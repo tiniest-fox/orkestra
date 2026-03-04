@@ -16,15 +16,19 @@ use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::middleware::Next;
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 
-use crate::interactions::auth::{pair_device, verify_token};
+use crate::interactions::auth::{generate_pairing_code, pair_device, verify_token};
 use crate::interactions::command::dispatch::{self, CommandContext};
 use crate::types::{AuthError, ErrorResponse, Event, Request, Response as WsResponse};
 
@@ -84,9 +88,18 @@ pub async fn start(
             .expose_headers(tower_http::cors::Any),
     };
 
+    let bootstrap_routes = Router::new()
+        .route("/", get(bootstrap_page))
+        .route("/pairing-code", post(generate_code))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_basic_auth,
+        ));
+
     let router = Router::new()
         .route("/ws", get(ws_handler))
         .route("/pair", post(pair_handler))
+        .merge(bootstrap_routes)
         .layer(cors)
         .with_state(state);
 
@@ -156,6 +169,91 @@ async fn pair_handler(
                 serde_json::json!({"error": "Invalid, expired, or already claimed pairing code"});
             (StatusCode::BAD_REQUEST, Json(body)).into_response()
         }
+        Ok(Err(e)) => {
+            let body = serde_json::json!({"error": e.to_string()});
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+        }
+        Err(e) => {
+            let body = serde_json::json!({"error": e.to_string()});
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+        }
+    }
+}
+
+// ============================================================================
+// Bootstrap Page
+// ============================================================================
+
+/// HTTP Basic Auth middleware — validates password against `ORKD_TOKEN`.
+///
+/// Returns 503 if no static token is configured, 401 with `WWW-Authenticate`
+/// header if credentials are missing or wrong, or passes the request through.
+async fn require_basic_auth(
+    State(state): State<ServerState>,
+    request: axum::extract::Request,
+    next: Next,
+) -> Response {
+    let Some(expected) = &state.static_token else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+
+    let password = extract_basic_auth_password(request.headers());
+    let authorized = password.as_deref().is_some_and(|p| {
+        let input_hash = Sha256::digest(p.as_bytes());
+        let expected_hash = Sha256::digest(expected.as_bytes());
+        input_hash.ct_eq(&expected_hash).into()
+    });
+
+    if !authorized {
+        return (
+            StatusCode::UNAUTHORIZED,
+            [(
+                axum::http::header::WWW_AUTHENTICATE,
+                r#"Basic realm="orkd""#,
+            )],
+        )
+            .into_response();
+    }
+
+    next.run(request).await
+}
+
+/// `GET /` — serve the bootstrap HTML page.
+///
+/// Reads the `Host` header and `X-Forwarded-Proto` to construct the WebSocket
+/// URL displayed on the page. Defaults to `ws://` (plain, as the daemon serves),
+/// but upgrades to `wss://` when a reverse proxy signals HTTPS via the forwarded
+/// proto header.
+async fn bootstrap_page(headers: HeaderMap) -> Html<String> {
+    let host = headers
+        .get("Host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+    let scheme = headers
+        .get("X-Forwarded-Proto")
+        .and_then(|v| v.to_str().ok())
+        .map_or("ws", |p| if p == "https" { "wss" } else { "ws" });
+    let ws_url = format!("{scheme}://{host}/ws");
+
+    let html = include_str!("bootstrap.html").replace("{ws_url}", &ws_url);
+    Html(html)
+}
+
+/// Response body for `POST /pairing-code`.
+#[derive(Debug, Serialize)]
+struct PairingCodeResponse {
+    code: String,
+}
+
+/// `POST /pairing-code` — generate a pairing code and return it as JSON.
+///
+/// Protected by `require_basic_auth` middleware.
+async fn generate_code(State(state): State<ServerState>) -> Response<Body> {
+    let conn = Arc::clone(&state.ctx.conn);
+    let result = tokio::task::spawn_blocking(move || generate_pairing_code::execute(&conn)).await;
+
+    match result {
+        Ok(Ok(code)) => Json(PairingCodeResponse { code }).into_response(),
         Ok(Err(e)) => {
             let body = serde_json::json!({"error": e.to_string()});
             (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
@@ -252,8 +350,12 @@ async fn handle_connection(mut socket: WebSocket, state: ServerState) {
 /// a token verified against the `device_tokens` table via `spawn_blocking`.
 async fn is_authenticated(state: &ServerState, token: &str) -> bool {
     // Constant-time comparison for static token to prevent timing attacks.
+    // Hash both sides so the comparison always operates on equal-length slices,
+    // eliminating the length leak in subtle's slice ct_eq.
     if let Some(static_token) = &state.static_token {
-        if token.as_bytes().ct_eq(static_token.as_bytes()).into() {
+        let input_hash = Sha256::digest(token.as_bytes());
+        let expected_hash = Sha256::digest(static_token.as_bytes());
+        if input_hash.ct_eq(&expected_hash).into() {
             return true;
         }
     }
@@ -277,6 +379,19 @@ async fn is_authenticated(state: &ServerState, token: &str) -> bool {
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     let auth = headers.get("Authorization")?.to_str().ok()?;
     auth.strip_prefix("Bearer ").map(|t| t.trim().to_string())
+}
+
+/// Extract the password from an `Authorization: Basic <base64>` header.
+///
+/// Accepts any username — only the password is validated against `ORKD_TOKEN`.
+fn extract_basic_auth_password(headers: &HeaderMap) -> Option<String> {
+    let auth = headers.get("Authorization")?.to_str().ok()?;
+    let encoded = auth.strip_prefix("Basic ")?;
+    let decoded = BASE64_STANDARD.decode(encoded).ok()?;
+    let s = String::from_utf8(decoded).ok()?;
+    // Split at the first `:` — the password may itself contain colons.
+    let (_, password) = s.split_once(':')?;
+    Some(password.to_string())
 }
 
 /// Parse a text message and dispatch it to the appropriate handler.
@@ -307,5 +422,28 @@ async fn handle_text_message(
         Err(error) => {
             serde_json::to_value(ErrorResponse { id, error }).unwrap_or(serde_json::Value::Null)
         }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `extract_basic_auth_password` splits on the first colon, so a password
+    /// that itself contains colons is returned intact.
+    #[test]
+    fn extract_basic_auth_password_preserves_colons_in_password() {
+        let mut headers = HeaderMap::new();
+        let encoded = BASE64_STANDARD.encode(b"user:tok:en");
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            format!("Basic {encoded}").parse().unwrap(),
+        );
+        let password = extract_basic_auth_password(&headers);
+        assert_eq!(password.as_deref(), Some("tok:en"));
     }
 }

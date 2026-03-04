@@ -706,6 +706,156 @@ async fn test_get_project_info() {
     );
 }
 
+// ============================================================================
+// Bootstrap Page Tests
+// ============================================================================
+
+/// `GET /` without auth returns 401 with `WWW-Authenticate` header.
+#[tokio::test]
+async fn test_bootstrap_page_requires_auth() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{addr}/"))
+        .send()
+        .await
+        .expect("GET / failed");
+
+    assert_eq!(resp.status(), 401);
+    assert!(
+        resp.headers().contains_key("www-authenticate"),
+        "401 must include WWW-Authenticate header"
+    );
+}
+
+/// `GET /` with correct Basic Auth returns 200 and HTML containing "ws://".
+#[tokio::test]
+async fn test_bootstrap_page_with_valid_auth() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{addr}/"))
+        .basic_auth("", Some(TEST_TOKEN))
+        .send()
+        .await
+        .expect("GET / failed");
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("ws://"), "HTML should contain WebSocket URL");
+}
+
+/// `GET /` with wrong password returns 401.
+#[tokio::test]
+async fn test_bootstrap_page_wrong_password() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{addr}/"))
+        .basic_auth("", Some("wrong-password"))
+        .send()
+        .await
+        .expect("GET / failed");
+
+    assert_eq!(resp.status(), 401);
+}
+
+/// `POST /pairing-code` with valid Basic Auth returns 200 and JSON with `code` field.
+#[tokio::test]
+async fn test_pairing_code_endpoint() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/pairing-code"))
+        .basic_auth("", Some(TEST_TOKEN))
+        .send()
+        .await
+        .expect("POST /pairing-code failed");
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let code = body["code"]
+        .as_str()
+        .expect("response must have a 'code' field");
+    assert_eq!(code.len(), 6, "pairing code must be 6 digits");
+    assert!(
+        code.chars().all(|c| c.is_ascii_digit()),
+        "code must be numeric"
+    );
+}
+
+/// `POST /pairing-code` without auth returns 401.
+#[tokio::test]
+async fn test_pairing_code_requires_auth() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/pairing-code"))
+        .send()
+        .await
+        .expect("POST /pairing-code failed");
+
+    assert_eq!(resp.status(), 401);
+}
+
+/// `POST /pairing-code` with a wrong password returns 401.
+#[tokio::test]
+async fn test_pairing_code_wrong_password() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/pairing-code"))
+        .basic_auth("", Some("wrong-password"))
+        .send()
+        .await
+        .expect("POST /pairing-code failed");
+
+    assert_eq!(resp.status(), 401);
+}
+
+/// When no static token is configured, `GET /` returns 503.
+#[tokio::test]
+async fn test_bootstrap_unavailable_without_token() {
+    let (api, store, conn) = test_api();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let (event_tx, _rx) = broadcast::channel::<Event>(256);
+    let event_tx_clone = event_tx.clone();
+    let ctx = Arc::new(CommandContext::new(
+        api,
+        conn,
+        PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
+    ));
+    tokio::spawn(async move {
+        let _ = server::start(ctx, event_tx_clone, None, listener, None::<HeaderValue>).await;
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{addr}/"))
+        .basic_auth("", Some("any-password"))
+        .send()
+        .await
+        .expect("GET / failed");
+
+    assert_eq!(resp.status(), 503);
+}
+
 /// `create_task` with `auto_mode: true` threads the flag through to the stored task.
 /// Passing an unknown `flow` name returns `INVALID_TRANSITION`.
 #[tokio::test]

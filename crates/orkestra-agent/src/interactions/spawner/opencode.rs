@@ -89,6 +89,17 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         // Request JSON event output and log internal state to stderr
         cmd.args(["--format", "json", "--print-logs"]);
 
+        // Apply environment when resolved: env_clear + envs replaces inherited env.
+        // When None, prepend ork CLI dir to PATH for discoverability (matches Claude spawner).
+        if let Some(ref env_map) = config.env {
+            cmd.env_clear();
+            cmd.envs(env_map);
+        } else {
+            // Prepend ork CLI dir to PATH for discoverability (matches Claude spawner)
+            let path_env = super::cli_path::prepare_path_env();
+            cmd.env("PATH", &path_env);
+        }
+
         cmd.current_dir(working_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

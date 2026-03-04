@@ -1,5 +1,6 @@
 //! Process management types.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{ChildStderr, ChildStdin, ChildStdout};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,13 +31,13 @@ impl ProcessGuard {
     /// Disarm the guard to prevent killing the process on drop.
     /// Call this when the process exits normally.
     pub fn disarm(&self) {
-        self.disarmed.store(true, Ordering::Relaxed);
+        self.disarmed.store(true, Ordering::Release);
     }
 }
 
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
-        if !self.disarmed.load(Ordering::Relaxed) {
+        if !self.disarmed.load(Ordering::Acquire) {
             eprintln!(
                 "[ProcessGuard] Killing orphaned process {} on drop",
                 self.pid
@@ -69,6 +70,9 @@ pub struct ProcessConfig {
     /// Providers that support tool restrictions will enforce these patterns;
     /// others will ignore them.
     pub disallowed_tools: Vec<String>,
+    /// Resolved project environment. When `Some`, the spawner clears inherited
+    /// env and uses this map as the base. When `None`, inherits the process env.
+    pub env: Option<HashMap<String, String>>,
 }
 
 impl ProcessConfig {
@@ -81,6 +85,7 @@ impl ProcessConfig {
             model: None,
             system_prompt: None,
             disallowed_tools: Vec::new(),
+            env: None,
         }
     }
 
@@ -93,6 +98,7 @@ impl ProcessConfig {
             model: None,
             system_prompt: None,
             disallowed_tools: Vec::new(),
+            env: None,
         }
     }
 
@@ -122,6 +128,13 @@ impl ProcessConfig {
     #[must_use]
     pub fn with_disallowed_tools(mut self, tools: Vec<String>) -> Self {
         self.disallowed_tools = tools;
+        self
+    }
+
+    /// Set the resolved project environment.
+    #[must_use]
+    pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
+        self.env = Some(env);
         self
     }
 }
@@ -256,6 +269,29 @@ mod tests {
         assert_eq!(config.session_id, Some("session-123".to_string()));
         assert!(config.is_resume);
         assert_eq!(config.json_schema, Some(r#"{"type":"object"}"#.to_string()));
+    }
+
+    #[test]
+    fn test_process_config_with_env() {
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+        env.insert("HOME".to_string(), "/home/user".to_string());
+
+        let config = ProcessConfig::new(r#"{"type":"object"}"#).with_env(env.clone());
+
+        assert!(config.env.is_some());
+        let stored = config.env.unwrap();
+        assert_eq!(stored["PATH"], "/usr/bin:/bin");
+        assert_eq!(stored["HOME"], "/home/user");
+    }
+
+    #[test]
+    fn test_process_config_env_defaults_to_none() {
+        let config = ProcessConfig::new(r#"{"type":"object"}"#);
+        assert!(config.env.is_none());
+
+        let config = ProcessConfig::for_chat();
+        assert!(config.env.is_none());
     }
 
     #[test]

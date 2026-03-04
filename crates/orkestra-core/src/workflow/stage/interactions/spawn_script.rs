@@ -34,9 +34,16 @@ pub(crate) fn execute(
 
     let env = build_script_env(project_root, task);
 
-    // Spawn the gate with environment variables
-    let handle = ScriptHandle::spawn_with_env(&command, &working_dir, timeout, &env)
-        .map_err(|e| ScriptError::SpawnFailed(e.to_string()))?;
+    // Resolve project-specific environment for the gate script
+    let resolved_env =
+        orkestra_agent::resolve_agent_env(project_root, std::env::var("SHELL").ok().as_deref());
+
+    let handle = if let Some(base_env) = resolved_env {
+        ScriptHandle::spawn_with_base_env(&command, &working_dir, timeout, &base_env, &env)
+    } else {
+        ScriptHandle::spawn_with_env(&command, &working_dir, timeout, &env)
+    }
+    .map_err(|e| ScriptError::SpawnFailed(e.to_string()))?;
 
     Ok(ActiveScript {
         task_id: task.id.clone(),

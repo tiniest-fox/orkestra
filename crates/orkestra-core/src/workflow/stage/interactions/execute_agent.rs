@@ -126,7 +126,13 @@ pub(crate) fn execute(
         spawn_context.is_resume
     );
 
-    // 8. Build run config with session info, model spec, and system prompt
+    // 8. Resolve project-specific environment for the agent process
+    let resolved_env = orkestra_agent::resolve_agent_env(
+        prompt_service.project_root(),
+        std::env::var("SHELL").ok().as_deref(),
+    );
+
+    // 9. Build run config with session info, model spec, system prompt, and env
     let stage_config = ResolvedStageConfig {
         user_prompt,
         json_schema,
@@ -134,9 +140,15 @@ pub(crate) fn execute(
         model_spec,
         disallowed_tool_patterns: disallowed_patterns,
     };
-    let run_config = build_run_config(prompt_service, task, stage_config, spawn_context);
+    let run_config = build_run_config(
+        prompt_service,
+        task,
+        stage_config,
+        spawn_context,
+        resolved_env,
+    );
 
-    // 9. Run the agent
+    // 10. Run the agent
     let (pid, events) = runner.run_async(run_config)?;
 
     orkestra_debug!(
@@ -478,12 +490,13 @@ fn get_working_dir(prompt_service: &PromptService, task: &Task) -> PathBuf {
     )
 }
 
-/// Build `RunConfig` with session info, model spec, and system prompt.
+/// Build `RunConfig` with session info, model spec, system prompt, and resolved env.
 fn build_run_config(
     prompt_service: &PromptService,
     task: &Task,
     resolved: ResolvedStageConfig,
     spawn_context: &SessionSpawnContext,
+    resolved_env: Option<std::collections::HashMap<String, String>>,
 ) -> RunConfig {
     let working_dir = get_working_dir(prompt_service, task);
     let mut run_config = RunConfig::new(working_dir, resolved.user_prompt, resolved.json_schema)
@@ -507,6 +520,11 @@ fn build_run_config(
 
     if !resolved.disallowed_tool_patterns.is_empty() {
         run_config = run_config.with_disallowed_tools(resolved.disallowed_tool_patterns);
+    }
+
+    // Thread resolved project environment to the spawner
+    if let Some(env) = resolved_env {
+        run_config = run_config.with_env(env);
     }
 
     run_config

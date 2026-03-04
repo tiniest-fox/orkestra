@@ -1,5 +1,6 @@
 //! Claude Code process spawner adapter.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
@@ -8,8 +9,6 @@ use std::os::unix::process::CommandExt;
 
 use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 
-use super::cli_path::prepare_path_env;
-
 // ============================================================================
 // Process Spawning
 // ============================================================================
@@ -17,7 +16,7 @@ use super::cli_path::prepare_path_env;
 /// Spawns a Claude Code process with the given configuration.
 fn spawn_claude_process(
     working_dir: &Path,
-    path_env: &str,
+    env: Option<&HashMap<String, String>>,
     config: &ProcessConfig,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new("claude");
@@ -56,10 +55,21 @@ fn spawn_claude_process(
         cmd.args(["--disallowedTools", &joined]);
     }
 
-    cmd.args(["--dangerously-skip-permissions"])
-        .env("PATH", path_env)
-        .env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
-        .current_dir(working_dir)
+    cmd.args(["--dangerously-skip-permissions"]);
+
+    // Apply environment: use resolved env (env_clear + envs) when available,
+    // otherwise fall back to inheriting process env with PATH prepended.
+    if let Some(env_map) = env {
+        cmd.env_clear();
+        cmd.envs(env_map);
+    } else {
+        let path_env = super::cli_path::prepare_path_env();
+        cmd.env("PATH", &path_env);
+    }
+    // IMPORTANT: Must remain outside the if/else — always set regardless of env source.
+    cmd.env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+
+    cmd.current_dir(working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -101,11 +111,8 @@ impl ProcessSpawner for ClaudeProcessSpawner {
         working_dir: &Path,
         config: ProcessConfig,
     ) -> Result<ProcessHandle, ProcessError> {
-        // Prepare PATH with CLI directory
-        let path_env = prepare_path_env();
-
         // Spawn the process
-        let mut child = spawn_claude_process(working_dir, &path_env, &config)
+        let mut child = spawn_claude_process(working_dir, config.env.as_ref(), &config)
             .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
 
         let pid = child.id();

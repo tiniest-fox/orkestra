@@ -3,6 +3,7 @@
 //! Defines the request/response contract for `AgentRunner`: `RunConfig` (builder),
 //! `RunResult`, `RunEvent`, and `RunError`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use orkestra_parser::StageOutput;
@@ -37,6 +38,9 @@ pub struct RunConfig {
     /// Tool patterns that the agent is not allowed to use.
     /// Threaded to `ProcessConfig` and ultimately to the CLI flag.
     pub disallowed_tools: Vec<String>,
+    /// Resolved project environment. When `Some`, the spawner clears inherited
+    /// env and uses this map as the base. When `None`, inherits the process env.
+    pub env: Option<HashMap<String, String>>,
 }
 
 impl RunConfig {
@@ -58,6 +62,7 @@ impl RunConfig {
             model: None,
             system_prompt: None,
             disallowed_tools: Vec::new(),
+            env: None,
         }
     }
 
@@ -94,6 +99,13 @@ impl RunConfig {
     #[must_use]
     pub fn with_disallowed_tools(mut self, tools: Vec<String>) -> Self {
         self.disallowed_tools = tools;
+        self
+    }
+
+    /// Set the resolved project environment.
+    #[must_use]
+    pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
+        self.env = Some(env);
         self
     }
 }

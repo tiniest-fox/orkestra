@@ -7730,3 +7730,124 @@ fn test_pr_comments_context_reaches_agent_prompt() {
         ],
     );
 }
+
+// =============================================================================
+// Env Resolution Tests
+// =============================================================================
+
+/// Verify that resolved project env is threaded through to the agent runner.
+///
+/// When SHELL is set (normal developer/CI environment), the mock runner
+/// should receive a `RunConfig` with env populated. The task must also
+/// progress to `AwaitingApproval` to confirm the full pipeline is unaffected.
+#[test]
+fn test_resolved_env_threaded_to_agent_runner() {
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Env threading test", "Verify env in RunConfig", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+
+    let calls = ctx.runner_calls();
+    assert!(!calls.is_empty(), "Expected at least one runner call");
+
+    if std::env::var("SHELL").is_ok() {
+        // SHELL is set: env should be resolved with PATH
+        let env = calls[0].env.as_ref();
+        assert!(env.is_some(), "Expected resolved env when SHELL is set");
+        let env_map = env.unwrap();
+        assert!(
+            env_map.contains_key("PATH"),
+            "Resolved env should contain PATH"
+        );
+        assert!(!env_map["PATH"].is_empty(), "PATH should not be empty");
+    } else {
+        // SHELL is not set: env should be None (graceful fallback)
+        assert!(
+            calls[0].env.is_none(),
+            "Expected None env when SHELL is not set"
+        );
+    }
+
+    // Verify task progresses normally regardless of env resolution outcome
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Task should reach AwaitingApproval, got: {:?}",
+        task.state
+    );
+}
+
+/// Gate scripts receive ORKESTRA_* environment variables when env resolution is active.
+///
+/// When `resolve_agent_env` succeeds, gate scripts are spawned via `spawn_with_base_env`,
+/// which clears the inherited env and applies base + overlay. This test verifies that
+/// `ORKESTRA_TASK_ID` is present in the overlay and survives the `env_clear`.
+#[test]
+fn test_gate_script_receives_orkestra_env_vars() {
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
+
+    // Gate script writes ORKESTRA_TASK_ID to a file in the worktree
+    let gate_command = "echo $ORKESTRA_TASK_ID > orkestra_env_check.txt";
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new(gate_command).with_timeout(10))]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate env test", "Verify ORKESTRA vars in gate", None);
+    let task_id = task.id.clone();
+
+    // Agent produces artifact, which triggers the gate
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingGate { .. }),
+        "Task should be AwaitingGate after artifact, got: {:?}",
+        task.state
+    );
+
+    ctx.advance(); // spawns gate → drain_active → gate completes → AwaitingApproval
+
+    // Re-fetch task to get worktree_path
+    let task = ctx.api().get_task(&task_id).unwrap();
+    let worktree = task
+        .worktree_path
+        .as_ref()
+        .expect("task should have worktree");
+    let check_file = std::path::Path::new(worktree).join("orkestra_env_check.txt");
+
+    assert!(
+        check_file.exists(),
+        "Gate script should have written orkestra_env_check.txt"
+    );
+    let contents = std::fs::read_to_string(&check_file).unwrap();
+    assert_eq!(
+        contents.trim(),
+        task_id,
+        "Gate script should receive ORKESTRA_TASK_ID"
+    );
+}

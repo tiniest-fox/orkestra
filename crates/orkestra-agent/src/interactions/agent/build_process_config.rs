@@ -25,6 +25,7 @@ pub fn execute(
         model: _,
         system_prompt,
         disallowed_tools,
+        env,
     } = config;
 
     let mut process_config = ProcessConfig::new(json_schema);
@@ -43,6 +44,10 @@ pub fn execute(
 
     if !disallowed_tools.is_empty() {
         process_config = process_config.with_disallowed_tools(disallowed_tools);
+    }
+
+    if let Some(env) = env {
+        process_config = process_config.with_env(env);
     }
 
     (process_config, prompt, working_dir)

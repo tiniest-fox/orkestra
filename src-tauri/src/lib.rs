@@ -306,8 +306,7 @@ pub fn run() {
         let path = std::env::var("PATH").unwrap_or_else(|_| "(not set)".to_string());
         match fix_path_env::fix() {
             Ok(()) => {
-                let new_path =
-                    std::env::var("PATH").unwrap_or_else(|_| "(not set)".to_string());
+                let new_path = std::env::var("PATH").unwrap_or_else(|_| "(not set)".to_string());
                 let _ = PATH_FIX_RESULT.set(Ok(new_path));
             }
             Err(e) => {

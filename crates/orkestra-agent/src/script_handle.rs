@@ -133,53 +133,44 @@ impl ScriptHandle {
         timeout: Duration,
         env: &ScriptEnv,
     ) -> std::io::Result<Self> {
-        let mut cmd = Command::new("sh");
-        cmd.args(["-c", command])
-            .current_dir(working_dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        // Spawn in own process group so kill_process_tree can target it
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
-        }
+        let mut cmd = build_script_command(command, working_dir);
 
         // Add custom environment variables
         for (key, value) in env.vars() {
             cmd.env(key, value);
         }
 
-        let mut child = cmd.spawn()?;
+        let child = cmd.spawn()?;
+        Self::from_child(child, timeout)
+    }
 
-        // Set up channel for output streaming
-        let (sender, receiver) = mpsc::channel();
+    /// Spawn a script with a fully resolved base environment and overlay variables.
+    ///
+    /// The base environment replaces the inherited process environment entirely
+    /// (via `env_clear`). Overlay variables from `ScriptEnv` are applied on top,
+    /// with overlay taking precedence on key collisions.
+    pub fn spawn_with_base_env(
+        command: &str,
+        working_dir: &Path,
+        timeout: Duration,
+        base_env: &HashMap<String, String>,
+        overlay: &ScriptEnv,
+    ) -> std::io::Result<Self> {
+        let mut cmd = build_script_command(command, working_dir);
 
-        // Spawn reader threads for stdout and stderr
-        let mut reader_handles = Vec::new();
-
-        if let Some(stdout) = child.stdout.take() {
-            let handle = spawn_output_reader(stdout, sender.clone());
-            reader_handles.push(handle);
+        // Clear inherited env and apply resolved base
+        cmd.env_clear();
+        for (key, value) in base_env {
+            cmd.env(key, value);
         }
 
-        if let Some(stderr) = child.stderr.take() {
-            let handle = spawn_output_reader(stderr, sender);
-            reader_handles.push(handle);
+        // Overlay task-context variables (ORKESTRA_* etc.) — these take precedence
+        for (key, value) in overlay.vars() {
+            cmd.env(key, value);
         }
 
-        let now = Instant::now();
-        Ok(Self {
-            child,
-            output_receiver: receiver,
-            reader_handles,
-            started_at: now,
-            timeout_at: now + timeout,
-            output_buffer: String::new(),
-            killed: false,
-        })
+        let child = cmd.spawn()?;
+        Self::from_child(child, timeout)
     }
 
     /// Get the process ID of the running script.
@@ -268,6 +259,33 @@ impl ScriptHandle {
 
     // -- Helpers --
 
+    /// Set up channels and reader threads for a spawned child process.
+    fn from_child(mut child: Child, timeout: Duration) -> std::io::Result<Self> {
+        let (sender, receiver) = mpsc::channel();
+        let mut reader_handles = Vec::new();
+
+        if let Some(stdout) = child.stdout.take() {
+            let handle = spawn_output_reader(stdout, sender.clone());
+            reader_handles.push(handle);
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            let handle = spawn_output_reader(stderr, sender);
+            reader_handles.push(handle);
+        }
+
+        let now = Instant::now();
+        Ok(Self {
+            child,
+            output_receiver: receiver,
+            reader_handles,
+            started_at: now,
+            timeout_at: now + timeout,
+            output_buffer: String::new(),
+            killed: false,
+        })
+    }
+
     /// Collect available output from reader threads without blocking.
     fn collect_available_output(&mut self) -> Option<String> {
         let mut new_lines = Vec::new();
@@ -290,6 +308,24 @@ impl ScriptHandle {
             let _ = handle.join();
         }
     }
+}
+
+/// Build the base `sh -c` command with process group and stdio setup.
+fn build_script_command(command: &str, working_dir: &Path) -> Command {
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", command])
+        .current_dir(working_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
+    cmd
 }
 
 /// Spawn a thread to read lines from a reader and send them through a channel.
@@ -493,6 +529,77 @@ mod tests {
                 ScriptPollState::Completed(result) => {
                     assert!(result.is_success());
                     assert!(result.output.trim().contains(expected_path));
+                    break;
+                }
+                ScriptPollState::Running { .. } => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_spawn_with_base_env_isolates_environment() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut base_env = HashMap::new();
+        base_env.insert("TEST_BASE".to_string(), "base_value".to_string());
+        base_env.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+
+        let overlay = ScriptEnv::new().with("TEST_OVERLAY", "overlay_value");
+
+        let mut handle = ScriptHandle::spawn_with_base_env(
+            "env",
+            temp_dir.path(),
+            Duration::from_secs(10),
+            &base_env,
+            &overlay,
+        )
+        .unwrap();
+
+        loop {
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(result.is_success());
+                    assert!(result.output.contains("TEST_BASE=base_value"));
+                    assert!(result.output.contains("TEST_OVERLAY=overlay_value"));
+                    // HOME should NOT appear unless it was in base_env
+                    // (env_clear removes all inherited vars)
+                    assert!(
+                        !result.output.contains("HOME="),
+                        "HOME leaked from process env"
+                    );
+                    break;
+                }
+                ScriptPollState::Running { .. } => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_spawn_with_base_env_overlay_wins() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut base_env = HashMap::new();
+        base_env.insert("CONFLICT".to_string(), "base".to_string());
+        base_env.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+
+        let overlay = ScriptEnv::new().with("CONFLICT", "overlay");
+
+        let mut handle = ScriptHandle::spawn_with_base_env(
+            "echo $CONFLICT",
+            temp_dir.path(),
+            Duration::from_secs(10),
+            &base_env,
+            &overlay,
+        )
+        .unwrap();
+
+        loop {
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(result.is_success());
+                    assert_eq!(result.output.trim(), "overlay");
                     break;
                 }
                 ScriptPollState::Running { .. } => {

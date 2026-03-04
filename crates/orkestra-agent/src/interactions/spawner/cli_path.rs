@@ -3,6 +3,7 @@
 //! Finds the `ork` CLI binary and prepares the PATH environment variable
 //! so spawned agent processes can locate it.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -53,14 +54,57 @@ pub fn find_cli_path() -> Option<PathBuf> {
     None
 }
 
-/// Prepares the PATH environment variable with the CLI directory.
+/// Prepends the `ork` CLI directory to the PATH entry in an environment map.
+///
+/// If `find_cli_path()` returns None, the map is unchanged.
+pub fn prepend_cli_dir(env: &mut HashMap<String, String>) {
+    let cli_dir = find_cli_path().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+    let Some(dir) = cli_dir else { return };
+    let current_path = env.entry("PATH".to_string()).or_default();
+    *current_path = format!("{}:{}", dir.display(), current_path);
+}
+
+/// Prepares the PATH environment variable with the CLI directory prepended.
 pub fn prepare_path_env() -> String {
-    let cli_path = find_cli_path();
-    let mut path_env = std::env::var("PATH").unwrap_or_default();
-    if let Some(ref cli) = cli_path {
-        if let Some(parent) = cli.parent() {
-            path_env = format!("{}:{}", parent.display(), path_env);
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    match find_cli_path().and_then(|p| p.parent().map(std::path::Path::to_path_buf)) {
+        Some(dir) => format!("{}:{}", dir.display(), current_path),
+        None => current_path,
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prepend_cli_dir() {
+        let mut env = HashMap::new();
+        let original = "/usr/bin:/bin".to_string();
+        env.insert("PATH".to_string(), original.clone());
+        prepend_cli_dir(&mut env);
+        let path = &env["PATH"];
+        // PATH should still contain original entries
+        assert!(path.contains("/usr/bin"));
+        // If CLI was found, PATH should be longer (something was prepended)
+        if find_cli_path().is_some() {
+            assert_ne!(path, &original, "CLI dir should have been prepended");
+            assert!(
+                path.ends_with(&original),
+                "Original PATH should be at the end"
+            );
         }
     }
-    path_env
+
+    #[test]
+    fn test_prepend_cli_dir_empty_env() {
+        let mut env = HashMap::new();
+        prepend_cli_dir(&mut env);
+        // Should not panic; PATH may or may not be set depending on find_cli_path
+        let _ = env.get("PATH");
+    }
 }

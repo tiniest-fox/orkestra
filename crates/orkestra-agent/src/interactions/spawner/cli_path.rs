@@ -57,7 +57,7 @@ pub fn find_cli_path() -> Option<PathBuf> {
 /// Prepends the `ork` CLI directory to the PATH entry in an environment map.
 ///
 /// If `find_cli_path()` returns None, the map is unchanged.
-pub fn prepend_cli_dir(env: &mut HashMap<String, String>) {
+pub fn prepend_cli_dir<S: std::hash::BuildHasher>(env: &mut HashMap<String, String, S>) {
     let cli_dir = find_cli_path().and_then(|p| p.parent().map(std::path::Path::to_path_buf));
     let Some(dir) = cli_dir else { return };
     let current_path = env.entry("PATH".to_string()).or_default();

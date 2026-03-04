@@ -16,10 +16,6 @@ use crate::types::Event;
 /// only for that lookup and released immediately.
 pub fn execute(event: &OrchestratorEvent, api: &Arc<Mutex<WorkflowApi>>) -> Vec<Event> {
     match event {
-        OrchestratorEvent::AgentSpawned { task_id, .. } => {
-            vec![Event::task_updated(task_id)]
-        }
-
         OrchestratorEvent::OutputProcessed { task_id, .. } => {
             let mut events = vec![Event::task_updated(task_id)];
 
@@ -43,7 +39,8 @@ pub fn execute(event: &OrchestratorEvent, api: &Arc<Mutex<WorkflowApi>>) -> Vec<
             }
         }
 
-        OrchestratorEvent::IntegrationStarted { task_id, .. }
+        OrchestratorEvent::AgentSpawned { task_id, .. }
+        | OrchestratorEvent::IntegrationStarted { task_id, .. }
         | OrchestratorEvent::IntegrationCompleted { task_id }
         | OrchestratorEvent::IntegrationFailed { task_id, .. }
         | OrchestratorEvent::ParentAdvanced { task_id, .. }

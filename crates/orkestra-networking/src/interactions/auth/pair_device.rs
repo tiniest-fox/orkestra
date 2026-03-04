@@ -53,5 +53,9 @@ pub fn execute(
 fn random_token() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut s, b| {
+        use std::fmt::Write;
+        write!(s, "{b:02x}").expect("write to String is infallible");
+        s
+    })
 }

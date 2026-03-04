@@ -329,10 +329,7 @@ impl RunProcessRegistry {
 fn stream_lines_to_buffer(reader: impl std::io::Read, log_buffer: Arc<Mutex<LogBuffer>>) {
     let reader = std::io::BufReader::new(reader);
     for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
+        let Ok(line) = line else { break };
         let mut buf = log_buffer
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

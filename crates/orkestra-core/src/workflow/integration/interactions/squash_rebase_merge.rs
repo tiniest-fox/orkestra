@@ -129,6 +129,7 @@ pub(crate) fn execute(
 ///
 /// Commit message generation happens after the sync merge succeeds — if the sync
 /// merge hits a conflict, we bail early without wasting an AI call.
+#[allow(clippy::too_many_lines)]
 fn perform_git_integration(
     git: &dyn GitService,
     params: &IntegrationParams<'_>,

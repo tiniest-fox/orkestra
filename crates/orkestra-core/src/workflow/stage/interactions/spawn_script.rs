@@ -43,7 +43,7 @@ pub(crate) fn execute(
     } else {
         ScriptHandle::spawn_with_env(&command, &working_dir, timeout, &env)
     }
-    .map_err(|e| ScriptError::SpawnFailed(e.to_string()))?;
+    .map_err(|e| ScriptError::SpawnFailed(format!("command={command} {e}")))?;
 
     Ok(ActiveScript {
         task_id: task.id.clone(),

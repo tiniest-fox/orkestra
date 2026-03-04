@@ -45,19 +45,22 @@ pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Resu
 
     // Create artifacts directory (needed for either regular artifacts or activity log)
     let artifacts_dir = worktree_path.join(artifacts_directory());
-    fs::create_dir_all(&artifacts_dir)?;
+    fs::create_dir_all(&artifacts_dir)
+        .map_err(|e| std::io::Error::other(format!("{}: {}", artifacts_dir.display(), e)))?;
 
     // Write regular artifacts
     for artifact in task.artifacts.all() {
         let file_path = worktree_path.join(artifact_file_path(&artifact.name));
-        fs::write(&file_path, &artifact.content)?;
+        fs::write(&file_path, &artifact.content)
+            .map_err(|e| std::io::Error::other(format!("{}: {}", file_path.display(), e)))?;
     }
 
     // Write activity log file
     if has_activity_logs {
         let content = format_activity_log(activity_logs);
         let file_path = worktree_path.join(artifact_file_path(ACTIVITY_LOG_ARTIFACT_NAME));
-        fs::write(&file_path, content)?;
+        fs::write(&file_path, content)
+            .map_err(|e| std::io::Error::other(format!("{}: {}", file_path.display(), e)))?;
         artifact_names.push(ACTIVITY_LOG_ARTIFACT_NAME.to_string());
     }
 

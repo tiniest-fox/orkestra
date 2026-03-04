@@ -120,12 +120,9 @@ fn parse_env_output(bytes: &[u8]) -> HashMap<String, String> {
             continue;
         }
         // Split only on the first `=`
-        let eq_pos = match record.iter().position(|&b| b == b'=') {
-            Some(pos) => pos,
-            None => {
-                // Malformed record — no `=` separator
-                continue;
-            }
+        let Some(eq_pos) = record.iter().position(|&b| b == b'=') else {
+            // Malformed record — no `=` separator
+            continue;
         };
         let key = String::from_utf8_lossy(&record[..eq_pos]).into_owned();
         let value = String::from_utf8_lossy(&record[eq_pos + 1..]).into_owned();

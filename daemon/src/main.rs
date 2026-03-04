@@ -27,7 +27,8 @@ use orkestra_core::workflow::{
 };
 use orkestra_core::{ensure_orkestra_project, orkestra_debug};
 use orkestra_networking::{
-    convert_orchestrator_event, generate_pairing_code, CommandContext, Event, RelayClientConfig,
+    convert_orchestrator_event, generate_pairing_code, CommandContext, Event, HeaderValue,
+    RelayClientConfig,
 };
 
 // ============================================================================
@@ -62,6 +63,14 @@ struct Args {
     /// Clients can use this code with `POST /pair` to obtain a bearer token.
     #[arg(long)]
     generate_pairing_code: bool,
+
+    /// Restrict CORS to a specific origin (e.g., <https://app.orkestra.dev>).
+    ///
+    /// When unset, any origin is allowed (permissive dev mode). When set, only
+    /// the provided origin is permitted. Use `ORKD_ALLOWED_ORIGIN` env var for
+    /// the same effect without a CLI flag.
+    #[arg(long, env = "ORKD_ALLOWED_ORIGIN")]
+    allowed_origin: Option<String>,
 
     /// Relay server URL (e.g., <wss://relay.orkestra.dev>). Enables relay connection.
     #[arg(long, env = "ORKD_RELAY_URL")]
@@ -117,6 +126,7 @@ fn main() {
         bind_addr,
         args.token,
         args.generate_pairing_code,
+        args.allowed_origin,
         args.relay_url,
         args.relay_api_key,
     )) {
@@ -135,9 +145,20 @@ async fn run(
     bind_addr: SocketAddr,
     static_token: Option<String>,
     generate_pairing_code_flag: bool,
+    allowed_origin: Option<String>,
     relay_url: Option<String>,
     relay_api_key: Option<String>,
 ) -> Result<(), String> {
+    // Validate allowed_origin before any side effects so we fail fast with a
+    // clear message rather than panicking deep into startup.
+    let allowed_origin: Option<HeaderValue> = match allowed_origin {
+        None => None,
+        Some(ref s) => Some(
+            s.parse::<HeaderValue>()
+                .map_err(|_| format!("Invalid --allowed-origin value: {s}"))?,
+        ),
+    };
+
     // -- Project init --
     let orkestra_dir = project_root.join(".orkestra");
     ensure_orkestra_project(&orkestra_dir).map_err(|e| format!("Failed to init .orkestra: {e}"))?;
@@ -363,8 +384,13 @@ async fn run(
         .await
         .map_err(|e| format!("Failed to bind {bind_addr}: {e}"))?;
     tracing::info!("Daemon listening on {bind_addr}");
-    let server_future =
-        orkestra_networking::start(ctx, event_tx_for_server, static_token, listener);
+    let server_future = orkestra_networking::start(
+        ctx,
+        event_tx_for_server,
+        static_token,
+        listener,
+        allowed_origin,
+    );
 
     // Watch for stop flag and abort server once set.
     let stop_watcher = {

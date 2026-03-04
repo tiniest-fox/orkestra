@@ -18,6 +18,7 @@ use orkestra_core::workflow::{
     SqliteWorkflowStore, WorkflowApi, WorkflowStore,
 };
 
+use axum::http::HeaderValue;
 use orkestra_networking::{server, CommandContext, Event};
 
 /// Static token used in tests to bypass device pairing.
@@ -74,7 +75,14 @@ async fn start_test_server(
         store,
     ));
     tokio::spawn(async move {
-        let _ = server::start(ctx, event_tx_clone, Some(TEST_TOKEN.to_string()), listener).await;
+        let _ = server::start(
+            ctx,
+            event_tx_clone,
+            Some(TEST_TOKEN.to_string()),
+            listener,
+            None::<HeaderValue>,
+        )
+        .await;
     });
     (addr, event_tx)
 }
@@ -551,7 +559,7 @@ async fn test_full_pairing_flow() {
         store,
     ));
     tokio::spawn(async move {
-        let _ = server::start(ctx, event_tx_clone, None, listener).await;
+        let _ = server::start(ctx, event_tx_clone, None, listener, None::<HeaderValue>).await;
     });
 
     // Generate a pairing code using the interaction directly.
@@ -632,7 +640,7 @@ async fn test_revoked_device_cannot_connect() {
         store,
     ));
     tokio::spawn(async move {
-        let _ = server::start(ctx, event_tx_clone, None, listener).await;
+        let _ = server::start(ctx, event_tx_clone, None, listener, None::<HeaderValue>).await;
     });
 
     // Generate and claim a pairing code.
@@ -895,5 +903,58 @@ async fn test_assistant_dispatch_wiring() {
     assert_eq!(
         stop["error"]["code"], "INVALID_PARAMS",
         "assistant_stop with missing session_id should return INVALID_PARAMS"
+    );
+}
+
+/// A server started with a restricted `allowed_origin` echoes the origin back
+/// in `Access-Control-Allow-Origin` when the request origin matches.
+#[tokio::test]
+async fn test_cors_restricted_origin() {
+    let (api, store, conn) = test_api();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let (event_tx, _rx) = broadcast::channel::<Event>(256);
+    let event_tx_clone = event_tx.clone();
+    let ctx = Arc::new(CommandContext::new(
+        api,
+        conn,
+        PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
+    ));
+
+    let allowed = HeaderValue::from_static("https://allowed.example.com");
+    tokio::spawn(async move {
+        let _ = server::start(
+            ctx,
+            event_tx_clone,
+            Some(TEST_TOKEN.to_string()),
+            listener,
+            Some(allowed),
+        )
+        .await;
+    });
+
+    // POST /pair with a matching Origin header — ACAO should be set.
+    // The code "000000" is intentionally invalid; we only care about the CORS header.
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/pair"))
+        .header("Origin", "https://allowed.example.com")
+        .json(&serde_json::json!({ "code": "000000", "device_name": "cors-test" }))
+        .send()
+        .await
+        .expect("Request failed");
+
+    let acao = resp.headers().get("access-control-allow-origin");
+    assert!(
+        acao.is_some(),
+        "Access-Control-Allow-Origin should be set for a matching origin"
+    );
+    assert_eq!(
+        acao.unwrap(),
+        "https://allowed.example.com",
+        "ACAO should echo the restricted origin"
     );
 }

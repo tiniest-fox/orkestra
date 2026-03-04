@@ -15,13 +15,14 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
+use tower_http::cors::CorsLayer;
 
 use crate::interactions::auth::{pair_device, verify_token};
 use crate::interactions::command::dispatch::{self, CommandContext};
@@ -50,6 +51,10 @@ struct ServerState {
 /// parameter enables a fixed development token that bypasses device pairing.
 /// Pass `None` in production to require the full pairing flow.
 ///
+/// `allowed_origin` controls CORS: `None` allows any origin (dev mode);
+/// `Some(origin)` restricts to exactly that origin (e.g. `https://app.orkestra.dev`).
+/// The caller is responsible for validating the origin value before passing it here.
+///
 /// The caller is responsible for binding the listener — this eliminates the
 /// TOCTOU race that occurs when binding an ephemeral port and passing the
 /// address separately.
@@ -60,6 +65,7 @@ pub async fn start(
     event_tx: broadcast::Sender<Event>,
     static_token: Option<String>,
     listener: tokio::net::TcpListener,
+    allowed_origin: Option<HeaderValue>,
 ) -> Result<(), std::io::Error> {
     let local_addr = listener.local_addr()?;
 
@@ -69,9 +75,19 @@ pub async fn start(
         static_token,
     };
 
+    let cors = match allowed_origin {
+        None => CorsLayer::permissive(),
+        Some(origin) => CorsLayer::new()
+            .allow_origin(origin)
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any)
+            .expose_headers(tower_http::cors::Any),
+    };
+
     let router = Router::new()
         .route("/ws", get(ws_handler))
         .route("/pair", post(pair_handler))
+        .layer(cors)
         .with_state(state);
 
     tracing::info!("WebSocket server listening on {local_addr}");

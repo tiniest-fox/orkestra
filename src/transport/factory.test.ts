@@ -31,6 +31,11 @@ function storeProject(project: ProjectConfig): void {
   localStorage.setItem(STORAGE_CURRENT_PROJECT_ID, project.id);
 }
 
+function storeProjects(projects: ProjectConfig[], currentId: string): void {
+  localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects));
+  localStorage.setItem(STORAGE_CURRENT_PROJECT_ID, currentId);
+}
+
 describe("createTransport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -40,6 +45,7 @@ describe("createTransport", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     localStorage.clear();
+    history.replaceState(null, "", "/");
   });
 
   it("returns TauriTransport when TAURI_ENV_PLATFORM is set and no remote URL is set", () => {
@@ -85,5 +91,50 @@ describe("createTransport", () => {
     expect(MockTauriTransport).not.toHaveBeenCalled();
     expect(transport.supportsLocalOperations).toBe(false);
     expect(transport.requiresAuthentication).toBe(true);
+  });
+
+  it("uses URL ?project= param project over localStorage default", () => {
+    const urlProject: ProjectConfig = {
+      id: "url-proj",
+      url: "ws://url-project.example.com/ws",
+      token: "url-token",
+      projectName: "",
+      projectRoot: "",
+    };
+    const storedProject: ProjectConfig = {
+      id: "stored-proj",
+      url: "ws://stored-project.example.com/ws",
+      token: "stored-token",
+      projectName: "",
+      projectRoot: "",
+    };
+    storeProjects([urlProject, storedProject], storedProject.id);
+    history.replaceState(null, "", `/?project=${urlProject.id}`);
+
+    createTransport();
+
+    expect(MockWebSocketTransport).toHaveBeenCalledWith(
+      "ws://url-project.example.com/ws",
+      "url-token",
+    );
+  });
+
+  it("falls back to localStorage default when URL project ID does not match any project", () => {
+    const stored: ProjectConfig = {
+      id: "stored-proj",
+      url: "ws://stored.example.com/ws",
+      token: "stored-token",
+      projectName: "",
+      projectRoot: "",
+    };
+    storeProject(stored);
+    history.replaceState(null, "", "/?project=non-existent-id");
+
+    createTransport();
+
+    expect(MockWebSocketTransport).toHaveBeenCalledWith(
+      "ws://stored.example.com/ws",
+      "stored-token",
+    );
   });
 });

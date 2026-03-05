@@ -1,6 +1,6 @@
 //! Transport factory — selects Tauri or WebSocket based on runtime environment.
 
-import { loadCurrentProject, migrateFromLegacy } from "../utils/projectStorage";
+import { loadActiveProject, migrateFromLegacy } from "../utils/projectStorage";
 import { TauriTransport } from "./TauriTransport";
 import type { Transport } from "./types";
 import { WebSocketTransport } from "./WebSocketTransport";
@@ -21,7 +21,7 @@ const DEFAULT_WS_URL = "ws://localhost:3847/ws";
 export function createTransport(): Transport {
   migrateFromLegacy();
   const hasTauri = !!import.meta.env.TAURI_ENV_PLATFORM;
-  const currentProject = loadCurrentProject();
+  const currentProject = loadActiveProject();
   const remoteUrl = currentProject?.url ?? null;
 
   if (hasTauri && !remoteUrl) {

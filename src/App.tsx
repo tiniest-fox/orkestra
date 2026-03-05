@@ -5,7 +5,7 @@
 //! then a loading screen while the WebSocket connects.
 
 import { ConnectionPage } from "./components/ConnectionPage/ConnectionPage";
-import { LoadingScreen } from "./components/LoadingScreen";
+import { FeedLoadingSkeleton } from "./components/Feed/FeedLoadingSkeleton";
 import { Orkestra } from "./components/Orkestra";
 import { Button } from "./components/ui";
 import {
@@ -64,12 +64,20 @@ function AppContent() {
     }
 
     if (connectionState === "connecting") {
-      return <LoadingScreen message="Connecting to daemon…" />;
+      return (
+        <FeedLoadingSkeleton
+          statusText="Connecting to daemon…"
+          projectName={currentProject.projectName || undefined}
+        />
+      );
     }
 
     if (connectionState === "disconnected") {
       return (
-        <LoadingScreen message="Reconnecting to daemon…">
+        <FeedLoadingSkeleton
+          statusText="Reconnecting to daemon…"
+          projectName={currentProject.projectName || undefined}
+        >
           <Button
             variant="secondary"
             className="mt-4"
@@ -79,7 +87,7 @@ function AppContent() {
           >
             Disconnect
           </Button>
-        </LoadingScreen>
+        </FeedLoadingSkeleton>
       );
     }
   }

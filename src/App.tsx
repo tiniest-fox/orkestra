@@ -4,6 +4,7 @@
 //! In PWA mode, shows the ConnectionPage until a project is configured,
 //! then a loading screen while the WebSocket connects.
 
+import { useEffect } from "react";
 import { ConnectionPage } from "./components/ConnectionPage/ConnectionPage";
 import { FeedLoadingSkeleton } from "./components/Feed/FeedLoadingSkeleton";
 import { Orkestra } from "./components/Orkestra";
@@ -56,6 +57,19 @@ function AppContent() {
   const transport = useTransport();
   const connectionState = useConnectionState();
   const { currentProject, addingProject, cancelAddProject, removeProject } = useProjects();
+
+  useEffect(() => {
+    if (!currentProject) {
+      document.title = "Orkestra";
+      return;
+    }
+    try {
+      const host = new URL(currentProject.url).host;
+      document.title = `Orkestra | ${host}`;
+    } catch {
+      document.title = "Orkestra";
+    }
+  }, [currentProject]);
 
   // PWA path: gate access behind pairing and WebSocket connection.
   if (transport.requiresAuthentication) {

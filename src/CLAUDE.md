@@ -99,6 +99,18 @@ useEffect(() => {
 - **Forge tokens used with opacity modifiers must be defined as RGB channels**: Tailwind's `/N` opacity modifier syntax (e.g. `bg-accent/40`, `text-status-error/60`) requires the CSS variable to be defined as space-separated RGB channels (`"R G B"`) rather than a hex string. Hex values silently break opacity — the class is applied but opacity has no effect. Affected tokens (accent, status-success, status-error, status-warning, status-info, violet, teal, merge) are already defined in the correct format in `tailwind.config.js`. When adding a new Forge token, check whether it will ever be used with `/N` and define it accordingly: `"--forge-my-token": "120 80 200"` not `"#7850C8"`.
 - Use `PROSE_CLASSES` from `utils/prose.ts` for markdown rendering. Always pair with `text-forge-body` for font size — never use arbitrary values like `text-[13px]` alongside `PROSE_CLASSES`.
 
+## Pre-React HTML Skeleton (`index.html`)
+
+<!-- compound: slickly-continuous-bonobo -->
+
+`index.html` contains a pre-React loading skeleton (shown before JS hydrates) that mirrors `FeedLoadingSkeleton.tsx`. Because it's plain HTML, it cannot use Tailwind or CSS variables — it uses hardcoded hex colors that duplicate Forge token values from `src/index.css`.
+
+**When changing Forge color tokens, update both:**
+1. `src/index.css` — the canonical CSS variable definition
+2. `index.html` — the hardcoded hex equivalents in the pre-React skeleton
+
+The skeleton also has a `statusText` element (`.loading-status-text`) that shows a loading message. Always populate it when adding new skeleton states so the UI doesn't jump between "has status" and "no status" variants.
+
 ## Forge Design System
 
 <!-- compound: unthinkingly-inventive-dugong -->

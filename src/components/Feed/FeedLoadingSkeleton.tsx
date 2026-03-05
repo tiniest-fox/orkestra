@@ -15,7 +15,7 @@ interface FeedLoadingSkeletonProps {
 }
 
 export function FeedLoadingSkeleton({
-  statusText,
+  statusText = "Loading…",
   projectName,
   children,
 }: FeedLoadingSkeletonProps = {}) {

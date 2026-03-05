@@ -34,7 +34,7 @@ export function Orkestra() {
   }
 
   if (!config || (tasksLoading && tasks.length === 0)) {
-    return <FeedLoadingSkeleton />;
+    return <FeedLoadingSkeleton statusText="Loading Orkestra…" />;
   }
 
   if (!readyLoggedRef.current) {

@@ -49,7 +49,7 @@ export function FeedHeader({
 
   return (
     <div className="flex items-center justify-between px-6 h-11 border-b border-border bg-surface shrink-0">
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-2">
         <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
           Orkestra
         </span>

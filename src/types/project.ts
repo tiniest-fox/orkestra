@@ -3,6 +3,22 @@
  */
 
 /**
+ * A stored daemon connection configuration.
+ */
+export interface ProjectConfig {
+  /** Unique identifier for this project entry. */
+  id: string;
+  /** WebSocket URL of the daemon (e.g., "ws://localhost:3847/ws"). */
+  url: string;
+  /** Bearer token obtained from pairing. */
+  token: string;
+  /** Display name derived from the project root — populated after first connection. */
+  projectName: string;
+  /** Absolute path to the project root — populated after first connection. */
+  projectRoot: string;
+}
+
+/**
  * A recent project entry stored in the recents list.
  */
 export interface RecentProject {

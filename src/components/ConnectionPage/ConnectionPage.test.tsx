@@ -9,15 +9,24 @@ import { ConnectionPage } from "./ConnectionPage";
 // ============================================================================
 
 const fetchMock = vi.fn();
-const setItemMock = vi.fn();
 const reloadMock = vi.fn();
+const addProjectMock = vi.fn();
+
+// Mock ProjectsProvider so ConnectionPage renders without needing a full provider tree.
+vi.mock("../../providers/ProjectsProvider", () => ({
+  useProjects: () => ({
+    projects: [],
+    currentProject: null,
+    addingProject: false,
+    addProject: addProjectMock,
+    removeProject: vi.fn(),
+    switchProject: vi.fn(),
+    startAddProject: vi.fn(),
+    cancelAddProject: vi.fn(),
+  }),
+}));
 
 vi.stubGlobal("fetch", fetchMock);
-vi.stubGlobal("localStorage", {
-  getItem: vi.fn(),
-  setItem: setItemMock,
-  removeItem: vi.fn(),
-});
 Object.defineProperty(window, "location", {
   value: { reload: reloadMock },
   writable: true,
@@ -26,8 +35,8 @@ Object.defineProperty(window, "location", {
 
 beforeEach(() => {
   fetchMock.mockReset();
-  setItemMock.mockReset();
   reloadMock.mockReset();
+  addProjectMock.mockReset();
 });
 
 // ============================================================================
@@ -129,16 +138,21 @@ describe("ConnectionPage — pairing exchange", () => {
     fireEvent.click(screen.getByText("Connect"));
   }
 
-  it("stores credentials and reloads on success", async () => {
+  it("saves project via context on success", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ token: "test-token" }),
     });
     submitPair();
     await waitFor(() => {
-      expect(setItemMock).toHaveBeenCalledWith("orkestra.remote_url", "ws://localhost:3847/ws");
-      expect(setItemMock).toHaveBeenCalledWith("orkestra.auth_token", "test-token");
-      expect(reloadMock).toHaveBeenCalledTimes(1);
+      expect(addProjectMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "ws://localhost:3847/ws",
+          token: "test-token",
+          projectName: "",
+          projectRoot: "",
+        }),
+      );
     });
   });
 

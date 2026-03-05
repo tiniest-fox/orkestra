@@ -1,11 +1,12 @@
-//! Connection and pairing page shown to PWA users on first launch.
+//! Connection and pairing page shown to PWA users on first launch or when adding a project.
 //!
 //! Guides the user through entering the daemon URL and a 6-digit pairing code
-//! to obtain a bearer token. On success, credentials are stored in localStorage
+//! to obtain a bearer token. On success, the project is saved via ProjectsContext
 //! and the page reloads to mount the main app via WebSocketTransport.
 
 import { useState } from "react";
-import { STORAGE_AUTH_TOKEN, STORAGE_REMOTE_URL } from "../../constants";
+import { useProjects } from "../../providers/ProjectsProvider";
+import type { ProjectConfig } from "../../types/project";
 import { Button } from "../ui";
 
 // ============================================================================
@@ -56,17 +57,28 @@ async function claimPairingCode(wsUrl: string, code: string): Promise<string> {
 // Component
 // ============================================================================
 
+interface ConnectionPageProps {
+  /**
+   * Called when the user cancels adding a new project (add-project mode only).
+   * When undefined, no Cancel button is rendered (initial setup mode).
+   */
+  onCancel?: () => void;
+}
+
 /**
  * Full-screen connection and pairing page for PWA mode.
  *
- * Shown when the PWA has no stored auth token. Guides the user through:
+ * Shown when the PWA has no stored project (initial setup) or when the user
+ * wants to add a new daemon connection. Guides the user through:
  * 1. Entering the daemon WebSocket URL
  * 2. Entering the 6-digit pairing code shown by the daemon
  *
- * On successful pairing, stores credentials in localStorage and reloads
- * so the app mounts via WebSocketTransport.
+ * On successful pairing, saves the project via ProjectsContext (which handles
+ * persisting to localStorage and reloading the app).
  */
-export function ConnectionPage() {
+export function ConnectionPage({ onCancel }: ConnectionPageProps) {
+  const { addProject } = useProjects();
+
   const [step, setStep] = useState<Step>("url");
   const [url, setUrl] = useState("ws://localhost:3847/ws");
   const [code, setCode] = useState("");
@@ -89,10 +101,15 @@ export function ConnectionPage() {
 
     try {
       const token = await claimPairingCode(url.trim(), code.trim());
-      localStorage.setItem(STORAGE_REMOTE_URL, url.trim());
-      localStorage.setItem(STORAGE_AUTH_TOKEN, token);
-      // Reload to pick up the stored credentials via WebSocketTransport.
-      window.location.reload();
+      const config: ProjectConfig = {
+        id: crypto.randomUUID(),
+        url: url.trim(),
+        token,
+        projectName: "",
+        projectRoot: "",
+      };
+      // addProject saves to storage, sets as current, and reloads.
+      addProject(config);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
       setLoading(false);
@@ -104,8 +121,8 @@ export function ConnectionPage() {
       <div className="w-full max-w-sm">
         {/* Header */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold text-primary mb-2">Connect to Orkestra</h1>
-          <p className="text-secondary text-sm">Enter your daemon address to get started</p>
+          <h1 className="text-2xl font-semibold text-text-primary mb-2">Connect to Orkestra</h1>
+          <p className="text-text-secondary text-sm">Enter your daemon address to get started</p>
         </div>
 
         {/* Step indicator */}
@@ -120,7 +137,7 @@ export function ConnectionPage() {
           <form onSubmit={handleUrlNext} className="space-y-4">
             <div>
               <label
-                className="block text-sm font-medium text-secondary mb-1.5"
+                className="block text-sm font-medium text-text-secondary mb-1.5"
                 htmlFor="daemon-url"
               >
                 Daemon URL
@@ -131,20 +148,27 @@ export function ConnectionPage() {
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="ws://localhost:3847/ws"
-                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-panel-sm text-primary placeholder:text-quaternary text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-panel-sm text-text-primary placeholder:text-text-quaternary text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                 autoComplete="off"
                 spellCheck={false}
               />
-              <p className="mt-1.5 text-xs text-tertiary">
+              <p className="mt-1.5 text-xs text-text-tertiary">
                 The WebSocket address of your running Orkestra daemon
               </p>
             </div>
 
             {error && <p className="text-sm text-status-error">{error}</p>}
 
-            <Button type="submit" variant="primary" fullWidth disabled={!url.trim()}>
-              Continue
-            </Button>
+            <div className="flex gap-2">
+              {onCancel && (
+                <Button type="button" variant="secondary" onClick={onCancel}>
+                  Cancel
+                </Button>
+              )}
+              <Button type="submit" variant="primary" fullWidth disabled={!url.trim()}>
+                Continue
+              </Button>
+            </div>
           </form>
         )}
 
@@ -153,7 +177,7 @@ export function ConnectionPage() {
           <form onSubmit={handlePair} className="space-y-4">
             <div>
               <label
-                className="block text-sm font-medium text-secondary mb-1.5"
+                className="block text-sm font-medium text-text-secondary mb-1.5"
                 htmlFor="pairing-code"
               >
                 Pairing Code
@@ -165,18 +189,18 @@ export function ConnectionPage() {
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="000000"
                 maxLength={6}
-                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-panel-sm text-primary placeholder:text-quaternary text-sm focus:outline-none focus:ring-1 focus:ring-accent tracking-widest font-mono"
+                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-panel-sm text-text-primary placeholder:text-text-quaternary text-sm focus:outline-none focus:ring-1 focus:ring-accent tracking-widest font-mono"
                 autoComplete="off"
                 inputMode="numeric"
               />
-              <p className="mt-1.5 text-xs text-tertiary">
-                Run <code className="font-mono text-secondary">ork pair</code> on the daemon machine
-                to generate a code
+              <p className="mt-1.5 text-xs text-text-tertiary">
+                Run <code className="font-mono text-text-secondary">ork pair</code> on the daemon
+                machine to generate a code
               </p>
             </div>
 
-            <p className="text-xs text-tertiary">
-              Connecting to <span className="text-secondary font-mono">{url}</span>
+            <p className="text-xs text-text-tertiary">
+              Connecting to <span className="text-text-secondary font-mono">{url}</span>
             </p>
 
             {error && <p className="text-sm text-status-error">{error}</p>}
@@ -229,5 +253,7 @@ function StepDot({ active, done, label }: StepDotProps) {
   if (active) {
     return <div className={`${base} bg-accent text-white`}>{label}</div>;
   }
-  return <div className={`${base} bg-surface-2 border border-border text-quaternary`}>{label}</div>;
+  return (
+    <div className={`${base} bg-surface-2 border border-border text-text-quaternary`}>{label}</div>
+  );
 }

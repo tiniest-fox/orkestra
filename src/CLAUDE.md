@@ -90,7 +90,8 @@ useEffect(() => {
 ## Styling
 
 - Tailwind classes only. No CSS modules, styled-components, or inline style objects.
-- Use the project's Forge design tokens: `canvas`, `surface-*`, `text-primary/secondary/tertiary/quaternary`, `accent-*`, `status-*`, `border`. These are native Tailwind tokens defined in `tailwind.config.js`.
+- Use the project's Forge design tokens: `canvas`, `surface-*`, `text-text-primary/secondary/tertiary/quaternary`, `accent-*`, `status-*`, `border`. These are native Tailwind tokens defined in `tailwind.config.js`.
+  - **Text color classes use `text-text-*` prefix** (not `text-primary`): `text-text-primary`, `text-text-secondary`, `text-text-tertiary`, `text-text-quaternary`. The `text` nesting in `tailwind.config.js` means the utility class doubles the word. Using `text-primary` renders with browser defaults.
   - **Border radius tokens**: `rounded-panel` (12px) for structural panels, `rounded-panel-sm` (8px) for smaller containers. For chat-like UI elements (messages, bubbles), `rounded-2xl` (16px) is acceptable to differentiate conversational UI from structural panels.
   - **Verify token names before using them.** Only classes defined in `tailwind.config.js` generate CSS. For example, status colors use `status-*` tokens (e.g., `bg-status-success`, `text-status-error`) — there are no `success-*`, `error-*`, `info-*`, or `warning-*` tokens. When in doubt, check `tailwind.config.js` first.
   - **Arbitrary opacity values are valid** (Tailwind v3.4+ JIT): `opacity-45`, `opacity-30`, etc. are all valid — JIT generates them on demand. They are NOT limited to the standard scale (0, 25, 50, 75, 100). Don't flag arbitrary opacity values in review.

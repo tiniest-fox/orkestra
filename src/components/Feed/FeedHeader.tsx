@@ -1,10 +1,13 @@
 //! Top bar for the Feed view — logo, live task metrics, keyboard hint.
 
 import { useMemo } from "react";
+import { useProjects } from "../../providers";
+import { useTransport } from "../../transport";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 import { Button } from "../ui/Button";
 import { HotkeyScope } from "../ui/HotkeyScope";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 interface FeedHeaderProps {
   tasks: WorkflowTaskView[];
@@ -27,6 +30,8 @@ export function FeedHeader({
   hotkeyActive,
   assistantActive,
 }: FeedHeaderProps) {
+  const transport = useTransport();
+  const { currentProject } = useProjects();
   const metrics = useMemo<Metric[]>(() => {
     const topLevel = tasks.filter((t) => !t.parent_id);
     const working = topLevel.filter((t) => isActivelyProgressing(t)).length;
@@ -48,6 +53,7 @@ export function FeedHeader({
         <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
           Orkestra
         </span>
+        {transport.requiresAuthentication && currentProject && <ProjectSwitcher />}
         {metrics.length > 0 && (
           <div className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">
             {metrics.map((m, i) => (

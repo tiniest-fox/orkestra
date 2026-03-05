@@ -84,10 +84,17 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
   const [currentProjectId] = useState<string | null>(() => {
     const urlId = getProjectIdFromUrl();
     if (urlId && loadProjects().some((p) => p.id === urlId)) {
-      setCurrentProjectId(urlId);
+      // Use the URL project for this session without persisting it as the default.
+      // Explicit switching (switchProject, addProject) is the only way to update
+      // the stored default.
       return urlId;
     }
-    return getCurrentProjectId();
+    const storedId = getCurrentProjectId();
+    // Inject the stored default into the URL so it's self-contained and shareable.
+    if (storedId) {
+      setProjectIdInUrl(storedId);
+    }
+    return storedId;
   });
 
   const [addingProject, setAddingProject] = useState(false);

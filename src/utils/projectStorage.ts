@@ -77,6 +77,24 @@ export function loadCurrentProject(): ProjectConfig | null {
 }
 
 /**
+ * Resolve the active project using URL-first priority.
+ *
+ * Checks `?project=<id>` URL param first, then falls back to the localStorage
+ * default. Returns null when no projects are configured.
+ */
+export function loadActiveProject(): ProjectConfig | null {
+  const projects = loadProjects();
+  const urlId = getProjectIdFromUrl();
+  if (urlId) {
+    const urlProject = projects.find((p) => p.id === urlId);
+    if (urlProject) return urlProject;
+  }
+  const storedId = getCurrentProjectId();
+  if (!storedId) return null;
+  return projects.find((p) => p.id === storedId) ?? null;
+}
+
+/**
  * Read the project ID from the `?project=<id>` URL query parameter.
  *
  * Returns null when the param is absent, empty, or when running in the Tauri

@@ -9,6 +9,7 @@ import type { ProjectConfig } from "../types/project";
 import {
   getCurrentProjectId,
   getProjectIdFromUrl,
+  loadActiveProject,
   loadCurrentProject,
   loadProjects,
   migrateFromLegacy,
@@ -109,6 +110,64 @@ describe("loadCurrentProject", () => {
     saveProjects([p]);
     setCurrentProjectId(p.id);
     expect(loadCurrentProject()).toEqual(p);
+  });
+});
+
+describe("loadActiveProject", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    localStorage.clear();
+    history.replaceState(null, "", "/");
+    vi.unstubAllEnvs();
+  });
+
+  it("returns null when no projects are configured", () => {
+    expect(loadActiveProject()).toBeNull();
+  });
+
+  it("prefers URL param over localStorage default", () => {
+    const urlProject = makeProject({ id: "url-proj", url: "ws://url.example.com/ws" });
+    const storedProject = makeProject({ id: "stored-proj", url: "ws://stored.example.com/ws" });
+    saveProjects([urlProject, storedProject]);
+    setCurrentProjectId(storedProject.id);
+    history.replaceState(null, "", `/?project=${urlProject.id}`);
+
+    expect(loadActiveProject()).toEqual(urlProject);
+  });
+
+  it("falls back to localStorage default when no URL param is set", () => {
+    const p = makeProject();
+    saveProjects([p]);
+    setCurrentProjectId(p.id);
+
+    expect(loadActiveProject()).toEqual(p);
+  });
+
+  it("falls back to localStorage when URL param references a non-existent project", () => {
+    const stored = makeProject({ id: "stored-proj" });
+    saveProjects([stored]);
+    setCurrentProjectId(stored.id);
+    history.replaceState(null, "", "/?project=non-existent-id");
+
+    expect(loadActiveProject()).toEqual(stored);
+  });
+
+  it("returns null when URL param is absent and no localStorage default is set", () => {
+    const p = makeProject();
+    saveProjects([p]);
+    // No setCurrentProjectId call
+
+    expect(loadActiveProject()).toBeNull();
+  });
+
+  it("returns null in Tauri even when ?project= param is in URL", () => {
+    vi.stubEnv("TAURI_ENV_PLATFORM", "darwin");
+    const p = makeProject({ id: "proj-1" });
+    saveProjects([p]);
+    setCurrentProjectId(p.id);
+    history.replaceState(null, "", "/?project=proj-1");
+    // In Tauri, getProjectIdFromUrl() returns null, so it falls back to localStorage
+    expect(loadActiveProject()).toEqual(p);
   });
 });
 

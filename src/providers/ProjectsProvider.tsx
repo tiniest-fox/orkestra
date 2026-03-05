@@ -7,8 +7,8 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 import { type Transport, useTransport } from "../transport";
 import type { ProjectConfig, ProjectInfo } from "../types/project";
 import {
-  getCurrentProjectId,
   getProjectIdFromUrl,
+  loadActiveProject,
   loadProjects,
   migrateFromLegacy,
   saveProjects,
@@ -82,19 +82,13 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
   // Prefer the URL ?project= param (PWA multi-tab); fall back to localStorage.
   // Note: migrateFromLegacy() already ran in the projects initializer above.
   const [currentProjectId] = useState<string | null>(() => {
-    const urlId = getProjectIdFromUrl();
-    if (urlId && loadProjects().some((p) => p.id === urlId)) {
-      // Use the URL project for this session without persisting it as the default.
-      // Explicit switching (switchProject, addProject) is the only way to update
-      // the stored default.
-      return urlId;
+    const activeProject = loadActiveProject();
+    // Inject stored default into URL so windows are self-contained and shareable.
+    // Skip when the URL param is already set (multi-tab: don't clobber the caller's URL).
+    if (activeProject && !getProjectIdFromUrl()) {
+      setProjectIdInUrl(activeProject.id);
     }
-    const storedId = getCurrentProjectId();
-    // Inject the stored default into the URL so it's self-contained and shareable.
-    if (storedId) {
-      setProjectIdInUrl(storedId);
-    }
-    return storedId;
+    return activeProject?.id ?? null;
   });
 
   const [addingProject, setAddingProject] = useState(false);

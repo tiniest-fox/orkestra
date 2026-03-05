@@ -88,7 +88,7 @@ function DropdownRoot({
 
       {isOpen && (
         <div
-          className={`absolute top-full mt-1 z-10 min-w-[160px] bg-surface border border-border rounded-panel-sm shadow-lg overflow-hidden ${alignmentClass} ${className}`}
+          className={`absolute top-full mt-1 z-50 min-w-[160px] bg-surface border border-border rounded-panel-sm shadow-lg overflow-hidden ${alignmentClass} ${className}`}
         >
           {children}
         </div>

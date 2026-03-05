@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   STORAGE_AUTH_TOKEN,
   STORAGE_CURRENT_PROJECT_ID,
@@ -8,11 +8,13 @@ import {
 import type { ProjectConfig } from "../types/project";
 import {
   getCurrentProjectId,
+  getProjectIdFromUrl,
   loadCurrentProject,
   loadProjects,
   migrateFromLegacy,
   saveProjects,
   setCurrentProjectId,
+  setProjectIdInUrl,
 } from "./projectStorage";
 
 function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
@@ -107,6 +109,60 @@ describe("loadCurrentProject", () => {
     saveProjects([p]);
     setCurrentProjectId(p.id);
     expect(loadCurrentProject()).toEqual(p);
+  });
+});
+
+describe("getProjectIdFromUrl", () => {
+  afterEach(() => {
+    // Reset URL to bare origin after each test
+    history.replaceState(null, "", "/");
+  });
+
+  it("returns null when no ?project= param is present", () => {
+    history.replaceState(null, "", "/");
+    expect(getProjectIdFromUrl()).toBeNull();
+  });
+
+  it("returns the project ID from the query string", () => {
+    history.replaceState(null, "", "/?project=abc-123");
+    expect(getProjectIdFromUrl()).toBe("abc-123");
+  });
+
+  it("returns null when the param is present but empty", () => {
+    history.replaceState(null, "", "/?project=");
+    expect(getProjectIdFromUrl()).toBeNull();
+  });
+
+  it("returns null when running in Tauri", () => {
+    vi.stubEnv("TAURI_ENV_PLATFORM", "darwin");
+    history.replaceState(null, "", "/?project=some-id");
+    expect(getProjectIdFromUrl()).toBeNull();
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("setProjectIdInUrl", () => {
+  afterEach(() => {
+    history.replaceState(null, "", "/");
+  });
+
+  it("sets the ?project= param in the URL without navigation", () => {
+    setProjectIdInUrl("proj-42");
+    expect(new URLSearchParams(window.location.search).get("project")).toBe("proj-42");
+  });
+
+  it("removes the ?project= param when called with null", () => {
+    history.replaceState(null, "", "/?project=proj-42");
+    setProjectIdInUrl(null);
+    expect(new URLSearchParams(window.location.search).get("project")).toBeNull();
+  });
+
+  it("is a no-op in Tauri", () => {
+    vi.stubEnv("TAURI_ENV_PLATFORM", "darwin");
+    history.replaceState(null, "", "/");
+    setProjectIdInUrl("proj-42");
+    expect(new URLSearchParams(window.location.search).get("project")).toBeNull();
+    vi.unstubAllEnvs();
   });
 });
 

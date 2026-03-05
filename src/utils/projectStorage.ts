@@ -77,6 +77,38 @@ export function loadCurrentProject(): ProjectConfig | null {
 }
 
 /**
+ * Read the project ID from the `?project=<id>` URL query parameter.
+ *
+ * Returns null when the param is absent, empty, or when running in the Tauri
+ * desktop app (which uses `?project=` for file paths, not IDs).
+ */
+export function getProjectIdFromUrl(): string | null {
+  if (import.meta.env.TAURI_ENV_PLATFORM) return null;
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("project") || null;
+}
+
+/**
+ * Update the `?project=<id>` URL query parameter using `history.replaceState`
+ * (no navigation, no back-button entry).
+ *
+ * Pass null to remove the param entirely.
+ * No-op in the Tauri desktop app.
+ */
+export function setProjectIdInUrl(id: string | null): void {
+  if (import.meta.env.TAURI_ENV_PLATFORM) return;
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (id === null) {
+    url.searchParams.delete("project");
+  } else {
+    url.searchParams.set("project", id);
+  }
+  history.replaceState(null, "", url.toString());
+}
+
+/**
  * Migrate from the legacy single-project storage format.
  *
  * If `orkestra.auth_token` exists and `orkestra.projects` does NOT exist,

@@ -282,6 +282,9 @@ Note: `Array.prototype.findLast` is ES2023 — use `[...arr].reverse().find()` f
 - **`@tanstack/react-virtual` renders 0 items in jsdom**: The virtualizer measures DOM element heights to determine which items to render. In jsdom there are no layout measurements, so `virtualItems` is always empty. Tests that exercise virtualizer-dependent behavior (`scrollToFile`, active-path tracking, `onActivePathChange` callbacks) are impractical in unit tests — document them as requiring manual verification and focus test coverage on the hook or logic layer instead (e.g., `useAutoCollapsePaths.test.ts` tests the collapse logic without touching the virtualizer).
 - **`vi.fn` type argument constraint**: `vi.fn<TArgs, TReturn>()` is not supported — Vitest's `vi.fn` only accepts 0 or 1 type argument. When you need to specify the return type, add an explicit return type annotation on the implementation function instead: `vi.fn((): ReturnType => value)`.
 - **Mock reset in test files**: Always add `beforeEach(() => mockXxx.mockReset())` for module-level mocks. Without it, tests that run in any order can observe state from earlier tests, causing subtle ordering-sensitive failures that only appear when tests are added or reordered.
+- **`vi.stubEnv` cleanup**: Always restore env stubs in `afterEach(() => vi.unstubAllEnvs())`, not inline after assertions. If an assertion throws before the inline `vi.unstubAllEnvs()` call, the stub leaks and affects subsequent tests in the file.
+
+<!-- compound: garishly-true-wren -->
 
 ## Keyboard Navigation
 

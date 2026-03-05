@@ -54,6 +54,9 @@ export function FeedHeader({
           Orkestra
         </span>
         {transport.requiresAuthentication && currentProject && <ProjectSwitcher />}
+        {transport.requiresAuthentication && currentProject && metrics.length > 0 && (
+          <span className="text-text-quaternary select-none">·</span>
+        )}
         {metrics.length > 0 && (
           <div className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">
             {metrics.map((m, i) => (

@@ -14,7 +14,7 @@
       }
 
       body {
-        background: #fff;
+        background: #FAF8FC;
       }
 
       .skeleton {
@@ -23,7 +23,7 @@
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        background: #fff;
+        background: #FAF8FC;
         font-family: 'IBM Plex Sans', system-ui, sans-serif;
       }
 
@@ -34,8 +34,8 @@
         justify-content: space-between;
         padding: 0 24px;
         height: 44px;
-        border-bottom: 1px solid #e5e4e2;
-        background: #fff;
+        border-bottom: 1px solid #E4DFE9;
+        background: #FFFFFF;
         flex-shrink: 0;
       }
 
@@ -44,7 +44,7 @@
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: #1a1714;
+        color: #1C1820;
         user-select: none;
       }
 
@@ -52,9 +52,9 @@
         font-family: 'IBM Plex Mono', monospace;
         font-size: 10px;
         font-weight: 500;
-        color: #a09b96;
-        background: #f5f4f2;
-        border: 1px solid #e5e4e2;
+        color: #9E96AC;
+        background: #FAF8FC;
+        border: 1px solid #E4DFE9;
         border-radius: 4px;
         padding: 2px 6px;
         line-height: 1;
@@ -62,12 +62,14 @@
         opacity: 0.5;
       }
 
-      /* Body — centered spinner */
+      /* Body — centered spinner + status text */
       .skeleton-body {
         flex: 1;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 12px;
         background: #FAF8FC;
       }
 
@@ -75,9 +77,15 @@
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        border: 2px solid #e5e4e2;
-        border-top-color: #6b6560;
+        border: 2px solid #E4DFE9;
+        border-top-color: #7A7288;
         animation: spin 0.8s linear infinite;
+      }
+
+      .skeleton-status {
+        font-size: 13px;
+        color: #7A7288;
+        user-select: none;
       }
 
       @keyframes spin {
@@ -87,9 +95,53 @@
       /* Footer — matches FeedStatusLine */
       .skeleton-footer {
         height: 28px;
-        border-top: 1px solid #e5e4e2;
-        background: #fff;
+        border-top: 1px solid #E4DFE9;
+        background: #FFFFFF;
         flex-shrink: 0;
+      }
+
+      /* Dark mode — Forge dark tokens */
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #13111A;
+        }
+
+        .skeleton {
+          background: #13111A;
+        }
+
+        .skeleton-header {
+          background: #1C1926;
+          border-bottom-color: #2E2A3C;
+        }
+
+        .skeleton-title {
+          color: #EDEBF0;
+        }
+
+        .skeleton-kbd {
+          color: #544E66;
+          background: #13111A;
+          border-color: #2E2A3C;
+        }
+
+        .skeleton-body {
+          background: #13111A;
+        }
+
+        .skeleton-spinner {
+          border-color: #2E2A3C;
+          border-top-color: #7B7490;
+        }
+
+        .skeleton-status {
+          color: #7B7490;
+        }
+
+        .skeleton-footer {
+          background: #1C1926;
+          border-top-color: #2E2A3C;
+        }
       }
     </style>
   </head>
@@ -103,6 +155,7 @@
         </div>
         <div class="skeleton-body">
           <div class="skeleton-spinner"></div>
+          <p class="skeleton-status">Loading Orkestra…</p>
         </div>
         <div class="skeleton-footer"></div>
       </div>

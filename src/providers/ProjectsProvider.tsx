@@ -8,10 +8,12 @@ import { type Transport, useTransport } from "../transport";
 import type { ProjectConfig, ProjectInfo } from "../types/project";
 import {
   getCurrentProjectId,
+  getProjectIdFromUrl,
   loadProjects,
   migrateFromLegacy,
   saveProjects,
   setCurrentProjectId,
+  setProjectIdInUrl,
 } from "../utils/projectStorage";
 
 // ============================================================================
@@ -76,8 +78,17 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
   });
 
   // All current project ID changes trigger window.location.reload(), so we only
-  // need the initial value from localStorage — no state setter required.
-  const [currentProjectId] = useState<string | null>(() => getCurrentProjectId());
+  // need the initial value — no state setter required.
+  // Prefer the URL ?project= param (PWA multi-tab); fall back to localStorage.
+  // Note: migrateFromLegacy() already ran in the projects initializer above.
+  const [currentProjectId] = useState<string | null>(() => {
+    const urlId = getProjectIdFromUrl();
+    if (urlId && loadProjects().some((p) => p.id === urlId)) {
+      setCurrentProjectId(urlId);
+      return urlId;
+    }
+    return getCurrentProjectId();
+  });
 
   const [addingProject, setAddingProject] = useState(false);
 
@@ -88,6 +99,7 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
       const updated = [...projects, config];
       saveProjects(updated);
       setCurrentProjectId(config.id);
+      setProjectIdInUrl(config.id);
       window.location.reload();
     },
     [projects],
@@ -99,11 +111,9 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
       saveProjects(updated);
 
       if (id === currentProjectId) {
-        if (updated.length > 0) {
-          setCurrentProjectId(updated[0].id);
-        } else {
-          setCurrentProjectId(null);
-        }
+        const nextId = updated.length > 0 ? updated[0].id : null;
+        setCurrentProjectId(nextId);
+        setProjectIdInUrl(nextId);
         window.location.reload();
       } else {
         // Non-current removal: update state in-place without reload.
@@ -115,6 +125,7 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
 
   const switchProject = useCallback((id: string) => {
     setCurrentProjectId(id);
+    setProjectIdInUrl(id);
     window.location.reload();
   }, []);
 

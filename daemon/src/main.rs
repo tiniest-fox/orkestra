@@ -213,12 +213,37 @@ async fn run(
         }
     };
 
+    // -- Provider registry for assistant commands (needed by WorkflowApi for chat) --
+    // A standalone registry separate from the one used by StageExecutionService
+    // (which creates its own internally). The registry is stateless, so having
+    // two instances is fine.
+    let provider_registry = {
+        let mut registry = ProviderRegistry::new("claudecode");
+        registry.register(
+            "claudecode",
+            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+        registry.register(
+            "opencode",
+            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            opencode_capabilities(),
+            opencode_aliases(),
+        );
+        Arc::new(registry)
+    };
+
     // -- WorkflowApi --
     let api = if let Some(git) = git_service {
         WorkflowApi::with_git(workflow.clone(), Arc::clone(&store), git)
             .with_pr_service(Arc::new(GhPrService::new()))
+            .with_provider_registry(Arc::clone(&provider_registry))
+            .with_project_root(project_root.clone())
     } else {
         WorkflowApi::new(workflow.clone(), Arc::clone(&store))
+            .with_provider_registry(Arc::clone(&provider_registry))
+            .with_project_root(project_root.clone())
     };
 
     // Cleanup orphaned agents from a previous crash.
@@ -251,27 +276,6 @@ async fn run(
 
     // -- Event channel --
     let (event_tx, _event_rx) = broadcast::channel::<Event>(256);
-
-    // -- Provider registry for assistant commands --
-    // A standalone registry separate from the one used by StageExecutionService
-    // (which creates its own internally). The registry is stateless, so having
-    // two instances is fine.
-    let provider_registry = {
-        let mut registry = ProviderRegistry::new("claudecode");
-        registry.register(
-            "claudecode",
-            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            claudecode_capabilities(),
-            claudecode_aliases(),
-        );
-        registry.register(
-            "opencode",
-            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            opencode_capabilities(),
-            opencode_aliases(),
-        );
-        Arc::new(registry)
-    };
 
     // -- Shared CommandContext (used by both server and relay client) --
     let ctx = Arc::new(CommandContext::new(

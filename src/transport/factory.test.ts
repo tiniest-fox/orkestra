@@ -17,13 +17,19 @@ vi.mock("./WebSocketTransport", () => {
   return { WebSocketTransport };
 });
 
-import { STORAGE_AUTH_TOKEN, STORAGE_REMOTE_URL } from "../constants";
+import { STORAGE_CURRENT_PROJECT_ID, STORAGE_PROJECTS } from "../constants";
+import type { ProjectConfig } from "../types/project";
 import { createTransport } from "./factory";
 import { TauriTransport } from "./TauriTransport";
 import { WebSocketTransport } from "./WebSocketTransport";
 
 const MockTauriTransport = TauriTransport as ReturnType<typeof vi.fn>;
 const MockWebSocketTransport = WebSocketTransport as ReturnType<typeof vi.fn>;
+
+function storeProject(project: ProjectConfig): void {
+  localStorage.setItem(STORAGE_PROJECTS, JSON.stringify([project]));
+  localStorage.setItem(STORAGE_CURRENT_PROJECT_ID, project.id);
+}
 
 describe("createTransport", () => {
   beforeEach(() => {
@@ -49,12 +55,21 @@ describe("createTransport", () => {
 
   it("returns WebSocketTransport when TAURI_ENV_PLATFORM is set but remote URL is set", () => {
     vi.stubEnv("TAURI_ENV_PLATFORM", "macos");
-    localStorage.setItem(STORAGE_REMOTE_URL, "ws://remote.example.com/ws");
-    localStorage.setItem(STORAGE_AUTH_TOKEN, "secret-token");
+    storeProject({
+      id: "proj-1",
+      url: "ws://remote.example.com/ws",
+      token: "secret-token",
+      projectName: "",
+      projectRoot: "",
+    });
 
     const transport = createTransport();
 
     expect(MockWebSocketTransport).toHaveBeenCalledOnce();
+    expect(MockWebSocketTransport).toHaveBeenCalledWith(
+      "ws://remote.example.com/ws",
+      "secret-token",
+    );
     expect(MockTauriTransport).not.toHaveBeenCalled();
     expect(transport.supportsLocalOperations).toBe(false);
     expect(transport.requiresAuthentication).toBe(true);
@@ -66,6 +81,7 @@ describe("createTransport", () => {
     const transport = createTransport();
 
     expect(MockWebSocketTransport).toHaveBeenCalledOnce();
+    expect(MockWebSocketTransport).toHaveBeenCalledWith("ws://localhost:3847/ws", "");
     expect(MockTauriTransport).not.toHaveBeenCalled();
     expect(transport.supportsLocalOperations).toBe(false);
     expect(transport.requiresAuthentication).toBe(true);

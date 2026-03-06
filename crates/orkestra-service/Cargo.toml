@@ -17,7 +17,9 @@ thiserror = "1"
 uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 rand = "0.8"
-axum = { version = "0.8" }
+axum = { version = "0.8", features = ["ws"] }
+tokio-tungstenite = "0.28"
+futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors"] }
 reqwest = { version = "0.12", features = ["json"] }

@@ -8,12 +8,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
-use axum::extract::{Path, Request, State};
+use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
+use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use futures_util::{SinkExt, StreamExt};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
@@ -96,6 +98,7 @@ pub async fn start(
     let mut router = Router::new()
         .route("/", get(management_page))
         .route("/pair", post(pair_handler))
+        .route("/projects/{id}/ws", get(ws_proxy_handler))
         .merge(auth_routes)
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -261,12 +264,13 @@ impl ProjectResponse {
         proj: &crate::types::Project,
         token: Option<String>,
         token_error: Option<String>,
+        ws_base: &str,
     ) -> Self {
         Self {
             id: proj.id.clone(),
             name: proj.name.clone(),
             path: proj.path.clone(),
-            ws_url: format!("ws://127.0.0.1:{}/ws", proj.daemon_port),
+            ws_url: format!("{ws_base}/projects/{}/ws", proj.id),
             token,
             token_error,
             status: proj.status.clone(),
@@ -301,6 +305,7 @@ async fn list_projects_handler(
         Err(r) => return r,
     };
 
+    let ws_base = ws_base_from_headers(request.headers());
     let mut responses: Vec<ProjectResponse> = Vec::with_capacity(projects.len());
 
     for proj in projects {
@@ -317,7 +322,7 @@ async fn list_projects_handler(
             (None, None)
         };
 
-        responses.push(ProjectResponse::from_project(&proj, token, token_error));
+        responses.push(ProjectResponse::from_project(&proj, token, token_error, &ws_base));
     }
 
     Json(responses).into_response()
@@ -335,8 +340,10 @@ struct AddProjectRequest {
 /// and daemon spawn happen in a background task.
 async fn add_project_handler(
     State(state): State<OrkServiceState>,
+    headers: HeaderMap,
     Json(body): Json<AddProjectRequest>,
 ) -> Response<Body> {
+    let ws_base = ws_base_from_headers(&headers);
     if let Err(e) = validate_project_name(&body.name) {
         return (
             StatusCode::BAD_REQUEST,
@@ -415,7 +422,7 @@ async fn add_project_handler(
         repo_url,
     ));
 
-    Json(ProjectResponse::from_project(&proj, None, None)).into_response()
+    Json(ProjectResponse::from_project(&proj, None, None, &ws_base)).into_response()
 }
 
 /// `DELETE /api/projects/{id}` — stop daemon and remove project.
@@ -523,6 +530,112 @@ async fn github_status_handler() -> Response<Body> {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/// `GET /projects/{id}/ws` — proxy a WebSocket connection to the project's local daemon.
+///
+/// The browser connects here with its daemon token in `?token=<token>`. We look up
+/// the project's daemon port and forward all WebSocket traffic to it, letting the
+/// daemon validate the token itself.
+async fn ws_proxy_handler(
+    ws: WebSocketUpgrade,
+    Path(project_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    State(state): State<OrkServiceState>,
+) -> Response {
+    let token = params.get("token").cloned().unwrap_or_default();
+
+    let conn = Arc::clone(&state.conn);
+    let proj = match tokio::task::spawn_blocking(move || project::get::execute(&conn, &project_id))
+        .await
+    {
+        Ok(Ok(p)) => p,
+        Ok(Err(crate::types::ServiceError::ProjectNotFound(_))) => {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        Ok(Err(e)) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response();
+        }
+    };
+
+    let daemon_port = proj.daemon_port;
+    ws.on_upgrade(move |socket| proxy_ws(socket, daemon_port, token))
+}
+
+/// Bridge a client WebSocket to a daemon WebSocket on `127.0.0.1:{daemon_port}`.
+async fn proxy_ws(mut client: WebSocket, daemon_port: u16, token: String) {
+    use tokio_tungstenite::tungstenite::Message as TMsg;
+
+    let url = format!("ws://127.0.0.1:{daemon_port}/ws?token={token}");
+    let (mut daemon_ws, _) = match tokio_tungstenite::connect_async(&url).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Daemon WS connect failed on port {daemon_port}: {e}");
+            return;
+        }
+    };
+
+    loop {
+        tokio::select! {
+            client_msg = client.recv() => {
+                let Some(Ok(msg)) = client_msg else { break };
+                let daemon_msg = match msg {
+                    WsMessage::Text(t) => TMsg::Text(t.as_str().into()),
+                    WsMessage::Binary(b) => TMsg::Binary(b),
+                    WsMessage::Ping(p) => TMsg::Ping(p),
+                    WsMessage::Pong(p) => TMsg::Pong(p),
+                    WsMessage::Close(_) => break,
+                };
+                if daemon_ws.send(daemon_msg).await.is_err() {
+                    break;
+                }
+            }
+            daemon_msg = daemon_ws.next() => {
+                let Some(Ok(msg)) = daemon_msg else { break };
+                let client_msg = match msg {
+                    TMsg::Text(t) => WsMessage::Text(t.to_string().into()),
+                    TMsg::Binary(b) => WsMessage::Binary(b),
+                    TMsg::Ping(p) => WsMessage::Ping(p),
+                    TMsg::Pong(p) => WsMessage::Pong(p),
+                    TMsg::Close(_) => break,
+                    TMsg::Frame(_) => continue,
+                };
+                if client.send(client_msg).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Build a WebSocket base URL (`ws://host` or `wss://host`) from request headers.
+///
+/// Uses `X-Forwarded-Proto` to detect HTTPS (set by Cloudflare and other reverse
+/// proxies). Falls back to `ws` for plain local connections.
+fn ws_base_from_headers(headers: &HeaderMap) -> String {
+    let host = headers
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost:3847");
+
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("http");
+
+    let ws_scheme = if proto == "https" { "wss" } else { "ws" };
+    format!("{ws_scheme}://{host}")
+}
 
 /// Reject project names that could enable path traversal.
 ///

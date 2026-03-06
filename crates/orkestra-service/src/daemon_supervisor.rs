@@ -173,15 +173,6 @@ impl DaemonSupervisor {
             unsafe { libc::kill(-pgid, libc::SIGTERM) };
         }
 
-        // Update all statuses to stopped upfront.
-        for id in guard.keys() {
-            if let Err(e) =
-                project::update_status::execute(&self.conn, id, ProjectStatus::Stopped, None, None)
-            {
-                error!("Failed to update status during shutdown for {id}: {e}");
-            }
-        }
-
         // Wait up to 10 s for all children to exit.
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {

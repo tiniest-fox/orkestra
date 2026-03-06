@@ -5,4 +5,5 @@ pub mod get;
 pub mod list;
 pub mod provision;
 pub mod remove;
+pub mod update_container_id;
 pub mod update_status;

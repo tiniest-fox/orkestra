@@ -89,6 +89,7 @@ pub async fn start(
         .route("/api/projects/{id}", delete(remove_project_handler))
         .route("/api/projects/{id}/start", post(start_project_handler))
         .route("/api/projects/{id}/stop", post(stop_project_handler))
+        .route("/api/projects/{id}/rebuild", post(rebuild_project_handler))
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -100,7 +101,6 @@ pub async fn start(
     let mut router = Router::new()
         .route("/", get(management_page))
         .route("/pair", post(pair_handler))
-        .route("/debug/headers", get(debug_headers_handler))
         .route("/projects/{id}/ws", get(ws_proxy_handler))
         .merge(auth_routes)
         .layer(CorsLayer::permissive())
@@ -257,6 +257,8 @@ struct ProjectResponse {
     token_error: Option<String>,
     status: ProjectStatus,
     error_message: Option<String>,
+    /// Whether the project repo has a `.devcontainer/devcontainer.json`.
+    has_devcontainer: bool,
 }
 
 impl ProjectResponse {
@@ -265,6 +267,7 @@ impl ProjectResponse {
         token: Option<String>,
         token_error: Option<String>,
         ws_base: &str,
+        has_devcontainer: bool,
     ) -> Self {
         Self {
             id: proj.id.clone(),
@@ -275,6 +278,7 @@ impl ProjectResponse {
             token_error,
             status: proj.status,
             error_message: proj.error_message.clone(),
+            has_devcontainer,
         }
     }
 }
@@ -303,12 +307,32 @@ async fn list_projects_handler(
     };
 
     let ws_base = ws_base_from_headers(request.headers());
+
+    // Compute devcontainer flags in a blocking context — Path::exists() is a
+    // synchronous syscall that must not run on the async worker thread.
+    let has_devcontainer_flags: Vec<bool> = {
+        let paths: Vec<String> = projects.iter().map(|p| p.path.clone()).collect();
+        tokio::task::spawn_blocking(move || {
+            paths
+                .iter()
+                .map(|path| {
+                    std::path::Path::new(path)
+                        .join(".devcontainer")
+                        .join("devcontainer.json")
+                        .exists()
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_else(|_| vec![false; projects.len()])
+    };
+
     let mut responses: Vec<ProjectResponse> = Vec::with_capacity(projects.len());
 
-    for proj in projects {
+    for (proj, has_devcontainer) in projects.iter().zip(has_devcontainer_flags) {
         let (token, token_error) = if proj.status == ProjectStatus::Running {
             let lock = state.pairing_lock_for(&proj.id);
-            match daemon_token::get_or_create::execute(&state.conn, &device.id, &proj, lock).await {
+            match daemon_token::get_or_create::execute(&state.conn, &device.id, proj, lock).await {
                 Ok(t) => (Some(t), None),
                 Err(e) => {
                     tracing::warn!("Failed to get daemon token for {}: {e}", proj.id);
@@ -320,10 +344,11 @@ async fn list_projects_handler(
         };
 
         responses.push(ProjectResponse::from_project(
-            &proj,
+            proj,
             token,
             token_error,
             &ws_base,
+            has_devcontainer,
         ));
     }
 
@@ -424,7 +449,11 @@ async fn add_project_handler(
         repo_url,
     ));
 
-    Json(ProjectResponse::from_project(&proj, None, None, &ws_base)).into_response()
+    // Repository is still being cloned — devcontainer.json cannot exist yet.
+    Json(ProjectResponse::from_project(
+        &proj, None, None, &ws_base, false,
+    ))
+    .into_response()
 }
 
 /// `DELETE /api/projects/{id}` — stop daemon and remove project.
@@ -487,7 +516,7 @@ async fn remove_project_handler(
     StatusCode::OK.into_response()
 }
 
-/// `POST /api/projects/{id}/start` — spawn a daemon for a stopped project.
+/// `POST /api/projects/{id}/start` — create a container and spawn a daemon for a stopped project.
 async fn start_project_handler(
     State(state): State<OrkServiceState>,
     Path(id): Path<String>,
@@ -502,15 +531,56 @@ async fn start_project_handler(
         Err(r) => return r,
     };
 
-    if let Err(e) = state.supervisor.spawn_daemon(&proj) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
-        )
-            .into_response();
+    // Container setup is async (docker pull/run may take time); run in background.
+    tokio::spawn(project::provision::start_containers_and_spawn(
+        Arc::clone(&state.conn),
+        Arc::clone(&state.supervisor),
+        proj,
+        false, // run_setup: false for restarts (repo is already set up)
+    ));
+
+    StatusCode::ACCEPTED.into_response()
+}
+
+/// `POST /api/projects/{id}/rebuild` — stop the current container, rebuild it,
+/// and restart the daemon. Runs setup commands again (postCreateCommand / mise install).
+async fn rebuild_project_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    let proj = match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        let id = id.clone();
+        move || project::get::execute(&conn, &id)
+    })
+    .await
+    {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    // Stop daemon + container synchronously so we don't start a rebuild race.
+    match tokio::task::spawn_blocking({
+        let supervisor = Arc::clone(&state.supervisor);
+        let stop_id = id.clone();
+        move || supervisor.stop_daemon(&stop_id)
+    })
+    .await
+    {
+        Ok(Err(e)) => tracing::warn!("Error stopping daemon for rebuild {id}: {e}"),
+        Err(e) => tracing::warn!("stop_daemon panicked for {id}: {e}"),
+        Ok(Ok(())) => {}
     }
 
-    StatusCode::OK.into_response()
+    // Rebuild: create new container with setup, then spawn daemon.
+    tokio::spawn(project::provision::start_containers_and_spawn(
+        Arc::clone(&state.conn),
+        Arc::clone(&state.supervisor),
+        proj,
+        true, // run_setup: true for rebuild
+    ));
+
+    StatusCode::ACCEPTED.into_response()
 }
 
 /// `POST /api/projects/{id}/stop` — stop a running daemon and mark the project stopped.
@@ -673,26 +743,6 @@ async fn proxy_ws(mut client: WebSocket, daemon_port: u16, token: String) {
             }
         }
     }
-}
-
-/// `GET /debug/headers` — return all request headers and computed `ws_base` as JSON.
-///
-/// Temporary diagnostic endpoint; remove once the `wss://` issue is resolved.
-async fn debug_headers_handler(headers: HeaderMap) -> Response<Body> {
-    let ws_base = ws_base_from_headers(&headers);
-    let header_map: HashMap<String, String> = headers
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|s| (k.as_str().to_string(), s.to_string()))
-        })
-        .collect();
-    Json(serde_json::json!({
-        "computed_ws_base": ws_base,
-        "headers": header_map,
-    }))
-    .into_response()
 }
 
 /// Build a WebSocket base URL (`ws://host` or `wss://host`) from request headers.

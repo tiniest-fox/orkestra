@@ -12,7 +12,9 @@ use std::sync::Arc;
 
 use clap::Parser;
 
-use orkestra_service::{DaemonSupervisor, ProjectStatus, ServiceConfig, ServiceDatabase};
+use orkestra_service::{
+    start_containers_and_spawn, DaemonSupervisor, ProjectStatus, ServiceConfig, ServiceDatabase,
+};
 
 // ============================================================================
 // CLI
@@ -125,6 +127,7 @@ async fn run(args: Args) -> Result<(), String> {
     let supervisor = Arc::new(DaemonSupervisor::new(
         conn.clone(),
         orkd_path,
+        data_dir.clone(),
         (args.port_range_start, args.port_range_end),
     ));
 
@@ -146,14 +149,18 @@ async fn run(args: Args) -> Result<(), String> {
         Err(e) => tracing::warn!("Startup cleanup failed: {e}"),
     }
 
-    // Spawn daemons only for projects that were previously running.
+    // Re-create containers and spawn daemons for previously-running projects.
+    // Container IDs were cleared by startup_cleanup, so we must create fresh containers.
     let all_projects = orkestra_service::list_projects(&conn)
         .map_err(|e| format!("Failed to list projects: {e}"))?;
     for proj in all_projects {
         if previously_running.contains(&proj.id) {
-            if let Err(e) = supervisor.spawn_daemon(&proj) {
-                tracing::warn!("Failed to spawn daemon for {}: {e}", proj.id);
-            }
+            tokio::spawn(start_containers_and_spawn(
+                conn.clone(),
+                Arc::clone(&supervisor),
+                proj,
+                false, // run_setup: false — repo is already set up
+            ));
         }
     }
 

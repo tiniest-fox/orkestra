@@ -12,7 +12,7 @@ pub fn execute(conn: &Arc<Mutex<Connection>>, id: &str) -> Result<Project, Servi
     guard
         .query_row(
             "SELECT id, name, path, daemon_port, shared_secret, status,
-                    error_message, pid, created_at
+                    error_message, pid, created_at, container_id
              FROM service_projects WHERE id = ?",
             params![id],
             map_row,
@@ -43,6 +43,7 @@ pub(super) fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         error_message: row.get(6)?,
         pid: pid_i64.map(|v| v as u32),
         created_at: row.get(8)?,
+        container_id: row.get(9)?,
     })
 }
 

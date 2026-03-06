@@ -1,0 +1,14 @@
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl git build-essential ca-certificates unzip && \
+    rm -rf /var/lib/apt/lists/*
+# Pin mise to a specific version; download directly from GitHub releases rather
+# than piping an unversioned install script. Update MISE_VERSION when upgrading.
+ARG MISE_VERSION=2024.12.20
+RUN ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') && \
+    curl -fsSL "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${ARCH}" \
+    -o /usr/local/bin/mise && chmod +x /usr/local/bin/mise
+ENV PATH="/root/.local/bin:/root/.mise/shims:$PATH"
+RUN mise settings set experimental true
+WORKDIR /workspace
+CMD ["sleep", "infinity"]

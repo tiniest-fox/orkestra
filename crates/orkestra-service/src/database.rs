@@ -88,11 +88,19 @@ impl ServiceDatabase {
 // Helpers
 // ============================================================================
 
+const MIGRATION_V2: &str = "
+ALTER TABLE service_projects ADD COLUMN container_id TEXT;
+";
+
 fn run_migrations(conn: &Connection) -> Result<(), ServiceError> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 1 {
         conn.execute_batch(MIGRATION_V1)?;
         conn.pragma_update(None, "user_version", 1)?;
+    }
+    if version < 2 {
+        conn.execute_batch(MIGRATION_V2)?;
+        conn.pragma_update(None, "user_version", 2)?;
     }
     Ok(())
 }
@@ -111,7 +119,7 @@ pub(crate) fn apply_migrations_for_test(conn: &Connection) {
 mod tests {
     use rusqlite::Connection;
 
-    use super::{run_migrations, MIGRATION_V1};
+    use super::{run_migrations, MIGRATION_V1, MIGRATION_V2};
 
     fn migrated_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -143,5 +151,19 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(MIGRATION_V1).unwrap();
         conn.execute_batch(MIGRATION_V1).unwrap();
+    }
+
+    #[test]
+    fn migration_v2_adds_container_id() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATION_V1).unwrap();
+        conn.execute_batch(MIGRATION_V2).unwrap();
+        // container_id column should exist — insert NULL succeeds.
+        conn.execute(
+            "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret, container_id)
+             VALUES ('x', 'x', '/x', 3850, 's', NULL)",
+            [],
+        )
+        .unwrap();
     }
 }

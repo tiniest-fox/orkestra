@@ -38,7 +38,7 @@ pub fn execute(
 
     let project = guard.query_row(
         "SELECT id, name, path, daemon_port, shared_secret, status,
-                error_message, pid, created_at
+                error_message, pid, created_at, container_id
          FROM service_projects WHERE id = ?",
         params![id],
         super::get::map_row,

@@ -54,6 +54,31 @@ impl std::str::FromStr for ProjectStatus {
     }
 }
 
+/// Devcontainer configuration detected from `.devcontainer/devcontainer.json`,
+/// or the Orkestra default when no config is present.
+#[derive(Debug, Clone)]
+pub enum DevcontainerConfig {
+    /// No devcontainer config found — use the default Orkestra base image.
+    Default,
+    /// A pre-built image declared via `"image"` in devcontainer.json.
+    Image {
+        image: String,
+        post_create_command: Option<String>,
+    },
+    /// A custom Dockerfile declared via `"build.dockerfile"`.
+    Build {
+        dockerfile: String,
+        context: String,
+        post_create_command: Option<String>,
+    },
+    /// Docker Compose declared via `"dockerComposeFile"` + `"service"`.
+    Compose {
+        compose_file: String,
+        service: String,
+        post_create_command: Option<String>,
+    },
+}
+
 /// A project managed by the service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
@@ -67,6 +92,20 @@ pub struct Project {
     pub error_message: Option<String>,
     pub pid: Option<u32>,
     pub created_at: String,
+    pub container_id: Option<String>,
+}
+
+/// Parameters for starting a Docker container for a project.
+///
+/// Groups the arguments to `devcontainer_start_container` into a single value.
+pub struct ContainerStartParams {
+    pub project_id: String,
+    pub config: DevcontainerConfig,
+    pub image: String,
+    pub repo_path: std::path::PathBuf,
+    pub orkd_path: std::path::PathBuf,
+    pub port: u16,
+    pub override_dir: std::path::PathBuf,
 }
 
 /// Configuration for the service.

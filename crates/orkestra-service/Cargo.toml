@@ -27,5 +27,8 @@ base64 = "0.22"
 orkestra-networking = { path = "../orkestra-networking" }
 orkestra-core = { path = "../orkestra-core" }
 
+[dev-dependencies]
+tempfile = "3"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

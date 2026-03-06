@@ -350,6 +350,15 @@ async function startProject(id) {
   await loadProjects();
 }
 
+async function rebuildProject(id) {
+  const res = await apiFetch(`/api/projects/${id}/rebuild`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  await loadProjects();
+}
+
 async function stopProject(id) {
   const res = await apiFetch(`/api/projects/${id}/stop`, { method: 'POST' });
   if (!res.ok) {
@@ -444,14 +453,18 @@ function renderProjectCard(proj) {
     ? `<div class="project-error">${escHtml(proj.error_message)}</div>`
     : '';
 
-  const canStart = proj.status === 'stopped' || proj.status === 'error';
-  const canStop  = proj.status === 'running' || proj.status === 'starting';
+  const canStart   = proj.status === 'stopped' || proj.status === 'error';
+  const canStop    = proj.status === 'running' || proj.status === 'starting';
+  const canRebuild = proj.status === 'running' || proj.status === 'error' || proj.status === 'stopped';
 
   const startBtn = canStart
     ? `<button data-id="${escHtml(proj.id)}" onclick="handleStartClick(this)">Start</button>`
     : '';
   const stopBtn = canStop
     ? `<button data-id="${escHtml(proj.id)}" onclick="handleStopClick(this)">Stop</button>`
+    : '';
+  const rebuildBtn = canRebuild
+    ? `<button data-id="${escHtml(proj.id)}" onclick="handleRebuildClick(this)">Rebuild</button>`
     : '';
 
   const portHtml = port ? `<span class="project-port">${escHtml(port)}</span>` : '';
@@ -466,6 +479,7 @@ function renderProjectCard(proj) {
         <div class="project-actions">
           ${startBtn}
           ${stopBtn}
+          ${rebuildBtn}
           <button class="danger" data-id="${escHtml(proj.id)}" data-name="${escHtml(proj.name)}" onclick="handleRemoveClick(this)">Remove</button>
         </div>
       </div>
@@ -633,9 +647,18 @@ async function handleStop(id) {
   }
 }
 
+async function handleRebuild(id) {
+  try {
+    await rebuildProject(id);
+  } catch (e) {
+    alert('Failed to rebuild project: ' + e.message);
+  }
+}
+
 // data-* click wrappers — read values from dataset (HTML-decoded, no JS injection risk)
 async function handleStartClick(el) { await handleStart(el.dataset.id); }
 async function handleStopClick(el) { await handleStop(el.dataset.id); }
+async function handleRebuildClick(el) { await handleRebuild(el.dataset.id); }
 async function handleRemoveClick(el) { await handleRemove(el.dataset.id, el.dataset.name); }
 async function handleSelectRepoClick(el) { await handleSelectRepo(el.dataset.url, el.dataset.name); }
 

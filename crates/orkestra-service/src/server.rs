@@ -100,6 +100,7 @@ pub async fn start(
     let mut router = Router::new()
         .route("/", get(management_page))
         .route("/pair", post(pair_handler))
+        .route("/debug/headers", get(debug_headers_handler))
         .route("/projects/{id}/ws", get(ws_proxy_handler))
         .merge(auth_routes)
         .layer(CorsLayer::permissive())
@@ -672,6 +673,21 @@ async fn proxy_ws(mut client: WebSocket, daemon_port: u16, token: String) {
             }
         }
     }
+}
+
+/// `GET /debug/headers` — return all request headers as JSON for diagnosing proxy setups.
+///
+/// Temporary diagnostic endpoint; remove once the `wss://` issue is resolved.
+async fn debug_headers_handler(headers: HeaderMap) -> Response<Body> {
+    let map: HashMap<String, String> = headers
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|s| (k.as_str().to_string(), s.to_string()))
+        })
+        .collect();
+    Json(map).into_response()
 }
 
 /// Build a WebSocket base URL (`ws://host` or `wss://host`) from request headers.

@@ -341,9 +341,21 @@ async function removeProject(id) {
   await loadProjects();
 }
 
-async function retryProject(id) {
-  // Remove and let user re-add, or trigger a status refresh.
-  // Currently the API has no explicit retry endpoint, so just refresh.
+async function startProject(id) {
+  const res = await apiFetch(`/api/projects/${id}/start`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  await loadProjects();
+}
+
+async function stopProject(id) {
+  const res = await apiFetch(`/api/projects/${id}/stop`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
   await loadProjects();
 }
 
@@ -426,17 +438,23 @@ function statusLabel(status) {
 
 function renderProjectCard(proj) {
   const showPort = proj.status === 'running' && proj.ws_url;
-  const port = showPort ? proj.ws_url.replace(/^ws:\/\/[^:]+:/, '').replace(/\/.*$/, '') : null;
+  const port = showPort ? proj.ws_url.replace(/^wss?:\/\/[^/]+\/projects\/[^/]+\/ws.*$/, '').replace(/^.*:(\d+).*$/, ':$1') : null;
 
   const errorHtml = proj.status === 'error' && proj.error_message
     ? `<div class="project-error">${escHtml(proj.error_message)}</div>`
     : '';
 
-  const retryBtn = proj.status === 'error'
-    ? `<button data-id="${escHtml(proj.id)}" onclick="handleRetryClick(this)">Retry</button>`
+  const canStart = proj.status === 'stopped' || proj.status === 'error';
+  const canStop  = proj.status === 'running' || proj.status === 'starting';
+
+  const startBtn = canStart
+    ? `<button data-id="${escHtml(proj.id)}" onclick="handleStartClick(this)">Start</button>`
+    : '';
+  const stopBtn = canStop
+    ? `<button data-id="${escHtml(proj.id)}" onclick="handleStopClick(this)">Stop</button>`
     : '';
 
-  const portHtml = port ? `<span class="project-port">:${escHtml(port)}</span>` : '';
+  const portHtml = port ? `<span class="project-port">${escHtml(port)}</span>` : '';
 
   return `
     <div class="card" id="proj-${escHtml(proj.id)}">
@@ -446,7 +464,8 @@ function renderProjectCard(proj) {
         <span class="project-status">${statusLabel(proj.status)}</span>
         ${portHtml}
         <div class="project-actions">
-          ${retryBtn}
+          ${startBtn}
+          ${stopBtn}
           <button class="danger" data-id="${escHtml(proj.id)}" data-name="${escHtml(proj.name)}" onclick="handleRemoveClick(this)">Remove</button>
         </div>
       </div>
@@ -598,12 +617,25 @@ async function handleRemove(id, name) {
   }
 }
 
-async function handleRetry(id) {
-  await retryProject(id);
+async function handleStart(id) {
+  try {
+    await startProject(id);
+  } catch (e) {
+    alert('Failed to start project: ' + e.message);
+  }
+}
+
+async function handleStop(id) {
+  try {
+    await stopProject(id);
+  } catch (e) {
+    alert('Failed to stop project: ' + e.message);
+  }
 }
 
 // data-* click wrappers — read values from dataset (HTML-decoded, no JS injection risk)
-async function handleRetryClick(el) { await handleRetry(el.dataset.id); }
+async function handleStartClick(el) { await handleStart(el.dataset.id); }
+async function handleStopClick(el) { await handleStop(el.dataset.id); }
 async function handleRemoveClick(el) { await handleRemove(el.dataset.id, el.dataset.name); }
 async function handleSelectRepoClick(el) { await handleSelectRepo(el.dataset.url, el.dataset.name); }
 

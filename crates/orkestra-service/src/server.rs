@@ -87,6 +87,8 @@ pub async fn start(
             get(list_projects_handler).post(add_project_handler),
         )
         .route("/api/projects/{id}", delete(remove_project_handler))
+        .route("/api/projects/{id}/start", post(start_project_handler))
+        .route("/api/projects/{id}/stop", post(stop_project_handler))
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -475,6 +477,61 @@ async fn remove_project_handler(
     if let Err(r) = run_blocking({
         let conn = Arc::clone(&state.conn);
         move || project::remove::execute(&conn, &id)
+    })
+    .await
+    {
+        return r;
+    }
+
+    StatusCode::OK.into_response()
+}
+
+/// `POST /api/projects/{id}/start` — spawn a daemon for a stopped project.
+async fn start_project_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    let proj = match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || project::get::execute(&conn, &id)
+    })
+    .await
+    {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    if let Err(e) = state.supervisor.spawn_daemon(&proj) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response();
+    }
+
+    StatusCode::OK.into_response()
+}
+
+/// `POST /api/projects/{id}/stop` — stop a running daemon and mark the project stopped.
+async fn stop_project_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    match tokio::task::spawn_blocking({
+        let supervisor = Arc::clone(&state.supervisor);
+        let stop_id = id.clone();
+        move || supervisor.stop_daemon(&stop_id)
+    })
+    .await
+    {
+        Ok(Err(e)) => tracing::warn!("Error stopping daemon for {id}: {e}"),
+        Err(e) => tracing::warn!("stop_daemon task panicked for {id}: {e}"),
+        Ok(Ok(())) => {}
+    }
+
+    if let Err(r) = run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || project::update_status::execute(&conn, &id, ProjectStatus::Stopped, None, None)
     })
     .await
     {

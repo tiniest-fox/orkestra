@@ -322,7 +322,12 @@ async fn list_projects_handler(
             (None, None)
         };
 
-        responses.push(ProjectResponse::from_project(&proj, token, token_error, &ws_base));
+        responses.push(ProjectResponse::from_project(
+            &proj,
+            token,
+            token_error,
+            &ws_base,
+        ));
     }
 
     Json(responses).into_response()

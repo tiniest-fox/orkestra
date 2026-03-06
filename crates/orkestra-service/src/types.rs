@@ -1,0 +1,105 @@
+//! Domain types for the service layer.
+
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+
+/// A GitHub repository returned by `gh repo list`.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GithubRepo {
+    pub name: String,
+    #[serde(rename = "nameWithOwner")]
+    pub name_with_owner: String,
+    pub url: String,
+    pub description: Option<String>,
+}
+
+/// Status of a managed project's daemon.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectStatus {
+    Stopped,
+    Starting,
+    Cloning,
+    Running,
+    Error,
+}
+
+impl ProjectStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Stopped => "stopped",
+            Self::Starting => "starting",
+            Self::Cloning => "cloning",
+            Self::Running => "running",
+            Self::Error => "error",
+        }
+    }
+}
+
+impl std::str::FromStr for ProjectStatus {
+    type Err = ServiceError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "stopped" => Ok(Self::Stopped),
+            "starting" => Ok(Self::Starting),
+            "cloning" => Ok(Self::Cloning),
+            "running" => Ok(Self::Running),
+            "error" => Ok(Self::Error),
+            other => Err(ServiceError::Other(format!(
+                "Unknown project status: {other}"
+            ))),
+        }
+    }
+}
+
+/// A project managed by the service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub daemon_port: u16,
+    #[serde(skip_serializing)]
+    pub shared_secret: String,
+    pub status: ProjectStatus,
+    pub error_message: Option<String>,
+    pub pid: Option<u32>,
+    pub created_at: String,
+}
+
+/// Configuration for the service.
+pub struct ServiceConfig {
+    pub data_dir: PathBuf,
+    pub port: u16,
+    /// Port range for assigning daemon ports (inclusive).
+    pub port_range: (u16, u16),
+}
+
+impl Default for ServiceConfig {
+    fn default() -> Self {
+        Self {
+            data_dir: PathBuf::from("."),
+            port: 3849,
+            port_range: (3850, 3899),
+        }
+    }
+}
+
+/// Service-level errors.
+#[derive(Debug, thiserror::Error)]
+pub enum ServiceError {
+    #[error("Database error: {0}")]
+    Database(#[from] rusqlite::Error),
+    #[error("Project not found: {0}")]
+    ProjectNotFound(String),
+    #[error("Duplicate project path: {0}")]
+    DuplicatePath(String),
+    #[error("No available ports in range {0}-{1}")]
+    NoAvailablePorts(u16, u16),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Other(String),
+}

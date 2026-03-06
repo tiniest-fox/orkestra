@@ -1,0 +1,28 @@
+[package]
+name = "ork-service"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ork-service"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+orkestra-service = { path = "../crates/orkestra-service" }
+orkestra-networking = { path = "../crates/orkestra-networking" }
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { version = "1", features = ["full"] }
+signal-hook = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+axum = "0.8"
+rust-embed = { version = "8", optional = true }
+mime_guess = { version = "2", optional = true }
+
+[features]
+default = []
+embed-pwa = ["dep:rust-embed", "dep:mime_guess"]

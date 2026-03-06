@@ -37,6 +37,8 @@ COPY crates/orkestra-service/Cargo.toml crates/orkestra-service/
 COPY crates/orkestra-store/Cargo.toml crates/orkestra-store/
 COPY crates/orkestra-types/Cargo.toml crates/orkestra-types/
 COPY crates/orkestra-utility/Cargo.toml crates/orkestra-utility/
+# src-tauri is in the workspace but not built — stub out the lib so cargo metadata resolves.
+RUN mkdir -p src-tauri/src && touch src-tauri/src/lib.rs
 
 RUN cargo chef prepare --recipe-path recipe.json
 

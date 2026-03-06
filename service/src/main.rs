@@ -87,6 +87,7 @@ fn main() {
 // Core Run Logic
 // ============================================================================
 
+#[allow(clippy::too_many_lines)]
 async fn run(args: Args) -> Result<(), String> {
     if args.port_range_start > args.port_range_end {
         return Err(format!(

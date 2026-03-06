@@ -28,7 +28,15 @@ export function createTransport(): Transport {
     return new TauriTransport();
   }
 
-  const url = remoteUrl ?? DEFAULT_WS_URL;
+  const rawUrl = remoteUrl ?? DEFAULT_WS_URL;
+  // Upgrade stale ws:// URLs when the page is served over HTTPS — prevents
+  // mixed-content blocks when stored URLs pre-date a proxy reconfiguration.
+  const url =
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    rawUrl.startsWith("ws://")
+      ? rawUrl.replace("ws://", "wss://")
+      : rawUrl;
   const token = currentProject?.token ?? "";
   return new WebSocketTransport(url, token);
 }

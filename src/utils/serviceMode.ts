@@ -54,12 +54,19 @@ export async function syncProjectsFromService(): Promise<ProjectConfig[]> {
 
   const serviceProjects: ServiceProject[] = await response.json();
 
+  // Derive the WebSocket base from the current page location rather than the
+  // server-returned ws_url. This ensures we always use wss:// on HTTPS pages
+  // regardless of what the backend computed, and avoids stale ws:// URLs in
+  // localStorage when proxies are reconfigured.
+  const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+  const wsBase = `${wsScheme}://${window.location.host}`;
+
   // Convert to ProjectConfig entries — only include running projects with tokens
   const configs: ProjectConfig[] = serviceProjects
     .filter((p) => p.status === "running" && p.token)
     .map((p) => ({
       id: p.id,
-      url: p.ws_url,
+      url: `${wsBase}/projects/${p.id}/ws`,
       token: p.token ?? "",
       projectName: p.name,
       projectRoot: p.path,

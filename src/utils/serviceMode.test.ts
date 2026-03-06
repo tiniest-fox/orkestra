@@ -173,9 +173,12 @@ describe("syncProjectsFromService", () => {
 
     const result = await syncProjectsFromService();
     const cfg = result[0];
+    // URL is derived from window.location (ws:// on http, wss:// on https),
+    // not from the server-returned ws_url field.
+    const expectedWsBase = `ws://${window.location.host}`;
     expect(cfg).toEqual<ProjectConfig>({
       id: svc.id,
-      url: svc.ws_url,
+      url: `${expectedWsBase}/projects/${svc.id}/ws`,
       token: svc.token ?? "",
       projectName: svc.name,
       projectRoot: svc.path,

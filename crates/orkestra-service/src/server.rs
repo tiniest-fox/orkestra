@@ -675,11 +675,12 @@ async fn proxy_ws(mut client: WebSocket, daemon_port: u16, token: String) {
     }
 }
 
-/// `GET /debug/headers` — return all request headers as JSON for diagnosing proxy setups.
+/// `GET /debug/headers` — return all request headers and computed `ws_base` as JSON.
 ///
 /// Temporary diagnostic endpoint; remove once the `wss://` issue is resolved.
 async fn debug_headers_handler(headers: HeaderMap) -> Response<Body> {
-    let map: HashMap<String, String> = headers
+    let ws_base = ws_base_from_headers(&headers);
+    let header_map: HashMap<String, String> = headers
         .iter()
         .filter_map(|(k, v)| {
             v.to_str()
@@ -687,7 +688,11 @@ async fn debug_headers_handler(headers: HeaderMap) -> Response<Body> {
                 .map(|s| (k.as_str().to_string(), s.to_string()))
         })
         .collect();
-    Json(map).into_response()
+    Json(serde_json::json!({
+        "computed_ws_base": ws_base,
+        "headers": header_map,
+    }))
+    .into_response()
 }
 
 /// Build a WebSocket base URL (`ws://host` or `wss://host`) from request headers.
@@ -786,7 +791,59 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::validate_project_name;
+    use axum::http::HeaderMap;
+
+    use super::{validate_project_name, ws_base_from_headers};
+
+    // -- ws_base_from_headers --
+
+    fn headers_from_pairs(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (k, v) in pairs {
+            map.insert(
+                axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                axum::http::HeaderValue::from_str(v).unwrap(),
+            );
+        }
+        map
+    }
+
+    #[test]
+    fn uses_wss_when_x_forwarded_proto_is_https() {
+        let headers =
+            headers_from_pairs(&[("host", "example.com"), ("x-forwarded-proto", "https")]);
+        assert_eq!(ws_base_from_headers(&headers), "wss://example.com");
+    }
+
+    #[test]
+    fn uses_wss_when_cf_visitor_is_https_and_proto_is_http() {
+        // Exact headers observed behind Cloudflare + Traefik (Dokploy).
+        // Traefik overwrites x-forwarded-proto to "http" but Cloudflare's
+        // CF-Visitor still carries the original scheme.
+        let headers = headers_from_pairs(&[
+            ("host", "orkestra.tiniestfox.com"),
+            ("x-forwarded-proto", "http"),
+            ("x-forwarded-port", "80"),
+            ("cf-visitor", "{\"scheme\":\"https\"}"),
+        ]);
+        assert_eq!(
+            ws_base_from_headers(&headers),
+            "wss://orkestra.tiniestfox.com"
+        );
+    }
+
+    #[test]
+    fn uses_ws_when_both_signals_absent() {
+        let headers = headers_from_pairs(&[("host", "localhost:3847")]);
+        assert_eq!(ws_base_from_headers(&headers), "ws://localhost:3847");
+    }
+
+    #[test]
+    fn uses_ws_when_proto_http_and_no_cf_visitor() {
+        let headers =
+            headers_from_pairs(&[("host", "localhost:3847"), ("x-forwarded-proto", "http")]);
+        assert_eq!(ws_base_from_headers(&headers), "ws://localhost:3847");
+    }
 
     #[test]
     fn accepts_valid_names() {

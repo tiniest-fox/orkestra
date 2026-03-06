@@ -37,8 +37,20 @@ COPY crates/orkestra-service/Cargo.toml crates/orkestra-service/
 COPY crates/orkestra-store/Cargo.toml crates/orkestra-store/
 COPY crates/orkestra-types/Cargo.toml crates/orkestra-types/
 COPY crates/orkestra-utility/Cargo.toml crates/orkestra-utility/
-# src-tauri is in the workspace but not built — stub out the lib so cargo metadata resolves.
-RUN mkdir -p src-tauri/src && touch src-tauri/src/lib.rs
+# Stub source files for all workspace members — cargo metadata requires targets to exist
+# even for crates we don't build. Library crates auto-detect src/lib.rs; binary crates
+# declare explicit paths to src/main.rs.
+RUN for crate in \
+        crates/orkestra-agent crates/orkestra-core crates/orkestra-debug \
+        crates/orkestra-git crates/orkestra-networking crates/orkestra-parser \
+        crates/orkestra-process crates/orkestra-prompt crates/orkestra-relay-protocol \
+        crates/orkestra-schema crates/orkestra-service crates/orkestra-store \
+        crates/orkestra-types crates/orkestra-utility src-tauri; do \
+    mkdir -p "$crate/src" && touch "$crate/src/lib.rs"; \
+done && \
+for bin in cli daemon relay service; do \
+    mkdir -p "$bin/src" && touch "$bin/src/main.rs"; \
+done
 
 RUN cargo chef prepare --recipe-path recipe.json
 

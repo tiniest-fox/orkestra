@@ -46,6 +46,7 @@ export default defineConfig(async ({ mode }) => {
 
   return {
     plugins,
+    base: mode === "pwa" ? "/app/" : "/",
     envPrefix: ["VITE_", "TAURI_ENV_"],
     clearScreen: false,
     server: {

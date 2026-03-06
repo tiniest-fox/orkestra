@@ -1,0 +1,29 @@
+[package]
+name = "orkestra-service"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Service database, types, and project CRUD for the ork-service binary"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+thiserror = "1"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+rand = "0.8"
+axum = { version = "0.8" }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors"] }
+reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"
+orkestra-networking = { path = "../orkestra-networking" }
+orkestra-core = { path = "../orkestra-core" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

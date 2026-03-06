@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orkestra Service</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --bg: #ffffff;
+  --surface: #f9fafb;
+  --border: #e5e7eb;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --gray: #9ca3af;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --btn-bg: #111827;
+  --btn-text: #ffffff;
+  --btn-danger-bg: #fee2e2;
+  --btn-danger-text: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111827;
+    --surface: #1f2937;
+    --border: #374151;
+    --text: #f9fafb;
+    --text-muted: #9ca3af;
+    --btn-bg: #f9fafb;
+    --btn-text: #111827;
+    --btn-danger-bg: #3b1515;
+    --btn-danger-text: #f87171;
+  }
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--text);
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+h1 { font-size: 1.5rem; margin: 0; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 0.75rem; }
+
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4rem 0.875rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+button:hover { filter: brightness(0.95); }
+button.primary {
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border-color: transparent;
+}
+button.danger {
+  background: var(--btn-danger-bg);
+  color: var(--btn-danger-text);
+  border-color: transparent;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+input[type="text"], input[type="number"] {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+input:focus { border-color: var(--blue); }
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+.header-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+/* Status dot */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot.running { background: var(--green); }
+.dot.stopped { background: var(--gray); }
+.dot.error   { background: var(--red); }
+.dot.cloning,
+.dot.starting { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  margin-bottom: 0.625rem;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.project-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-status {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.project-port {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+.project-actions { display: flex; gap: 0.375rem; margin-left: auto; }
+.project-error {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--red);
+  background: var(--btn-danger-bg);
+  border-radius: 6px;
+  padding: 0.375rem 0.625rem;
+  word-break: break-word;
+}
+
+/* Empty state */
+.empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+/* Add project panel */
+.add-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-top: 0.75rem;
+}
+.add-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.add-panel h3 { margin: 0; font-size: 0.9375rem; }
+
+.repo-search { margin-bottom: 0.75rem; }
+
+.repo-list { max-height: 280px; overflow-y: auto; }
+.repo-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.repo-item:hover { background: var(--border); }
+.repo-item-info { min-width: 0; }
+.repo-item-name { font-weight: 500; font-size: 0.875rem; }
+.repo-item-desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Pairing code display */
+.pairing-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  margin-top: 0.75rem;
+}
+.pairing-code {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  font-family: monospace;
+  margin: 0.5rem 0;
+}
+.pairing-expires {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* First-visit pairing form */
+.pair-page {
+  margin-top: 3rem;
+  text-align: center;
+}
+.pair-page h2 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+.pair-page p { color: var(--text-muted); margin-bottom: 1.5rem; }
+.pair-form { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; max-width: 280px; margin: 0 auto; }
+.pair-form input { text-align: center; font-size: 1.25rem; letter-spacing: 0.1em; }
+.pair-error { color: var(--red); font-size: 0.875rem; }
+
+/* Inline errors */
+.inline-error {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--red);
+}
+
+/* GH unavailable */
+.gh-unavailable {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  padding: 0.5rem 0;
+}
+.gh-unavailable code {
+  background: var(--border);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script>
+'use strict';
+
+const TOKEN_KEY = 'orkestra.service_token';
+
+// ============================================================================
+// State
+// ============================================================================
+
+let projects = [];
+let ghAvailable = false;
+let ghError = null;
+let repos = [];
+let repoFilter = '';
+let loadingRepos = false;
+let showAddPanel = false;
+let pairingCode = null;
+let pairingExpiry = null;
+let pairingCountdown = null;
+
+// ============================================================================
+// API Helper
+// ============================================================================
+
+async function apiFetch(path, options = {}) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
+  });
+}
+
+// ============================================================================
+// Actions
+// ============================================================================
+
+async function loadProjects() {
+  try {
+    const res = await apiFetch('/api/projects');
+    if (res.ok) {
+      projects = await res.json();
+      render();
+    } else if (res.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      location.reload();
+    }
+  } catch (_) {
+    // silent retry on next poll
+  }
+}
+
+async function addProject(repoUrl, name) {
+  const res = await apiFetch('/api/projects', {
+    method: 'POST',
+    body: JSON.stringify({ repo_url: repoUrl, name }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  showAddPanel = false;
+  await loadProjects();
+}
+
+async function removeProject(id) {
+  const res = await apiFetch(`/api/projects/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  await loadProjects();
+}
+
+async function retryProject(id) {
+  // Remove and let user re-add, or trigger a status refresh.
+  // Currently the API has no explicit retry endpoint, so just refresh.
+  await loadProjects();
+}
+
+async function checkGithub() {
+  try {
+    const res = await apiFetch('/api/github/status');
+    if (res.ok) {
+      const data = await res.json();
+      ghAvailable = data.available;
+      ghError = data.error || null;
+    }
+  } catch (_) {}
+}
+
+async function loadRepos(search) {
+  loadingRepos = true;
+  renderAddPanel();
+  try {
+    const url = search ? `/api/github/repos?search=${encodeURIComponent(search)}` : '/api/github/repos';
+    const res = await apiFetch(url);
+    if (res.ok) {
+      repos = await res.json();
+    }
+  } catch (_) {}
+  loadingRepos = false;
+  renderAddPanel();
+}
+
+async function generatePairingCode() {
+  const res = await apiFetch('/api/pairing-code', { method: 'POST' });
+  if (!res.ok) {
+    alert('Failed to generate pairing code');
+    return;
+  }
+  const data = await res.json();
+  pairingCode = data.code;
+  pairingExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes
+  if (pairingCountdown) clearInterval(pairingCountdown);
+  pairingCountdown = setInterval(() => {
+    if (Date.now() >= pairingExpiry) {
+      pairingCode = null;
+      pairingExpiry = null;
+      clearInterval(pairingCountdown);
+      pairingCountdown = null;
+    }
+    renderPairingBox();
+  }, 1000);
+  render();
+}
+
+async function pairDevice(code) {
+  const res = await fetch('/pair', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, device_name: 'Browser' }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  localStorage.setItem(TOKEN_KEY, data.token);
+  location.reload();
+}
+
+// ============================================================================
+// Rendering
+// ============================================================================
+
+function statusLabel(status) {
+  switch (status) {
+    case 'running':  return 'Running';
+    case 'stopped':  return 'Stopped';
+    case 'error':    return 'Error';
+    case 'cloning':  return 'Cloning...';
+    case 'starting': return 'Starting...';
+    default:         return status;
+  }
+}
+
+function renderProjectCard(proj) {
+  const showPort = proj.status === 'running' && proj.ws_url;
+  const port = showPort ? proj.ws_url.replace(/^ws:\/\/[^:]+:/, '').replace(/\/.*$/, '') : null;
+
+  const errorHtml = proj.status === 'error' && proj.error_message
+    ? `<div class="project-error">${escHtml(proj.error_message)}</div>`
+    : '';
+
+  const retryBtn = proj.status === 'error'
+    ? `<button data-id="${escHtml(proj.id)}" onclick="handleRetryClick(this)">Retry</button>`
+    : '';
+
+  const portHtml = port ? `<span class="project-port">:${escHtml(port)}</span>` : '';
+
+  return `
+    <div class="card" id="proj-${escHtml(proj.id)}">
+      <div class="project-header">
+        <span class="dot ${escHtml(proj.status)}"></span>
+        <span class="project-name" title="${escHtml(proj.name)}">${escHtml(proj.name)}</span>
+        <span class="project-status">${statusLabel(proj.status)}</span>
+        ${portHtml}
+        <div class="project-actions">
+          ${retryBtn}
+          <button class="danger" data-id="${escHtml(proj.id)}" data-name="${escHtml(proj.name)}" onclick="handleRemoveClick(this)">Remove</button>
+        </div>
+      </div>
+      ${errorHtml}
+    </div>`;
+}
+
+function renderPairingBox() {
+  const el = document.getElementById('pairing-box');
+  if (!el) return;
+  if (!pairingCode) {
+    el.innerHTML = '';
+    return;
+  }
+  const remaining = Math.max(0, Math.ceil((pairingExpiry - Date.now()) / 1000));
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  el.innerHTML = `
+    <div class="pairing-box">
+      <div style="font-size:0.875rem;color:var(--text-muted)">Pairing Code</div>
+      <div class="pairing-code">${escHtml(pairingCode)}</div>
+      <div class="pairing-expires">Expires in ${mins}:${String(secs).padStart(2,'0')}</div>
+    </div>`;
+}
+
+function renderAddPanel() {
+  const el = document.getElementById('add-panel');
+  if (!el) return;
+
+  if (!showAddPanel) {
+    el.innerHTML = '';
+    return;
+  }
+
+  if (!ghAvailable) {
+    el.innerHTML = `
+      <div class="add-panel">
+        <div class="add-panel-header">
+          <h3>Add Project</h3>
+          <button onclick="toggleAddPanel()">Close</button>
+        </div>
+        <div class="gh-unavailable">
+          <p style="margin:0 0 0.5rem">GitHub CLI not configured.</p>
+          <p style="margin:0 0 0.25rem">Install: <code>brew install gh</code></p>
+          <p style="margin:0">Authenticate: <code>gh auth login</code></p>
+          ${ghError ? `<p style="margin:0.5rem 0 0;color:var(--red);font-size:0.8rem">${escHtml(ghError)}</p>` : ''}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const filtered = repos.filter(r => {
+    if (!repoFilter) return true;
+    const q = repoFilter.toLowerCase();
+    return r.name.toLowerCase().includes(q) || (r.description || '').toLowerCase().includes(q);
+  });
+
+  const repoItems = filtered.map(r => `
+    <div class="repo-item" data-url="${escHtml(r.url)}" data-name="${escHtml(r.name)}" onclick="handleSelectRepoClick(this)">
+      <div class="repo-item-info">
+        <div class="repo-item-name">${escHtml(r.nameWithOwner)}</div>
+        ${r.description ? `<div class="repo-item-desc">${escHtml(r.description)}</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="add-panel">
+      <div class="add-panel-header">
+        <h3>Add Project</h3>
+        <button onclick="toggleAddPanel()">Close</button>
+      </div>
+      <div class="repo-search">
+        <input id="repo-filter" type="text" placeholder="Search repos..." value="${escHtml(repoFilter)}" oninput="handleRepoFilter(this.value)">
+      </div>
+      ${loadingRepos
+        ? '<div style="text-align:center;padding:1rem;color:var(--text-muted);font-size:0.875rem">Loading...</div>'
+        : filtered.length === 0
+          ? '<div style="text-align:center;padding:1rem;color:var(--text-muted);font-size:0.875rem">No repos found.</div>'
+          : `<div class="repo-list">${repoItems}</div>`
+      }
+      <div id="add-error" class="inline-error"></div>
+    </div>`;
+}
+
+function render() {
+  const root = document.getElementById('root');
+
+  const projectCards = projects.length === 0
+    ? '<div class="empty">No projects yet. Add one below.</div>'
+    : projects.map(renderProjectCard).join('');
+
+  root.innerHTML = `
+    <div class="header">
+      <h1>Orkestra Service</h1>
+      <div class="header-actions">
+        <button onclick="generatePairingCode()">Generate Pairing Code</button>
+        <a href="/app"><button>Open App</button></a>
+      </div>
+    </div>
+
+    <div id="pairing-box"></div>
+
+    <h2>Projects</h2>
+    ${projectCards}
+
+    <div style="margin-top:0.75rem">
+      <button class="primary" onclick="toggleAddPanel()">+ Add Project</button>
+    </div>
+    <div id="add-panel"></div>`;
+
+  renderPairingBox();
+  renderAddPanel();
+}
+
+// ============================================================================
+// Event Handlers
+// ============================================================================
+
+function toggleAddPanel() {
+  showAddPanel = !showAddPanel;
+  if (showAddPanel && ghAvailable && repos.length === 0) {
+    loadRepos('');
+  }
+  renderAddPanel();
+}
+
+function handleRepoFilter(value) {
+  repoFilter = value;
+  renderAddPanel();
+}
+
+async function handleSelectRepo(url, name) {
+  const errEl = document.getElementById('add-error');
+  if (errEl) errEl.textContent = '';
+  try {
+    await addProject(url, name);
+  } catch (e) {
+    const errEl2 = document.getElementById('add-error');
+    if (errEl2) errEl2.textContent = e.message;
+  }
+}
+
+async function handleRemove(id, name) {
+  if (!confirm(`Remove project "${name}"? This cannot be undone.`)) return;
+  try {
+    await removeProject(id);
+  } catch (e) {
+    alert('Failed to remove project: ' + e.message);
+  }
+}
+
+async function handleRetry(id) {
+  await retryProject(id);
+}
+
+// data-* click wrappers — read values from dataset (HTML-decoded, no JS injection risk)
+async function handleRetryClick(el) { await handleRetry(el.dataset.id); }
+async function handleRemoveClick(el) { await handleRemove(el.dataset.id, el.dataset.name); }
+async function handleSelectRepoClick(el) { await handleSelectRepo(el.dataset.url, el.dataset.name); }
+
+// ============================================================================
+// Pairing Form (first-visit)
+// ============================================================================
+
+function showPairingForm() {
+  const root = document.getElementById('root');
+  root.innerHTML = `
+    <div class="header">
+      <h1>Orkestra Service</h1>
+    </div>
+    <div class="pair-page">
+      <h2>Pair this Device</h2>
+      <p>Enter the 6-digit pairing code shown on your Orkestra service to connect.</p>
+      <div class="pair-form">
+        <input id="pair-code" type="text" maxlength="6" placeholder="000000" autocomplete="off">
+        <button class="primary" onclick="handlePair()">Connect</button>
+        <div id="pair-error" class="pair-error"></div>
+      </div>
+    </div>`;
+
+  const input = document.getElementById('pair-code');
+  if (input) {
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') handlePair();
+    });
+    input.focus();
+  }
+}
+
+async function handlePair() {
+  const input = document.getElementById('pair-code');
+  const errEl = document.getElementById('pair-error');
+  const code = input ? input.value.trim() : '';
+  if (!code) {
+    if (errEl) errEl.textContent = 'Please enter a pairing code.';
+    return;
+  }
+  if (errEl) errEl.textContent = '';
+  try {
+    await pairDevice(code);
+  } catch (e) {
+    if (errEl) errEl.textContent = e.message;
+  }
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ============================================================================
+// Init
+// ============================================================================
+
+const token = localStorage.getItem(TOKEN_KEY);
+if (!token) {
+  showPairingForm();
+} else {
+  loadProjects();
+  checkGithub();
+
+  // Poll every 5 seconds.
+  setInterval(async () => {
+    try {
+      const res = await apiFetch('/api/projects');
+      if (res.ok) {
+        projects = await res.json();
+        render();
+      } else if (res.status === 401) {
+        localStorage.removeItem(TOKEN_KEY);
+        location.reload();
+      }
+    } catch (_) {
+      // silent retry
+    }
+  }, 5000);
+}
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@ pub mod generate_pairing_code;
 pub mod list_devices;
 pub mod pair_device;
 pub mod revoke_device;
-pub(crate) mod verify_token;
+pub mod verify_token;
 
 // -- Shared Helpers --
 

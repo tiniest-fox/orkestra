@@ -217,6 +217,23 @@ When implementing or extending the `transport.call()` / WebSocket dispatch layer
 
 **Parallel structures** — `METHOD_MAP` in `TauriTransport.ts` and the Rust dispatch table are maintained in parallel. When adding a new command, update both and add a cross-reference comment to make the link explicit.
 
+<!-- compound: usually-moving-mollusk -->
+## Blocking Operations in Async Handlers
+
+When writing async HTTP handlers (axum, actix, etc.), **never call blocking operations directly** — process management, synchronous I/O, heavy computation, or anything that holds a lock while doing I/O. Blocking the async runtime starves all other requests on the thread.
+
+Use `tokio::task::spawn_blocking` for any blocking call:
+```rust
+let supervisor = Arc::clone(&state.supervisor);
+let id = project_id.clone();
+spawn_blocking(move || supervisor.stop_daemon(&id))
+    .await
+    .map_err(|e| /* task panicked */)?
+    .map_err(|e| /* stop failed */)?;
+```
+
+Both error cases need handling: `Ok(Err(e))` (operation failed) and `Err(e)` (task panicked). This is a HIGH-severity finding reviewers always catch when blocking code appears in async context.
+
 <!-- compound: plainly-touched-whitefish -->
 ## CLI Flags for Typed HTTP/Network Values
 

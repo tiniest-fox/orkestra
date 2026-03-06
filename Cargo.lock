@@ -3446,6 +3446,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "futures-util",
  "libc",
  "orkestra-core",
  "orkestra-networking",
@@ -3456,6 +3457,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-tungstenite",
  "tower-http",
  "tracing",
  "uuid",

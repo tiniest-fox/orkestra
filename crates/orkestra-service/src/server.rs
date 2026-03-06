@@ -676,20 +676,39 @@ async fn proxy_ws(mut client: WebSocket, daemon_port: u16, token: String) {
 
 /// Build a WebSocket base URL (`ws://host` or `wss://host`) from request headers.
 ///
-/// Uses `X-Forwarded-Proto` to detect HTTPS (set by Cloudflare and other reverse
-/// proxies). Falls back to `ws` for plain local connections.
+/// Checks two signals in priority order:
+/// 1. `X-Forwarded-Proto` — set by most reverse proxies (Nginx, Traefik, etc.)
+/// 2. `CF-Visitor` — Cloudflare always sets `{"scheme":"https"}` for HTTPS
+///    traffic, even when Traefik overwrites `X-Forwarded-Proto` with `http`
+///    on the Cloudflare→origin leg.
 fn ws_base_from_headers(headers: &HeaderMap) -> String {
     let host = headers
         .get("host")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("localhost:3847");
 
-    let proto = headers
+    // X-Forwarded-Proto may be a comma-separated list when multiple proxies
+    // are in the chain (e.g. "https,http"). The first value is the outermost
+    // scheme seen by the client.
+    let forwarded_proto = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("http");
+        .unwrap_or("");
 
-    let ws_scheme = if proto == "https" { "wss" } else { "ws" };
+    let cf_visitor = headers
+        .get("cf-visitor")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let is_https = forwarded_proto
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .eq_ignore_ascii_case("https")
+        || cf_visitor.contains("\"https\"");
+
+    let ws_scheme = if is_https { "wss" } else { "ws" };
     format!("{ws_scheme}://{host}")
 }
 

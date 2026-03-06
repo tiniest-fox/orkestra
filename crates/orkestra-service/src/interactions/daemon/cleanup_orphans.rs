@@ -13,7 +13,11 @@ use crate::types::{ProjectStatus, ServiceError};
 ///
 /// Called once at service startup before any new daemons are spawned.
 #[cfg(unix)]
-#[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
 pub fn execute(conn: &Arc<Mutex<Connection>>) -> Result<usize, ServiceError> {
     // Collect stale entries without holding the lock during the kill loop.
     let stale = {
@@ -35,29 +39,29 @@ pub fn execute(conn: &Arc<Mutex<Connection>>) -> Result<usize, ServiceError> {
     for (id, pid_opt) in &stale {
         if let Some(pid_i64) = pid_opt {
             let pid = *pid_i64 as u32;
-            let pgid = pid as i32;
+            let pid_signed = pid as i32;
 
             // `kill(pid, 0)` checks existence without sending a signal.
             // SAFETY: Existence check — no signal is delivered. pid was read from
             // the database and cast from a stored i64.
-            let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+            let alive = unsafe { libc::kill(pid_signed, 0) == 0 };
 
             if alive {
                 info!("Killing orphaned daemon pid={pid} for project {id}");
                 // Wake stopped processes before SIGTERM.
-                // SAFETY: pgid is derived from a PID stored in the database (cast from i64).
+                // SAFETY: pid_signed is derived from a PID stored in the database (cast from i64).
                 // Negating it targets the process group for a clean shutdown.
-                unsafe { libc::kill(-pgid, libc::SIGCONT) };
+                unsafe { libc::kill(-pid_signed, libc::SIGCONT) };
                 // SAFETY: same as above — targeting the same process group.
-                unsafe { libc::kill(-pgid, libc::SIGTERM) };
+                unsafe { libc::kill(-pid_signed, libc::SIGTERM) };
 
                 std::thread::sleep(std::time::Duration::from_millis(500));
 
                 // Escalate if still running.
                 // SAFETY: Existence check — no signal is delivered. pid cast from stored i64.
-                if unsafe { libc::kill(pid as i32, 0) == 0 } {
-                    // SAFETY: pgid is a valid process group ID; negating it targets the group.
-                    unsafe { libc::kill(-pgid, libc::SIGKILL) };
+                if unsafe { libc::kill(pid_signed, 0) == 0 } {
+                    // SAFETY: pid_signed is a valid process group ID; negating it targets the group.
+                    unsafe { libc::kill(-pid_signed, libc::SIGKILL) };
                 }
 
                 killed += 1;

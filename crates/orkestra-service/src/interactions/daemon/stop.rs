@@ -3,8 +3,6 @@
 use std::process::Child;
 use std::time::{Duration, Instant};
 
-use crate::types::ServiceError;
-
 /// Stop a child daemon process.
 ///
 /// Sends SIGCONT + SIGTERM to the process group, waits up to `timeout` for
@@ -13,7 +11,7 @@ use crate::types::ServiceError;
 /// deliver SIGTERM without it.
 #[cfg(unix)]
 #[allow(clippy::cast_possible_wrap)]
-pub fn execute(child: &mut Child, timeout: Duration) -> Result<(), ServiceError> {
+pub fn execute(child: &mut Child, timeout: Duration) {
     let pgid = child.id() as i32;
 
     // Wake stopped processes, then request graceful shutdown.
@@ -27,7 +25,7 @@ pub fn execute(child: &mut Child, timeout: Duration) -> Result<(), ServiceError>
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if let Ok(Some(_)) = child.try_wait() {
-            return Ok(());
+            return;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -38,6 +36,4 @@ pub fn execute(child: &mut Child, timeout: Duration) -> Result<(), ServiceError>
     // SAFETY: same as above.
     unsafe { libc::kill(-pgid, libc::SIGKILL) };
     let _ = child.wait();
-
-    Ok(())
 }

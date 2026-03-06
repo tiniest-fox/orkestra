@@ -108,6 +108,7 @@ fn cache_token(
 /// Drive the pairing flow against a running daemon:
 /// 1. `POST /pairing-code` with Basic auth (empty user, `shared_secret` password)
 /// 2. `POST /pair` with the returned code
+///
 /// Returns the new bearer token.
 async fn pair_with_daemon(project: &Project, device_id: &str) -> Result<String, ServiceError> {
     let base_url = format!("http://127.0.0.1:{}", project.daemon_port);

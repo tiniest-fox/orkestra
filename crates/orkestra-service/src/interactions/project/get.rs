@@ -23,6 +23,7 @@ pub fn execute(conn: &Arc<Mutex<Connection>>, id: &str) -> Result<Project, Servi
 
 // -- Helpers --
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub(super) fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     let status_str: String = row.get(5)?;
     let status = status_str.parse::<ProjectStatus>().map_err(|e| {

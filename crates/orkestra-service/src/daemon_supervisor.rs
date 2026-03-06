@@ -58,19 +58,14 @@ impl DaemonSupervisor {
     /// Spawn a daemon for `project`, update its DB status to `starting`, and
     /// begin polling for readiness in a background thread.
     pub fn spawn_daemon(&self, project: &Project) -> Result<(), ServiceError> {
-        spawn_and_poll(
-            self.conn.clone(),
-            self.children.clone(),
-            &self.orkd_path,
-            project,
-        )
+        spawn_and_poll(&self.conn, &self.children, &self.orkd_path, project)
     }
 
     /// Stop the daemon for `project_id`, escalating to SIGKILL after 5 s.
     pub fn stop_daemon(&self, project_id: &str) -> Result<(), ServiceError> {
         let mut guard = self.children.lock().expect("children mutex poisoned");
         if let Some(mut child) = guard.remove(project_id) {
-            daemon::stop::execute(&mut child, Duration::from_secs(5))?;
+            daemon::stop::execute(&mut child, Duration::from_secs(5));
         }
         drop(guard);
 
@@ -131,9 +126,7 @@ impl DaemonSupervisor {
                                 info!("Skipping restart for {project_id} — project was stopped");
                                 return;
                             }
-                            if let Err(e) =
-                                spawn_and_poll(conn.clone(), children, &orkd_path, &project)
-                            {
+                            if let Err(e) = spawn_and_poll(&conn, &children, &orkd_path, &project) {
                                 error!("Failed to respawn daemon for {project_id}: {e}");
                                 let _ = project::update_status::execute(
                                     &conn,
@@ -257,8 +250,8 @@ impl DaemonSupervisor {
 /// `starting`, and launch a background thread that polls for TCP readiness
 /// before updating status to `running`.
 fn spawn_and_poll(
-    conn: Arc<Mutex<Connection>>,
-    children: Arc<Mutex<HashMap<String, Child>>>,
+    conn: &Arc<Mutex<Connection>>,
+    children: &Arc<Mutex<HashMap<String, Child>>>,
     orkd_path: &Path,
     project: &Project,
 ) -> Result<(), ServiceError> {
@@ -274,7 +267,7 @@ fn spawn_and_poll(
     let project_id = project.id.clone();
     let port = project.daemon_port;
 
-    project::update_status::execute(&conn, &project_id, ProjectStatus::Starting, Some(pid), None)?;
+    project::update_status::execute(conn, &project_id, ProjectStatus::Starting, Some(pid), None)?;
 
     {
         let mut guard = children.lock().expect("children mutex poisoned");

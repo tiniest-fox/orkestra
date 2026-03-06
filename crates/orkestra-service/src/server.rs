@@ -130,15 +130,12 @@ async fn require_bearer_auth(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let token = match extract_bearer_token(request.headers()) {
-        Some(t) => t,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({"error": "Missing Authorization header"})),
-            )
-                .into_response();
-        }
+    let Some(token) = extract_bearer_token(request.headers()) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "Missing Authorization header"})),
+        )
+            .into_response();
     };
 
     let conn = Arc::clone(&state.conn);
@@ -273,7 +270,7 @@ impl ProjectResponse {
             ws_url: format!("{ws_base}/projects/{}/ws", proj.id),
             token,
             token_error,
-            status: proj.status.clone(),
+            status: proj.status,
             error_message: proj.error_message.clone(),
         }
     }
@@ -284,15 +281,12 @@ async fn list_projects_handler(
     State(state): State<OrkServiceState>,
     request: Request,
 ) -> Response<Body> {
-    let device = match request.extensions().get::<AuthenticatedDevice>().cloned() {
-        Some(d) => d,
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Internal authentication error"})),
-            )
-                .into_response();
-        }
+    let Some(device) = request.extensions().get::<AuthenticatedDevice>().cloned() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal authentication error"})),
+        )
+            .into_response();
     };
 
     let projects = match run_blocking({

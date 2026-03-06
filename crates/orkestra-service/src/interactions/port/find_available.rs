@@ -32,6 +32,7 @@ pub fn execute(
 // -- Helpers --
 
 /// Collect all `daemon_port` values currently in the database.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn allocated_ports(conn: &Arc<Mutex<Connection>>) -> Result<Vec<u16>, ServiceError> {
     let guard = conn.lock().expect("db mutex poisoned");
     let mut stmt = guard.prepare("SELECT daemon_port FROM service_projects")?;

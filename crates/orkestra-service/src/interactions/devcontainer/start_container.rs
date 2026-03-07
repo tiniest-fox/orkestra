@@ -49,22 +49,38 @@ fn docker_run(
 ) -> Result<String, ServiceError> {
     let container_name = format!("orkestra-{project_id}");
 
+    // Mount the host Claude auth directory if the operator has specified one.
+    // In DooD, bind mounts use HOST paths, so the env var must hold the path
+    // on the host filesystem (not the service container's /root/.claude).
+    // Set CLAUDE_AUTH_DIR on the service container to enable this.
+    let claude_auth_mount = std::env::var("CLAUDE_AUTH_DIR")
+        .ok()
+        .map(|dir| format!("{dir}:/root/.claude:ro"));
+    let workspace_mount = format!("{}:/workspace", repo_path.display());
+    let port_bind = format!("127.0.0.1:{port}:{port}");
+
+    let mut args = vec![
+        "run",
+        "-d",
+        "--name",
+        &container_name,
+        "-v",
+        &workspace_mount,
+        "-p",
+        &port_bind,
+        "-w",
+        "/workspace",
+    ];
+
+    if let Some(ref mount) = claude_auth_mount {
+        args.push("-v");
+        args.push(mount);
+    }
+
+    args.extend_from_slice(&[image, "sleep", "infinity"]);
+
     let output = Command::new("docker")
-        .args([
-            "run",
-            "-d",
-            "--name",
-            &container_name,
-            "-v",
-            &format!("{}:/workspace", repo_path.display()),
-            "-p",
-            &format!("127.0.0.1:{port}:{port}"),
-            "-w",
-            "/workspace",
-            image,
-            "sleep",
-            "infinity",
-        ])
+        .args(&args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

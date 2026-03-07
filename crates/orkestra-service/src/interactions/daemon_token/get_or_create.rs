@@ -111,7 +111,16 @@ fn cache_token(
 ///
 /// Returns the new bearer token.
 async fn pair_with_daemon(project: &Project, device_id: &str) -> Result<String, ServiceError> {
-    let base_url = format!("http://127.0.0.1:{}", project.daemon_port);
+    // In DooD the service runs inside a container and cannot reach ports bound
+    // on the host's loopback. Use the project container's Docker name instead —
+    // connect_network ensures both containers share a user-defined network where
+    // Docker's embedded DNS resolves container names.
+    let host = if std::path::Path::new("/.dockerenv").exists() {
+        format!("orkestra-{}", project.id)
+    } else {
+        "127.0.0.1".to_string()
+    };
+    let base_url = format!("http://{}:{}", host, project.daemon_port);
     let client = reqwest::Client::new();
 
     // Build Basic auth header: base64(":" + shared_secret)

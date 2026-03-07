@@ -137,30 +137,13 @@ async fn container_and_spawn(
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
     // Step 5b: Remove any leftover container from a previous failed attempt.
-    // `docker run --name orkestra-{id}` fails if that name already exists, so
-    // clean it up before trying to start a new container.
+    // `docker run --name orkestra-{id}` fails if that name already exists.
     let _ = tokio::task::spawn_blocking({
         let id = project_id.clone();
         let config = config.clone();
         let p = path.clone();
         let od = override_dir.clone();
-        move || {
-            if let Some(existing_cid) = devcontainer::find_container::execute(&id) {
-                let compose_file_buf =
-                    if let crate::types::DevcontainerConfig::Compose { compose_file, .. } = &config
-                    {
-                        Some(p.join(compose_file))
-                    } else {
-                        None
-                    };
-                let _ = devcontainer::stop_container::execute(
-                    &config,
-                    &existing_cid,
-                    compose_file_buf.as_deref(),
-                    &od,
-                );
-            }
-        }
+        move || stop_existing_container(&id, &config, &p, &od)
     })
     .await;
 
@@ -189,6 +172,15 @@ async fn container_and_spawn(
         let cid = container_id.clone();
         let op = orkd_path.clone();
         move || devcontainer::inject_orkd::execute(&cid, &op)
+    })
+    .await
+    .map_err(|e| ServiceError::Other(e.to_string()))??;
+
+    // Step 6c: Connect project container to service container's Docker networks.
+    // This allows the service to reach the daemon by container name (DooD).
+    tokio::task::spawn_blocking({
+        let cid = container_id.clone();
+        move || devcontainer::connect_network::execute(&cid)
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
@@ -234,6 +226,32 @@ async fn container_and_spawn(
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
     Ok(())
+}
+
+/// Stop and remove any existing container for `project_id` (best-effort).
+///
+/// Called before `docker run` to avoid "name already in use" conflicts when
+/// restarting a project whose previous container was not cleaned up.
+fn stop_existing_container(
+    project_id: &str,
+    config: &crate::types::DevcontainerConfig,
+    repo_path: &std::path::Path,
+    override_dir: &std::path::Path,
+) {
+    if let Some(existing_cid) = devcontainer::find_container::execute(project_id) {
+        let compose_file_buf =
+            if let crate::types::DevcontainerConfig::Compose { compose_file, .. } = config {
+                Some(repo_path.join(compose_file))
+            } else {
+                None
+            };
+        let _ = devcontainer::stop_container::execute(
+            config,
+            &existing_cid,
+            compose_file_buf.as_deref(),
+            override_dir,
+        );
+    }
 }
 
 /// Update the project status to `Error` with the given message.

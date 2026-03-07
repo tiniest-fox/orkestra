@@ -1,5 +1,6 @@
 //! Interactions for managing project devcontainer lifecycles.
 
+pub mod connect_network;
 pub mod detect;
 pub mod exec_orkd;
 pub mod find_container;

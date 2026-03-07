@@ -101,6 +101,13 @@ fn docker_run(
         args.push(mount);
     }
 
+    // Forward GH_TOKEN so the git credential helper can authenticate pushes.
+    let gh_token_env = std::env::var("GH_TOKEN").ok().map(|t| format!("GH_TOKEN={t}"));
+    if let Some(ref token) = gh_token_env {
+        args.push("-e");
+        args.push(token);
+    }
+
     args.extend_from_slice(&[image, "sleep", "infinity"]);
 
     let output = Command::new("docker")

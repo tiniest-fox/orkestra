@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 use crate::types::{DevcontainerConfig, ServiceError};
 
 /// Local tag for the default Orkestra base image built from the embedded Dockerfile.
-const DEFAULT_IMAGE_TAG: &str = "orkestra-base:7";
+const DEFAULT_IMAGE_TAG: &str = "orkestra-base:8";
 
 /// Path inside the service container where the base Dockerfile is embedded at build time.
 const DEFAULT_DOCKERFILE_PATH: &str = "/etc/orkestra/Dockerfile.base";

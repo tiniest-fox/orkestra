@@ -18,6 +18,11 @@ RUN mise settings set experimental true
 RUN usermod -l orkestra -d /home/orkestra -m ubuntu && \
     groupmod -n orkestra ubuntu && \
     chmod 755 /root
+# Set git identity for the orkestra user so commits don't fail with "Author identity unknown".
+USER orkestra
+RUN git config --global user.email "agent@orkestra.local" && \
+    git config --global user.name "Orkestra Agent"
+USER root
 # Install Node.js 22 LTS via NodeSource (binary ends up at /usr/local/bin)
 # then install the Claude Code CLI globally so `claude` is on PATH.
 ARG NODE_MAJOR=22

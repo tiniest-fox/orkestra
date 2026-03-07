@@ -63,6 +63,18 @@ fn docker_run(
     let workspace_mount = format!("{}:/workspace", repo_path.display());
     let port_bind = format!("127.0.0.1:{port}:{port}");
 
+    // Forward git author identity into the container using git's native env vars.
+    // GIT_USER_EMAIL / GIT_USER_NAME can be set on the service container to
+    // control commit attribution. Falls back to the Dockerfile-baked git config.
+    let git_email = std::env::var("GIT_USER_EMAIL")
+        .unwrap_or_else(|_| "agent@orkestra.local".to_string());
+    let git_name = std::env::var("GIT_USER_NAME")
+        .unwrap_or_else(|_| "Orkestra Agent".to_string());
+    let git_author_email = format!("GIT_AUTHOR_EMAIL={git_email}");
+    let git_committer_email = format!("GIT_COMMITTER_EMAIL={git_email}");
+    let git_author_name = format!("GIT_AUTHOR_NAME={git_name}");
+    let git_committer_name = format!("GIT_COMMITTER_NAME={git_name}");
+
     let mut args = vec![
         "run",
         "-d",
@@ -74,6 +86,14 @@ fn docker_run(
         &port_bind,
         "-w",
         "/workspace",
+        "-e",
+        &git_author_email,
+        "-e",
+        &git_committer_email,
+        "-e",
+        &git_author_name,
+        "-e",
+        &git_committer_name,
     ];
 
     if let Some(ref mount) = claude_auth_mount {

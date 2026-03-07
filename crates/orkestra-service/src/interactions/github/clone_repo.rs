@@ -6,9 +6,13 @@ use crate::types::ServiceError;
 
 /// Clone `repo_url` into `target_dir` using `git clone`.
 ///
-/// Returns an error with `stderr` output if the clone fails or `git` is not
-/// found on PATH.
+/// Creates the parent directory if it does not exist. Returns an error with
+/// `stderr` output if the clone fails or `git` is not found on PATH.
 pub fn execute(repo_url: &str, target_dir: &Path) -> Result<(), ServiceError> {
+    if let Some(parent) = target_dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
     let output = std::process::Command::new("git")
         .args(["clone", repo_url])
         .arg(target_dir)

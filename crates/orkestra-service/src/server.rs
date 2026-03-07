@@ -461,34 +461,36 @@ async fn remove_project_handler(
     State(state): State<OrkServiceState>,
     Path(id): Path<String>,
 ) -> Response<Body> {
-    // Fetch project to verify it exists.
-    let fetch_result = tokio::task::spawn_blocking({
-        let conn = Arc::clone(&state.conn);
-        let id = id.clone();
-        move || project::get::execute(&conn, &id)
-    })
-    .await;
+    // Fetch project to verify it exists and capture its path for cleanup.
+    let project_path = {
+        let fetch_result = tokio::task::spawn_blocking({
+            let conn = Arc::clone(&state.conn);
+            let id = id.clone();
+            move || project::get::execute(&conn, &id)
+        })
+        .await;
 
-    match fetch_result {
-        Ok(Err(ServiceError::ProjectNotFound(_))) => {
-            return StatusCode::NOT_FOUND.into_response();
+        match fetch_result {
+            Ok(Err(ServiceError::ProjectNotFound(_))) => {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            Ok(Err(e)) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": e.to_string()})),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": e.to_string()})),
+                )
+                    .into_response();
+            }
+            Ok(Ok(project)) => project.path,
         }
-        Ok(Err(e)) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-                .into_response();
-        }
-        Ok(Ok(_)) => {}
-    }
+    };
 
     // Stop daemon (best-effort — project may already be stopped).
     // stop_daemon acquires a std::sync::Mutex and may block for up to 5 s,
@@ -511,6 +513,15 @@ async fn remove_project_handler(
     .await
     {
         return r;
+    }
+
+    // Best-effort: delete the cloned directory from disk so that re-adding the
+    // same repo doesn't fail with "destination path already exists".
+    let path = std::path::PathBuf::from(&project_path);
+    if let Err(e) = std::fs::remove_dir_all(&path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!("Failed to delete project directory {}: {e}", path.display());
+        }
     }
 
     StatusCode::OK.into_response()

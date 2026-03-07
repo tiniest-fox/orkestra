@@ -1,3 +1,4 @@
 [tools]
-node = "23"
-rust = "latest"
+rust = "stable"
+node = "22"
+pnpm = "9"

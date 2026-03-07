@@ -609,6 +609,11 @@ function toggleAddPanel() {
 function handleRepoFilter(value) {
   repoFilter = value;
   renderAddPanel();
+  const input = document.getElementById('repo-filter');
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
 }
 
 async function handleSelectRepo(url, name) {

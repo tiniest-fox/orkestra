@@ -1,0 +1,55 @@
+# Dokploy / Docker Compose config for the Orkestra service (ork-service).
+#
+# Point Dokploy at this file. Set all required environment variables in
+# Dokploy's UI — never commit secrets.
+#
+# The Docker socket mount (/var/run/docker.sock) is required so that
+# ork-service can create and manage per-project dev containers on the host.
+
+services:
+  ork-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    restart: unless-stopped
+    ports:
+      - "${SERVICE_PORT:-3847}:3847"
+    environment:
+      # --- Git identity (used for commits made inside spawned daemons) ---
+      GIT_USER_EMAIL: "${GIT_USER_EMAIL:-orkestra@localhost}"
+      GIT_USER_NAME: "${GIT_USER_NAME:-Orkestra}"
+
+      # --- GitHub CLI auth ---
+      GH_TOKEN: "${GH_TOKEN:-}"
+
+      # --- Optional: OpenCode support ---
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+
+      # --- Logging ---
+      RUST_LOG: "${RUST_LOG:-info}"
+
+    volumes:
+      # Persistent data: service database + cloned repos.
+      - service-data:/data
+
+      # Docker socket — gives ork-service access to the host Docker daemon
+      # so it can pull images and run per-project dev containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Claude credentials — persist subscription login across restarts.
+      # After first deploy: docker compose exec ork-service claude login
+      - claude-config:/root/.claude
+
+      # SSH keys — uncomment if using SSH git URLs.
+      # - ~/.ssh:/root/.ssh:ro
+
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/3847"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  service-data:
+  claude-config:

@@ -10,5 +10,8 @@ RUN ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') && \
     -o /usr/local/bin/mise && chmod +x /usr/local/bin/mise
 ENV PATH="/root/.local/bin:/root/.mise/shims:$PATH"
 RUN mise settings set experimental true
+# Install Node.js (LTS) via mise and then the Claude Code CLI.
+RUN mise use -g node@lts
+RUN npm install -g @anthropic-ai/claude-code
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

@@ -1,40 +1,21 @@
 //! Poll a daemon port to check if it is ready to accept connections.
 
-use std::net::TcpStream;
-use std::time::Duration;
+use std::process::{Command, Stdio};
 
-/// Return `true` if a TCP connection to `127.0.0.1:{port}` succeeds within
-/// 200 ms. Used to detect when a newly-spawned daemon has finished starting up.
-pub fn execute(port: u16) -> bool {
-    let addr = format!("127.0.0.1:{port}");
-    let Ok(sock_addr) = addr.parse() else {
+/// Return `true` if `orkd` inside `container_id` is accepting TCP connections
+/// on `port`. Probes from inside the container via `docker exec` so that the
+/// check works in Docker-outside-of-Docker setups where the service container
+/// cannot reach ports bound on the host's loopback.
+pub fn execute(container_id: &str, port: u16) -> bool {
+    let probe = format!("exec 3<>/dev/tcp/127.0.0.1/{port} 2>/dev/null");
+    let Ok(output) = Command::new("docker")
+        .args(["exec", container_id, "bash", "-c", &probe])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    else {
         return false;
     };
-    TcpStream::connect_timeout(&sock_addr, Duration::from_millis(200)).is_ok()
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use std::net::TcpListener;
-
-    use super::*;
-
-    #[test]
-    fn returns_true_when_port_is_listening() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        assert!(execute(port));
-    }
-
-    #[test]
-    fn returns_false_when_port_is_not_listening() {
-        // Port 1 requires root/CAP_NET_BIND_SERVICE to bind on Unix systems,
-        // so it is never bound by user-space test processes. Connecting to it
-        // on loopback returns ECONNREFUSED immediately with no race window.
-        assert!(!execute(1));
-    }
+    output.status.success()
 }

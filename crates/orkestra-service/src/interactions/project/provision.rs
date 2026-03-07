@@ -136,6 +136,34 @@ async fn container_and_spawn(
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
+    // Step 5b: Remove any leftover container from a previous failed attempt.
+    // `docker run --name orkestra-{id}` fails if that name already exists, so
+    // clean it up before trying to start a new container.
+    let _ = tokio::task::spawn_blocking({
+        let id = project_id.clone();
+        let config = config.clone();
+        let p = path.clone();
+        let od = override_dir.clone();
+        move || {
+            if let Some(existing_cid) = devcontainer::find_container::execute(&id) {
+                let compose_file_buf =
+                    if let crate::types::DevcontainerConfig::Compose { compose_file, .. } = &config
+                    {
+                        Some(p.join(compose_file))
+                    } else {
+                        None
+                    };
+                let _ = devcontainer::stop_container::execute(
+                    &config,
+                    &existing_cid,
+                    compose_file_buf.as_deref(),
+                    &od,
+                );
+            }
+        }
+    })
+    .await;
+
     // Step 6: Start container.
     let container_id = tokio::task::spawn_blocking({
         let config = config.clone();

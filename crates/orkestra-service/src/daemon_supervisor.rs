@@ -410,6 +410,7 @@ fn spawn_and_poll(
     let pid = child.id();
     let project_id = project.id.clone();
     let port = project.daemon_port;
+    let container_id = container_id.to_string();
 
     project::update_status::execute(conn, &project_id, ProjectStatus::Starting, Some(pid), None)?;
 
@@ -461,7 +462,7 @@ fn spawn_and_poll(
                 return;
             }
 
-            if daemon::check_readiness::execute(port) {
+            if daemon::check_readiness::execute(&container_id, port) {
                 if let Err(e) = project::update_status::execute(
                     &conn_poll,
                     &project_id,

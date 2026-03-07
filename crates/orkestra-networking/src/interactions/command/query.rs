@@ -334,7 +334,12 @@ struct GhPrResponse {
 
 #[derive(Deserialize)]
 struct GhStatusCheck {
-    name: String,
+    // CheckRun entries have `name`; StatusContext entries have `context`.
+    // Both are optional here so either type deserializes without error.
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    context: Option<String>,
     status: Option<String>,
     conclusion: Option<String>,
 }
@@ -513,9 +518,14 @@ fn map_checks<'a>(
 ) -> Vec<PrCheck> {
     status_checks
         .map(|check| {
-            let enrichment = check_enrichments.remove(&check.name);
+            let name = check
+                .name
+                .clone()
+                .or_else(|| check.context.clone())
+                .unwrap_or_default();
+            let enrichment = check_enrichments.remove(&name);
             PrCheck {
-                name: check.name.clone(),
+                name,
                 status: orkestra_types::domain::classify_check(
                     check.status.as_deref(),
                     check.conclusion.as_deref(),

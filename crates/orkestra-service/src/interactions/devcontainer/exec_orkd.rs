@@ -21,6 +21,11 @@ pub fn execute(container_id: &str, port: u16, secret: &str) -> Result<Child, Ser
         .args([
             "exec",
             "-i",
+            // Run as the non-root user (uid 1000 = orkestra) so that child
+            // processes like `claude --dangerously-skip-permissions` are not
+            // blocked by the CLI's root-privilege guard.
+            "-u",
+            "1000",
             container_id,
             "/usr/local/bin/orkd",
             "--project-root",

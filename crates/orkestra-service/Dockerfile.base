@@ -10,6 +10,10 @@ RUN ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') && \
     -o /usr/local/bin/mise && chmod +x /usr/local/bin/mise
 ENV PATH="/root/.local/bin:/root/.mise/shims:$PATH"
 RUN mise settings set experimental true
+# Create non-root user for running agents.
+# claude CLI refuses --dangerously-skip-permissions when running as root.
+# chmod 755 /root so the agent user can access /root/.claude (the bind-mounted auth dir).
+RUN useradd -m -s /bin/bash -u 1000 orkestra && chmod 755 /root
 # Install Node.js 22 LTS via NodeSource (binary ends up at /usr/local/bin)
 # then install the Claude Code CLI globally so `claude` is on PATH.
 ARG NODE_MAJOR=22

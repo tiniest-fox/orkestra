@@ -180,7 +180,15 @@ async fn container_and_spawn(
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
-    // Step 6c: Connect project container to service container's Docker networks.
+    // Step 6c: Give the non-root container user (uid 1000) write access to the
+    // workspace. The repo was cloned as root; files are owned by uid 0.
+    let _ = tokio::task::spawn_blocking({
+        let cid = container_id.clone();
+        move || chown_workspace(&cid)
+    })
+    .await;
+
+    // Step 6e: Connect project container to service container's Docker networks.
     // This allows the service to reach the daemon by container name (DooD).
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
@@ -256,6 +264,30 @@ fn stop_existing_container(
             override_dir,
         );
     }
+}
+
+/// Chown `/workspace` inside `container_id` to uid/gid 1000 (best-effort).
+///
+/// The repo is cloned as root, so files are owned by uid 0. The non-root
+/// agent user needs write access. The chown also propagates to the host's
+/// bind-mounted directory, which is fine — root in the service container
+/// can still access uid-1000 files.
+fn chown_workspace(container_id: &str) {
+    let _ = std::process::Command::new("docker")
+        .args([
+            "exec",
+            "-u",
+            "root",
+            container_id,
+            "chown",
+            "-R",
+            "1000:1000",
+            "/workspace",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 /// Force-remove any Docker containers that have `127.0.0.1:{port}` bound.

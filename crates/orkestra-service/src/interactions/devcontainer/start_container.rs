@@ -51,11 +51,15 @@ fn docker_run(
 
     // Mount the host Claude auth directory if the operator has specified one.
     // In DooD, bind mounts use HOST paths, so the env var must hold the path
-    // on the host filesystem (not the service container's /root/.claude).
+    // on the host filesystem (not the service container's filesystem).
     // Set CLAUDE_AUTH_DIR on the service container to enable this.
+    //
+    // Target is /home/orkestra/.claude because orkd runs as uid 1000 (orkestra)
+    // and claude CLI resolves config from $HOME/.claude.
+    // Mount read-write so claude can refresh tokens and write session state.
     let claude_auth_mount = std::env::var("CLAUDE_AUTH_DIR")
         .ok()
-        .map(|dir| format!("{dir}:/root/.claude:ro"));
+        .map(|dir| format!("{dir}:/home/orkestra/.claude"));
     let workspace_mount = format!("{}:/workspace", repo_path.display());
     let port_bind = format!("127.0.0.1:{port}:{port}");
 

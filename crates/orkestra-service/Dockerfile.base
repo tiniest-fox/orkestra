@@ -22,8 +22,8 @@ RUN usermod -l orkestra -d /home/orkestra -m ubuntu && \
 # as HTTPS credentials for github.com. Allows non-interactive git push without
 # prompting for a username/password. GH_TOKEN is forwarded from the service
 # container at `docker run` time.
-RUN printf '#!/bin/sh\n[ "$1" = "get" ] && [ -n "$GH_TOKEN" ] && printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"\n' \
-    > /usr/local/bin/git-credential-gh-token && \
+RUN echo '#!/bin/sh' > /usr/local/bin/git-credential-gh-token && \
+    echo '[ "$1" = "get" ] && [ -n "$GH_TOKEN" ] && printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"' >> /usr/local/bin/git-credential-gh-token && \
     chmod +x /usr/local/bin/git-credential-gh-token
 # Set git identity for the orkestra user so commits don't fail with "Author identity unknown".
 # Also register the GH_TOKEN credential helper.

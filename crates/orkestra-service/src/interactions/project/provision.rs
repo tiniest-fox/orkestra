@@ -103,8 +103,8 @@ pub async fn start_containers_and_spawn(
 
 // -- Helpers --
 
-/// Steps 4–9: detect → prepare image → start container → store `container_id` →
-/// optionally run setup → spawn daemon.
+/// Steps 4–9: detect → prepare image → start container → inject orkd →
+/// store `container_id` → optionally run setup → spawn daemon.
 #[cfg(unix)]
 async fn container_and_spawn(
     conn: &Arc<Mutex<Connection>>,
@@ -147,11 +147,20 @@ async fn container_and_spawn(
                 &config,
                 &image,
                 &p,
-                &orkd_path,
                 project.daemon_port,
                 &override_dir,
             )
         }
+    })
+    .await
+    .map_err(|e| ServiceError::Other(e.to_string()))??;
+
+    // Step 6b: Inject orkd binary into the container via `docker cp`.
+    // This avoids bind-mounting a host path (which doesn't exist in DooD setups).
+    tokio::task::spawn_blocking({
+        let cid = container_id.clone();
+        let op = orkd_path.clone();
+        move || devcontainer::inject_orkd::execute(&cid, &op)
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;

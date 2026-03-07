@@ -314,7 +314,6 @@ mod database {
 // ============================================================================
 
 mod docker {
-    use std::path::PathBuf;
 
     use tempfile::TempDir;
 
@@ -348,13 +347,12 @@ mod docker {
         assert!(!image.is_empty());
 
         // Use /bin/sh as a stand-in for orkd (we just need a container to stay alive).
-        let orkd_stub = PathBuf::from("/bin/sh");
+
         let container_id = devcontainer_start_container(&ContainerStartParams {
             project_id: project_id.to_string(),
             config: config.clone(),
             image,
             repo_path: repo.path().to_path_buf(),
-            orkd_path: orkd_stub,
             port: 19999, // use a high port to avoid conflicts
             override_dir: override_dir.path().to_path_buf(),
         })
@@ -401,13 +399,11 @@ mod docker {
         let image = devcontainer_prepare_image(&config, repo.path(), project_id)
             .expect("docker pull should succeed");
 
-        let orkd_stub = PathBuf::from("/bin/sh");
         let container_id = devcontainer_start_container(&ContainerStartParams {
             project_id: project_id.to_string(),
             config: config.clone(),
             image,
             repo_path: repo.path().to_path_buf(),
-            orkd_path: orkd_stub,
             port: 19998,
             override_dir: override_dir.path().to_path_buf(),
         })

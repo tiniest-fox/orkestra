@@ -103,7 +103,6 @@ pub struct ContainerStartParams {
     pub config: DevcontainerConfig,
     pub image: String,
     pub repo_path: std::path::PathBuf,
-    pub orkd_path: std::path::PathBuf,
     pub port: u16,
     pub override_dir: std::path::PathBuf,
 }

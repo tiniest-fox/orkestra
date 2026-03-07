@@ -91,7 +91,6 @@ pub fn devcontainer_start_container(params: &ContainerStartParams) -> Result<Str
         &params.config,
         &params.image,
         &params.repo_path,
-        &params.orkd_path,
         params.port,
         &params.override_dir,
     )

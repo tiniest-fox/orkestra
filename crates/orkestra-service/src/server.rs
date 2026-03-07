@@ -707,14 +707,24 @@ async fn ws_proxy_handler(
     };
 
     let daemon_port = proj.daemon_port;
-    ws.on_upgrade(move |socket| proxy_ws(socket, daemon_port, token))
+    let project_id = proj.id.clone();
+    ws.on_upgrade(move |socket| proxy_ws(socket, project_id, daemon_port, token))
 }
 
-/// Bridge a client WebSocket to a daemon WebSocket on `127.0.0.1:{daemon_port}`.
-async fn proxy_ws(mut client: WebSocket, daemon_port: u16, token: String) {
+/// Bridge a client WebSocket to a daemon WebSocket on the project container.
+///
+/// In `DooD` setups the daemon port is bound on the host's loopback and is not
+/// reachable from the service container. We connect by container name instead,
+/// which is resolvable on the shared Docker network set up by `connect_network`.
+async fn proxy_ws(mut client: WebSocket, project_id: String, daemon_port: u16, token: String) {
     use tokio_tungstenite::tungstenite::Message as TMsg;
 
-    let url = format!("ws://127.0.0.1:{daemon_port}/ws?token={token}");
+    let host = if std::path::Path::new("/.dockerenv").exists() {
+        format!("orkestra-{project_id}")
+    } else {
+        "127.0.0.1".to_string()
+    };
+    let url = format!("ws://{host}:{daemon_port}/ws?token={token}");
     let (mut daemon_ws, _) = match tokio_tungstenite::connect_async(&url).await {
         Ok(c) => c,
         Err(e) => {

@@ -117,7 +117,10 @@ input:focus { border-color: var(--blue); }
 .dot.stopped { background: var(--gray); }
 .dot.error   { background: var(--red); }
 .dot.cloning,
-.dot.starting { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+.dot.starting,
+.dot.stopping,
+.dot.rebuilding,
+.dot.removing { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -439,10 +442,12 @@ function statusLabel(status) {
     case 'running':  return 'Running';
     case 'stopped':  return 'Stopped';
     case 'error':    return 'Error';
-    case 'cloning':  return 'Cloning...';
-    case 'starting': return 'Starting...';
-    case 'stopping': return 'Stopping...';
-    default:         return status;
+    case 'cloning':    return 'Cloning...';
+    case 'starting':   return 'Starting...';
+    case 'stopping':   return 'Stopping...';
+    case 'rebuilding': return 'Rebuilding...';
+    case 'removing':   return 'Removing...';
+    default:           return status;
   }
 }
 
@@ -641,12 +646,11 @@ function setProjectStatusInDom(id, status) {
 
 async function handleRemove(id, name) {
   if (!confirm(`Remove project "${name}"? This cannot be undone.`)) return;
-  const card = document.getElementById(`proj-${id}`);
-  if (card) { card.style.opacity = '0.5'; card.querySelectorAll('button').forEach(b => { b.disabled = true; }); }
+  setProjectStatusInDom(id, 'removing');
   try {
     await removeProject(id);
   } catch (e) {
-    if (card) { card.style.opacity = ''; card.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
+    await loadProjects();
     alert('Failed to remove project: ' + e.message);
   }
 }
@@ -672,7 +676,7 @@ async function handleStop(id) {
 }
 
 async function handleRebuild(id) {
-  setProjectStatusInDom(id, 'starting');
+  setProjectStatusInDom(id, 'rebuilding');
   try {
     await rebuildProject(id);
   } catch (e) {

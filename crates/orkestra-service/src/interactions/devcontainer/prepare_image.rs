@@ -45,25 +45,26 @@ pub fn execute(
 // -- Helpers --
 
 fn docker_pull(image: &str) -> Result<(), ServiceError> {
-    let status = Command::new("docker")
+    let output = Command::new("docker")
         .args(["pull", image])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()?;
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| ServiceError::Other(format!("Failed to run `docker pull`: {e}")))?;
 
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         Err(ServiceError::Other(format!(
-            "docker pull {image} failed with exit code {}",
-            status.code().unwrap_or(-1)
+            "`docker pull {image}` failed: {stderr}"
         )))
     }
 }
 
 fn docker_build(dockerfile: &Path, context: &Path, tag: &str) -> Result<(), ServiceError> {
-    let status = Command::new("docker")
+    let output = Command::new("docker")
         .arg("build")
         .arg("-f")
         .arg(dockerfile)
@@ -72,15 +73,16 @@ fn docker_build(dockerfile: &Path, context: &Path, tag: &str) -> Result<(), Serv
         .arg(context)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()?;
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| ServiceError::Other(format!("Failed to run `docker build`: {e}")))?;
 
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         Err(ServiceError::Other(format!(
-            "docker build -t {tag} failed with exit code {}",
-            status.code().unwrap_or(-1)
+            "`docker build -t {tag}` failed: {stderr}"
         )))
     }
 }

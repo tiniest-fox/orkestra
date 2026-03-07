@@ -80,13 +80,14 @@ fn docker_run(
         ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()?;
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| ServiceError::Other(format!("Failed to run `docker run`: {e}")))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(ServiceError::Other(format!(
-            "docker run failed with exit code {}",
-            output.status.code().unwrap_or(-1)
+            "`docker run` failed: {stderr}"
         )));
     }
 
@@ -102,7 +103,8 @@ fn compose_up(
     port: u16,
     override_dir: &Path,
 ) -> Result<String, ServiceError> {
-    std::fs::create_dir_all(override_dir)?;
+    std::fs::create_dir_all(override_dir)
+        .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
     let override_path = override_dir.join("orkestra-override.yml");
     let override_content = format!(
@@ -111,9 +113,10 @@ fn compose_up(
         port = port,
         orkd = orkd_path.display(),
     );
-    std::fs::write(&override_path, override_content)?;
+    std::fs::write(&override_path, override_content)
+        .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 
-    let status = Command::new("docker")
+    let output = Command::new("docker")
         .args([
             "compose",
             "-f",
@@ -127,13 +130,14 @@ fn compose_up(
         ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()?;
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| ServiceError::Other(format!("Failed to run `docker compose up`: {e}")))?;
 
-    if !status.success() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(ServiceError::Other(format!(
-            "docker compose up failed with exit code {}",
-            status.code().unwrap_or(-1)
+            "`docker compose up` failed: {stderr}"
         )));
     }
 
@@ -153,13 +157,14 @@ fn compose_up(
         ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()?;
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| ServiceError::Other(format!("Failed to run `docker compose ps`: {e}")))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(ServiceError::Other(format!(
-            "docker compose ps -q {service} failed with exit code {}",
-            output.status.code().unwrap_or(-1)
+            "`docker compose ps -q {service}` failed: {stderr}"
         )));
     }
 

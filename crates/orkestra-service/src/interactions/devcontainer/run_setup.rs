@@ -50,19 +50,20 @@ pub fn execute(
 // -- Helpers --
 
 fn docker_exec(container_id: &str, cmd: &str) -> Result<(), ServiceError> {
-    let status = Command::new("docker")
+    let output = Command::new("docker")
         .args(["exec", container_id, "sh", "-c", cmd])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()?;
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| ServiceError::Other(format!("Failed to run `docker exec`: {e}")))?;
 
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         Err(ServiceError::Other(format!(
-            "Container setup command failed with exit code {}",
-            status.code().unwrap_or(-1)
+            "Container setup command failed: {stderr}"
         )))
     }
 }

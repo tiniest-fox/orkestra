@@ -136,14 +136,18 @@ async fn container_and_spawn(
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
-    // Step 5b: Remove any leftover container from a previous failed attempt.
-    // `docker run --name orkestra-{id}` fails if that name already exists.
+    // Step 5b: Remove any leftover container (by name or port binding).
+    // `docker run --name orkestra-{id}` fails if that name or port is still allocated.
+    let daemon_port = project.daemon_port;
     let _ = tokio::task::spawn_blocking({
         let id = project_id.clone();
         let config = config.clone();
         let p = path.clone();
         let od = override_dir.clone();
-        move || stop_existing_container(&id, &config, &p, &od)
+        move || {
+            stop_existing_container(&id, &config, &p, &od);
+            remove_containers_by_port(daemon_port);
+        }
     })
     .await;
 
@@ -251,6 +255,35 @@ fn stop_existing_container(
             compose_file_buf.as_deref(),
             override_dir,
         );
+    }
+}
+
+/// Force-remove any Docker containers that have `127.0.0.1:{port}` bound.
+///
+/// Belt-and-suspenders cleanup for cases where a previous container was not
+/// properly removed and still holds the port, preventing `docker run -p`.
+fn remove_containers_by_port(port: u16) {
+    let filter = format!("publish={port}");
+    let Ok(out) = std::process::Command::new("docker")
+        .args(["ps", "-a", "--filter", &filter, "-q"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+    else {
+        return;
+    };
+    for id in String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+    {
+        let _ = std::process::Command::new("docker")
+            .args(["rm", "-f", id])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output();
     }
 }
 

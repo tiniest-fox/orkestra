@@ -441,6 +441,7 @@ function statusLabel(status) {
     case 'error':    return 'Error';
     case 'cloning':  return 'Cloning...';
     case 'starting': return 'Starting...';
+    case 'stopping': return 'Stopping...';
     default:         return status;
   }
 }
@@ -627,35 +628,55 @@ async function handleSelectRepo(url, name) {
   }
 }
 
+function setProjectStatusInDom(id, status) {
+  const card = document.getElementById(`proj-${id}`);
+  if (!card) return;
+  const dot = card.querySelector('.dot');
+  const label = card.querySelector('.project-status');
+  if (dot) { dot.className = `dot ${status}`; }
+  if (label) { label.textContent = statusLabel(status); }
+  // Disable all action buttons while transitioning to avoid double-clicks.
+  card.querySelectorAll('button').forEach(b => { b.disabled = true; });
+}
+
 async function handleRemove(id, name) {
   if (!confirm(`Remove project "${name}"? This cannot be undone.`)) return;
+  const card = document.getElementById(`proj-${id}`);
+  if (card) { card.style.opacity = '0.5'; card.querySelectorAll('button').forEach(b => { b.disabled = true; }); }
   try {
     await removeProject(id);
   } catch (e) {
+    if (card) { card.style.opacity = ''; card.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
     alert('Failed to remove project: ' + e.message);
   }
 }
 
 async function handleStart(id) {
+  setProjectStatusInDom(id, 'starting');
   try {
     await startProject(id);
   } catch (e) {
+    await loadProjects();
     alert('Failed to start project: ' + e.message);
   }
 }
 
 async function handleStop(id) {
+  setProjectStatusInDom(id, 'stopping');
   try {
     await stopProject(id);
   } catch (e) {
+    await loadProjects();
     alert('Failed to stop project: ' + e.message);
   }
 }
 
 async function handleRebuild(id) {
+  setProjectStatusInDom(id, 'starting');
   try {
     await rebuildProject(id);
   } catch (e) {
+    await loadProjects();
     alert('Failed to rebuild project: ' + e.message);
   }
 }

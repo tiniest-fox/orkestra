@@ -136,6 +136,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 COPY --from=builder /app/target/release/ork-service /usr/local/bin/ork-service
 COPY --from=builder /app/target/release/orkd /usr/local/bin/orkd
 
+# Base Dockerfile — used to build the default dev container image on the host
+# when a project has no .devcontainer config.
+RUN mkdir -p /etc/orkestra
+COPY crates/orkestra-service/Dockerfile.base /etc/orkestra/Dockerfile.base
+
 COPY docker/entrypoint-service.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

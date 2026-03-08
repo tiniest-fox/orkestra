@@ -204,8 +204,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   }, [task.id]);
 
   useEffect(() => {
-    if (task.derived.is_failed) retryTextareaRef.current?.focus();
-  }, [task.derived.is_failed]);
+    if (task.derived.is_failed || task.derived.is_blocked) retryTextareaRef.current?.focus();
+  }, [task.derived.is_failed, task.derived.is_blocked]);
 
   // -- Feedback input auto-focus --
   const feedbackRef = useRef<HTMLInputElement>(null);

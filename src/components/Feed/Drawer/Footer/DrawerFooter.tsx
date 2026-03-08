@@ -52,6 +52,17 @@ export function DrawerFooter({
       />
     );
   }
+  if (task.derived.is_blocked) {
+    return (
+      <FailedFooter
+        retryInstructions={state.retryInstructions}
+        onRetryInstructionsChange={state.setRetryInstructions}
+        retryTextareaRef={state.retryTextareaRef}
+        retrying={state.retrying}
+        onRetry={state.handleRetry}
+      />
+    );
+  }
   if (task.derived.has_questions && activeTab === "questions") {
     return (
       <QuestionsFooter

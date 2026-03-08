@@ -295,6 +295,9 @@ Note: `Array.prototype.findLast` is ES2023 — use `[...arr].reverse().find()` f
 - **`vi.fn` type argument constraint**: `vi.fn<TArgs, TReturn>()` is not supported — Vitest's `vi.fn` only accepts 0 or 1 type argument. When you need to specify the return type, add an explicit return type annotation on the implementation function instead: `vi.fn((): ReturnType => value)`.
 - **Mock reset in test files**: Always add `beforeEach(() => mockXxx.mockReset())` for module-level mocks. Without it, tests that run in any order can observe state from earlier tests, causing subtle ordering-sensitive failures that only appear when tests are added or reordered.
 - **`vi.stubEnv` cleanup**: Always restore env stubs in `afterEach(() => vi.unstubAllEnvs())`, not inline after assertions. If an assertion throws before the inline `vi.unstubAllEnvs()` call, the stub leaks and affects subsequent tests in the file.
+- **`vi.runAllTimersAsync()` with `setInterval` causes infinite loop**: `vi.runAllTimersAsync()` repeatedly fires all pending timers including `setInterval`, triggering indefinitely until Vitest aborts at 10000 iterations. Use `vi.advanceTimersByTimeAsync(N)` instead — it only fires timers that would trigger within N milliseconds, so it's bounded and safe with intervals.
+
+<!-- compound: boorishly-profitable-cat -->
 
 <!-- compound: garishly-true-wren -->
 

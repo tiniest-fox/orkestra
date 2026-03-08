@@ -53,6 +53,18 @@ The pattern for deferring early startup messages to the debug log: store the res
 
 This asymmetry with the daemon (which has `tracing` available immediately from startup) is by design — Tauri's lifecycle requires a project to be open before the logger is initialized.
 
+<!-- compound: boorishly-profitable-cat -->
+## Embedded SPA Serving
+
+When serving multiple Vite bundles (e.g., main PWA + service manager), each bundle has its own HTML entry file. `embedded_spa.rs`'s `serve_embedded_file` accepts a `root_file: &str` parameter — callers pass the correct filename for their bundle:
+
+- `pwa.rs` → `"index.html"` (from `dist/`)
+- `service_ui.rs` → `"service.html"` (from `dist-service/`)
+
+**Do not hardcode `"index.html"`** in `serve_embedded_file` — it silently 404s for any bundle whose Vite output file has a different name. This contract is stringly-typed and only surfaces at runtime (rust_embed resolves at compile time), so it won't be caught by unit tests.
+
+When adding a new embedded bundle: (1) check what filename Vite outputs in `vite.config.ts`, (2) pass that exact string to `serve_embedded_file`.
+
 ## Key Files
 
 | File | Role |

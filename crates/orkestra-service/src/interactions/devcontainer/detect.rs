@@ -44,11 +44,10 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
     if let Some(build) = json.get("build") {
         if let Some(dockerfile) = build.get("dockerfile").and_then(|v| v.as_str()) {
             let dockerfile = format!(".devcontainer/{dockerfile}");
-            let context = build
-                .get("context")
-                .and_then(|v| v.as_str())
-                .map(|c| format!(".devcontainer/{c}"))
-                .unwrap_or_else(|| ".devcontainer".to_string());
+            let context = build.get("context").and_then(|v| v.as_str()).map_or_else(
+                || ".devcontainer".to_string(),
+                |c| format!(".devcontainer/{c}"),
+            );
             return DevcontainerConfig::Build {
                 dockerfile,
                 context,

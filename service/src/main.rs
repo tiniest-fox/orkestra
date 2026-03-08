@@ -3,7 +3,9 @@
 //! Manages multiple child orkd daemon processes, serves a project management
 //! web UI, and provides automatic project discovery for the PWA.
 
+mod embedded_spa;
 mod pwa;
+mod service_ui;
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -203,8 +205,10 @@ async fn run(args: Args) -> Result<(), String> {
         .map_err(|e| format!("Failed to bind {bind_addr}: {e}"))?;
     tracing::info!("Service listening on {bind_addr}");
 
-    // Build PWA router (no-op stub when embed-pwa feature is disabled).
+    // Build PWA and service UI routers (no-op stubs when features are disabled).
     let pwa_router = pwa::router();
+    let service_ui_router = service_ui::router();
+    let extra_routes = pwa_router.merge(service_ui_router);
 
     // Start HTTP server — runs until the stop flag is set externally.
     let server_future = orkestra_service::start(
@@ -212,7 +216,7 @@ async fn run(args: Args) -> Result<(), String> {
         Arc::clone(&supervisor),
         config,
         listener,
-        Some(pwa_router),
+        Some(extra_routes),
     );
 
     // Poll the stop flag and resolve when a signal arrives.

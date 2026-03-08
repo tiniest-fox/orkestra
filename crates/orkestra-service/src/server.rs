@@ -12,7 +12,7 @@ use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
@@ -45,16 +45,6 @@ impl OrkServiceState {
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
     }
-}
-
-// ============================================================================
-// Static Assets
-// ============================================================================
-
-const MANAGEMENT_HTML: &str = include_str!("management.html");
-
-async fn management_page() -> Html<&'static str> {
-    Html(MANAGEMENT_HTML)
 }
 
 // ============================================================================
@@ -99,7 +89,6 @@ pub async fn start(
         ));
 
     let mut router = Router::new()
-        .route("/", get(management_page))
         .route("/pair", post(pair_handler))
         .route("/projects/{id}/ws", get(ws_proxy_handler))
         .merge(auth_routes)

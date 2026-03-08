@@ -4,6 +4,7 @@ const colors = require('tailwindcss/colors')
 export default {
   content: [
     "./index.html",
+    "./service.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   // Use media query strategy so dark: variants respond to the OS color scheme.

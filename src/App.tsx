@@ -66,6 +66,10 @@ function AppContent() {
       document.title = "Orkestra";
       return;
     }
+    if (currentProject.projectName) {
+      document.title = `Orkestra | ${currentProject.projectName}`;
+      return;
+    }
     try {
       const host = new URL(currentProject.url).host;
       document.title = `Orkestra | ${host}`;

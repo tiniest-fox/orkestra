@@ -26,3 +26,4 @@ mime_guess = { version = "2", optional = true }
 [features]
 default = []
 embed-pwa = ["dep:rust-embed", "dep:mime_guess"]
+embed-service-ui = ["dep:rust-embed", "dep:mime_guess"]

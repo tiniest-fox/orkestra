@@ -38,8 +38,9 @@ fn setup_origin(repo_path: &Path) -> TempDir {
     let origin_dir = TempDir::new().expect("Failed to create origin dir");
     let origin_path = origin_dir.path();
 
-    // Initialize bare repo
+    // Initialize bare repo with main as default branch so clones use main.
     run_git(origin_path, &["init", "--bare"]);
+    run_git(origin_path, &["symbolic-ref", "HEAD", "refs/heads/main"]);
 
     // Add as remote to local repo
     let origin_url = format!("file://{}", origin_path.display());

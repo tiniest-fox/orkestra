@@ -228,7 +228,7 @@ mod database {
     }
 
     /// Detect config for a project that has a devcontainer.json and verify
-    /// the round-trip of storing the resulting container_id in the DB.
+    /// the round-trip of storing the resulting `container_id` in the DB.
     #[test]
     fn detect_and_store_container_id_round_trip() {
         use std::fs;
@@ -243,8 +243,8 @@ mod database {
         )
         .unwrap();
 
-        let db_dir = TempDir::new().unwrap();
-        let conn = open_db(&db_dir);
+        let db_tmp = TempDir::new().unwrap();
+        let conn = open_db(&db_tmp);
         let p = add_project(&conn, "myapp", repo.path().to_str().unwrap(), 3850, "s").unwrap();
 
         let config = devcontainer_detect(repo.path());
@@ -325,7 +325,7 @@ mod docker {
     /// Verify `find_container` returns `None` for a project name that doesn't exist.
     /// Requires only a working `docker` binary — no network access needed.
     #[test]
-    #[ignore]
+    #[ignore = "requires a running Docker daemon"]
     fn find_container_none_for_nonexistent_project() {
         let result = devcontainer_find_container("orkestra-e2e-nonexistent-xyz-999");
         assert!(result.is_none());
@@ -334,7 +334,7 @@ mod docker {
     /// Full lifecycle: pull default image → start container → find it → stop it.
     /// Requires Docker and network access to pull `ghcr.io/orkestra/base:latest`.
     #[test]
-    #[ignore]
+    #[ignore = "requires Docker daemon and network access to pull images"]
     fn default_image_full_lifecycle() {
         let repo = TempDir::new().unwrap();
         let override_dir = TempDir::new().unwrap();
@@ -377,7 +377,7 @@ mod docker {
 
     /// Image-based devcontainer: pull a declared image, start, stop.
     #[test]
-    #[ignore]
+    #[ignore = "requires Docker daemon and network access to pull images"]
     fn image_based_devcontainer_lifecycle() {
         use std::fs;
 

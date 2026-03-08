@@ -147,15 +147,9 @@ impl WorkflowApi {
                 self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
                 Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
             }
-            IntegrationGitResult::RebaseError(error_msg) => {
-                self.integration_failed(task_id, &error_msg, &[])?;
-                Err(WorkflowError::IntegrationFailed(error_msg))
-            }
-            IntegrationGitResult::MergeError(error_msg) => {
-                self.integration_failed(task_id, &error_msg, &[])?;
-                Err(WorkflowError::IntegrationFailed(error_msg))
-            }
-            IntegrationGitResult::CommitError(error_msg) => {
+            IntegrationGitResult::RebaseError(error_msg)
+            | IntegrationGitResult::MergeError(error_msg)
+            | IntegrationGitResult::CommitError(error_msg) => {
                 self.integration_failed(task_id, &error_msg, &[])?;
                 Err(WorkflowError::IntegrationFailed(error_msg))
             }

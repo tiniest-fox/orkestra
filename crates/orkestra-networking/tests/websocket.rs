@@ -40,11 +40,13 @@ fn test_workflow() -> WorkflowConfig {
 ///
 /// Returns the API, a handle to the underlying store so tests can seed task
 /// state directly, and the raw connection needed for auth in the server.
-fn test_api() -> (
+type TestApi = (
     Arc<Mutex<WorkflowApi>>,
     Arc<dyn WorkflowStore>,
     Arc<Mutex<rusqlite::Connection>>,
-) {
+);
+
+fn test_api() -> TestApi {
     let conn = DatabaseConnection::in_memory().expect("Failed to open in-memory DB");
     let raw_conn = conn.shared();
     let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
@@ -237,7 +239,7 @@ async fn test_unknown_method_error() {
     assert_eq!(response["error"]["code"], "METHOD_NOT_FOUND");
 }
 
-/// Delete a task — subsequent get_task returns TASK_NOT_FOUND.
+/// Delete a task — subsequent `get_task` returns `TASK_NOT_FOUND`.
 #[tokio::test]
 async fn test_delete_task() {
     let (api, store, conn) = test_api();
@@ -300,8 +302,8 @@ async fn test_get_archived_tasks_empty() {
     assert_eq!(response["result"].as_array().unwrap().len(), 0);
 }
 
-/// `approve` on a task in AwaitingApproval state succeeds.
-/// A second `approve` on the same task returns INVALID_TRANSITION.
+/// `approve` on a task in `AwaitingApproval` state succeeds.
+/// A second `approve` on the same task returns `INVALID_TRANSITION`.
 #[tokio::test]
 async fn test_approve_concurrent_returns_invalid_transition() {
     let (api, store, conn) = test_api();
@@ -898,7 +900,7 @@ async fn test_create_task_with_options() {
     );
 }
 
-/// `return_to_work` on a task in AwaitingApproval state succeeds.
+/// `return_to_work` on a task in `AwaitingApproval` state succeeds.
 #[tokio::test]
 async fn test_return_to_work() {
     let (api, store, conn) = test_api();

@@ -198,7 +198,7 @@ pub fn workflow_list_branches(
 ///   specific session directly (takes precedence over `stage`).
 ///
 /// # Returns
-/// Vec of LogEntry representing agent activity (tool uses, text output, etc.)
+/// `Vec` of `LogEntry` representing agent activity (tool uses, text output, etc.)
 #[tauri::command]
 #[allow(clippy::similar_names)]
 pub fn workflow_get_logs(

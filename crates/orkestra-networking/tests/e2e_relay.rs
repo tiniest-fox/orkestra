@@ -254,7 +254,7 @@ async fn wait_for_daemon_registered(relay_addr: SocketAddr, api_key: &str, devic
 // Test 1: Happy Path — JSON-RPC Request/Response
 // ============================================================================
 
-/// A valid client can send list_tasks through the relay and receive a response.
+/// A valid client can send `list_tasks` through the relay and receive a response.
 #[tokio::test]
 async fn test_happy_path_request_response() {
     let env = RelayTestEnv::new().await;
@@ -363,7 +363,7 @@ async fn test_multiple_clients() {
 // Test 4: Device Offline
 // ============================================================================
 
-/// A client forwarding to a device with no daemon receives device_offline immediately.
+/// A client forwarding to a device with no daemon receives `device_offline` immediately.
 #[tokio::test]
 async fn test_device_offline_no_daemon() {
     // Start relay only — no daemon relay client for this device.
@@ -590,7 +590,7 @@ async fn test_daemon_reconnection() {
 // ============================================================================
 
 /// When the daemon disconnects with a pending request, the client receives
-/// device_offline.
+/// `device_offline`.
 ///
 /// This test uses a raw WebSocket as the daemon (not the relay client) so we
 /// can control exactly when it disconnects — after receiving the request but

@@ -80,7 +80,7 @@ pub fn workflow_retry(
     })
 }
 
-/// Set the auto_mode flag on a task.
+/// Set the `auto_mode` flag on a task.
 ///
 /// When enabling auto mode on a task that is awaiting review,
 /// immediately auto-approves or auto-answers pending questions.
@@ -233,7 +233,7 @@ pub fn workflow_archive(
     })
 }
 
-/// Reject an AwaitingApproval task with line-level comments.
+/// Reject an `AwaitingApproval` task with line-level comments.
 ///
 /// Routes the task to the rejection target stage (typically "work") with
 /// the submitted comments as context for the agent.

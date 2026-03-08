@@ -38,11 +38,13 @@ fn test_workflow() -> WorkflowConfig {
     ])
 }
 
-fn test_env() -> (
+type TestEnv = (
     Arc<Mutex<WorkflowApi>>,
     Arc<dyn WorkflowStore>,
     Arc<Mutex<rusqlite::Connection>>,
-) {
+);
+
+fn test_env() -> TestEnv {
     let conn = DatabaseConnection::in_memory().expect("Failed to open in-memory DB");
     let raw_conn = conn.shared();
     let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
@@ -67,9 +69,8 @@ async fn accept_one(listener: &TcpListener) -> WebSocketStream<tokio::net::TcpSt
 /// Receive the next Text message from a WebSocket stream.
 async fn next_text(ws: &mut WebSocketStream<tokio::net::TcpStream>) -> serde_json::Value {
     loop {
-        match ws.next().await.unwrap().unwrap() {
-            Message::Text(t) => return serde_json::from_str(&t).unwrap(),
-            _ => continue,
+        if let Message::Text(t) = ws.next().await.unwrap().unwrap() {
+            return serde_json::from_str(&t).unwrap();
         }
     }
 }
@@ -303,7 +304,7 @@ async fn test_reconnection_after_disconnect() {
     stop.cancel();
 }
 
-/// Forward request: send a Forward message, expect the response to echo client_id.
+/// Forward request: send a Forward message, expect the response to echo `client_id`.
 #[tokio::test]
 async fn test_request_forwarding_echoes_client_id() {
     use orkestra_networking::{generate_pairing_code, pair_device};

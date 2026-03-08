@@ -489,18 +489,13 @@ async fn test_client_missing_token_rejected() {
 
     // The connection should close after the error.
     let next = tokio::time::timeout(Duration::from_secs(2), client.next()).await;
-    match next {
-        Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | None) => {}
-        Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t)))) => {
-            // Allow extra messages but they shouldn't be non-error frames.
-            let v: Value = serde_json::from_str(&t).unwrap_or(Value::Null);
-            assert_ne!(
-                v["type"], "forward",
-                "should not receive forward after missing_token error"
-            );
-        }
-        Err(_) => {} // timeout is fine — connection may already be closed
-        _ => {}
+    if let Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t)))) = next {
+        // Allow extra messages but they shouldn't be non-error frames.
+        let v: Value = serde_json::from_str(&t).unwrap_or(Value::Null);
+        assert_ne!(
+            v["type"], "forward",
+            "should not receive forward after missing_token error"
+        );
     }
 
     handle.shutdown();

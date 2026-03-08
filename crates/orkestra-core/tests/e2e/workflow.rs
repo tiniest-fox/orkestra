@@ -2537,8 +2537,7 @@ fn test_rejection_review_override_then_approval() {
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let latest_review = iterations
         .iter()
-        .filter(|i| i.stage == "review")
-        .next_back()
+        .rfind(|i| i.stage == "review")
         .expect("Should have review iterations");
     assert!(
         !matches!(

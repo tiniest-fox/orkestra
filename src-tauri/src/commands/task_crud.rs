@@ -20,7 +20,7 @@ pub fn workflow_get_tasks(
 /// If git service is configured, creates a worktree and branch.
 /// `base_branch` specifies which branch to create from (defaults to current).
 /// `auto_mode` enables autonomous execution through all stages.
-/// `flow` selects an alternate workflow flow (e.g., "quick_fix"). Omit for default full pipeline.
+/// `flow` selects an alternate workflow flow (e.g., `"quick_fix"`). Omit for default full pipeline.
 #[tauri::command]
 pub fn workflow_create_task(
     registry: State<ProjectRegistry>,

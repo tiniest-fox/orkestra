@@ -524,7 +524,7 @@ fn handle_orchestrator_event(
                     let _ = window.emit(
                         "review-ready",
                         ReviewReadyPayload {
-                            task_id: task_id.to_string(),
+                            task_id: task_id.clone(),
                             parent_id: task.parent_id.clone(),
                         },
                     );

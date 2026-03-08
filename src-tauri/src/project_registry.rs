@@ -153,7 +153,7 @@ impl ProjectState {
     /// Get a lock on the `WorkflowApi`.
     ///
     /// Returns an error if the mutex is poisoned (another thread panicked while holding the lock).
-    pub fn api(&self) -> Result<MutexGuard<WorkflowApi>, TauriError> {
+    pub fn api(&self) -> Result<MutexGuard<'_, WorkflowApi>, TauriError> {
         self.api
             .lock()
             .map_err(|_| TauriError::new("LOCK_ERROR", "Failed to acquire API lock"))

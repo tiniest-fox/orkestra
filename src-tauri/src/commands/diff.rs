@@ -270,10 +270,14 @@ pub async fn workflow_get_syntax_css(
 
 /// Convert a raw `FileDiff` into a highlighted `FileDiff` with parsed hunks.
 fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> HighlightedFileDiff {
-    let hunks = if file.is_binary || file.diff_content.is_none() {
-        vec![]
+    let hunks = if let Some(ref content) = file.diff_content {
+        if file.is_binary {
+            vec![]
+        } else {
+            parse_and_highlight_diff(content, &file.path, highlighter)
+        }
     } else {
-        parse_and_highlight_diff(&file.diff_content.unwrap(), &file.path, highlighter)
+        vec![]
     };
 
     HighlightedFileDiff {

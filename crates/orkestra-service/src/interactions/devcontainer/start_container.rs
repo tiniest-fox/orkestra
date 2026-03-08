@@ -66,10 +66,9 @@ fn docker_run(
     // Forward git author identity into the container using git's native env vars.
     // GIT_USER_EMAIL / GIT_USER_NAME can be set on the service container to
     // control commit attribution. Falls back to the Dockerfile-baked git config.
-    let git_email = std::env::var("GIT_USER_EMAIL")
-        .unwrap_or_else(|_| "agent@orkestra.local".to_string());
-    let git_name = std::env::var("GIT_USER_NAME")
-        .unwrap_or_else(|_| "Orkestra Agent".to_string());
+    let git_email =
+        std::env::var("GIT_USER_EMAIL").unwrap_or_else(|_| "agent@orkestra.local".to_string());
+    let git_name = std::env::var("GIT_USER_NAME").unwrap_or_else(|_| "Orkestra Agent".to_string());
     let git_author_email = format!("GIT_AUTHOR_EMAIL={git_email}");
     let git_committer_email = format!("GIT_COMMITTER_EMAIL={git_email}");
     let git_author_name = format!("GIT_AUTHOR_NAME={git_name}");
@@ -102,7 +101,9 @@ fn docker_run(
     }
 
     // Forward GH_TOKEN so the git credential helper can authenticate pushes.
-    let gh_token_env = std::env::var("GH_TOKEN").ok().map(|t| format!("GH_TOKEN={t}"));
+    let gh_token_env = std::env::var("GH_TOKEN")
+        .ok()
+        .map(|t| format!("GH_TOKEN={t}"));
     if let Some(ref token) = gh_token_env {
         args.push("-e");
         args.push(token);

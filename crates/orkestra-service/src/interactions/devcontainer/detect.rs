@@ -37,15 +37,20 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
     }
 
     // Build: build.dockerfile.
+    //
+    // devcontainer.json paths are relative to the .devcontainer/ directory
+    // (VS Code spec). Prefix them so they resolve correctly when joined with
+    // the repo root in prepare_image.
     if let Some(build) = json.get("build") {
         if let Some(dockerfile) = build.get("dockerfile").and_then(|v| v.as_str()) {
+            let dockerfile = format!(".devcontainer/{dockerfile}");
             let context = build
                 .get("context")
                 .and_then(|v| v.as_str())
-                .unwrap_or(".")
-                .to_string();
+                .map(|c| format!(".devcontainer/{c}"))
+                .unwrap_or_else(|| ".devcontainer".to_string());
             return DevcontainerConfig::Build {
-                dockerfile: dockerfile.to_string(),
+                dockerfile,
                 context,
                 post_create_command,
             };
@@ -155,7 +160,7 @@ mod tests {
         );
         let config = execute(dir.path());
         assert!(
-            matches!(config, DevcontainerConfig::Build { dockerfile, .. } if dockerfile == "Dockerfile")
+            matches!(config, DevcontainerConfig::Build { dockerfile, .. } if dockerfile == ".devcontainer/Dockerfile")
         );
     }
 

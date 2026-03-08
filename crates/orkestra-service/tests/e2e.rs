@@ -141,8 +141,8 @@ mod detect {
         else {
             panic!("expected Build");
         };
-        assert_eq!(dockerfile, "Dockerfile.dev");
-        assert_eq!(context, "./docker");
+        assert_eq!(dockerfile, ".devcontainer/Dockerfile.dev");
+        assert_eq!(context, ".devcontainer/./docker");
     }
 
     #[test]
@@ -152,7 +152,7 @@ mod detect {
         let DevcontainerConfig::Build { context, .. } = devcontainer_detect(dir.path()) else {
             panic!("expected Build");
         };
-        assert_eq!(context, ".");
+        assert_eq!(context, ".devcontainer");
     }
 
     #[test]

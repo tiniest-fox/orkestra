@@ -80,6 +80,7 @@ export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig):
 
 export function defaultTab(task: WorkflowTaskView): DrawerTabId {
   if (task.derived.is_failed) return "error";
+  if (task.derived.is_blocked) return "error";
   if (task.derived.has_questions) return "questions";
   if (task.derived.needs_review) return "artifact";
   if (task.state.type === "gate_running" || task.state.type === "awaiting_gate") return "gate";
@@ -110,6 +111,16 @@ export function availableTabs(
   const showRunTab = canUseRunScript(task, options?.hasRunScript);
 
   if (task.derived.is_failed) {
+    return [
+      { id: "error", label: "Error", hotkey: "e" },
+      { id: "logs", label: "Logs", hotkey: "l" },
+      { id: "diff", label: "Diff", hotkey: "d" },
+      { id: "history", label: "History", hotkey: "h" },
+      ...(showGateTab ? [gateTab] : []),
+      ...(showRunTab ? [runTab] : []),
+    ];
+  }
+  if (task.derived.is_blocked) {
     return [
       { id: "error", label: "Error", hotkey: "e" },
       { id: "logs", label: "Logs", hotkey: "l" },

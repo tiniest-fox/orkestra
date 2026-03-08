@@ -7,7 +7,40 @@ import {
   createMockWorkflowTaskView,
 } from "../../../test/mocks/fixtures";
 import type { WorkflowIteration } from "../../../types/workflow";
-import { availableTabs, canUseRunScript, currentArtifact } from "./drawerTabs";
+import { availableTabs, canUseRunScript, currentArtifact, defaultTab } from "./drawerTabs";
+
+describe("defaultTab", () => {
+  it("returns 'error' for a failed task", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "failed" } });
+    expect(defaultTab(task)).toBe("error");
+  });
+
+  it("returns 'error' for a blocked task", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
+    expect(defaultTab(task)).toBe("error");
+  });
+
+  it("returns 'logs' for a generic queued task", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "queued", stage: "planning" } });
+    expect(defaultTab(task)).toBe("logs");
+  });
+});
+
+describe("availableTabs — blocked task", () => {
+  it("returns Error, Logs, Diff, History tabs for a blocked task", () => {
+    const config = createMockWorkflowConfig();
+    const task = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
+    const tabs = availableTabs(task, config);
+    expect(tabs.map((t) => t.id)).toEqual(["error", "logs", "diff", "history"]);
+  });
+
+  it("blocked tabs match failed tabs in shape", () => {
+    const config = createMockWorkflowConfig();
+    const blocked = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
+    const failed = createMockWorkflowTaskView({ state: { type: "failed" } });
+    expect(availableTabs(blocked, config)).toEqual(availableTabs(failed, config));
+  });
+});
 
 // Config with a gate on the "work" stage.
 function configWithGate() {

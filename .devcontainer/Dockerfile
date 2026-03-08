@@ -35,6 +35,9 @@ ENV PATH="/usr/local/cargo/bin:$PATH"
 # Install sccache — required by .cargo/config.toml as rustc-wrapper.
 RUN cargo install sccache --locked && \
     chmod a+rx /usr/local/cargo/bin/sccache
+# Give the orkestra user full ownership of cargo/rustup so cargo can fetch
+# dependencies and write to the registry at runtime.
+RUN chown -R orkestra:orkestra /usr/local/cargo /usr/local/rustup
 # Set git identity and credential helper for the orkestra user.
 USER orkestra
 RUN git config --global user.email "agent@orkestra.local" && \

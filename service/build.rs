@@ -12,17 +12,14 @@ fn main() {
         }
     }
 
-    // Only build service UI when embed-service-ui feature is enabled.
-    #[cfg(feature = "embed-service-ui")]
+    // Always build service UI.
     {
         use std::process::Command;
         let status = Command::new("pnpm")
             .args(["build", "--mode", "service"])
             .status()
             .expect("Failed to run pnpm build --mode service. Is pnpm installed?");
-        if !status.success() {
-            panic!("pnpm build --mode service failed");
-        }
+        assert!(status.success(), "pnpm build --mode service failed")
     }
 
     // Rerun if frontend sources change.

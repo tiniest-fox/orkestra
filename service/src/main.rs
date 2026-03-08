@@ -205,7 +205,7 @@ async fn run(args: Args) -> Result<(), String> {
         .map_err(|e| format!("Failed to bind {bind_addr}: {e}"))?;
     tracing::info!("Service listening on {bind_addr}");
 
-    // Build PWA and service UI routers (no-op stubs when features are disabled).
+    // Build PWA and service UI routers (PWA has a stub mode when embed-pwa is disabled).
     let pwa_router = pwa::router();
     let service_ui_router = service_ui::router();
     let extra_routes = pwa_router.merge(service_ui_router);

@@ -20,10 +20,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 axum = "0.8"
-rust-embed = { version = "8", optional = true }
-mime_guess = { version = "2", optional = true }
+rust-embed = "8"
+mime_guess = "2"
 
 [features]
 default = []
-embed-pwa = ["dep:rust-embed", "dep:mime_guess"]
-embed-service-ui = ["dep:rust-embed", "dep:mime_guess"]
+embed-pwa = []

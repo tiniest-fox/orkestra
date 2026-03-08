@@ -6,6 +6,7 @@ dist
 dist/
 target
 target/
+.sccache/
 
 # IDE
 .idea/

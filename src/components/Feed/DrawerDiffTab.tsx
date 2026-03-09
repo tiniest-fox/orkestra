@@ -5,12 +5,14 @@
 import { GitCompare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
 import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
+import { MobileDiffFileListOverlay } from "../Diff/MobileDiffFileListOverlay";
 import type { DraftComment } from "../Diff/types";
 import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
 import { EmptyState } from "../ui/EmptyState";
@@ -38,7 +40,9 @@ export function DrawerDiffTab({
 }: DrawerDiffTabProps) {
   const { diff: liveDiff, diffLoading } = useDrawerDiff();
   const { css } = useSyntaxCss();
+  const isMobile = useIsMobile();
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [fileListOpen, setFileListOpen] = useState(false);
   const diffContentRef = useRef<DiffContentHandle>(null);
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const setScrollRef = useCallback((el: HTMLDivElement | null) => {
@@ -146,7 +150,7 @@ export function DrawerDiffTab({
   const isCommentingEnabled = !!onAddDraftComment;
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-col flex-1 overflow-hidden relative">
       {css && (
         <style
           // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
@@ -159,28 +163,39 @@ export function DrawerDiffTab({
         </div>
       ) : diff && diff.files.length > 0 ? (
         <>
-          <div className="w-56 shrink-0 overflow-y-auto border-r border-border">
-            <DiffFileList files={diff.files} activePath={activePath} onJumpTo={handleJumpTo} />
-          </div>
-          <div ref={setScrollRef} className="flex-1 overflow-y-auto">
-            <DiffContent
-              ref={diffContentRef}
-              files={diff.files}
-              comments={[]}
-              activePath={activePath}
-              collapsedPaths={collapsedPaths}
-              scrollElement={scrollEl}
-              onActivePathChange={setActivePath}
-              onToggleCollapsed={handleToggleCollapsed}
-              onLineClick={isCommentingEnabled ? handleLineClick : undefined}
-              draftComments={draftComments}
-              activeCommentLine={activeCommentLine}
-              onSaveDraft={isCommentingEnabled ? handleSaveDraft : undefined}
-              onCancelDraft={isCommentingEnabled ? handleDismissCommentInput : undefined}
-              onDeleteDraft={onRemoveDraftComment}
-              draftBody={draftBody}
-              onDraftBodyChange={setDraftBody}
-            />
+          <MobileDiffFileListOverlay
+            files={diff.files}
+            activePath={activePath}
+            onJumpTo={handleJumpTo}
+            fileListOpen={fileListOpen}
+            onToggle={() => setFileListOpen((o) => !o)}
+          />
+          <div className="flex flex-1 overflow-hidden">
+            {!isMobile && (
+              <div className="w-56 shrink-0 overflow-y-auto border-r border-border">
+                <DiffFileList files={diff.files} activePath={activePath} onJumpTo={handleJumpTo} />
+              </div>
+            )}
+            <div ref={setScrollRef} className="flex-1 overflow-y-auto">
+              <DiffContent
+                ref={diffContentRef}
+                files={diff.files}
+                comments={[]}
+                activePath={activePath}
+                collapsedPaths={collapsedPaths}
+                scrollElement={scrollEl}
+                onActivePathChange={setActivePath}
+                onToggleCollapsed={handleToggleCollapsed}
+                onLineClick={isCommentingEnabled ? handleLineClick : undefined}
+                draftComments={draftComments}
+                activeCommentLine={activeCommentLine}
+                onSaveDraft={isCommentingEnabled ? handleSaveDraft : undefined}
+                onCancelDraft={isCommentingEnabled ? handleDismissCommentInput : undefined}
+                onDeleteDraft={onRemoveDraftComment}
+                draftBody={draftBody}
+                onDraftBodyChange={setDraftBody}
+              />
+            </div>
           </div>
         </>
       ) : (

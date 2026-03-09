@@ -3,6 +3,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { type ButtonHTMLAttributes, forwardRef, type ReactNode, useEffect, useRef } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useHotkeyScope } from "./HotkeyScope";
 
 // ============================================================================
@@ -130,6 +131,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   const { active, register } = useHotkeyScope();
+  const isMobile = useIsMobile();
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const setRef = (el: HTMLButtonElement | null) => {
@@ -148,11 +150,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
   const badge = hotkeyLabel ?? (hotkey ? formatHotkeyBadge(hotkey) : undefined);
   const sizeClass = sizeStyles[size];
+  const mobileSizeOverride = isMobile && size === "sm" ? " min-h-[44px]" : "";
 
   return (
     <button
       ref={setRef}
-      className={`${variantStyles[variant]} ${sizeClass} ${fullWidth ? "w-full justify-center" : ""} ${className}`}
+      className={`${variantStyles[variant]} ${sizeClass}${mobileSizeOverride} ${fullWidth ? "w-full justify-center" : ""} ${className}`}
       disabled={disabled || loading}
       onClick={onClick}
       {...props}

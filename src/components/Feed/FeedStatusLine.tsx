@@ -1,6 +1,7 @@
 //! Footer status line — git info and keyboard hints, swaps content when drawer is open.
 
 import { useEffect } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { Kbd } from "../ui/Kbd";
@@ -21,6 +22,7 @@ interface FeedStatusLineProps {
 }
 
 export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatusLineProps) {
+  const isMobile = useIsMobile();
   const drawerOpen = drawerMode !== null;
   const agentCount = tasks.filter((t) => t.derived.is_working).length;
   const {
@@ -37,8 +39,9 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
     fetchLoading,
   } = useGitHistory();
 
-  // Git key handlers — suspended while a task drawer is open.
+  // Git key handlers — suspended while a task drawer is open or on mobile.
   useEffect(() => {
+    if (isMobile) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       // H toggles git history only when no task drawer is open (avoids conflicting with
@@ -71,6 +74,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    isMobile,
     drawerMode,
     drawerOpen,
     canPush,
@@ -102,7 +106,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             type="button"
             onClick={pushToOrigin}
             disabled={pushLoading}
-            className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 cursor-default"
+            className={`shrink-0 text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 cursor-default${isMobile ? " min-h-[44px] min-w-[44px] flex items-center justify-center" : ""}`}
             title={`Push ${syncStatus.ahead} commit${syncStatus.ahead !== 1 ? "s" : ""} (P)`}
           >
             ↑{syncStatus.ahead}
@@ -113,7 +117,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             type="button"
             onClick={pullFromOrigin}
             disabled={pullLoading}
-            className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 cursor-default"
+            className={`shrink-0 text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 cursor-default${isMobile ? " min-h-[44px] min-w-[44px] flex items-center justify-center" : ""}`}
             title={`Pull ${syncStatus.behind} commit${syncStatus.behind !== 1 ? "s" : ""} (F)`}
           >
             ↓{syncStatus.behind}
@@ -129,136 +133,137 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
           </>
         )}
       </div>
-      {drawerMode === "new-task" ? (
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="flex items-center gap-1.5">
-            <Kbd>tab</Kbd>
-            <span>next field</span>
-          </span>
-          <span className="text-text-quaternary">·</span>
-          <span className="flex items-center gap-1.5">
-            <Kbd>cmd+enter</Kbd>
-            <span>create</span>
-          </span>
-          <span className="text-text-quaternary">·</span>
-          <span className="flex items-center gap-1.5">
-            <Kbd>esc</Kbd>
-            <span>cancel</span>
-          </span>
-        </div>
-      ) : drawerMode === "assistant" ? (
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="flex items-center gap-1.5">
-            <Kbd>⌘⏎</Kbd>
-            <span>send</span>
-          </span>
-          <span className="text-text-quaternary">·</span>
-          <span className="flex items-center gap-1.5">
-            <Kbd>esc</Kbd>
-            <span>close</span>
-          </span>
-        </div>
-      ) : drawerMode === "git-history" ? (
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="flex items-center gap-1.5">
-            <Kbd>j/k</Kbd>
-            <span>navigate</span>
-          </span>
-          <span className="text-text-quaternary">·</span>
-          <span className="flex items-center gap-1.5">
-            <Kbd>esc</Kbd>
-            <span>close</span>
-          </span>
-        </div>
-      ) : drawerOpen ? (
-        <div className="flex items-center gap-3 shrink-0">
-          {drawerMode === "review-reject" ? (
-            <>
+      {!isMobile &&
+        (drawerMode === "new-task" ? (
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="flex items-center gap-1.5">
+              <Kbd>tab</Kbd>
+              <span>next field</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>cmd+enter</Kbd>
+              <span>create</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>esc</Kbd>
+              <span>cancel</span>
+            </span>
+          </div>
+        ) : drawerMode === "assistant" ? (
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="flex items-center gap-1.5">
+              <Kbd>⌘⏎</Kbd>
+              <span>send</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>esc</Kbd>
+              <span>close</span>
+            </span>
+          </div>
+        ) : drawerMode === "git-history" ? (
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="flex items-center gap-1.5">
+              <Kbd>j/k</Kbd>
+              <span>navigate</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>esc</Kbd>
+              <span>close</span>
+            </span>
+          </div>
+        ) : drawerOpen ? (
+          <div className="flex items-center gap-3 shrink-0">
+            {drawerMode === "review-reject" ? (
+              <>
+                <span className="flex items-center gap-1.5">
+                  <Kbd>enter</Kbd>
+                  <span>send</span>
+                </span>
+                <span className="text-text-quaternary">·</span>
+                <span className="flex items-center gap-1.5">
+                  <Kbd>esc</Kbd>
+                  <span>cancel</span>
+                </span>
+              </>
+            ) : drawerMode === "answer" ? (
               <span className="flex items-center gap-1.5">
-                <Kbd>enter</Kbd>
-                <span>send</span>
+                <Kbd>S</Kbd>
+                <span>submit</span>
               </span>
-              <span className="text-text-quaternary">·</span>
+            ) : drawerMode === "focus" ? (
               <span className="flex items-center gap-1.5">
                 <Kbd>esc</Kbd>
-                <span>cancel</span>
+                <span>close</span>
               </span>
-            </>
-          ) : drawerMode === "answer" ? (
-            <span className="flex items-center gap-1.5">
-              <Kbd>S</Kbd>
-              <span>submit</span>
-            </span>
-          ) : drawerMode === "focus" ? (
-            <span className="flex items-center gap-1.5">
-              <Kbd>esc</Kbd>
-              <span>close</span>
-            </span>
-          ) : drawerMode === "ship" ? (
-            <span className="flex items-center gap-1.5">
-              <Kbd>esc</Kbd>
-              <span>close</span>
-            </span>
-          ) : (
-            <>
+            ) : drawerMode === "ship" ? (
               <span className="flex items-center gap-1.5">
-                <Kbd>A</Kbd>
-                <span>approve</span>
+                <Kbd>esc</Kbd>
+                <span>close</span>
               </span>
-              <span className="text-text-quaternary">·</span>
-              <span className="flex items-center gap-1.5">
-                <Kbd>R</Kbd>
-                <span>reject</span>
-              </span>
-              <span className="text-text-quaternary">·</span>
-              <span className="flex items-center gap-1.5">
-                <Kbd>L</Kbd>
-                <span>logs</span>
-              </span>
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 shrink-0">
-          {hasSyncActions && (
-            <>
-              {canPush && (
+            ) : (
+              <>
                 <span className="flex items-center gap-1.5">
-                  <Kbd>P</Kbd>
-                  <span>push</span>
+                  <Kbd>A</Kbd>
+                  <span>approve</span>
                 </span>
-              )}
-              {canPull && (
+                <span className="text-text-quaternary">·</span>
                 <span className="flex items-center gap-1.5">
-                  <Kbd>F</Kbd>
-                  <span>pull</span>
+                  <Kbd>R</Kbd>
+                  <span>reject</span>
                 </span>
-              )}
-              <span className="text-text-quaternary">·</span>
-            </>
-          )}
-          <span className="flex items-center gap-1.5">
-            <Kbd>G</Kbd>
-            <span>fetch</span>
-          </span>
-          <span className="text-text-quaternary">·</span>
-          <span className="flex items-center gap-1.5">
-            <Kbd>H</Kbd>
-            <span>history</span>
-          </span>
-          <span className="text-text-quaternary">·</span>
-          <span className="flex items-center gap-1.5">
-            <Kbd>enter</Kbd>
-            <span>focus</span>
-          </span>
-          <span className="text-text-quaternary">·</span>
-          <span className="flex items-center gap-1.5">
-            <Kbd>↑↓</Kbd>
-            <Kbd>j/k</Kbd>
-            <span>navigate</span>
-          </span>
-        </div>
-      )}
+                <span className="text-text-quaternary">·</span>
+                <span className="flex items-center gap-1.5">
+                  <Kbd>L</Kbd>
+                  <span>logs</span>
+                </span>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 shrink-0">
+            {hasSyncActions && (
+              <>
+                {canPush && (
+                  <span className="flex items-center gap-1.5">
+                    <Kbd>P</Kbd>
+                    <span>push</span>
+                  </span>
+                )}
+                {canPull && (
+                  <span className="flex items-center gap-1.5">
+                    <Kbd>F</Kbd>
+                    <span>pull</span>
+                  </span>
+                )}
+                <span className="text-text-quaternary">·</span>
+              </>
+            )}
+            <span className="flex items-center gap-1.5">
+              <Kbd>G</Kbd>
+              <span>fetch</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>H</Kbd>
+              <span>history</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>enter</Kbd>
+              <span>focus</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>↑↓</Kbd>
+              <Kbd>j/k</Kbd>
+              <span>navigate</span>
+            </span>
+          </div>
+        ))}
     </div>
   );
 }

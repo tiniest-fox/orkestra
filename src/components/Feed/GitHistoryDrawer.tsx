@@ -6,6 +6,7 @@
 import { ChevronDown, ChevronRight, GitCompare, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
@@ -15,9 +16,11 @@ import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
+import { MobileDiffFileListOverlay } from "../Diff/MobileDiffFileListOverlay";
 import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { EmptyState } from "../ui/EmptyState";
+import { HotkeyScope, useNavHandler } from "../ui/HotkeyScope";
 import { Kbd } from "../ui/Kbd";
 
 // ============================================================================
@@ -73,15 +76,18 @@ interface GitHistoryDrawerProps {
   onClose: () => void;
 }
 
-export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
+// Inner component — rendered inside HotkeyScope so useNavHandler is available.
+function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
   const { commits, fileCounts, currentBranch } = useGitHistory();
   const { css } = useSyntaxCss();
+  const isMobile = useIsMobile();
 
   // Start with no selection so the initial mount is cheap (no diff rendering).
   // The commit list renders instantly; diff loads only after explicit selection.
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [bodyExpanded, setBodyExpanded] = useState(true);
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [fileListOpen, setFileListOpen] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   const diffContentRef = useRef<DiffContentHandle>(null);
@@ -116,27 +122,31 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selectedHash]);
 
-  // j/k keyboard navigation for the commit list.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "j" || e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedHash((prev) => {
-          const idx = prev ? commits.findIndex((c) => c.hash === prev) : -1;
-          return commits[idx + 1]?.hash ?? prev;
-        });
-      } else if (e.key === "k" || e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedHash((prev) => {
-          const idx = prev ? commits.findIndex((c) => c.hash === prev) : commits.length;
-          return commits[idx - 1]?.hash ?? prev;
-        });
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [commits]);
+  // j/k keyboard navigation for the commit list — via HotkeyScope (mobile-suppressed automatically).
+  useNavHandler("j", () => {
+    setSelectedHash((prev) => {
+      const idx = prev ? commits.findIndex((c) => c.hash === prev) : -1;
+      return commits[idx + 1]?.hash ?? prev;
+    });
+  });
+  useNavHandler("ArrowDown", () => {
+    setSelectedHash((prev) => {
+      const idx = prev ? commits.findIndex((c) => c.hash === prev) : -1;
+      return commits[idx + 1]?.hash ?? prev;
+    });
+  });
+  useNavHandler("k", () => {
+    setSelectedHash((prev) => {
+      const idx = prev ? commits.findIndex((c) => c.hash === prev) : commits.length;
+      return commits[idx - 1]?.hash ?? prev;
+    });
+  });
+  useNavHandler("ArrowUp", () => {
+    setSelectedHash((prev) => {
+      const idx = prev ? commits.findIndex((c) => c.hash === prev) : commits.length;
+      return commits[idx - 1]?.hash ?? prev;
+    });
+  });
 
   function handleToggleCollapsed(path: string) {
     toggleCollapsed(path);
@@ -155,7 +165,7 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
     : null;
 
   return (
-    <Drawer onClose={onClose}>
+    <>
       {css && (
         <style
           // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
@@ -244,31 +254,42 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
               </div>
 
               {/* Diff viewer */}
-              <div className="flex flex-1 overflow-hidden">
+              <div className="flex flex-col flex-1 overflow-hidden relative">
                 {diffLoading && !diff ? (
                   <div className="flex-1 overflow-auto p-4">
                     <DiffSkeleton />
                   </div>
                 ) : diff && diff.files.length > 0 ? (
                   <>
-                    <div className="w-48 shrink-0 overflow-y-auto border-r border-border">
-                      <DiffFileList
-                        files={diff.files}
-                        activePath={activePath}
-                        onJumpTo={handleJumpTo}
-                      />
-                    </div>
-                    <div ref={setDiffScrollRef} className="flex-1 overflow-y-auto">
-                      <DiffContent
-                        ref={diffContentRef}
-                        files={diff.files}
-                        comments={[]}
-                        activePath={activePath}
-                        collapsedPaths={collapsedPaths}
-                        scrollElement={diffScrollEl}
-                        onActivePathChange={setActivePath}
-                        onToggleCollapsed={handleToggleCollapsed}
-                      />
+                    <MobileDiffFileListOverlay
+                      files={diff.files}
+                      activePath={activePath}
+                      onJumpTo={handleJumpTo}
+                      fileListOpen={fileListOpen}
+                      onToggle={() => setFileListOpen((o) => !o)}
+                    />
+                    <div className="flex flex-1 overflow-hidden">
+                      {!isMobile && (
+                        <div className="w-48 shrink-0 overflow-y-auto border-r border-border">
+                          <DiffFileList
+                            files={diff.files}
+                            activePath={activePath}
+                            onJumpTo={handleJumpTo}
+                          />
+                        </div>
+                      )}
+                      <div ref={setDiffScrollRef} className="flex-1 overflow-y-auto">
+                        <DiffContent
+                          ref={diffContentRef}
+                          files={diff.files}
+                          comments={[]}
+                          activePath={activePath}
+                          collapsedPaths={collapsedPaths}
+                          scrollElement={diffScrollEl}
+                          onActivePathChange={setActivePath}
+                          onToggleCollapsed={handleToggleCollapsed}
+                        />
+                      </div>
                     </div>
                   </>
                 ) : diff ? (
@@ -285,6 +306,16 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
+  return (
+    <Drawer onClose={onClose}>
+      <HotkeyScope active>
+        <GitHistoryDrawerContent onClose={onClose} />
+      </HotkeyScope>
     </Drawer>
   );
 }

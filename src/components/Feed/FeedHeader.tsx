@@ -1,6 +1,7 @@
 //! Top bar for the Feed view — logo, live task metrics, keyboard hint.
 
 import { useMemo } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useProjects } from "../../providers";
 import { useTransport } from "../../transport";
 import type { WorkflowTaskView } from "../../types/workflow";
@@ -32,6 +33,7 @@ export function FeedHeader({
 }: FeedHeaderProps) {
   const transport = useTransport();
   const { currentProject } = useProjects();
+  const isMobile = useIsMobile();
   const metrics = useMemo<Metric[]>(() => {
     const topLevel = tasks.filter((t) => !t.parent_id);
     const working = topLevel.filter((t) => isActivelyProgressing(t)).length;
@@ -87,9 +89,11 @@ export function FeedHeader({
             Assistant
           </Button>
         </HotkeyScope>
-        <kbd className="font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 select-none">
-          cmd+k
-        </kbd>
+        {!isMobile && (
+          <kbd className="font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 select-none">
+            cmd+k
+          </kbd>
+        )}
       </div>
     </div>
   );

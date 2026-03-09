@@ -1,6 +1,7 @@
 //! Task creation form rendered inside a ModalPanel overlay.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { WorkflowConfig } from "../../types/workflow";
 import { BranchSelector } from "../BranchSelector";
 import { Button } from "../ui/Button";
@@ -25,6 +26,7 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
   const [selectedFlow, setSelectedFlow] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isMobile = useIsMobile();
 
   // Autofocus textarea on mount.
   useEffect(() => {
@@ -82,7 +84,9 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
   }, [hasFlows, flowKeys]);
 
   return (
-    <div className="w-[520px] bg-surface border border-border rounded-panel shadow-xl flex flex-col">
+    <div
+      className={`${isMobile ? "w-full" : "w-[520px]"} bg-surface border border-border rounded-panel shadow-xl flex flex-col`}
+    >
       {/* Description */}
       <div className="px-4 pt-4 pb-3">
         <label
@@ -115,7 +119,9 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border bg-canvas rounded-b-panel">
+      <div
+        className={`${isMobile ? "flex flex-col gap-3" : "flex items-center justify-between gap-3"} px-4 py-3 border-t border-border bg-canvas rounded-b-panel`}
+      >
         <div className="flex items-center gap-3 min-w-0">
           <BranchSelector value={baseBranch} onChange={setBaseBranch} />
           <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0">
@@ -126,9 +132,11 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
               className="w-3.5 h-3.5 accent-accent cursor-pointer"
             />
             <span className="font-sans text-[12px] text-text-secondary">Run automatically</span>
-            <kbd className="font-mono text-[10px] text-text-quaternary bg-canvas border border-border rounded px-1 leading-none select-none">
-              ⌥A
-            </kbd>
+            {!isMobile && (
+              <kbd className="font-mono text-[10px] text-text-quaternary bg-canvas border border-border rounded px-1 leading-none select-none">
+                ⌥A
+              </kbd>
+            )}
           </label>
         </div>
         <HotkeyScope active>

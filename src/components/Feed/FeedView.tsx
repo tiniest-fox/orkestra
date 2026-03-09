@@ -2,6 +2,7 @@
 
 import { Inbox } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
@@ -59,6 +60,7 @@ interface FeedViewProps {
 
 export function FeedView({ config, tasks }: FeedViewProps) {
   const transport = useTransport();
+  const isMobile = useIsMobile();
   const feedBodyRef = useRef<HTMLDivElement>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
@@ -178,6 +180,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
 
   // Cmd+K to focus command bar; Esc to blur and clear when focused.
   useEffect(() => {
+    if (isMobile) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.metaKey && e.key === "k") {
         e.preventDefault();
@@ -192,10 +195,11 @@ export function FeedView({ config, tasks }: FeedViewProps) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clearFilter]);
+  }, [clearFilter, isMobile]);
 
   // Shift+A toggles the assistant panel.
   useEffect(() => {
+    if (isMobile) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "A" && e.shiftKey && !e.metaKey && !e.ctrlKey) {
@@ -211,7 +215,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [isMobile]);
 
   return (
     <div className="h-full flex flex-col rounded-panel overflow-hidden relative bg-canvas">
@@ -287,7 +291,9 @@ export function FeedView({ config, tasks }: FeedViewProps) {
       <ModalPanel
         isOpen={isNewTaskOpen}
         onClose={closeNewTask}
-        className="top-[15%] left-0 right-0 mx-auto w-fit"
+        className={
+          isMobile ? "top-[10%] left-0 right-0 px-4" : "top-[15%] left-0 right-0 mx-auto w-fit"
+        }
       >
         {isNewTaskOpen && (
           <NewTaskModal

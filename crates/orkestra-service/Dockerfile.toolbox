@@ -94,7 +94,8 @@ chmod 755 /root
 
 su - "$USERNAME" -c 'git config --global user.email "agent@orkestra.local"'
 su - "$USERNAME" -c 'git config --global user.name "Orkestra Agent"'
-su - "$USERNAME" -c 'git config --global credential.helper gh-token'
+# Inline credential helper reads GH_TOKEN at push time — no PATH dependency.
+su - "$USERNAME" -c 'git config --global credential.helper "!f() { echo username=x-access-token; echo password=\$GH_TOKEN; }; f"'
 
 # -- Configure pnpm store for the uid 1000 user --
 # Point pnpm at /opt/pnpm-store (world-writable, pre-created in the toolbox

@@ -795,12 +795,15 @@ fn ws_base_from_headers(headers: &HeaderMap) -> String {
 
 /// Reject project names that could enable path traversal.
 ///
-/// Names must be non-empty and must not contain `/`, `\`, `..`, or null bytes.
+/// Names must be non-empty and must not contain `\`, `..`, or null bytes.
+/// Forward slashes are allowed so that GitHub `org/repo` slugs can be used
+/// directly as names — they produce nested directories under the repos root,
+/// which is safe as long as `..` is still rejected.
 fn validate_project_name(name: &str) -> Result<(), &'static str> {
     if name.is_empty() {
         return Err("Project name cannot be empty");
     }
-    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+    if name.contains('\\') || name.contains("..") || name.contains('\0') {
         return Err("Project name contains invalid characters");
     }
     Ok(())

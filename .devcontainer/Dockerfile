@@ -23,6 +23,12 @@ ENV PATH="/usr/local/cargo/bin:$PATH"
 # Install sccache — required by .cargo/config.toml as rustc-wrapper.
 RUN cargo install sccache --locked && \
     chmod a+rx /usr/local/cargo/bin/sccache
+# Pre-fetch all cargo dependencies (including git deps like fix-path-env from
+# src-tauri) at build time. This ensures /usr/local/cargo/git/db/ directories
+# exist with correct ownership before the container starts, preventing
+# permission errors at runtime when cargo resolves workspace git deps.
+COPY . /tmp/cargo-prefetch/
+RUN cd /tmp/cargo-prefetch && cargo fetch --locked && rm -rf /tmp/cargo-prefetch
 # Install Node.js 22 LTS via NodeSource, then Claude Code CLI and pnpm globally.
 ARG NODE_MAJOR=22
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \

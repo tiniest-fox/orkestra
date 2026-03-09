@@ -30,7 +30,7 @@ set -e
 
 # This project uses mise for tool management. Activate it so cargo, node, pnpm
 # etc. are available when running from the .app bundle or agent worktrees.
-eval "$(mise activate bash --shims)" 2>/dev/null || true
+command -v mise &>/dev/null && eval "$(mise activate bash --shims)" || true
 
 # Parse arguments
 FORCE_ALL=false

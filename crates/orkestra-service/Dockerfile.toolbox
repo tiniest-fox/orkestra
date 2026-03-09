@@ -26,8 +26,11 @@ RUN npm install --prefix /opt/orkestra/claude-code @anthropic-ai/claude-code && 
     ln -sf /opt/orkestra/claude-code/node_modules/.bin/claude /opt/orkestra/bin/claude
 
 # Install pnpm via npm --prefix and symlink into /opt/orkestra/bin/.
+# Create a world-writable pnpm store so any non-root user can run pnpm install.
 RUN npm install --prefix /opt/orkestra/pnpm pnpm && \
-    ln -sf /opt/orkestra/pnpm/node_modules/.bin/pnpm /opt/orkestra/bin/pnpm
+    ln -sf /opt/orkestra/pnpm/node_modules/.bin/pnpm /opt/orkestra/bin/pnpm && \
+    mkdir -p /opt/pnpm-store && \
+    chmod a+rwX /opt/pnpm-store
 
 # Install GitHub CLI from the official GitHub releases tarball.
 ARG GH_VERSION=2.67.0
@@ -92,6 +95,15 @@ chmod 755 /root
 su - "$USERNAME" -c 'git config --global user.email "agent@orkestra.local"'
 su - "$USERNAME" -c 'git config --global user.name "Orkestra Agent"'
 su - "$USERNAME" -c 'git config --global credential.helper gh-token'
+
+# -- Configure pnpm store for the uid 1000 user --
+# Point pnpm at /opt/pnpm-store (world-writable, pre-created in the toolbox
+# image) so it never falls back to creating a store inside /workspace or the
+# user home directory — both of which can have permission issues depending on
+# the devcontainer environment.
+
+echo 'store-dir=/opt/pnpm-store' > /home/orkestra/.npmrc
+chown 1000:1000 /home/orkestra/.npmrc
 SETUP_SCRIPT
 chmod +x /opt/orkestra/setup.sh
 TOOLBOX_BUILD

@@ -39,9 +39,6 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
     apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @anthropic-ai/claude-code pnpm && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /opt/pnpm-store && \
-    chmod a+rwX /opt/pnpm-store && \
-    pnpm config set store-dir /opt/pnpm-store --global
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

@@ -10,7 +10,7 @@ use crate::types::ServiceError;
 /// Bump this string to trigger a full image rebuild and volume repopulation.
 /// The image tag (`orkestra-toolbox:v{N}`) and Dockerfile version marker are
 /// both derived from this value — never edit them separately.
-const TOOLBOX_VERSION: &str = "1";
+const TOOLBOX_VERSION: &str = "2";
 
 const TOOLBOX_DOCKERFILE_PATH: &str = "/etc/orkestra/Dockerfile.toolbox";
 pub const TOOLBOX_VOLUME_NAME: &str = "orkestra-toolbox";

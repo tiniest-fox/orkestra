@@ -20,6 +20,7 @@
 //!   useNavHandler("ArrowDown", () => containerRef.current?.scrollBy({ top: 56 }));
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 // ============================================================================
 // Hotkey matching
@@ -68,6 +69,9 @@ interface HotkeyScopeProps {
 }
 
 export function HotkeyScope({ active, children }: HotkeyScopeProps) {
+  const isMobile = useIsMobile();
+  const effectiveActive = active && !isMobile;
+
   // Stack per key — last registered fires; unregistering restores the previous handler.
   const handlersRef = useRef<Map<string, Array<() => void>>>(new Map());
 
@@ -86,7 +90,7 @@ export function HotkeyScope({ active, children }: HotkeyScopeProps) {
   }, []);
 
   useEffect(() => {
-    if (!active) return;
+    if (!effectiveActive) return;
 
     function onKeyDown(e: KeyboardEvent) {
       const isFromInput =
@@ -106,10 +110,10 @@ export function HotkeyScope({ active, children }: HotkeyScopeProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active]);
+  }, [effectiveActive]);
 
   return (
-    <HotkeyScopeContext.Provider value={{ active, register }}>
+    <HotkeyScopeContext.Provider value={{ active: effectiveActive, register }}>
       {children}
     </HotkeyScopeContext.Provider>
   );

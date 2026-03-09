@@ -307,6 +307,23 @@ Note: `Array.prototype.findLast` is ES2023 — use `[...arr].reverse().find()` f
 
 Use `useNavHandler` from `HotkeyScope` for keyboard shortcuts instead of raw `window.addEventListener`. Raw listeners bypass scope isolation — they fire regardless of which drawer or panel is focused, and they won't benefit from future hotkey system updates.
 
+<!-- compound: shyly-limber-sponge -->
+
+**Mobile guards on keyboard `useEffect` handlers**: When a component uses `useIsMobile()`, every `useEffect` that registers keyboard listeners must include an early-return guard and add `isMobile` to the dependency array. Missing guards cause single-key shortcuts to fire on touch devices:
+
+```tsx
+const isMobile = useIsMobile();
+
+useEffect(() => {
+  if (isMobile) return; // required — skip on touch devices
+  const handler = (e: KeyboardEvent) => { /* ... */ };
+  window.addEventListener("keydown", handler);
+  return () => window.removeEventListener("keydown", handler);
+}, [isMobile, /* other deps */]); // isMobile must be in deps
+```
+
+Modifier-key shortcuts (Cmd+K, Shift+A, Alt+key) can remain active on mobile — they have no physical equivalent on most touch keyboards and are harmless. Single-key nav shortcuts (j/k, g/h, etc.) must be suppressed. `HotkeyScope` handles suppression automatically for `useNavHandler` callers; only raw-listener effects need manual guards.
+
 ```tsx
 // Avoid
 useEffect(() => {

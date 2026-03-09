@@ -1,6 +1,7 @@
 //! Diff line — single row with gutters and syntax-highlighted content.
 
 import type { HighlightedLine } from "../../hooks/useDiff";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 interface DiffLineProps {
   line: HighlightedLine;
@@ -8,6 +9,7 @@ interface DiffLineProps {
 }
 
 export function DiffLine({ line, onOpenCommentInput }: DiffLineProps) {
+  const isMobile = useIsMobile();
   const bgColor =
     line.line_type === "add"
       ? "bg-status-success-bg"
@@ -56,7 +58,7 @@ export function DiffLine({ line, onOpenCommentInput }: DiffLineProps) {
               // Satisfies Biome useKeyWithClickEvents — button is click-only
               onKeyDown={() => {}}
               aria-label="Add comment"
-              className="absolute inset-y-0 left-0 right-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              className={`absolute inset-y-0 left-0 right-0 flex items-center justify-center ${isMobile ? "opacity-30" : "opacity-0 group-hover:opacity-100"} transition-opacity`}
             >
               <span className="w-4 h-4 rounded-full bg-status-info text-white text-[10px] font-bold flex items-center justify-center leading-none">
                 +

@@ -26,4 +26,6 @@ export interface Transport {
    * rather than `!supportsLocalOperations`, which is about local OS access, not auth.
    */
   readonly requiresAuthentication: boolean;
+  /** Stop reconnecting and close the connection. Optional — not all transports need explicit cleanup. */
+  close?(): void;
 }

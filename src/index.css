@@ -5,6 +5,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Establish full-height reference chain so h-full resolves to viewport height */
+html,
+body,
+#root {
+  height: 100%;
+}
+
 /* ============================================================================
  * Forge Design Token CSS Variables
  * ============================================================================

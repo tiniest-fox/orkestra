@@ -107,6 +107,29 @@ export class WebSocketTransport implements Transport {
     };
   }
 
+  /** Stop reconnecting and close the WebSocket connection. */
+  close(): void {
+    if (this._reconnectTimer !== null) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    if (this._ws) {
+      // Remove all handlers before closing to prevent _handleDisconnect from scheduling a reconnect.
+      this._ws.onopen = null;
+      this._ws.onmessage = null;
+      this._ws.onclose = null;
+      this._ws.onerror = null;
+      this._ws.close();
+      this._ws = null;
+    }
+    // Reject any pending requests so callers don't hang.
+    for (const [, request] of this._pending) {
+      request.reject(new Error("Transport closed"));
+    }
+    this._pending.clear();
+    this._setConnectionState("disconnected");
+  }
+
   // -- Helpers --
 
   private _connect(): void {

@@ -20,7 +20,7 @@ export function Orkestra() {
 
   if (configError) {
     return (
-      <div className="w-screen h-screen flex flex-col items-center justify-center gap-4 bg-canvas">
+      <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-canvas">
         <ErrorState message="Failed to load workflow config" error={configError} />
         <button
           type="button"
@@ -43,7 +43,7 @@ export function Orkestra() {
   }
 
   return (
-    <div className="w-screen h-screen overflow-clip bg-canvas">
+    <div className="w-full h-full overflow-clip bg-canvas">
       <FeedView config={config} tasks={tasks} />
     </div>
   );

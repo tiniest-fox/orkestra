@@ -81,6 +81,21 @@ useEffect(() => {
 
 **Example:** See `useAutoScroll.ts` for the canonical implementation
 
+## Provider Remount via `key` Prop
+
+<!-- compound: saucily-sanctified-curlew -->
+
+When a provider holds `useState` initialized from a prop (e.g., a connection keyed to a resource ID), **the state does not update if the prop changes** — `useState` only reads its initializer on first mount. Use `key={resourceId}` on the provider's parent wrapper to force a full remount when the resource changes, reinitializing all state.
+
+```tsx
+// ProjectPageWrapper — forces full provider stack remount when project changes
+<ProjectAppShell key={project.id} project={project} />
+```
+
+**Implication**: any provider that uses `useState(initialProp)` is intentionally ignoring prop updates — it expects remounts via `key` instead. Document this assumption with a comment in the provider file so future callers aren't confused by the prop appearing to be ignored.
+
+**When NOT to use `key` remount**: if the provider genuinely needs to react to prop changes without unmounting (e.g., theme switching), use `useEffect` to sync the state instead.
+
 ## State Management
 
 - Use the existing Context + hooks pattern (`TasksProvider`, `WorkflowConfigProvider`). No Redux, Zustand, or other state libraries.

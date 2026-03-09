@@ -13,18 +13,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         > /etc/apt/sources.list.d/github-cli.list && \
     apt-get update && apt-get install -y --no-install-recommends gh && \
     rm -rf /var/lib/apt/lists/*
-# Git credential helper: reads GH_TOKEN from the environment and returns it
-# as HTTPS credentials for github.com.
-RUN echo '#!/bin/sh' > /usr/local/bin/git-credential-gh-token && \
-    echo '[ "$1" = "get" ] && [ -n "$GH_TOKEN" ] && printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"' >> /usr/local/bin/git-credential-gh-token && \
-    chmod +x /usr/local/bin/git-credential-gh-token
-# Create non-root user for running agents.
-# claude CLI refuses --dangerously-skip-permissions when running as root.
-# Ubuntu 24.04 ships a built-in "ubuntu" user at uid 1000; rename it to "orkestra".
-# chmod 755 /root so the agent user can access /root/.claude (the bind-mounted auth dir).
-RUN usermod -l orkestra -d /home/orkestra -m ubuntu && \
-    groupmod -n orkestra ubuntu && \
-    chmod 755 /root
 # Install Rust stable to /usr/local so it's available to all users (including uid 1000).
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path \
@@ -35,15 +23,6 @@ ENV PATH="/usr/local/cargo/bin:$PATH"
 # Install sccache — required by .cargo/config.toml as rustc-wrapper.
 RUN cargo install sccache --locked && \
     chmod a+rx /usr/local/cargo/bin/sccache
-# Give the orkestra user full ownership of cargo/rustup so cargo can fetch
-# dependencies and write to the registry at runtime.
-RUN chown -R orkestra:orkestra /usr/local/cargo /usr/local/rustup
-# Set git identity and credential helper for the orkestra user.
-USER orkestra
-RUN git config --global user.email "agent@orkestra.local" && \
-    git config --global user.name "Orkestra Agent" && \
-    git config --global credential.helper gh-token
-USER root
 # Install Node.js 22 LTS via NodeSource, then Claude Code CLI and pnpm globally.
 ARG NODE_MAJOR=22
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \

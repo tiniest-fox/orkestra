@@ -136,6 +136,9 @@ async fn container_and_spawn(
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
+    // Step 5a: Ensure the shared toolbox volume is populated (once per service lifetime).
+    supervisor.ensure_toolbox_volume().await?;
+
     // Step 5b: Remove any leftover container (by name or port binding).
     // `docker run --name orkestra-{id}` fails if that name or port is still allocated.
     let daemon_port = project.daemon_port;
@@ -187,6 +190,14 @@ async fn container_and_spawn(
         move || chown_workspace(&cid)
     })
     .await;
+
+    // Step 6d: Run toolbox setup (symlinks, user creation, git config).
+    tokio::task::spawn_blocking({
+        let cid = container_id.clone();
+        move || devcontainer::run_toolbox_setup::execute(&cid)
+    })
+    .await
+    .map_err(|e| ServiceError::Other(e.to_string()))??;
 
     // Step 6e: Connect project container to service container's Docker networks.
     // This allows the service to reach the daemon by container name (DooD).

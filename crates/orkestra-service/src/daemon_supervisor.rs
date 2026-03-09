@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
+use tokio::sync::OnceCell;
 use tracing::{error, info, warn};
 
 use crate::interactions::daemon;
@@ -33,6 +34,9 @@ pub struct DaemonSupervisor {
     #[allow(dead_code)]
     port_range: (u16, u16),
     stop: Arc<AtomicBool>,
+    /// Guards concurrent toolbox volume initialization — ensures `ensure_toolbox_volume`
+    /// runs at most once per service lifetime across all provisioning tasks.
+    toolbox_initialized: OnceCell<()>,
 }
 
 impl DaemonSupervisor {
@@ -50,6 +54,7 @@ impl DaemonSupervisor {
             data_dir,
             port_range,
             stop: Arc::new(AtomicBool::new(false)),
+            toolbox_initialized: OnceCell::const_new(),
         }
     }
 
@@ -63,6 +68,23 @@ impl DaemonSupervisor {
     /// Data directory used for compose override files and project state.
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+
+    // -- Toolbox --
+
+    /// Ensure the shared toolbox volume is populated — runs at most once per
+    /// service lifetime regardless of how many projects provision concurrently.
+    pub async fn ensure_toolbox_volume(&self) -> Result<(), ServiceError> {
+        self.toolbox_initialized
+            .get_or_try_init(|| async {
+                tokio::task::spawn_blocking(|| {
+                    crate::interactions::devcontainer::ensure_toolbox_volume::execute()
+                })
+                .await
+                .map_err(|e| ServiceError::Other(e.to_string()))?
+            })
+            .await
+            .copied()
     }
 
     // -- Startup --

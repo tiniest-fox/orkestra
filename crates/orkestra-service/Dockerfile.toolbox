@@ -1,0 +1,102 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl xz-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create the toolbox directory layout.
+RUN mkdir -p /opt/orkestra/bin /opt/orkestra/node /opt/orkestra/claude-code /opt/orkestra/pnpm
+
+# Install Node.js 22 LTS from the official tarball.
+# Extract to /opt/orkestra/node/ and symlink binaries into /opt/orkestra/bin/.
+ARG NODE_VERSION=22.14.0
+RUN ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${ARCH}.tar.xz" \
+    | tar -xJ --strip-components=1 -C /opt/orkestra/node && \
+    ln -sf /opt/orkestra/node/bin/node /opt/orkestra/bin/node && \
+    ln -sf /opt/orkestra/node/bin/npm /opt/orkestra/bin/npm && \
+    ln -sf /opt/orkestra/node/bin/npx /opt/orkestra/bin/npx
+
+# Install Claude Code CLI via npm --prefix so it lands in /opt/orkestra/claude-code/.
+# npm --prefix installs binaries under node_modules/.bin/, not bin/.
+# Symlink the claude binary into /opt/orkestra/bin/.
+ENV PATH="/opt/orkestra/node/bin:$PATH"
+RUN npm install --prefix /opt/orkestra/claude-code @anthropic-ai/claude-code && \
+    ln -sf /opt/orkestra/claude-code/node_modules/.bin/claude /opt/orkestra/bin/claude
+
+# Install pnpm via npm --prefix and symlink into /opt/orkestra/bin/.
+RUN npm install --prefix /opt/orkestra/pnpm pnpm && \
+    ln -sf /opt/orkestra/pnpm/node_modules/.bin/pnpm /opt/orkestra/bin/pnpm
+
+# Install GitHub CLI from the official GitHub releases tarball.
+ARG GH_VERSION=2.67.0
+RUN ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') && \
+    TARBALL="gh_${GH_VERSION}_linux_${ARCH}" && \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${TARBALL}.tar.gz" \
+    | tar -xz -C /tmp && \
+    mv "/tmp/${TARBALL}/bin/gh" /opt/orkestra/bin/gh && \
+    chmod +x /opt/orkestra/bin/gh && \
+    rm -rf "/tmp/${TARBALL}"
+
+# Git credential helper: reads GH_TOKEN from the environment and returns it
+# as HTTPS credentials for github.com.
+RUN printf '#!/bin/sh\n[ "$1" = "get" ] && [ -n "$GH_TOKEN" ] && printf "username=x-access-token\\npassword=%%s\\n" "$GH_TOKEN"\n' \
+    > /opt/orkestra/bin/git-credential-gh-token && \
+    chmod +x /opt/orkestra/bin/git-credential-gh-token
+
+# Embed the per-container setup script inline — no build context needed, compatible
+# with the stdin-pipe pattern used by ensure_toolbox_image() in ensure_toolbox_volume.rs.
+RUN <<'TOOLBOX_BUILD'
+cat > /opt/orkestra/setup.sh <<'SETUP_SCRIPT'
+#!/bin/sh
+# toolbox-setup.sh — configure toolbox tools inside a project container.
+#
+# Runs as root via `docker exec -u root`. Idempotent: safe to run multiple times.
+# Does not require network access.
+
+set -e
+
+# -- Symlink binaries into /usr/local/bin so tools are on PATH --
+
+for bin in /opt/orkestra/bin/*; do
+    ln -sf "$bin" "/usr/local/bin/$(basename "$bin")"
+done
+
+# -- Set NODE_PATH and PATH via profile script --
+# Written to /etc/profile.d/ so it is sourced for all login shells.
+
+cat > /etc/profile.d/orkestra-env.sh << 'EOF'
+export PATH="/opt/orkestra/bin:$PATH"
+export NODE_PATH="/opt/orkestra/claude-code/node_modules:/opt/orkestra/node/lib/node_modules"
+EOF
+
+# -- Resolve or create the uid 1000 user --
+
+if getent passwd 1000 > /dev/null 2>&1; then
+    USERNAME=$(getent passwd 1000 | cut -d: -f1)
+else
+    useradd -u 1000 -m -d /home/orkestra -s /bin/bash orkestra
+    USERNAME=orkestra
+fi
+
+# Ensure the home directory exists and is owned by uid 1000.
+mkdir -p /home/orkestra
+chown 1000:1000 /home/orkestra
+
+# Allow uid 1000 to access bind-mounted auth dirs under /root (e.g. /root/.claude).
+chmod 755 /root
+
+# -- Configure git for the uid 1000 user --
+
+su - "$USERNAME" -c 'git config --global user.email "agent@orkestra.local"'
+su - "$USERNAME" -c 'git config --global user.name "Orkestra Agent"'
+su - "$USERNAME" -c 'git config --global credential.helper gh-token'
+SETUP_SCRIPT
+chmod +x /opt/orkestra/setup.sh
+TOOLBOX_BUILD
+
+# Version marker — written from the TOOLBOX_VERSION build-arg passed by ensure_toolbox_image().
+# Never edit this manually; bump TOOLBOX_VERSION in ensure_toolbox_volume.rs instead.
+ARG TOOLBOX_VERSION=unknown
+RUN echo "${TOOLBOX_VERSION}" > /opt/orkestra/.version

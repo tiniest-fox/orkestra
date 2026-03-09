@@ -31,15 +31,11 @@ if [ -d "$MAIN_REPO/dist" ] && [ ! -e "$WORKTREE_PATH/dist" ]; then
     echo "dist/ -> $(readlink "$WORKTREE_PATH/dist")"
 fi
 
-# node_modules/ symlink (frontend dependencies)
-# Share the main repo's node_modules rather than running pnpm install in the
-# worktree. Running pnpm inside a worktree that sits inside the pnpm workspace
-# root (/workspace) causes ELOOP errors — pnpm follows its own virtual-store
-# symlinks into a cycle. Same pattern as target/: one shared copy, no duplication.
-# If package.json changes, the agent can run `pnpm install` from the main repo.
-if [ -d "$MAIN_REPO/node_modules" ] && [ ! -e "$WORKTREE_PATH/node_modules" ]; then
-    ln -s "$MAIN_REPO/node_modules" "$WORKTREE_PATH/node_modules"
-    echo "node_modules/ -> $(readlink "$WORKTREE_PATH/node_modules")"
-fi
+# Install node dependencies in isolation.
+# --ignore-workspace prevents pnpm from treating the worktree as a member of
+# the /workspace pnpm workspace, which would cause ELOOP symlink cycles.
+# Each worktree gets its own node_modules reflecting its own package.json.
+echo "Installing node dependencies..."
+cd "$WORKTREE_PATH" && pnpm install --ignore-workspace
 
 echo "Worktree setup complete: $WORKTREE_PATH"

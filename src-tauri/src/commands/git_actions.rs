@@ -61,10 +61,10 @@ pub fn workflow_git_push(
     })
 }
 
-/// Pull changes from origin into the current branch.
+/// Pull changes from origin into the current branch using rebase.
 ///
-/// Uses `git pull --ff-only origin <current_branch>`.
-/// Fails if local branch has diverged from origin.
+/// Performs `git pull --rebase origin <current_branch>`. If the rebase encounters
+/// conflicts, it is aborted to restore a clean working tree and a conflict error is returned.
 #[tauri::command]
 pub fn workflow_git_pull(
     registry: State<ProjectRegistry>,

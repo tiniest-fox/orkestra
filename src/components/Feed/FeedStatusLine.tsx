@@ -37,6 +37,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
     pushLoading,
     pullLoading,
     fetchLoading,
+    operationError,
   } = useGitHistory();
 
   // Git key handlers — suspended while a task drawer is open or on mobile.
@@ -122,6 +123,15 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
           >
             ↓{syncStatus.behind}
           </button>
+        )}
+        {operationError && (
+          <span
+            className="shrink-0 text-status-error truncate max-w-[320px]"
+            title={`${operationError.type === "pull" ? "Pull" : "Push"} failed: ${operationError.message}`}
+          >
+            {operationError.type === "pull" ? "Pull failed" : "Push failed"}:{" "}
+            {operationError.message}
+          </span>
         )}
         {agentCount > 0 && (
           <>

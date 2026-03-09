@@ -64,6 +64,18 @@ Produce a summary artifact as usual, focusing on integration quality rather than
 
 ## Implementation Mindset
 
+<!-- compound: evilly-happening-teal -->
+### Update Docstrings When Changing Behavior
+
+When you change *how* a function works (e.g., from `--ff-only` to `--rebase`, from sync to async, from returning `Option` to `Result`), update every docstring that describes that behavior:
+
+- Trait method docs (`interface.rs`)
+- Tauri command docs (`git_actions.rs`, `commands/*.rs`)
+- File-level `//!` headers (`interactions/*.rs`)
+- Inline comments that describe the algorithm
+
+Reviewers scan all call sites and doc comments. A single stale `//! Fetch and fast-forward` after switching to rebase is a guaranteed rejection. Before submitting: grep the function name and skim every `///` or `//!` block that mentions the old behavior.
+
 ### Follow Existing Patterns
 Before writing new code, search for similar implementations in the codebase:
 - How are similar features structured?

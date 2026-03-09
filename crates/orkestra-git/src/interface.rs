@@ -229,13 +229,14 @@ pub trait GitService: Send + Sync {
     /// - In detached HEAD state
     fn sync_status(&self) -> Result<Option<SyncStatus>, GitError>;
 
-    /// Pull changes from origin into the current branch.
+    /// Pull changes from origin into the current branch using rebase.
     ///
-    /// Performs `git pull --ff-only origin {branch}` to fetch and fast-forward.
-    /// Fails if local branch has diverged from origin (not fast-forwardable).
+    /// Performs `git pull --rebase origin {branch}`. If the rebase encounters
+    /// conflicts, it is aborted to restore a clean working tree and
+    /// `GitError::MergeConflict` is returned.
     fn pull_branch(&self) -> Result<(), GitError>;
 
-    /// Pull changes from origin into the branch checked out in a specific worktree.
+    /// Pull changes from origin into the branch checked out in a specific worktree using rebase.
     ///
     /// Like `pull_branch` but targets a worktree directory rather than the main repo.
     /// Use this when pulling a task branch that lives in `.orkestra/.worktrees/{task-id}`.

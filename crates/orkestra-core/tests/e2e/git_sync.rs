@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use orkestra_core::workflow::adapters::Git2GitService;
-use orkestra_core::workflow::ports::GitService;
+use orkestra_core::workflow::ports::{GitError, GitService};
 use tempfile::TempDir;
 
 // =============================================================================
@@ -279,28 +279,97 @@ fn pull_branch_fast_forwards_when_behind() {
 }
 
 #[test]
-fn pull_branch_fails_when_diverged() {
+fn pull_branch_rebases_when_diverged() {
     let (_temp_dir, repo_path) = create_test_repo();
     let origin_dir = setup_origin(&repo_path);
 
-    // Add local commits (creates divergence)
+    // Add local commits touching a different file (no conflict)
     add_local_commits(&repo_path, 1);
 
-    // Add commits to origin
+    // Add commits to origin touching different files
     add_commits_to_origin(origin_dir.path(), 1);
 
     // Fetch to update refs
     fetch_origin(&repo_path);
 
     let git = Git2GitService::new(&repo_path).expect("git service");
+
+    // With --rebase, diverged branches reconcile automatically when there are no conflicts
+    git.pull_branch()
+        .expect("pull_branch should succeed via rebase when no conflicts");
+
+    // Verify we have commits from both sides
+    assert!(
+        repo_path.join("local_file_0.txt").exists(),
+        "Local commits should be preserved after rebase"
+    );
+    assert!(
+        repo_path.join("origin_file_0.txt").exists(),
+        "Origin commits should be present after rebase"
+    );
+}
+
+#[test]
+fn pull_branch_aborts_rebase_on_conflict() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    let origin_dir = setup_origin(&repo_path);
+
+    // Modify the same file locally
+    std::fs::write(repo_path.join("README.md"), "# Local version\n").expect("write local");
+    run_git(&repo_path, &["add", "README.md"]);
+    run_git(&repo_path, &["commit", "-m", "Local change to README"]);
+
+    // Modify the same file on origin (via clone)
+    {
+        let clone_dir = TempDir::new().expect("clone dir");
+        let clone_path = clone_dir.path();
+        let origin_url = format!("file://{}", origin_dir.path().display());
+        run_git(
+            clone_path.parent().unwrap(),
+            &[
+                "clone",
+                &origin_url,
+                &clone_path.file_name().unwrap().to_string_lossy(),
+            ],
+        );
+        run_git(clone_path, &["config", "user.email", "other@example.com"]);
+        run_git(clone_path, &["config", "user.name", "Other User"]);
+        std::fs::write(clone_path.join("README.md"), "# Origin version\n").expect("write origin");
+        run_git(clone_path, &["add", "README.md"]);
+        run_git(clone_path, &["commit", "-m", "Origin change to README"]);
+        run_git(clone_path, &["push", "origin", "main"]);
+    }
+
+    fetch_origin(&repo_path);
+
+    let git = Git2GitService::new(&repo_path).expect("git service");
     let result = git.pull_branch();
 
-    assert!(result.is_err(), "pull_branch should fail when diverged");
-    let err = result.unwrap_err();
-    let err_msg = format!("{err}");
+    assert!(result.is_err(), "pull_branch should fail on conflict");
+    match result.unwrap_err() {
+        GitError::MergeConflict {
+            branch,
+            conflict_files,
+        } => {
+            assert_eq!(branch, "main");
+            assert!(
+                conflict_files.contains(&"README.md".to_string()),
+                "Conflict files should include README.md, got: {conflict_files:?}"
+            );
+        }
+        err => panic!("Expected MergeConflict, got: {err}"),
+    }
+
+    // Verify working tree is clean after abort
+    let status_output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&repo_path)
+        .output()
+        .expect("git status");
+    let status = String::from_utf8_lossy(&status_output.stdout);
     assert!(
-        err_msg.contains("diverged") || err_msg.contains("fast-forward"),
-        "Error should mention divergence: {err_msg}"
+        status.trim().is_empty(),
+        "Working tree should be clean after rebase abort, got: {status}"
     );
 }
 

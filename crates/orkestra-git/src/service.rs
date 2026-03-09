@@ -514,6 +514,11 @@ mod tests {
             .current_dir(remote_dir.path())
             .output()
             .expect("Failed to init bare repo");
+        Command::new("git")
+            .args(["symbolic-ref", "HEAD", "refs/heads/main"])
+            .current_dir(remote_dir.path())
+            .output()
+            .expect("Failed to set default branch");
 
         let clone_dir = TempDir::new().expect("Failed to create clone temp dir");
         let repo_path = clone_dir.path().to_path_buf();

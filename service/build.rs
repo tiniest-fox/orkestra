@@ -19,7 +19,7 @@ fn main() {
             .args(["build", "--mode", "service"])
             .status()
             .expect("Failed to run pnpm build --mode service. Is pnpm installed?");
-        assert!(status.success(), "pnpm build --mode service failed")
+        assert!(status.success(), "pnpm build --mode service failed");
     }
 
     // Rerun if frontend sources change.

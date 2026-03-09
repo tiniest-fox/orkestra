@@ -3,6 +3,9 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::interactions::devcontainer::ensure_toolbox_volume::{
+    TOOLBOX_MOUNT_PATH, TOOLBOX_VOLUME_NAME,
+};
 use crate::types::{DevcontainerConfig, ServiceError};
 
 /// Start the container and return its Docker container ID.
@@ -100,6 +103,18 @@ fn docker_run(
         args.push(mount);
     }
 
+    // Mount the shared toolbox volume read-only so agents have access to
+    // the claude CLI, gh, and other pre-built tools without baking them
+    // into the per-project image.
+    let toolbox_mount = format!("{TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro");
+    args.push("-v");
+    args.push(&toolbox_mount);
+
+    // Ensure the claude CLI finds auth tokens under /home/orkestra/.claude.
+    let home_env = "HOME=/home/orkestra".to_string();
+    args.push("-e");
+    args.push(&home_env);
+
     // Forward GH_TOKEN so the git credential helper can authenticate pushes.
     let gh_token_env = std::env::var("GH_TOKEN")
         .ok()
@@ -141,8 +156,9 @@ fn compose_up(
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
     let override_path = override_dir.join("orkestra-override.yml");
-    let override_content =
-        format!("services:\n  {service}:\n    ports:\n      - \"127.0.0.1:{port}:{port}\"\n");
+    let override_content = format!(
+        "services:\n  {service}:\n    ports:\n      - \"127.0.0.1:{port}:{port}\"\n    volumes:\n      - {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro\nvolumes:\n  {TOOLBOX_VOLUME_NAME}:\n    external: true\n"
+    );
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 

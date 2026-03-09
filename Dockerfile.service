@@ -140,6 +140,7 @@ COPY --from=builder /app/target/release/orkd /usr/local/bin/orkd
 # when a project has no .devcontainer config.
 RUN mkdir -p /etc/orkestra
 COPY crates/orkestra-service/Dockerfile.base /etc/orkestra/Dockerfile.base
+COPY crates/orkestra-service/Dockerfile.toolbox /etc/orkestra/Dockerfile.toolbox
 
 COPY docker/entrypoint-service.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

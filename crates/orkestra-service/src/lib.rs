@@ -8,6 +8,7 @@ pub mod types;
 
 pub use daemon_supervisor::DaemonSupervisor;
 pub use database::ServiceDatabase;
+pub use interactions::devcontainer::ensure_toolbox_volume::TOOLBOX_MOUNT_PATH;
 #[cfg(unix)]
 pub use interactions::project::provision::start_containers_and_spawn;
 pub use server::start;
@@ -63,6 +64,11 @@ pub fn update_project_status(
     error_message: Option<&str>,
 ) -> Result<(), ServiceError> {
     interactions::project::update_status::execute(conn, id, status, pid, error_message)
+}
+
+/// Build the toolbox image (if needed) and ensure the toolbox volume is populated.
+pub fn ensure_toolbox_volume() -> Result<(), ServiceError> {
+    interactions::devcontainer::ensure_toolbox_volume::execute()
 }
 
 /// Detect the devcontainer configuration for a project.

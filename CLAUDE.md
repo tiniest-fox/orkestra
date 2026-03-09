@@ -243,6 +243,28 @@ These docs trace operations that span multiple files. Read these instead of expl
 
 Orkestra is a task orchestration system that spawns AI coding agents (Claude Code, OpenCode, etc.) to plan and implement software development tasks with human oversight.
 
+### Devcontainer Architecture
+
+Orkestra uses a two-layer container model. Understanding the boundary between them is critical when making changes to either layer.
+
+**Layer 1 — The project devcontainer (`.devcontainer/Dockerfile`)**
+
+This image is the project's own development environment. It must work identically in GitHub Codespaces, VS Code Dev Containers, and Orkestra — it has no knowledge that Orkestra exists. Rules:
+
+- Install tools globally with **world-writable permissions** (`chmod -R a+rwX`) so any non-root user can write to tool caches at runtime. Never use `chown` with a specific uid — the uid is unknown at build time and varies by environment.
+- Do not reference uid 1000, `/home/orkestra`, or any Orkestra-specific path.
+- Pre-fetch expensive dependency caches (e.g. `cargo fetch --locked`) at build time to avoid runtime permission races.
+
+**Layer 2 — The Orkestra toolbox (`crates/orkestra-service/Dockerfile.toolbox` + `setup.sh`)**
+
+The toolbox is Orkestra's adapter: it runs inside *any* project container (including ones that have never heard of Orkestra) and configures it for Orkestra's runtime needs. `setup.sh` executes as root at container startup via `docker exec`. Rules:
+
+- All Orkestra-specific configuration belongs here, not in the project devcontainer.
+- `setup.sh` is the right place for: resolving/creating uid 1000, git identity, tool store paths (e.g. pnpm `store-dir`), and any other per-user setup.
+- Toolbox changes require bumping `TOOLBOX_VERSION` in `crates/orkestra-service/src/interactions/devcontainer/ensure_toolbox_volume.rs` to trigger a volume rebuild.
+
+**Decision rule:** If a change would break the devcontainer in Codespaces or a local VS Code setup, it belongs in the toolbox, not the devcontainer.
+
 ### Workspace Structure
 
 - **`crates/orkestra-core/`** - Core library containing task management, agent spawning, and domain logic

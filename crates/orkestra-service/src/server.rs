@@ -80,6 +80,7 @@ pub async fn start(
         .route("/api/projects/{id}/start", post(start_project_handler))
         .route("/api/projects/{id}/stop", post(stop_project_handler))
         .route("/api/projects/{id}/rebuild", post(rebuild_project_handler))
+        .route("/api/projects/{id}/logs", get(project_logs_handler))
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -612,6 +613,62 @@ async fn stop_project_handler(
     StatusCode::OK.into_response()
 }
 
+#[derive(Debug, Serialize)]
+struct ProjectLogsResponse {
+    lines: Vec<String>,
+}
+
+/// `GET /api/projects/{id}/logs?lines=50` — tail the project's debug log.
+async fn project_logs_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response<Body> {
+    let lines: usize = params
+        .get("lines")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+
+    // Look up the project to get its filesystem path.
+    let proj = {
+        let fetch_result = tokio::task::spawn_blocking({
+            let conn = Arc::clone(&state.conn);
+            let id = id.clone();
+            move || project::get::execute(&conn, &id)
+        })
+        .await;
+
+        match fetch_result {
+            Ok(Err(ServiceError::ProjectNotFound(_))) => {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            Ok(Err(e)) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": e.to_string()})),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": e.to_string()})),
+                )
+                    .into_response();
+            }
+            Ok(Ok(project)) => project,
+        }
+    };
+
+    // Read log tail in blocking context (filesystem I/O).
+    let log_lines = match run_blocking(move || project::tail_log::execute(&proj.path, lines)).await
+    {
+        Ok(l) => l,
+        Err(r) => return r,
+    };
+    Json(ProjectLogsResponse { lines: log_lines }).into_response()
+}
+
 // -- GitHub --
 
 /// `GET /api/github/repos` — list repos via the `gh` CLI.
@@ -795,15 +852,12 @@ fn ws_base_from_headers(headers: &HeaderMap) -> String {
 
 /// Reject project names that could enable path traversal.
 ///
-/// Names must be non-empty and must not contain `\`, `..`, or null bytes.
-/// Forward slashes are allowed so that GitHub `org/repo` slugs can be used
-/// directly as names — they produce nested directories under the repos root,
-/// which is safe as long as `..` is still rejected.
+/// Names must be non-empty and must not contain `/`, `\`, `..`, or null bytes.
 fn validate_project_name(name: &str) -> Result<(), &'static str> {
     if name.is_empty() {
         return Err("Project name cannot be empty");
     }
-    if name.contains('\\') || name.contains("..") || name.contains('\0') {
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
         return Err("Project name contains invalid characters");
     }
     Ok(())

@@ -8,6 +8,7 @@ import { Button } from "../../components/ui";
 import { Dropdown } from "../../components/ui/Dropdown";
 import type { Project, ProjectStatus } from "../api";
 import { rebuildProject, removeProject, startProject, stopProject } from "../api";
+import { ProjectLogsModal } from "./ProjectLogsModal";
 
 // ============================================================================
 // Types
@@ -71,6 +72,7 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
   const [optimisticStatus, setOptimisticStatus] = useState<ProjectStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
   const status = optimisticStatus ?? project.status;
   const busy = optimisticStatus !== null;
@@ -165,6 +167,14 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
           <Dropdown.Item
             onClick={() => {
               setMenuOpen(false);
+              setLogsOpen(true);
+            }}
+          >
+            View Logs
+          </Dropdown.Item>
+          <Dropdown.Item
+            onClick={() => {
+              setMenuOpen(false);
               handleRemove();
             }}
             className="text-status-error"
@@ -187,6 +197,12 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
           {actionError}
         </div>
       )}
+      <ProjectLogsModal
+        isOpen={logsOpen}
+        onClose={() => setLogsOpen(false)}
+        projectId={project.id}
+        projectName={project.name}
+      />
     </div>
   );
 }

@@ -274,6 +274,26 @@ impl DaemonSupervisor {
                                 info!("Skipping restart for {project_id} — project was stopped");
                                 return;
                             }
+                            // Skip restart if the container is no longer running — it was
+                            // stopped externally (e.g., by a new service instance during a
+                            // rolling deploy). Restarting into a stopped container would
+                            // only crash-loop; mark the project stopped instead.
+                            if devcontainer::find_container::execute(&project_id).is_none() {
+                                info!("Skipping restart for {project_id} — container no longer running");
+                                let _ = project::update_status::execute(
+                                    &conn,
+                                    &project_id,
+                                    ProjectStatus::Stopped,
+                                    None,
+                                    None,
+                                );
+                                let _ = project::update_container_id::execute(
+                                    &conn,
+                                    &project_id,
+                                    None,
+                                );
+                                return;
+                            }
                             // Re-exec into the same container (container is still running).
                             if let Err(e) = spawn_and_poll(&conn, &children, &project) {
                                 error!("Failed to respawn daemon for {project_id}: {e}");

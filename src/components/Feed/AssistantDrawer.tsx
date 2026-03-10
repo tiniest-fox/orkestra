@@ -1,4 +1,4 @@
-//! Assistant chat drawer — project-level AI chat with session management.
+//! Assistant chat drawer — project-level and task-scoped AI chat with session management.
 
 import { ArrowLeft, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -164,9 +164,11 @@ function AgentEntries({ entries }: { entries: LogEntry[] }) {
 
 interface AssistantDrawerProps {
   onClose: () => void;
+  /** When set, operates in task mode — scoped to this task's assistant session. */
+  taskId?: string;
 }
 
-export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
+export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
   const transport = useTransport();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -190,18 +192,34 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
     setAnswers(questions.map(() => ""));
   }, [questions.length]);
 
-  // -- Fetch sessions on mount and auto-select the most recent --
+  // -- Fetch sessions on mount and auto-select --
   useEffect(() => {
-    transport
-      .call<AssistantSession[]>("assistant_list_sessions", {})
-      .then((fetched) => {
-        setSessions(fetched);
-        if (fetched.length > 0) {
-          setActiveSessionId(fetched[0].id);
-        }
-      })
-      .catch(console.error);
-  }, [transport]);
+    if (taskId) {
+      // Task mode: find the existing session for this task, if any.
+      transport
+        .call<AssistantSession[]>("assistant_list_sessions", {})
+        .then((fetched) => {
+          const taskSession = fetched.find((s) => s.task_id === taskId);
+          if (taskSession) {
+            setSessions([taskSession]);
+            setActiveSessionId(taskSession.id);
+          }
+          // If no session found, first message will create one.
+        })
+        .catch(console.error);
+    } else {
+      // Project mode: use the project-only list (excludes task sessions).
+      transport
+        .call<AssistantSession[]>("assistant_list_project_sessions", {})
+        .then((fetched) => {
+          setSessions(fetched);
+          if (fetched.length > 0) {
+            setActiveSessionId(fetched[0].id);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [transport, taskId]);
 
   // -- Fetch logs when session changes --
   useEffect(() => {
@@ -215,16 +233,31 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
       .catch(console.error);
   }, [transport, activeSessionId]);
 
+  // -- Fetch the active task session by session ID (task mode only) --
+  const fetchTaskSession = useCallback(async (): Promise<AssistantSession | undefined> => {
+    const allSessions = await transport.call<AssistantSession[]>("assistant_list_sessions", {});
+    return allSessions.find((s) => s.id === activeSessionId);
+  }, [transport, activeSessionId]);
+
   // -- Poll logs while agent is running --
   const fetchLogs = useCallback(async () => {
     if (!activeSessionId) return;
-    const [newLogs, updatedSessions] = await Promise.all([
-      transport.call<LogEntry[]>("assistant_get_logs", { session_id: activeSessionId }),
-      transport.call<AssistantSession[]>("assistant_list_sessions", {}),
-    ]);
+    const newLogs = await transport.call<LogEntry[]>("assistant_get_logs", {
+      session_id: activeSessionId,
+    });
     setLogs(newLogs);
-    setSessions(updatedSessions);
-  }, [transport, activeSessionId]);
+    if (taskId) {
+      // Task mode: update just the task's session to track agent_pid.
+      const taskSession = await fetchTaskSession();
+      if (taskSession) setSessions([taskSession]);
+    } else {
+      const updatedSessions = await transport.call<AssistantSession[]>(
+        "assistant_list_project_sessions",
+        {},
+      );
+      setSessions(updatedSessions);
+    }
+  }, [transport, activeSessionId, taskId, fetchTaskSession]);
 
   usePolling(isAgentRunning ? fetchLogs : null, 1000);
 
@@ -260,19 +293,33 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
   // -- Shared send + refresh helper --
   const sendAndRefresh = useCallback(
     async (message: string) => {
-      const session = await transport.call<AssistantSession>("assistant_send_message", {
-        session_id: activeSessionId,
-        message,
-      });
-      setActiveSessionId(session.id);
-      const [updatedSessions, newLogs] = await Promise.all([
-        transport.call<AssistantSession[]>("assistant_list_sessions", {}),
-        transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
-      ]);
-      setSessions(updatedSessions);
-      setLogs(newLogs);
+      let session: AssistantSession;
+      if (taskId) {
+        session = await transport.call<AssistantSession>("assistant_send_task_message", {
+          task_id: taskId,
+          message,
+        });
+        setActiveSessionId(session.id);
+        setSessions([session]);
+        const newLogs = await transport.call<LogEntry[]>("assistant_get_logs", {
+          session_id: session.id,
+        });
+        setLogs(newLogs);
+      } else {
+        session = await transport.call<AssistantSession>("assistant_send_message", {
+          session_id: activeSessionId,
+          message,
+        });
+        setActiveSessionId(session.id);
+        const [updatedSessions, newLogs] = await Promise.all([
+          transport.call<AssistantSession[]>("assistant_list_project_sessions", {}),
+          transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
+        ]);
+        setSessions(updatedSessions);
+        setLogs(newLogs);
+      }
     },
-    [transport, activeSessionId],
+    [transport, activeSessionId, taskId],
   );
 
   // -- Send message --
@@ -310,9 +357,17 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
   const handleStop = useCallback(async () => {
     if (!activeSessionId) return;
     await transport.call("assistant_stop", { session_id: activeSessionId }).catch(console.error);
-    const updatedSessions = await transport.call<AssistantSession[]>("assistant_list_sessions", {});
-    setSessions(updatedSessions);
-  }, [transport, activeSessionId]);
+    if (taskId) {
+      const taskSession = await fetchTaskSession();
+      if (taskSession) setSessions([taskSession]);
+    } else {
+      const updatedSessions = await transport.call<AssistantSession[]>(
+        "assistant_list_project_sessions",
+        {},
+      );
+      setSessions(updatedSessions);
+    }
+  }, [transport, activeSessionId, taskId, fetchTaskSession]);
 
   // -- New session --
   const handleNewSession = useCallback(() => {
@@ -341,7 +396,7 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
           <div className="shrink-0 flex items-center justify-between px-6 h-11 border-b border-border bg-surface">
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="font-sans text-[13px] font-semibold text-text-primary shrink-0">
-                Assistant
+                {taskId ? "Task Assistant" : "Assistant"}
               </span>
               {sessionTitle && (
                 <>
@@ -353,14 +408,21 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {activeSessionId !== null && (
+              {!taskId && activeSessionId !== null && (
                 <Button variant="ghost" size="sm" hotkey="n" onClick={handleNewSession}>
                   New Session
                 </Button>
               )}
-              <Button variant="ghost" size="sm" hotkey="s" onClick={() => setShowSessionList(true)}>
-                Sessions
-              </Button>
+              {!taskId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  hotkey="s"
+                  onClick={() => setShowSessionList(true)}
+                >
+                  Sessions
+                </Button>
+              )}
               <div className="w-px h-3 bg-border" />
               <button
                 type="button"
@@ -496,11 +558,11 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
             </div>
           </div>
 
-          {/* Session List Overlay — slides in from right */}
+          {/* Session List Overlay — slides in from right (project mode only) */}
           <div
             className={[
               "absolute inset-0 bg-surface z-20 flex flex-col transition-transform duration-[160ms] ease-out",
-              showSessionList ? "translate-x-0" : "translate-x-full",
+              !taskId && showSessionList ? "translate-x-0" : "translate-x-full",
             ].join(" ")}
           >
             <div className="shrink-0 flex items-center px-6 h-11 border-b border-border">

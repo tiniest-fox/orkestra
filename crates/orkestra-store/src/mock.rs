@@ -425,6 +425,54 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(())
     }
 
+    fn get_assistant_session_for_task(
+        &self,
+        task_id: &str,
+    ) -> WorkflowResult<Option<AssistantSession>> {
+        let sessions = self
+            .assistant_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        Ok(sessions
+            .iter()
+            .find(|s| s.task_id.as_deref() == Some(task_id))
+            .cloned())
+    }
+
+    fn get_or_create_assistant_session_for_task(
+        &self,
+        task_id: &str,
+        new_session: &AssistantSession,
+    ) -> WorkflowResult<AssistantSession> {
+        // Hold the lock for the entire check-and-insert to make this atomic.
+        let mut sessions = self
+            .assistant_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        if let Some(existing) = sessions
+            .iter()
+            .find(|s| s.task_id.as_deref() == Some(task_id))
+        {
+            return Ok(existing.clone());
+        }
+        sessions.push(new_session.clone());
+        Ok(new_session.clone())
+    }
+
+    fn list_project_assistant_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {
+        let sessions = self
+            .assistant_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = sessions
+            .iter()
+            .filter(|s| s.task_id.is_none())
+            .cloned()
+            .collect();
+        result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(result)
+    }
+
     fn append_assistant_log_entry(
         &self,
         assistant_session_id: &str,

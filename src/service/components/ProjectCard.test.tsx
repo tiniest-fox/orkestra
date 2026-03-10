@@ -11,12 +11,14 @@ vi.mock("../api", () => ({
   stopProject: vi.fn(),
   rebuildProject: vi.fn(),
   removeProject: vi.fn(),
+  fetchProjectLogs: vi.fn(),
 }));
 
 const mockStart = vi.mocked(api.startProject);
 const mockStop = vi.mocked(api.stopProject);
 const mockRebuild = vi.mocked(api.rebuildProject);
 const mockRemove = vi.mocked(api.removeProject);
+const mockFetchLogs = vi.mocked(api.fetchProjectLogs);
 
 function renderCard(project: api.Project, onRefresh = vi.fn()) {
   return render(
@@ -61,6 +63,9 @@ describe("ProjectCard", () => {
     mockStop.mockReset();
     mockRebuild.mockReset();
     mockRemove.mockReset();
+    mockFetchLogs.mockReset();
+    // scrollIntoView is not implemented in jsdom; stub it out for ProjectLogsModal.
+    Element.prototype.scrollIntoView = vi.fn();
     vi.restoreAllMocks();
   });
 
@@ -117,6 +122,16 @@ describe("ProjectCard", () => {
     renderCard(runningProject());
     openMenu();
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("always shows View Logs in menu and opens the logs modal", async () => {
+    mockFetchLogs.mockResolvedValue([]);
+    renderCard(runningProject());
+    openMenu();
+    const viewLogsBtn = screen.getByRole("button", { name: "View Logs" });
+    expect(viewLogsBtn).toBeInTheDocument();
+    fireEvent.click(viewLogsBtn);
+    expect(await screen.findByText("my-repo — Logs")).toBeInTheDocument();
   });
 
   // -- Action handlers --

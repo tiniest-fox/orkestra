@@ -1,5 +1,9 @@
 # Frontend Guidelines
 
+## File Headers
+
+TypeScript and TSX files use a plain `//` comment for the file-level header — not `//!`, which is Rust doc-comment syntax with no equivalent in TypeScript. A one-line `// Description of what this file does.` at the top is sufficient and correct.
+
 ## Component Structure
 
 - One exported component per file, named to match the file (PascalCase).

@@ -74,6 +74,7 @@ impl AssistantSession {
     }
 
     /// Scope this session to a specific task.
+    #[must_use]
     pub fn with_task(mut self, task_id: impl Into<String>) -> Self {
         self.task_id = Some(task_id.into());
         self

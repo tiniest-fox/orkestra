@@ -5,6 +5,7 @@
 //! `POST /pair` is unauthenticated so clients can obtain their first token.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
@@ -55,12 +56,16 @@ impl OrkServiceState {
 ///
 /// `extra_routes` allows the calling binary to inject additional routes (e.g.
 /// PWA static file serving) that are merged into the router before binding.
+///
+/// `shutdown` is a future that resolves when the server should stop accepting
+/// new connections and drain in-flight requests before returning.
 pub async fn start(
     conn: Arc<Mutex<Connection>>,
     supervisor: Arc<DaemonSupervisor>,
     config: Arc<ServiceConfig>,
     listener: tokio::net::TcpListener,
     extra_routes: Option<Router>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), std::io::Error> {
     let local_addr = listener.local_addr()?;
 
@@ -90,6 +95,7 @@ pub async fn start(
         ));
 
     let mut router = Router::new()
+        .route("/health", get(health_handler))
         .route("/pair", post(pair_handler))
         .route("/projects/{id}/ws", get(ws_proxy_handler))
         .merge(auth_routes)
@@ -102,7 +108,9 @@ pub async fn start(
 
     tracing::info!("Service HTTP server listening on {local_addr}");
 
-    axum::serve(listener, router).await
+    axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown)
+        .await
 }
 
 // ============================================================================
@@ -155,6 +163,14 @@ async fn require_bearer_auth(
 // ============================================================================
 // Route Handlers
 // ============================================================================
+
+// -- Health (unauthenticated) --
+
+/// `GET /health` — liveness probe for Traefik/Dokploy health checks.
+#[allow(clippy::unused_async)]
+async fn health_handler() -> StatusCode {
+    StatusCode::OK
+}
 
 // -- Pairing (unauthenticated) --
 

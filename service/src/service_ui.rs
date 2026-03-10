@@ -10,6 +10,7 @@ use rust_embed::Embed;
 #[folder = "../dist-service/"]
 struct ServiceUiAssets;
 
+#[allow(clippy::unused_async)]
 async fn serve_file(Path(path): Path<String>) -> Response {
     crate::embedded_spa::serve_embedded_file::<ServiceUiAssets>(&path, "service.html")
 }

@@ -106,6 +106,7 @@ pub async fn start_containers_and_spawn(
 /// Steps 4–9: detect → prepare image → start container → inject orkd →
 /// store `container_id` → optionally run setup → spawn daemon.
 #[cfg(unix)]
+#[allow(clippy::too_many_lines)]
 async fn container_and_spawn(
     conn: &Arc<Mutex<Connection>>,
     supervisor: &Arc<DaemonSupervisor>,

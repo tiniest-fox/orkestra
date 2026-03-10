@@ -57,9 +57,10 @@ function deriveDrawerMode(
 interface FeedViewProps {
   config: WorkflowConfig;
   tasks: WorkflowTaskView[];
+  serviceProjectName?: string;
 }
 
-export function FeedView({ config, tasks }: FeedViewProps) {
+export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
   const transport = useTransport();
   const isMobile = useIsMobile();
   const feedBodyRef = useRef<HTMLDivElement>(null);
@@ -240,6 +241,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
         onAssistant={openAssistant}
         hotkeyActive={!drawerOpen}
         assistantActive={assistantOpen}
+        serviceProjectName={serviceProjectName}
       />
       <CommandBar
         tasks={tasks}

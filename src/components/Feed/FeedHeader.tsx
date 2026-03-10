@@ -1,6 +1,7 @@
 //! Top bar for the Feed view — logo, live task metrics, keyboard hint.
 
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useProjects } from "../../providers";
 import { useTransport } from "../../transport";
@@ -16,6 +17,7 @@ interface FeedHeaderProps {
   onAssistant: () => void;
   hotkeyActive: boolean;
   assistantActive: boolean;
+  serviceProjectName?: string;
 }
 
 interface Metric {
@@ -30,6 +32,7 @@ export function FeedHeader({
   onAssistant,
   hotkeyActive,
   assistantActive,
+  serviceProjectName,
 }: FeedHeaderProps) {
   const transport = useTransport();
   const { currentProject } = useProjects();
@@ -52,12 +55,32 @@ export function FeedHeader({
   return (
     <div className="flex items-center justify-between px-6 h-11 border-b border-border bg-surface shrink-0">
       <div className="flex items-center gap-2">
-        <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
-          Orkestra
-        </span>
-        {transport.requiresAuthentication && currentProject && <ProjectSwitcher />}
-        {transport.requiresAuthentication && currentProject && metrics.length > 0 && (
-          <span className="text-text-quaternary select-none">·</span>
+        {serviceProjectName ? (
+          <Link
+            to="/"
+            className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none hover:text-text-secondary transition-colors"
+          >
+            Orkestra
+          </Link>
+        ) : (
+          <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
+            Orkestra
+          </span>
+        )}
+        {serviceProjectName ? (
+          <>
+            <span className="text-text-quaternary select-none">·</span>
+            <span className="text-[13px] font-medium text-text-secondary select-none">
+              {serviceProjectName}
+            </span>
+          </>
+        ) : (
+          <>
+            {transport.requiresAuthentication && currentProject && <ProjectSwitcher />}
+            {transport.requiresAuthentication && currentProject && metrics.length > 0 && (
+              <span className="text-text-quaternary select-none">·</span>
+            )}
+          </>
         )}
         {metrics.length > 0 && (
           <div className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">

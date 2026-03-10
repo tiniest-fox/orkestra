@@ -15,18 +15,24 @@ const TransportContext = createContext<Transport | null>(null);
 // ============================================================================
 
 interface TransportProviderProps {
+  /** Optional pre-created transport. When omitted, a transport is created via `createTransport()`. */
+  transport?: Transport;
   children: ReactNode;
 }
 
 /**
  * Provides the transport singleton to the component tree.
  *
- * Creates the transport once (via `createTransport()`) and never recreates it.
+ * When `transport` is provided, it is used directly (no factory call).
+ * When omitted, creates the transport once via `createTransport()` and never recreates it.
  * Components that need connection state use `useConnectionState()`, which
  * manages its own subscription independently.
  */
-export function TransportProvider({ children }: TransportProviderProps) {
-  const [transport] = useState(() => createTransport());
+export function TransportProvider({
+  transport: injectedTransport,
+  children,
+}: TransportProviderProps) {
+  const [transport] = useState(() => injectedTransport ?? createTransport());
 
   return <TransportContext.Provider value={transport}>{children}</TransportContext.Provider>;
 }

@@ -98,21 +98,21 @@ su - "$USERNAME" -c 'git config --global user.name "Orkestra Agent"'
 su - "$USERNAME" -c 'git config --global credential.helper "!f() { echo username=x-access-token; echo password=\$GH_TOKEN; }; f"'
 
 # -- Configure pnpm store for the uid 1000 user --
-# Point pnpm at /opt/pnpm-store (world-writable, pre-created in the toolbox
-# image) so it never falls back to creating a store inside /workspace or the
-# user home directory — both of which can have permission issues depending on
-# the devcontainer environment.
+# Point pnpm at /opt/pnpm-store so it never falls back to creating a store
+# inside /workspace or the user home directory.
 #
-# Pre-create the v10/projects subdirectory with sticky+world-writable
-# permissions. pnpm creates project symlinks here; if root runs pnpm first
-# (e.g. via postCreateCommand) it would own this dir with 755, then uid 1000
-# cannot symlink inside it. Pre-creating with 1777 (sticky) means any user
-# can create entries but cannot remove others'.
+# Transfer ownership of /opt to uid 1000 so it can create new tool store
+# subdirectories (pnpm-store, go module cache, etc.) freely. Recurse into
+# every subdirectory except /opt/orkestra, which is the read-only toolbox
+# volume mount and cannot be chowned from inside the project container.
+# Root ignores ownership so it can still read/write everything.
+# This is idempotent: safe to re-run on every container start.
 
 echo 'store-dir=/opt/pnpm-store' > /home/orkestra/.npmrc
 chown 1000:1000 /home/orkestra/.npmrc
-mkdir -p /opt/pnpm-store/v10/projects
-chmod 1777 /opt/pnpm-store/v10/projects
+mkdir -p /opt/pnpm-store
+chown 1000:1000 /opt
+find /opt -mindepth 1 -maxdepth 1 ! -name orkestra -exec chown -R 1000:1000 {} +
 SETUP_SCRIPT
 chmod +x /opt/orkestra/setup.sh
 TOOLBOX_BUILD

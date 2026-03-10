@@ -35,6 +35,8 @@ export interface Project {
   status: ProjectStatus;
   error_message?: string;
   ws_url?: string;
+  token?: string;
+  token_error?: string;
 }
 
 export interface GithubStatus {

@@ -1,8 +1,11 @@
-//! Individual project card with status indicator and lifecycle action buttons.
+//! Individual project card with status indicator, Open CTA for running projects, and overflow menu.
 //! Applies optimistic status updates on action click; reverts on API error.
 
+import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "../../components/ui";
+import { Dropdown } from "../../components/ui/Dropdown";
 import type { Project, ProjectStatus } from "../api";
 import { rebuildProject, removeProject, startProject, stopProject } from "../api";
 
@@ -67,6 +70,7 @@ function statusDotClass(status: ProjectStatus): string {
 export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
   const [optimisticStatus, setOptimisticStatus] = useState<ProjectStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const status = optimisticStatus ?? project.status;
   const busy = optimisticStatus !== null;
@@ -105,46 +109,69 @@ export function ProjectCard({ project, onRefresh }: ProjectCardProps) {
           {project.name}
         </span>
         <span className="text-xs text-text-secondary whitespace-nowrap">{statusLabel(status)}</span>
-        <div className="flex items-center gap-1 ml-auto">
-          {canStart && (
-            <Button
-              variant="secondary"
-              size="sm"
+        {status === "running" && (
+          <Link to={`/project/${project.id}`}>
+            <Button variant="primary" size="sm">
+              Open
+            </Button>
+          </Link>
+        )}
+        <Dropdown
+          align="right"
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
+          trigger={({ onClick }) => (
+            <button
+              type="button"
+              onClick={onClick}
               disabled={busy || isTransitioning(status)}
-              onClick={() => runAction("starting", () => startProject(project.id))}
+              aria-label="Project actions"
+              className="p-1 rounded text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <EllipsisVertical className="w-4 h-4" />
+            </button>
+          )}
+        >
+          {canStart && (
+            <Dropdown.Item
+              onClick={() => {
+                setMenuOpen(false);
+                runAction("starting", () => startProject(project.id));
+              }}
             >
               Start
-            </Button>
+            </Dropdown.Item>
           )}
           {canStop && (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy || isTransitioning(status)}
-              onClick={() => runAction("stopping", () => stopProject(project.id))}
+            <Dropdown.Item
+              onClick={() => {
+                setMenuOpen(false);
+                runAction("stopping", () => stopProject(project.id));
+              }}
             >
               Stop
-            </Button>
+            </Dropdown.Item>
           )}
           {canRebuild && (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy || isTransitioning(status)}
-              onClick={() => runAction("rebuilding", () => rebuildProject(project.id))}
+            <Dropdown.Item
+              onClick={() => {
+                setMenuOpen(false);
+                runAction("rebuilding", () => rebuildProject(project.id));
+              }}
             >
               Rebuild
-            </Button>
+            </Dropdown.Item>
           )}
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={busy || isTransitioning(status)}
-            onClick={handleRemove}
+          <Dropdown.Item
+            onClick={() => {
+              setMenuOpen(false);
+              handleRemove();
+            }}
+            className="text-status-error"
           >
             Remove
-          </Button>
-        </div>
+          </Dropdown.Item>
+        </Dropdown>
       </div>
 
       {/* -- Error message from project -- */}

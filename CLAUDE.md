@@ -148,7 +148,7 @@ The `bin/ork` wrapper handles building and running the CLI automatically.
 The project uses two caching mechanisms for faster builds:
 
 - **sccache** - Caches Rust compilation artifacts. Configured in `.cargo/config.toml`. Clean builds with warm cache: ~24s (vs ~64s without). If you get inexplicable type errors after changing a crate's public API, sccache may be serving stale artifacts — `touch crates/<crate>/src/lib.rs` forces recompilation.
-- **pnpm** - Uses a global content-addressable store with hard links. Fresh `node_modules` install with warm cache: ~1.2s.
+- **pnpm** - Uses a global content-addressable store with hard links. Fresh `node_modules` install with warm cache: ~1.2s. **If `pnpm install` fails with EACCES on `/opt/pnpm-store`** (root-owned, not world-writable), use a local store: `pnpm install --store-dir ~/.pnpm-store`. The gate script (`checks.sh`) skips `pnpm install` when `node_modules` already exists, so a fully-populated `node_modules` also resolves this.
 
 ## Testing
 

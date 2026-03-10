@@ -194,3 +194,40 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
 
   return <ProjectsContext.Provider value={value}>{children}</ProjectsContext.Provider>;
 }
+
+// ============================================================================
+// ProjectDetailProvider
+// ============================================================================
+
+const PROJECT_DETAIL_STUB: ProjectsContextValue = {
+  projects: [],
+  currentProject: null,
+  addingProject: false,
+  addProject: () => {
+    throw new Error("ProjectDetailProvider: addProject not available");
+  },
+  removeProject: () => {
+    throw new Error("ProjectDetailProvider: removeProject not available");
+  },
+  switchProject: () => {
+    throw new Error("ProjectDetailProvider: switchProject not available");
+  },
+  startAddProject: () => {
+    throw new Error("ProjectDetailProvider: startAddProject not available");
+  },
+  cancelAddProject: () => {
+    throw new Error("ProjectDetailProvider: cancelAddProject not available");
+  },
+  syncing: false,
+  serviceError: null,
+};
+
+/**
+ * Stub provider for project detail pages where project management operations are not available.
+ * Components that call useProjects() will get a safe context that throws on mutation attempts.
+ */
+export function ProjectDetailProvider({ children }: { children: ReactNode }) {
+  return (
+    <ProjectsContext.Provider value={PROJECT_DETAIL_STUB}>{children}</ProjectsContext.Provider>
+  );
+}

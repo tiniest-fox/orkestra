@@ -22,15 +22,6 @@ export function ServiceHeader({ onGeneratePairingCode }: ServiceHeaderProps) {
         <Button variant="secondary" size="sm" onClick={onGeneratePairingCode}>
           Generate Pairing Code
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            window.location.href = "/app";
-          }}
-        >
-          Open App
-        </Button>
       </div>
     </div>
   );

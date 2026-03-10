@@ -10,6 +10,7 @@ import { FileHeaderContent } from "./FileHeaderContent";
 import { FileSection } from "./FileSection";
 import type { DraftComment } from "./types";
 import { FILE_HEADER_BUTTON_BASE } from "./types";
+import type { DiffMatch } from "./useDiffSearch";
 
 const HEADER_HEIGHT = 36;
 
@@ -45,6 +46,9 @@ interface DiffContentProps {
   onDeleteDraft?: (id: string) => void;
   draftBody?: string;
   onDraftBodyChange?: (body: string) => void;
+  // -- Search props (all optional) --
+  matches?: DiffMatch[];
+  currentMatch?: DiffMatch | null;
 }
 
 function estimateFileHeight(file: HighlightedFileDiff, collapsed: Set<string>): number {
@@ -75,6 +79,8 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
     onDeleteDraft,
     draftBody,
     onDraftBodyChange,
+    matches,
+    currentMatch,
   },
   ref,
 ) {
@@ -185,6 +191,8 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
       >
         {virtualItems.map((virtualItem) => {
           const file = files[virtualItem.index];
+          const isMatchFile = currentMatch?.fileIndex === virtualItem.index;
+          const fileMatches = (matches ?? []).filter((m) => m.fileIndex === virtualItem.index);
           return (
             <div
               key={file.path}
@@ -217,6 +225,8 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
                 onDeleteDraft={onDeleteDraft}
                 draftBody={draftBody}
                 onDraftBodyChange={onDraftBodyChange}
+                fileMatches={fileMatches}
+                currentMatch={isMatchFile ? (currentMatch ?? null) : null}
               />
             </div>
           );

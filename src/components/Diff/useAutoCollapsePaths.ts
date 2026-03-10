@@ -8,6 +8,7 @@ interface UseAutoCollapsePathsResult {
   collapsedPaths: Set<string>;
   toggleCollapsed: (path: string) => void;
   resetInteraction: () => void;
+  expandForSearch: (path: string) => void;
 }
 
 export function useAutoCollapsePaths(
@@ -44,5 +45,16 @@ export function useAutoCollapsePaths(
     userHasInteractedRef.current = false;
   }
 
-  return { collapsedPaths, toggleCollapsed, resetInteraction };
+  // Expand a file for search navigation without setting the user-interaction flag,
+  // so auto-collapse still applies on the next diff load.
+  function expandForSearch(path: string) {
+    setCollapsedPaths((prev) => {
+      if (!prev.has(path)) return prev;
+      const next = new Set(prev);
+      next.delete(path);
+      return next;
+    });
+  }
+
+  return { collapsedPaths, toggleCollapsed, resetInteraction, expandForSearch };
 }

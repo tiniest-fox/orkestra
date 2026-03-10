@@ -115,6 +115,41 @@ describe("useAutoCollapsePaths", () => {
     expect(result.current.collapsedPaths.has("deleted.ts")).toBe(true);
   });
 
+  it("expandForSearch removes path from collapsedPaths", () => {
+    const files = [makeFile("deleted.ts", { changeType: "deleted" }), makeFile("small.ts")];
+    const { result } = renderHook(() => useAutoCollapsePaths(files));
+    expect(result.current.collapsedPaths.has("deleted.ts")).toBe(true);
+
+    act(() => {
+      result.current.expandForSearch("deleted.ts");
+    });
+
+    expect(result.current.collapsedPaths.has("deleted.ts")).toBe(false);
+  });
+
+  it("expandForSearch does not set interaction flag (auto-collapse still runs on next file change)", () => {
+    const files = [makeFile("deleted.ts", { changeType: "deleted" })];
+    const { result, rerender } = renderHook(({ files }) => useAutoCollapsePaths(files), {
+      initialProps: { files },
+    });
+
+    // Expand via search — should NOT set the interaction flag
+    act(() => {
+      result.current.expandForSearch("deleted.ts");
+    });
+    expect(result.current.collapsedPaths.has("deleted.ts")).toBe(false);
+
+    // Change files — auto-collapse should still run because interaction flag was not set
+    const newFiles = [
+      makeFile("deleted.ts", { changeType: "deleted" }),
+      makeFile("large.ts", { additions: 200, deletions: 150 }),
+    ];
+    rerender({ files: newFiles });
+
+    expect(result.current.collapsedPaths.has("deleted.ts")).toBe(true);
+    expect(result.current.collapsedPaths.has("large.ts")).toBe(true);
+  });
+
   it("passing undefined files resets to empty set and clears interaction flag", () => {
     const initialFiles = [makeFile("deleted.ts", { changeType: "deleted" })];
     const { result, rerender } = renderHook(

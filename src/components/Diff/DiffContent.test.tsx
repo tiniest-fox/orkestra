@@ -119,6 +119,8 @@ function renderFileSection(
       isCollapsed={opts.collapsedPaths?.has(file.path) ?? false}
       onToggleCollapsed={opts.onToggleCollapsed ?? noop}
       activeCommentLine={null}
+      fileMatches={[]}
+      currentMatch={null}
     />,
   );
 }
@@ -150,6 +152,8 @@ describe("FileSection", () => {
           isCollapsed={false}
           onToggleCollapsed={noop}
           activeCommentLine={null}
+          fileMatches={[]}
+          currentMatch={null}
         />
         <FileSection
           file={fileB}
@@ -159,6 +163,8 @@ describe("FileSection", () => {
           isCollapsed={false}
           onToggleCollapsed={noop}
           activeCommentLine={null}
+          fileMatches={[]}
+          currentMatch={null}
         />
       </>,
     );
@@ -242,6 +248,8 @@ describe("FileSection", () => {
         isCollapsed={true}
         onToggleCollapsed={noop}
         activeCommentLine={null}
+        fileMatches={[]}
+        currentMatch={null}
       />,
     );
 
@@ -265,6 +273,8 @@ describe("FileSection", () => {
         isCollapsed={false}
         onToggleCollapsed={onToggle}
         activeCommentLine={null}
+        fileMatches={[]}
+        currentMatch={null}
       />,
     );
 

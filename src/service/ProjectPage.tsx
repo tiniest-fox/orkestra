@@ -61,6 +61,13 @@ function ProjectAppShell({ project, token }: { project: Project; token: string }
     };
   }, [wsUrl, token]);
 
+  useEffect(() => {
+    document.title = `Orkestra | ${project.name}`;
+    return () => {
+      document.title = "Orkestra Service";
+    };
+  }, [project.name]);
+
   if (!transport) {
     return <FeedLoadingSkeleton statusText="Connecting to daemon…" projectName={project.name} />;
   }

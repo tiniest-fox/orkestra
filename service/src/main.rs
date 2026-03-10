@@ -1,10 +1,9 @@
 //! `ork-service` — multi-project Orkestra service.
 //!
-//! Manages multiple child orkd daemon processes, serves a project management
-//! web UI, and provides automatic project discovery for the PWA.
+//! Manages multiple child orkd daemon processes and serves a project management
+//! web UI.
 
 mod embedded_spa;
-mod pwa;
 mod service_ui;
 
 use std::net::{IpAddr, SocketAddr};
@@ -205,10 +204,8 @@ async fn run(args: Args) -> Result<(), String> {
         .map_err(|e| format!("Failed to bind {bind_addr}: {e}"))?;
     tracing::info!("Service listening on {bind_addr}");
 
-    // Build PWA and service UI routers (PWA has a stub mode when embed-pwa is disabled).
-    let pwa_router = pwa::router();
-    let service_ui_router = service_ui::router();
-    let extra_routes = pwa_router.merge(service_ui_router);
+    // Build service UI router.
+    let extra_routes = service_ui::router();
 
     // Start HTTP server — runs until the stop flag is set externally.
     let server_future = orkestra_service::start(

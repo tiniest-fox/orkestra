@@ -1,7 +1,7 @@
 # Orkestra service (ork-service) — production image for Dokploy/Docker deployment.
 #
-# Builds ork-service (with embedded PWA) and orkd, then packages them with the
-# full agent runtime (claude CLI, gh CLI, git).
+# Builds ork-service and orkd, then packages them with the full agent runtime
+# (claude CLI, gh CLI, git).
 #
 # Build stages:
 #   1. planner  — cargo-chef prepares a dependency recipe
@@ -67,7 +67,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22 LTS + pnpm (needed by service/build.rs to compile the PWA).
+# Install Node.js 22 LTS + pnpm (needed by service/build.rs to compile the service UI).
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -87,9 +87,9 @@ RUN cargo chef cook --release -p ork-service -p orkd --recipe-path recipe.json
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile
 
-# -- Build ork-service (embed-pwa triggers pnpm build --mode pwa) + orkd --
+# -- Build ork-service + orkd --
 COPY . .
-RUN cargo build --release -p ork-service --features embed-pwa
+RUN cargo build --release -p ork-service
 RUN cargo build --release -p orkd
 
 # ============================================================================

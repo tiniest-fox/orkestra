@@ -18,7 +18,6 @@ import {
   WorkflowConfigProvider,
 } from "./providers";
 import { TransportProvider, useConnectionState, useTransport } from "./transport";
-import { isServiceMode } from "./utils/serviceMode";
 
 // ============================================================================
 // Root
@@ -57,8 +56,7 @@ export default App;
 function AppContent() {
   const transport = useTransport();
   const connectionState = useConnectionState();
-  const { currentProject, addingProject, cancelAddProject, removeProject, syncing, serviceError } =
-    useProjects();
+  const { currentProject, addingProject, cancelAddProject, removeProject } = useProjects();
 
   // All hooks must run unconditionally before any early returns.
   useEffect(() => {
@@ -78,34 +76,10 @@ function AppContent() {
     }
   }, [currentProject]);
 
-  // Service mode: show loading while syncing projects from service API
-  if (syncing) {
-    return <FeedLoadingSkeleton statusText="Loading projects…" />;
-  }
-
-  // Service mode: show error if sync failed (e.g., expired token)
-  if (serviceError) {
-    return (
-      <FeedLoadingSkeleton statusText={serviceError}>
-        <Button variant="secondary" className="mt-4" onClick={() => window.location.reload()}>
-          Retry
-        </Button>
-      </FeedLoadingSkeleton>
-    );
-  }
-
   // PWA path: gate access behind pairing and WebSocket connection.
   if (transport.requiresAuthentication) {
-    // In service mode, skip ConnectionPage — projects are auto-loaded from service
-    if (!isServiceMode()) {
-      if (!currentProject || addingProject) {
-        return <ConnectionPage onCancel={addingProject ? cancelAddProject : undefined} />;
-      }
-    }
-
-    // No projects available
-    if (!currentProject) {
-      return <FeedLoadingSkeleton statusText="No running projects on the service" />;
+    if (!currentProject || addingProject) {
+      return <ConnectionPage onCancel={addingProject ? cancelAddProject : undefined} />;
     }
 
     if (connectionState === "connecting") {
@@ -123,18 +97,15 @@ function AppContent() {
           statusText="Reconnecting to daemon…"
           projectName={currentProject.projectName || undefined}
         >
-          {/* Hide disconnect button in service mode — projects managed by service */}
-          {!isServiceMode() && (
-            <Button
-              variant="secondary"
-              className="mt-4"
-              onClick={() => {
-                removeProject(currentProject.id);
-              }}
-            >
-              Disconnect
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            className="mt-4"
+            onClick={() => {
+              removeProject(currentProject.id);
+            }}
+          >
+            Disconnect
+          </Button>
         </FeedLoadingSkeleton>
       );
     }

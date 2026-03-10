@@ -23,6 +23,3 @@ axum = "0.8"
 rust-embed = "8"
 mime_guess = "2"
 
-[features]
-default = []
-embed-pwa = []

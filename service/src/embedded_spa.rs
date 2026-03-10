@@ -6,8 +6,7 @@ use rust_embed::Embed;
 
 /// Serve a file from an embedded asset bundle with SPA fallback.
 /// Returns the requested file if found, or falls back to `root_file`
-/// for client-side routing. Pass `"index.html"` for the PWA bundle
-/// and `"service.html"` for the service UI bundle.
+/// for client-side routing. Pass `"service.html"` for the service UI bundle.
 pub fn serve_embedded_file<T: Embed>(path: &str, root_file: &str) -> Response {
     let path = if path.is_empty() { root_file } else { path };
 

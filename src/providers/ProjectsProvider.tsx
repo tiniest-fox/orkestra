@@ -15,7 +15,6 @@ import {
   setCurrentProjectId,
   setProjectIdInUrl,
 } from "../utils/projectStorage";
-import { isServiceMode, syncProjectsFromService } from "../utils/serviceMode";
 
 // ============================================================================
 // Types
@@ -30,8 +29,6 @@ interface ProjectsContextValue {
   switchProject: (id: string) => void;
   startAddProject: () => void;
   cancelAddProject: () => void;
-  syncing: boolean;
-  serviceError: string | null;
 }
 
 // ============================================================================
@@ -82,9 +79,7 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
 
   // Prefer the URL ?project= param (PWA multi-tab); fall back to localStorage.
   // Note: migrateFromLegacy() already ran in the projects initializer above.
-  // The setter is only needed for service-mode sync, which writes to localStorage
-  // then needs React to re-read the new ID without triggering a page reload.
-  const [currentProjectId, setCurrentProjectIdState] = useState<string | null>(() => {
+  const [currentProjectId] = useState<string | null>(() => {
     const activeProject = loadActiveProject();
     // Inject stored default into URL so windows are self-contained and shareable.
     // Skip when the URL param is already set (multi-tab: don't clobber the caller's URL).
@@ -95,8 +90,6 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
   });
 
   const [addingProject, setAddingProject] = useState(false);
-  const [syncing, setSyncing] = useState(() => isServiceMode());
-  const [serviceError, setServiceError] = useState<string | null>(null);
 
   const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
 
@@ -143,23 +136,6 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
     setAddingProject(false);
   }, []);
 
-  // Sync projects from the service API on mount (service mode only).
-  useEffect(() => {
-    if (!isServiceMode()) return;
-
-    syncProjectsFromService()
-      .then((synced) => {
-        setProjects(synced);
-        // Re-read the ID that syncProjectsFromService wrote to localStorage.
-        setCurrentProjectIdState(loadActiveProject()?.id ?? null);
-        setSyncing(false);
-      })
-      .catch((err) => {
-        setServiceError(err instanceof Error ? err.message : String(err));
-        setSyncing(false);
-      });
-  }, []); // Run once on mount
-
   // Populate projectName and projectRoot from the daemon after first connection.
   useEffect(() => {
     if (!currentProject || currentProject.projectName) return;
@@ -188,8 +164,6 @@ export function ProjectsProvider({ children }: ProjectsProviderProps) {
     switchProject,
     startAddProject,
     cancelAddProject,
-    syncing,
-    serviceError,
   };
 
   return <ProjectsContext.Provider value={value}>{children}</ProjectsContext.Provider>;
@@ -218,8 +192,6 @@ const PROJECT_DETAIL_STUB: ProjectsContextValue = {
   cancelAddProject: () => {
     throw new Error("ProjectDetailProvider: cancelAddProject not available");
   },
-  syncing: false,
-  serviceError: null,
 };
 
 /**

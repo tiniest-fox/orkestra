@@ -1,6 +1,5 @@
 //! Project detail page — connects to a specific project's daemon and mounts the Orkestra app.
 
-import { ArrowLeft } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { FeedLoadingSkeleton } from "../components/Feed/FeedLoadingSkeleton";
@@ -16,6 +15,7 @@ import { TransportProvider, useConnectionState } from "../transport";
 import { WebSocketTransport } from "../transport/WebSocketTransport";
 import type { Project } from "./api";
 import { fetchProjects } from "./api";
+import { SERVICE_TITLE } from "./constants";
 
 // ============================================================================
 // Connection gate
@@ -64,7 +64,7 @@ function ProjectAppShell({ project, token }: { project: Project; token: string }
   useEffect(() => {
     document.title = `Orkestra | ${project.name}`;
     return () => {
-      document.title = "Orkestra Service";
+      document.title = SERVICE_TITLE;
     };
   }, [project.name]);
 
@@ -80,22 +80,7 @@ function ProjectAppShell({ project, token }: { project: Project; token: string }
             <TasksProvider>
               <PrStatusProvider>
                 <GitHistoryProvider>
-                  <div className="w-full h-full flex flex-col overflow-clip bg-canvas">
-                    <div className="flex items-center gap-2 px-4 h-9 border-b border-border bg-surface shrink-0">
-                      <Link
-                        to="/"
-                        className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors"
-                      >
-                        <ArrowLeft className="w-3 h-3" />
-                        Projects
-                      </Link>
-                      <span className="text-text-quaternary">·</span>
-                      <span className="text-xs font-medium text-text-primary">{project.name}</span>
-                    </div>
-                    <div className="flex-1 overflow-clip">
-                      <Orkestra />
-                    </div>
-                  </div>
+                  <Orkestra serviceProjectName={project.name} />
                 </GitHistoryProvider>
               </PrStatusProvider>
             </TasksProvider>

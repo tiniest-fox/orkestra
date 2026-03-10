@@ -144,6 +144,6 @@ describe("ProjectPage", () => {
       expect(document.title).toBe("Orkestra | MyProject");
     });
     unmount();
-    expect(document.title).toBe("Orkestra Service");
+    expect(document.title).toBe("Orkestra | Service");
   });
 });

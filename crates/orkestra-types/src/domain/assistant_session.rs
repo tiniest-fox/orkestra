@@ -1,18 +1,18 @@
-// ! Assistant session tracking for project-level chat.
+//! Assistant session tracking for project-level and task-scoped chat.
 //!
-//! An `AssistantSession` tracks a Claude Code session for the project-level assistant chat
-//! panel. Unlike stage sessions (which are tied to tasks), assistant sessions are independent.
+//! An `AssistantSession` tracks a Claude Code session for the assistant chat panel.
+//! Sessions can be project-level (`task_id` = None) or task-scoped (`task_id` = Some).
 
 use serde::{Deserialize, Serialize};
 
 /// Reuse `SessionState` from `stage_session`.
 pub use super::stage_session::SessionState;
 
-/// An assistant session for project-level chat.
+/// An assistant session for project-level or task-scoped chat.
 ///
-/// Assistant sessions are independent of tasks and provide a persistent chat interface
-/// at the project level. They maintain Claude session continuity across app restarts
-/// and process crashes.
+/// Sessions with `task_id = None` are project-level. Sessions with `task_id = Some`
+/// are scoped to a specific task (at most one per task, enforced by a DB UNIQUE index).
+/// Both maintain Claude session continuity across app restarts and process crashes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AssistantSession {
     /// Unique identifier for this session.
@@ -46,6 +46,10 @@ pub struct AssistantSession {
 
     /// When the session was last active (RFC3339).
     pub updated_at: String,
+
+    /// Task this session is scoped to, or `None` for project-level sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
 }
 
 impl AssistantSession {
@@ -65,7 +69,14 @@ impl AssistantSession {
             session_state: SessionState::Active,
             created_at: created.clone(),
             updated_at: created,
+            task_id: None,
         }
+    }
+
+    /// Scope this session to a specific task.
+    pub fn with_task(mut self, task_id: impl Into<String>) -> Self {
+        self.task_id = Some(task_id.into());
+        self
     }
 
     /// Check if this session has a Claude session ID (can be resumed).
@@ -209,8 +220,29 @@ mod tests {
         assert!(json.contains("\"claude_session_id\":\"test-uuid\""));
         assert!(json.contains("\"title\":\"My Session\""));
         assert!(json.contains("\"spawn_count\":2"));
+        // task_id is None so it should be omitted (skip_serializing_if)
+        assert!(!json.contains("task_id"));
 
         let parsed: AssistantSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, session);
+    }
+
+    #[test]
+    fn test_with_task_builder() {
+        let session = AssistantSession::new("as-2", "2025-01-24T10:00:00Z").with_task("task-abc");
+
+        assert_eq!(session.task_id, Some("task-abc".to_string()));
+    }
+
+    #[test]
+    fn test_with_task_serialization_roundtrip() {
+        let session = AssistantSession::new("as-3", "2025-01-24T10:00:00Z").with_task("task-xyz");
+
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(json.contains("\"task_id\":\"task-xyz\""));
+
+        let parsed: AssistantSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.task_id, Some("task-xyz".to_string()));
         assert_eq!(parsed, session);
     }
 

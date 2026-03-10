@@ -83,6 +83,8 @@ const METHOD_MAP: Record<string, string> = {
   assistant_stop: "assistant_stop",
   assistant_list_sessions: "assistant_list_sessions",
   assistant_get_logs: "assistant_get_logs",
+  assistant_send_task_message: "assistant_send_task_message",
+  assistant_list_project_sessions: "assistant_list_project_sessions",
   get_project_info: "get_project_info",
   open_in_terminal: "open_in_terminal",
   open_in_editor: "open_in_editor",

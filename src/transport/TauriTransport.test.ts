@@ -93,6 +93,22 @@ describe("TauriTransport", () => {
       expect(mockInvoke).toHaveBeenCalledWith("assistant_send_message", { message: "hi" });
     });
 
+    it("passes through assistant_send_task_message without renaming", async () => {
+      await transport.call("assistant_send_task_message", {
+        task_id: "t1",
+        message: "hi",
+      });
+      expect(mockInvoke).toHaveBeenCalledWith("assistant_send_task_message", {
+        taskId: "t1",
+        message: "hi",
+      });
+    });
+
+    it("passes through assistant_list_project_sessions without renaming", async () => {
+      await transport.call("assistant_list_project_sessions");
+      expect(mockInvoke).toHaveBeenCalledWith("assistant_list_project_sessions", {});
+    });
+
     it("passes through get_project_info without renaming", async () => {
       await transport.call("get_project_info");
       expect(mockInvoke).toHaveBeenCalledWith("get_project_info", {});

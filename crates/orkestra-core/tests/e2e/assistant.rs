@@ -3,7 +3,8 @@
 //! Tests assistant session creation, log storage, and session isolation
 //! using real `SQLite` persistence (no mocks).
 
-use orkestra_core::workflow::domain::LogEntry;
+use orkestra_core::workflow::domain::{LogEntry, Task};
+use orkestra_core::workflow::ports::WorkflowStore;
 
 use crate::helpers::create_assistant_service;
 
@@ -125,5 +126,71 @@ fn test_process_exit_log_entry_round_trips() {
     assert!(
         matches!(last_entry, LogEntry::ProcessExit { code: Some(0) }),
         "Last entry should be ProcessExit with code: Some(0), got: {last_entry:?}"
+    );
+}
+
+// =============================================================================
+// Task-scoped Session Lifecycle
+// =============================================================================
+
+#[test]
+fn test_task_assistant_session_lifecycle() {
+    let (service, store, temp_dir) = create_assistant_service();
+
+    // Create a task with worktree_path pointing to the temp dir
+    let task_id = "test-task-abc";
+    let worktree_path = temp_dir.path().to_str().unwrap().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut task = Task::new(
+        task_id,
+        "Test Task Title",
+        "A description of the test task.",
+        "work",
+        &now,
+    );
+    task.worktree_path = Some(worktree_path);
+    store.save_task(&task).expect("save_task should succeed");
+
+    // Step 1: Send a message — creates a new session
+    let session1 = service
+        .send_task_message(task_id, "hello")
+        .expect("send_task_message should succeed");
+
+    // Verify task_id is set on the session
+    assert_eq!(
+        session1.task_id.as_deref(),
+        Some(task_id),
+        "Session should be scoped to the task"
+    );
+    assert!(!session1.id.is_empty());
+
+    // Step 2: Send another message — verify same session is reused
+    let session2 = service
+        .send_task_message(task_id, "follow-up question")
+        .expect("second send_task_message should succeed");
+
+    assert_eq!(
+        session1.id, session2.id,
+        "Same session should be reused for subsequent messages"
+    );
+
+    // Step 3: Verify list_project_sessions does NOT include the task session
+    let project_sessions = service
+        .list_project_sessions()
+        .expect("list_project_sessions should succeed");
+    let task_in_project = project_sessions.iter().any(|s| s.id == session1.id);
+    assert!(
+        !task_in_project,
+        "Task session should NOT appear in project sessions list"
+    );
+
+    // Step 4: Verify list_sessions DOES include it
+    let all_sessions = service
+        .list_sessions()
+        .expect("list_sessions should succeed");
+    let task_in_all = all_sessions.iter().any(|s| s.id == session1.id);
+    assert!(
+        task_in_all,
+        "Task session SHOULD appear in full sessions list"
     );
 }

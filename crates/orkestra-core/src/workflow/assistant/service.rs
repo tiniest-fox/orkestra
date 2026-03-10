@@ -1,7 +1,7 @@
-//! Assistant service for managing project-level chat sessions.
+//! Assistant service for managing project-level and task-scoped chat sessions.
 //!
 //! This service provides the core business logic for the assistant chat panel:
-//! - Creating new chat sessions
+//! - Creating new chat sessions (project-level and task-scoped)
 //! - Spawning/resuming Claude Code processes
 //! - Storing user messages and agent logs
 //! - Stopping running processes
@@ -9,15 +9,15 @@
 //! - Retrieving session history
 
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
 use crate::orkestra_debug;
 use crate::title::{generate_fallback_title, generate_title_sync};
-use crate::workflow::domain::{AssistantSession, LogEntry};
+use crate::workflow::domain::{AssistantSession, LogEntry, Task};
 use crate::workflow::execution::{AgentParser, ProviderRegistry};
-use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use orkestra_agent::interactions::spawner::cli_path::prepare_path_env;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessGuard};
 
@@ -106,31 +106,15 @@ impl AssistantService {
         }
 
         // Spawn the agent (or resume the session)
-        let spawn_result = self.spawn_agent(&session, message);
+        let system_prompt = Self::load_system_prompt();
+        let spawn_result = self.spawn_agent_in(
+            &session,
+            message,
+            &self.project_root.clone(),
+            &system_prompt,
+        );
 
-        match spawn_result {
-            Ok((pid, stdout, stderr)) => {
-                // Capture spawn count before incrementing (for title generation check)
-                let spawn_count_before = session.spawn_count;
-
-                // Update session state
-                session.agent_spawned(pid, &now);
-                self.store.save_assistant_session(&session)?;
-
-                // Spawn background thread to read agent output
-                self.spawn_output_reader(&session, spawn_count_before, pid, stdout, stderr);
-            }
-            Err(e) => {
-                // Write error to session logs instead of failing
-                orkestra_debug!("assistant", "Agent spawn failed: {}", e);
-                self.store.append_assistant_log_entry(
-                    &session.id,
-                    &LogEntry::Error {
-                        message: format!("Failed to spawn agent: {e}"),
-                    },
-                )?;
-            }
-        }
+        self.handle_spawn_result(&mut session, spawn_result, &now)?;
 
         Ok(session)
     }
@@ -160,6 +144,101 @@ impl AssistantService {
         Ok(())
     }
 
+    /// Send a message to the task-scoped assistant session for `task_id`.
+    ///
+    /// Creates a new session if none exists for this task, or reuses the existing one.
+    /// Spawns Claude Code in the task's worktree for task-specific context.
+    ///
+    /// Returns the session even if spawn fails — spawn failures are written as
+    /// `LogEntry::Error` to the session's logs so the UI can display them.
+    pub fn send_task_message(
+        &self,
+        task_id: &str,
+        message: &str,
+    ) -> WorkflowResult<AssistantSession> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        if message.trim().is_empty() {
+            return Err(WorkflowError::InvalidState(
+                "Message cannot be empty".to_string(),
+            ));
+        }
+
+        // Load the task — must exist
+        let task = self
+            .store
+            .get_task(task_id)?
+            .ok_or_else(|| WorkflowError::InvalidState(format!("Task not found: {task_id}")))?;
+
+        // Build the new session upfront so it's ready for atomic get-or-create
+        let new_session_id = uuid::Uuid::new_v4().to_string();
+        let claude_session_id = uuid::Uuid::new_v4().to_string();
+        let mut new_session = AssistantSession::new(&new_session_id, &now).with_task(task_id);
+        new_session.claude_session_id = Some(claude_session_id);
+
+        // Atomically get the existing session or create a new one
+        let mut session = self
+            .store
+            .get_or_create_assistant_session_for_task(task_id, &new_session)?;
+
+        // Validate worktree exists
+        let worktree_path = task.worktree_path.as_deref().and_then(|p| {
+            let path = std::path::Path::new(p);
+            if path.exists() {
+                Some(path.to_path_buf())
+            } else {
+                None
+            }
+        });
+
+        let Some(worktree) = worktree_path else {
+            self.store.append_assistant_log_entry(
+                &session.id,
+                &LogEntry::UserMessage {
+                    resume_type: "message".to_string(),
+                    content: message.to_string(),
+                },
+            )?;
+            self.store.append_assistant_log_entry(
+                &session.id,
+                &LogEntry::Error {
+                    message: "Task worktree not available — the task may have been integrated or cleaned up".to_string(),
+                },
+            )?;
+            return Ok(session);
+        };
+
+        // Store the user message as a log entry
+        self.store.append_assistant_log_entry(
+            &session.id,
+            &LogEntry::UserMessage {
+                resume_type: "message".to_string(),
+                content: message.to_string(),
+            },
+        )?;
+
+        // Kill any running agent before spawning a new one
+        if let Some(pid) = session.agent_pid {
+            if is_process_running(pid) {
+                orkestra_debug!("assistant", "Killing previous task agent (pid={})", pid);
+                let _ = kill_process_tree(pid);
+            }
+        }
+
+        // Spawn the task agent
+        let system_prompt = Self::build_task_system_prompt(&task);
+        let spawn_result = self.spawn_agent_in(&session, message, &worktree, &system_prompt);
+
+        self.handle_spawn_result(&mut session, spawn_result, &now)?;
+
+        Ok(session)
+    }
+
+    /// List project-level assistant sessions (excludes task-scoped sessions).
+    pub fn list_project_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {
+        self.store.list_project_assistant_sessions()
+    }
+
     /// List all assistant sessions ordered by `created_at` DESC.
     pub fn list_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {
         self.store.list_assistant_sessions()
@@ -175,21 +254,25 @@ impl AssistantService {
     // ========================================================================
 
     /// Spawn the Claude Code agent process and return (pid, stdout, stderr).
-    fn spawn_agent(
+    ///
+    /// Used by both `send_message` (project-level) and `send_task_message` (task-scoped).
+    /// The caller provides the working directory and system prompt appropriate for the context.
+    fn spawn_agent_in(
         &self,
         session: &AssistantSession,
         message: &str,
+        working_dir: &Path,
+        system_prompt: &str,
     ) -> std::io::Result<(u32, std::process::ChildStdout, std::process::ChildStderr)> {
         let path_env = prepare_path_env();
         let is_resume = session.spawn_count > 0;
-        let system_prompt = Self::load_system_prompt();
 
         let mut child = spawn_claude_assistant_process(
-            &self.project_root,
+            working_dir,
             &path_env,
             session.claude_session_id.as_deref(),
             is_resume,
-            &system_prompt,
+            system_prompt,
         )?;
 
         let pid = child.id();
@@ -210,6 +293,62 @@ impl AssistantService {
             .ok_or_else(|| std::io::Error::other("No stderr"))?;
 
         Ok((pid, stdout, stderr))
+    }
+
+    /// Handle the result of a spawn attempt.
+    ///
+    /// On success: records spawn in session state, saves session, and starts the output reader.
+    /// On failure: writes a `LogEntry::Error` to the session logs instead of propagating.
+    fn handle_spawn_result(
+        &self,
+        session: &mut AssistantSession,
+        spawn_result: std::io::Result<(u32, std::process::ChildStdout, std::process::ChildStderr)>,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        match spawn_result {
+            Ok((pid, stdout, stderr)) => {
+                // Capture spawn count before incrementing (for title generation check)
+                let spawn_count_before = session.spawn_count;
+
+                // Update session state
+                session.agent_spawned(pid, now);
+                self.store.save_assistant_session(session)?;
+
+                // Spawn background thread to read agent output
+                self.spawn_output_reader(session, spawn_count_before, pid, stdout, stderr);
+            }
+            Err(e) => {
+                // Write error to session logs instead of failing
+                orkestra_debug!("assistant", "Agent spawn failed: {}", e);
+                self.store.append_assistant_log_entry(
+                    &session.id,
+                    &LogEntry::Error {
+                        message: format!("Failed to spawn agent: {e}"),
+                    },
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Build the task-specific system prompt with task context interpolated.
+    fn build_task_system_prompt(task: &Task) -> String {
+        let artifacts_text = if task.artifacts.is_empty() {
+            "No artifacts yet.".to_string()
+        } else {
+            task.artifacts
+                .all()
+                .map(|a| format!("### {}\n\n{}", a.name, a.content))
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n")
+        };
+
+        crate::prompts::TASK_ASSISTANT_SYSTEM_PROMPT
+            .replace("{task_id}", &task.id)
+            .replace("{task_title}", &task.title)
+            .replace("{task_description}", &task.description)
+            .replace("{current_stage}", &task.state.to_string())
+            .replace("{artifacts}", &artifacts_text)
     }
 
     /// Load the assistant system prompt template.
@@ -382,7 +521,7 @@ fn generate_and_set_title(
 
 /// Spawns a Claude process for the assistant (free-form chat, no JSON schema).
 fn spawn_claude_assistant_process(
-    project_root: &std::path::Path,
+    working_dir: &std::path::Path,
     path_env: &str,
     session_id: Option<&str>,
     is_resume: bool,
@@ -420,7 +559,7 @@ fn spawn_claude_assistant_process(
 
     cmd.env("PATH", path_env)
         .env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
-        .current_dir(project_root)
+        .current_dir(working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -663,5 +802,154 @@ mod tests {
             }
             _ => panic!("Expected second log to be Text"),
         }
+    }
+
+    // ========================================================================
+    // Task-scoped session tests
+    // ========================================================================
+
+    /// Create a task with a `worktree_path` pointing to a temp dir.
+    fn create_task_with_worktree(
+        store: &Arc<InMemoryWorkflowStore>,
+        task_id: &str,
+        worktree_path: &str,
+    ) {
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut task = Task::new(
+            task_id,
+            "Test Task",
+            "A test task description",
+            "work",
+            &now,
+        );
+        task.worktree_path = Some(worktree_path.to_string());
+        store.save_task(&task).expect("save_task should succeed");
+    }
+
+    #[test]
+    fn test_send_task_message_creates_new_session() {
+        let (service, store) = create_test_service();
+        let task_id = "task-abc";
+        let worktree = std::env::temp_dir();
+        create_task_with_worktree(&store, task_id, worktree.to_str().unwrap());
+
+        let session = service
+            .send_task_message(task_id, "hello from task")
+            .unwrap();
+
+        // Session should have task_id set
+        assert_eq!(session.task_id.as_deref(), Some(task_id));
+        assert!(!session.id.is_empty());
+        assert!(session.claude_session_id.is_some());
+    }
+
+    #[test]
+    fn test_send_task_message_reuses_existing_session() {
+        let (service, store) = create_test_service();
+        let task_id = "task-reuse";
+        let worktree = std::env::temp_dir();
+        create_task_with_worktree(&store, task_id, worktree.to_str().unwrap());
+
+        // First message — creates session
+        let session1 = service.send_task_message(task_id, "first message").unwrap();
+
+        // Second message — reuses session
+        let session2 = service
+            .send_task_message(task_id, "second message")
+            .unwrap();
+
+        assert_eq!(session1.id, session2.id, "Same session should be reused");
+    }
+
+    #[test]
+    fn test_send_task_message_task_not_found() {
+        let (service, _store) = create_test_service();
+
+        let result = service.send_task_message("nonexistent-task", "hello");
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("not found"),
+            "Expected 'not found' in error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_send_task_message_empty_message_rejected() {
+        let (service, store) = create_test_service();
+        let task_id = "task-empty";
+        let worktree = std::env::temp_dir();
+        create_task_with_worktree(&store, task_id, worktree.to_str().unwrap());
+
+        let result = service.send_task_message(task_id, "");
+        assert!(result.is_err(), "Empty message should be rejected");
+
+        let result = service.send_task_message(task_id, "   ");
+        assert!(
+            result.is_err(),
+            "Whitespace-only message should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_list_project_sessions_excludes_task_sessions() {
+        let (service, store) = create_test_service();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Create a project-level session
+        let project_session = AssistantSession::new("project-session", &now);
+        store.save_assistant_session(&project_session).unwrap();
+
+        // Create a task-scoped session
+        let task_session = AssistantSession::new("task-session", &now).with_task("some-task");
+        store.save_assistant_session(&task_session).unwrap();
+
+        // list_project_sessions should only return the project-level one
+        let project_sessions = service.list_project_sessions().unwrap();
+        assert_eq!(project_sessions.len(), 1);
+        assert_eq!(project_sessions[0].id, "project-session");
+
+        // list_sessions should return both
+        let all_sessions = service.list_sessions().unwrap();
+        assert_eq!(all_sessions.len(), 2);
+    }
+
+    #[test]
+    fn test_get_or_create_assistant_session_for_task_returns_same_session() {
+        let (_service, store) = create_test_service();
+        let task_id = "task-idempotent";
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Build a candidate new session
+        let new_session = AssistantSession::new("session-a", &now).with_task(task_id);
+
+        // First call — should create and return session-a
+        let s1 = store
+            .get_or_create_assistant_session_for_task(task_id, &new_session)
+            .unwrap();
+        assert_eq!(s1.id, "session-a");
+
+        // Second call with a different candidate — should return the existing session-a
+        let another = AssistantSession::new("session-b", &now).with_task(task_id);
+        let s2 = store
+            .get_or_create_assistant_session_for_task(task_id, &another)
+            .unwrap();
+        assert_eq!(
+            s2.id, "session-a",
+            "Should return the existing session, not create a second one"
+        );
+
+        // Verify only one session exists in the store for this task
+        let sessions = store.list_assistant_sessions().unwrap();
+        let task_sessions: Vec<_> = sessions
+            .iter()
+            .filter(|s| s.task_id.as_deref() == Some(task_id))
+            .collect();
+        assert_eq!(
+            task_sessions.len(),
+            1,
+            "Only one session should exist for the task"
+        );
     }
 }

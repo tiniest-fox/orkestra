@@ -206,6 +206,51 @@ pub trait WorkflowStore: Send + Sync {
     /// Delete an assistant session by ID.
     fn delete_assistant_session(&self, id: &str) -> WorkflowResult<()>;
 
+    /// Get the assistant session for a specific task (one session per task).
+    ///
+    /// Default implementation scans `list_assistant_sessions()`. The `SQLite` store
+    /// overrides this with a direct indexed query.
+    fn get_assistant_session_for_task(
+        &self,
+        task_id: &str,
+    ) -> WorkflowResult<Option<AssistantSession>> {
+        let sessions = self.list_assistant_sessions()?;
+        Ok(sessions
+            .into_iter()
+            .find(|s| s.task_id.as_deref() == Some(task_id)))
+    }
+
+    /// Get or atomically create the assistant session for a task.
+    ///
+    /// Returns the existing session if one already exists for this `task_id`, otherwise
+    /// saves `new_session` and returns it. Default implementation uses a read-then-write
+    /// sequence (not atomic). The `SQLite` store overrides with `INSERT OR IGNORE` for
+    /// true atomicity.
+    fn get_or_create_assistant_session_for_task(
+        &self,
+        task_id: &str,
+        new_session: &AssistantSession,
+    ) -> WorkflowResult<AssistantSession> {
+        if let Some(existing) = self.get_assistant_session_for_task(task_id)? {
+            return Ok(existing);
+        }
+        self.save_assistant_session(new_session)?;
+        Ok(new_session.clone())
+    }
+
+    /// List project-level assistant sessions (excludes task-scoped sessions).
+    ///
+    /// Returns sessions ordered by `created_at` descending.
+    /// Default implementation filters `list_assistant_sessions()`. The `SQLite` store
+    /// overrides this with a direct query.
+    fn list_project_assistant_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {
+        let sessions = self.list_assistant_sessions()?;
+        Ok(sessions
+            .into_iter()
+            .filter(|s| s.task_id.is_none())
+            .collect())
+    }
+
     // -- Assistant Log Entry --
 
     /// Append a log entry to an assistant session.

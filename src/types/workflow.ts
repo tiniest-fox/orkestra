@@ -782,6 +782,8 @@ export interface AssistantSession {
   spawn_count: number;
   /** Session state (spawning, active, completed, abandoned). */
   session_state: string;
+  /** Task ID for task-scoped sessions. Undefined for project-level sessions. */
+  task_id?: string;
   /** When the session was created. */
   created_at: string;
   /** When the session was last updated. */

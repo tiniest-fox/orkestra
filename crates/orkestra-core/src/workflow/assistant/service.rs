@@ -257,6 +257,7 @@ impl AssistantService {
     ///
     /// Used by both `send_message` (project-level) and `send_task_message` (task-scoped).
     /// The caller provides the working directory and system prompt appropriate for the context.
+    #[allow(clippy::unused_self)]
     fn spawn_agent_in(
         &self,
         session: &AssistantSession,

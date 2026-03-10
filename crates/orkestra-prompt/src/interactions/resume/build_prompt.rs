@@ -179,6 +179,26 @@ mod tests {
     }
 
     #[test]
+    fn test_integration_pr_path_empty_conflict_files() {
+        let artifact_names = vec!["breakdown".to_string()];
+        let prompt = execute(
+            "work",
+            &ResumeType::Integration {
+                message: "PR has merge conflicts".to_string(),
+                conflict_files: vec![],
+            },
+            "main",
+            &artifact_names,
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
+        assert!(prompt.contains("PR has merge conflicts"));
+        assert!(!prompt.contains("merge is in progress"));
+        assert!(prompt.contains("git fetch origin && git merge origin/main"));
+    }
+
+    #[test]
     fn test_answers() {
         let artifact_names = vec!["requirements".to_string()];
         let prompt = execute(

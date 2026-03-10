@@ -282,6 +282,14 @@ task.state.type === "integrating" || isActivelyProgressing(task)
 
 Using `isActivelyProgressing` alone in contexts that previously handled `integrating` will silently drop those tasks. See `FeedRowActions.tsx` for the reference pattern.
 
+## React Router Navigation
+
+<!-- compound: cheerily-matchless-tilapia -->
+
+Use `<Link to="...">` from `react-router-dom` for all internal SPA navigation within components that render inside a `BrowserRouter`. Use `<a href="...">` only for external URLs or components that are intentionally outside the router context (e.g., pure utility UI rendered in a non-SPA context).
+
+`<a href="/">` for an internal route forces a full page reload (bypassing React Router's history), which breaks SPA behavior. "Keeping a component decoupled from react-router-dom" is not a valid reason to use `<a>` when the component renders inside a BrowserRouter — import `Link` instead.
+
 ## Types
 
 - Use `import type` for type-only imports.

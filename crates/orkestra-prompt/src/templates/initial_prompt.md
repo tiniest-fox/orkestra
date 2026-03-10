@@ -66,9 +66,11 @@ A: {{this.answer}}
 {{#each integration_error.conflict_files}}
 - {{this}}
 {{/each}}
-{{/if}}
 
 A merge is in progress in your worktree. Resolve the conflict markers in each file (`<<<<<<<` / `=======` / `>>>>>>>`), then `git add <resolved-files>` and `git commit`.
+{{else}}
+To reproduce and resolve the conflicts, run: `git fetch origin && git merge origin/{{base_branch}}`. Resolve the conflict markers in each file (`<<<<<<<` / `=======` / `>>>>>>>`), then `git add <resolved-files>` and `git commit`.
+{{/if}}
 
 {{/if}}
 {{#if worktree_path}}

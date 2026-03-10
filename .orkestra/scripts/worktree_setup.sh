@@ -31,11 +31,4 @@ if [ -d "$MAIN_REPO/dist" ] && [ ! -e "$WORKTREE_PATH/dist" ]; then
     echo "dist/ -> $(readlink "$WORKTREE_PATH/dist")"
 fi
 
-# Install node dependencies in isolation.
-# --ignore-workspace prevents pnpm from treating the worktree as a member of
-# the /workspace pnpm workspace, which would cause ELOOP symlink cycles.
-# Each worktree gets its own node_modules reflecting its own package.json.
-echo "Installing node dependencies..."
-cd "$WORKTREE_PATH" && pnpm install --ignore-workspace
-
 echo "Worktree setup complete: $WORKTREE_PATH"

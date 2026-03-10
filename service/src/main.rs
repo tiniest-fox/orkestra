@@ -207,16 +207,7 @@ async fn run(args: Args) -> Result<(), String> {
     // Build service UI router.
     let extra_routes = service_ui::router();
 
-    // Start HTTP server — runs until the stop flag is set externally.
-    let server_future = orkestra_service::start(
-        conn,
-        Arc::clone(&supervisor),
-        config,
-        listener,
-        Some(extra_routes),
-    );
-
-    // Poll the stop flag and resolve when a signal arrives.
+    // Graceful-shutdown future for axum: resolves when the stop flag is set.
     let stop_watcher = {
         let stop_flag = stop_flag.clone();
         async move {
@@ -229,21 +220,37 @@ async fn run(args: Args) -> Result<(), String> {
         }
     };
 
-    tokio::select! {
-        result = server_future => {
-            if let Err(e) = result {
-                tracing::error!("Server error: {e}");
+    // Concurrently shut down child daemons while axum drains in-flight requests.
+    // Must run alongside axum drain so WS proxy connections close naturally
+    // (daemon WS endpoint closes → proxy_ws loop breaks → axum drain completes).
+    {
+        let stop_flag = stop_flag.clone();
+        let sv = Arc::clone(&supervisor);
+        std::thread::spawn(move || {
+            while !stop_flag.load(Ordering::Acquire) {
+                std::thread::sleep(std::time::Duration::from_millis(200));
             }
-        }
-        () = stop_watcher => {}
+            tracing::info!("Shutting down — stopping all child daemons…");
+            #[cfg(unix)]
+            sv.shutdown_all();
+            tracing::info!("ork-service shutdown complete");
+        });
     }
 
-    tracing::info!("Shutting down — stopping all child daemons…");
+    // Run server; with_graceful_shutdown drains in-flight requests before returning.
+    if let Err(e) = orkestra_service::start(
+        conn,
+        Arc::clone(&supervisor),
+        config,
+        listener,
+        Some(extra_routes),
+        stop_watcher,
+    )
+    .await
+    {
+        tracing::error!("Server error: {e}");
+    }
 
-    #[cfg(unix)]
-    supervisor.shutdown_all();
-
-    tracing::info!("ork-service shutdown complete");
     Ok(())
 }
 

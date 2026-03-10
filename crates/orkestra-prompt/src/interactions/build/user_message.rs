@@ -254,4 +254,78 @@ mod tests {
         assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
         assert!(user_message.contains("[review] — Review the work"));
     }
+
+    #[test]
+    fn test_integration_error_auto_merge() {
+        let templates = test_templates();
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "work", "now")
+            .with_worktree("/path/to/worktree")
+            .with_base_branch("main");
+
+        let integration_error = IntegrationErrorContext {
+            message: "Merge conflict detected",
+            conflict_files: vec!["src/main.rs", "src/lib.rs"],
+            base_branch: "main",
+        };
+
+        let ctx = builder
+            .build_context(
+                "work",
+                &task,
+                &[],
+                None,
+                Some(integration_error),
+                false,
+                &[],
+            )
+            .unwrap();
+
+        let user_message = execute(&templates, &ctx);
+
+        assert!(user_message.contains("MERGE CONFLICT"));
+        assert!(user_message.contains("Merge conflict detected"));
+        assert!(user_message.contains("src/main.rs"));
+        assert!(user_message.contains("src/lib.rs"));
+        assert!(user_message.contains("merge is in progress"));
+        assert!(!user_message.contains("git fetch origin"));
+    }
+
+    #[test]
+    fn test_integration_error_pr_path() {
+        let templates = test_templates();
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "work", "now")
+            .with_worktree("/path/to/worktree")
+            .with_base_branch("main");
+
+        let integration_error = IntegrationErrorContext {
+            message: "PR has merge conflicts",
+            conflict_files: vec![],
+            base_branch: "main",
+        };
+
+        let ctx = builder
+            .build_context(
+                "work",
+                &task,
+                &[],
+                None,
+                Some(integration_error),
+                false,
+                &[],
+            )
+            .unwrap();
+
+        let user_message = execute(&templates, &ctx);
+
+        assert!(user_message.contains("MERGE CONFLICT"));
+        assert!(user_message.contains("PR has merge conflicts"));
+        assert!(!user_message.contains("merge is in progress"));
+        assert!(user_message.contains("git fetch origin && git merge origin/main"));
+    }
 }

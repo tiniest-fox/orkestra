@@ -106,6 +106,7 @@ pub async fn start_containers_and_spawn(
 /// Steps 4–9: detect → prepare image → start container → inject orkd →
 /// store `container_id` → optionally run setup → spawn daemon.
 #[cfg(unix)]
+#[allow(clippy::too_many_lines)]
 async fn container_and_spawn(
     conn: &Arc<Mutex<Connection>>,
     supervisor: &Arc<DaemonSupervisor>,
@@ -237,6 +238,16 @@ async fn container_and_spawn(
             // Setup failure is non-fatal: log a warning and continue.
             tracing::warn!("Container setup command failed for {project_id}: {e}");
         }
+
+        // Step 8b: Re-run toolbox setup to reclaim ownership of any files that
+        // run_setup created as root (e.g. pnpm store directories). setup.sh is
+        // idempotent so running it twice is safe.
+        tokio::task::spawn_blocking({
+            let cid = container_id.clone();
+            move || devcontainer::run_toolbox_setup::execute(&cid)
+        })
+        .await
+        .map_err(|e| ServiceError::Other(e.to_string()))??;
     }
 
     // Step 9: Spawn daemon.

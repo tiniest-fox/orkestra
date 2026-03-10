@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swipe Focus — Question</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { darkMode: 'media', theme: { extend: { fontFamily: { sans: ['IBM Plex Sans','system-ui','sans-serif'], mono: ['IBM Plex Mono','monospace'] } } } }</script>
+  <style>
+    :root {
+      --forge-canvas: #FAF8FC; --forge-surface: #FFFFFF; --forge-surface-2: #F4F0F8; --forge-surface-3: #DDD7E4;
+      --forge-text-primary: #1C1820; --forge-text-secondary: #5A5068; --forge-text-tertiary: #7A7288; --forge-text-quaternary: #9E96AC;
+      --forge-border: #E4DFE9; --forge-accent: 232 53 88;
+      --forge-status-success: 22 163 74; --forge-status-error: 220 38 38; --forge-status-warning: 217 119 6; --forge-status-info: 37 99 235;
+      --forge-violet: 124 58 237;
+      --forge-shadow-panel: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
+      --forge-shadow-panel-press: 0px 0px 4px 1px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.02);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --forge-canvas: #13111A; --forge-surface: #1C1926; --forge-surface-2: #252233; --forge-surface-3: #342F44;
+        --forge-text-primary: #EDEBF0; --forge-text-secondary: #A9A1B8; --forge-text-tertiary: #7B7490; --forge-text-quaternary: #544E66;
+        --forge-border: #2E2A3C; --forge-accent: 240 64 104;
+        --forge-status-success: 34 197 94; --forge-status-error: 239 68 68; --forge-status-warning: 245 158 11; --forge-status-info: 59 130 246;
+        --forge-violet: 139 92 246;
+        --forge-shadow-panel: 0 0 0 1px rgba(80,70,110,0.25), 0 0 12px 0 rgba(0,0,0,0.3);
+        --forge-shadow-panel-press: 0 0 0 1px rgba(60,52,85,0.3);
+      }
+    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #000; }
+    .bg-canvas { background: var(--forge-canvas); }
+    .bg-surface { background: var(--forge-surface); }
+    .bg-s2 { background: var(--forge-surface-2); }
+    .t1 { color: var(--forge-text-primary); } .t2 { color: var(--forge-text-secondary); } .t3 { color: var(--forge-text-tertiary); } .t4 { color: var(--forge-text-quaternary); }
+    .bd { border-color: var(--forge-border); }
+    .accent { color: rgb(var(--forge-accent)); }
+  </style>
+</head>
+<body class="flex items-start justify-center min-h-screen py-8">
+<div class="w-[390px] h-[844px] bg-canvas rounded-[44px] overflow-hidden shadow-2xl flex flex-col relative">
+
+  <!-- Edge peek: amber sliver (focus-plan to the left) -->
+  <div class="absolute left-0 top-0 bottom-0 w-[10px] z-10 rounded-l-[44px]" style="background:linear-gradient(to right, rgba(var(--forge-status-warning),0.25), transparent)"></div>
+  <!-- Edge peek: green sliver (focus-pr to the right) -->
+  <div class="absolute right-0 top-0 bottom-0 w-[10px] z-10 rounded-r-[44px]" style="background:linear-gradient(to left, rgba(var(--forge-status-success),0.25), transparent)"></div>
+
+  <!-- Status bar -->
+  <div class="flex items-center justify-between px-8 pt-5 pb-1 flex-shrink-0">
+    <span class="text-[15px] font-semibold t1" style="font-family:system-ui">9:41</span>
+    <div class="flex items-center gap-1.5 t1 opacity-80">
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor"><rect x="0" y="5.5" width="2.5" height="5.5" rx=".4"/><rect x="4" y="3.5" width="2.5" height="7.5" rx=".4"/><rect x="8" y="1.5" width="2.5" height="9.5" rx=".4"/><rect x="12" y="0" width="2.5" height="11" rx=".4"/></svg>
+      <svg width="24" height="11" viewBox="0 0 24 11" fill="none"><rect x=".5" y=".5" width="20" height="10" rx="2.5" stroke="currentColor" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="7" rx="1.5" fill="currentColor"/><path d="M22 3.5v4a2 2 0 000-4z" fill="currentColor" opacity=".4"/></svg>
+    </div>
+  </div>
+
+  <!-- Swipe header: back chevron + position dots + question counter -->
+  <div class="flex items-center justify-between px-5 pt-2 pb-2 flex-shrink-0" style="height:44px">
+    <!-- Back chevron -->
+    <a href="list.html" class="w-10 h-10 flex items-center justify-center -ml-2">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="t2">
+        <path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+    <!-- Position dots -->
+    <div class="flex items-center gap-2.5">
+      <!-- Dot 1: amber (focus-plan) — inactive -->
+      <div class="w-[5px] h-[5px] rounded-full" style="background:var(--forge-text-quaternary)"></div>
+      <!-- Dot 2: blue (this card) — active -->
+      <div class="w-[7px] h-[7px] rounded-full" style="background:rgb(var(--forge-status-info))"></div>
+      <!-- Dot 3: green (focus-pr) — inactive -->
+      <div class="w-[5px] h-[5px] rounded-full" style="background:var(--forge-text-quaternary)"></div>
+    </div>
+    <!-- Question counter (right side) -->
+    <span class="text-[12px] t3 font-medium">1 of 2 questions</span>
+  </div>
+
+  <!-- Card container -->
+  <div class="mx-4 flex-1 flex flex-col min-h-0 rounded-2xl bg-surface bd border relative overflow-hidden" style="box-shadow:var(--forge-shadow-panel)">
+    <!-- Blue left stripe -->
+    <div class="absolute left-0 inset-y-0 w-[4px] rounded-l-2xl" style="background:rgb(var(--forge-status-info))"></div>
+
+    <!-- Card header (fixed) -->
+    <div class="pl-6 pr-5 pt-5 pb-0 flex-shrink-0">
+      <!-- Stage pill + pipeline dots row -->
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="text-[11px] font-semibold uppercase tracking-widest t3 px-2 py-1 rounded-md bg-s2">Plan</span>
+          <span class="text-[11px] font-mono font-bold px-2 py-1 rounded uppercase tracking-wider text-white" style="background:rgb(var(--forge-status-info))">Question</span>
+        </div>
+        <!-- Pipeline dots -->
+        <div class="flex items-center gap-1.5">
+          <div class="w-[6px] h-[6px] rounded-full" style="background:rgb(var(--forge-status-info))"></div>
+          <div class="w-[5px] h-[5px] rounded-full" style="background:var(--forge-text-quaternary)"></div>
+          <div class="w-[5px] h-[5px] rounded-full" style="background:var(--forge-text-quaternary)"></div>
+          <div class="w-[5px] h-[5px] rounded-full" style="background:var(--forge-text-quaternary)"></div>
+        </div>
+      </div>
+      <!-- Task title -->
+      <h1 class="text-[20px] font-semibold t1 leading-snug mt-3 line-clamp-2">Refactor DB layer</h1>
+      <!-- Meta line -->
+      <div class="flex items-center gap-2 mt-1.5">
+        <span class="text-[13px] font-mono t3">firmly-eclectic-javelin</span>
+        <span class="text-[12px] t4">5m ago</span>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="mx-5 mt-4 h-px" style="background:var(--forge-border)"></div>
+
+    <!-- Scrollable content zone -->
+    <div class="flex-1 overflow-y-auto pl-6 pr-5 pt-5 pb-5">
+
+      <!-- Agent attribution -->
+      <div class="flex items-center gap-1.5 text-[13px] t3">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="flex-shrink-0">
+          <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M4.5 8.5c.7.9 1.5 1.2 2.5 1.2s1.8-.3 2.5-1.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          <circle cx="5.5" cy="5.5" r=".75" fill="currentColor"/>
+          <circle cx="8.5" cy="5.5" r=".75" fill="currentColor"/>
+        </svg>
+        <span>Claude asked</span>
+        <span class="t4">&middot;</span>
+        <span class="t4">5m ago</span>
+      </div>
+
+      <!-- Question callout -->
+      <div class="mt-4 p-4 rounded-lg bg-s2 bd border-l-2" style="border-left-color:rgb(var(--forge-status-info))">
+        <p class="text-[16px] t1 leading-7 font-medium">Should the migration be reversible or one-way?</p>
+        <p class="text-[14px] t2 leading-6 mt-2.5">The schema changes affect 3 tables and rollback complexity varies significantly between approaches.</p>
+      </div>
+
+      <!-- Multiple-choice options -->
+      <div class="mt-5 flex flex-col gap-2.5">
+
+        <!-- Option 1: unselected -->
+        <button class="w-full text-left px-4 py-3.5 rounded-lg bd border bg-s2 flex items-center gap-3">
+          <div class="w-[18px] h-[18px] rounded-full bd border flex-shrink-0 flex items-center justify-center" style="border-width:1.5px">
+          </div>
+          <span class="text-[15px] t1 leading-snug">Reversible -- add down migrations</span>
+        </button>
+
+        <!-- Option 2: SELECTED (pre-selected to show enabled footer) -->
+        <button class="w-full text-left px-4 py-3.5 rounded-lg flex items-center gap-3" style="background:rgba(var(--forge-status-info),0.1); border:1.5px solid rgba(var(--forge-status-info),0.4)">
+          <div class="w-[18px] h-[18px] rounded-full flex-shrink-0 flex items-center justify-center" style="border:1.5px solid rgb(var(--forge-status-info)); background:rgba(var(--forge-status-info),0.15)">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 5.5l2 2 4-4.5" stroke="rgb(var(--forge-status-info))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="text-[15px] leading-snug" style="color:rgb(var(--forge-status-info))">One-way -- simpler, document instead</span>
+        </button>
+
+        <!-- Option 3: unselected -->
+        <button class="w-full text-left px-4 py-3.5 rounded-lg bd border bg-s2 flex items-center gap-3">
+          <div class="w-[18px] h-[18px] rounded-full bd border flex-shrink-0 flex items-center justify-center" style="border-width:1.5px">
+          </div>
+          <span class="text-[15px] t1 leading-snug">Ask the team first</span>
+        </button>
+
+      </div>
+
+      <!-- Freeform notes textarea -->
+      <div class="mt-5">
+        <label class="text-[12px] t4 font-medium uppercase tracking-wider block mb-2">Notes (optional)</label>
+        <textarea
+          rows="3"
+          placeholder="Add context (optional)..."
+          class="w-full rounded-lg bd border bg-s2 text-[14px] t2 px-4 py-3 resize-none outline-none leading-relaxed"
+          style="color:var(--forge-text-secondary)"
+        ></textarea>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Sticky footer -->
+  <div class="flex-shrink-0 px-5 pt-3 pb-5" style="background:linear-gradient(to bottom, transparent, var(--forge-canvas) 8px); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px)">
+    <a href="focus-pr.html" class="block w-full h-[48px] rounded-xl text-[16px] font-semibold text-white flex items-center justify-center" style="background:rgb(var(--forge-status-info))">
+      Submit Answer
+    </a>
+    <div class="h-4"></div>
+  </div>
+
+</div>
+
+</body>
+</html>

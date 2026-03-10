@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swipe Focus — Parent Task Review</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'media',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --forge-canvas: #FAF8FC; --forge-surface: #FFFFFF; --forge-surface-2: #F4F0F8; --forge-surface-3: #DDD7E4;
+      --forge-text-primary: #1C1820; --forge-text-secondary: #5A5068; --forge-text-tertiary: #7A7288; --forge-text-quaternary: #9E96AC;
+      --forge-border: #E4DFE9; --forge-accent: 232 53 88;
+      --forge-status-success: 22 163 74; --forge-status-error: 220 38 38; --forge-status-warning: 217 119 6; --forge-status-info: 37 99 235;
+      --forge-violet: 124 58 237;
+      --forge-shadow-panel: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
+      --forge-shadow-panel-press: 0px 0px 4px 1px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.02);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --forge-canvas: #13111A; --forge-surface: #1C1926; --forge-surface-2: #252233; --forge-surface-3: #342F44;
+        --forge-text-primary: #EDEBF0; --forge-text-secondary: #A9A1B8; --forge-text-tertiary: #7B7490; --forge-text-quaternary: #544E66;
+        --forge-border: #2E2A3C; --forge-accent: 240 64 104;
+        --forge-status-success: 34 197 94; --forge-status-error: 239 68 68; --forge-status-warning: 245 158 11; --forge-status-info: 59 130 246;
+        --forge-violet: 139 92 246;
+        --forge-shadow-panel: 0 0 0 1px rgba(80,70,110,0.25), 0 0 12px 0 rgba(0,0,0,0.3);
+        --forge-shadow-panel-press: 0 0 0 1px rgba(60,52,85,0.3);
+      }
+    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #000; }
+    .bg-canvas { background: var(--forge-canvas); }
+    .bg-surface { background: var(--forge-surface); }
+    .bg-s2 { background: var(--forge-surface-2); }
+    .t1 { color: var(--forge-text-primary); } .t2 { color: var(--forge-text-secondary); } .t3 { color: var(--forge-text-tertiary); } .t4 { color: var(--forge-text-quaternary); }
+    .bd { border-color: var(--forge-border); }
+    .accent { color: rgb(var(--forge-accent)); }
+    .bg-accent { background-color: rgb(var(--forge-accent)); }
+
+    .footer-frost {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: var(--forge-surface);
+    }
+
+    @keyframes pulseRing {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(var(--forge-violet),0.3); }
+      50% { box-shadow: 0 0 0 4px rgba(var(--forge-violet),0.12); }
+    }
+  </style>
+</head>
+<body class="flex items-start justify-center min-h-screen py-8">
+<div class="w-[390px] min-h-[844px] bg-canvas rounded-[44px] overflow-hidden shadow-2xl flex flex-col relative">
+
+  <!-- Status bar -->
+  <div class="flex items-center justify-between px-8 pt-5 pb-1 flex-shrink-0" style="height:54px">
+    <span class="text-[15px] font-semibold t1" style="font-family:system-ui">9:41</span>
+    <div class="flex items-center gap-1.5 t1 opacity-80">
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor"><rect x="0" y="5.5" width="2.5" height="5.5" rx=".4"/><rect x="4" y="3.5" width="2.5" height="7.5" rx=".4"/><rect x="8" y="1.5" width="2.5" height="9.5" rx=".4"/><rect x="12" y="0" width="2.5" height="11" rx=".4"/></svg>
+      <svg width="24" height="11" viewBox="0 0 24 11" fill="none"><rect x=".5" y=".5" width="20" height="10" rx="2.5" stroke="currentColor" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="7" rx="1.5" fill="currentColor"/><path d="M22 3.5v4a2 2 0 000-4z" fill="currentColor" opacity=".4"/></svg>
+    </div>
+  </div>
+
+  <!-- Swipe header: back chevron + position dots -->
+  <div class="flex items-center px-5 flex-shrink-0" style="height:44px">
+    <a href="list.html" class="flex items-center justify-center w-8 h-8 -ml-1 rounded-lg" style="min-width:32px">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="t2">
+        <path d="M12.5 4.5L7 10l5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+    <!-- Position dot — standalone, 1 card -->
+    <div class="flex-1 flex items-center justify-center gap-2.5">
+      <div class="w-[7px] h-[7px] rounded-full" style="background:rgb(var(--forge-violet))"></div>
+    </div>
+    <div style="width:32px"></div>
+  </div>
+
+  <!-- Card wrapper (no edge peek — standalone card) -->
+  <div class="flex-1 flex relative overflow-hidden" style="min-height:0">
+
+    <!-- Main card -->
+    <div class="flex-1 flex flex-col mx-4 rounded-2xl overflow-hidden bg-surface bd border relative" style="min-height:0;box-shadow:var(--forge-shadow-panel)">
+
+      <!-- Left purple stripe -->
+      <div class="absolute left-0 inset-y-0 w-1 rounded-l-2xl" style="background:rgb(var(--forge-violet))"></div>
+
+      <!-- Card header (non-scrolling) -->
+      <div class="p-5 pl-6 flex-shrink-0">
+        <!-- Stage pill + pipeline dots -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-[12px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full" style="background:var(--forge-surface-2); color:rgb(var(--forge-violet))">Review</span>
+            <span class="text-[11px] font-medium px-1.5 py-0.5 rounded t3" style="background:var(--forge-surface-3)">Compound</span>
+          </div>
+          <!-- Pipeline dots — parent's own pipeline -->
+          <div class="flex items-center gap-2">
+            <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-violet),0.45)"></div>
+            <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-violet),0.45)"></div>
+            <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-violet),0.45)"></div>
+            <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-violet),0.45)"></div>
+            <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-violet),0.45)"></div>
+            <div class="w-2 h-2 rounded-full" style="background:rgb(var(--forge-violet)); animation: pulseRing 2s ease-in-out infinite"></div>
+          </div>
+        </div>
+
+        <!-- Task title -->
+        <h1 class="mt-4 text-[20px] font-semibold t1 leading-7">Migrate auth system</h1>
+
+        <!-- Meta line -->
+        <div class="mt-1.5 flex items-center gap-1.5 text-[13px] t3 font-mono">
+          <span>swift-tiger</span>
+          <span class="t4">·</span>
+          <span>14m ago</span>
+        </div>
+
+        <!-- Progress bar — all complete -->
+        <div class="mt-3 h-[3px] rounded-full overflow-hidden" style="background:var(--forge-surface-3)">
+          <div class="h-full rounded-full" style="width:100%;background:rgb(var(--forge-status-success))"></div>
+        </div>
+        <div class="mt-1 text-[11px] font-mono t3">8 of 8 complete · ready for final review</div>
+      </div>
+
+      <!-- Divider -->
+      <div class="mx-5 h-px flex-shrink-0" style="background:var(--forge-border)"></div>
+
+      <!-- Scrollable content zone — subtask status table -->
+      <div class="px-5 pl-6 pt-5 pb-5 overflow-y-auto flex-1" style="min-height:0">
+
+        <!-- Section header -->
+        <div class="text-[11px] font-semibold uppercase tracking-widest t4 mb-3">8 Subtasks</div>
+
+        <!-- Subtask rows -->
+        <div class="space-y-0">
+          <!-- Row 1 -->
+          <div class="flex items-center gap-3 py-2.5" style="border-bottom:1px solid var(--forge-border)">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Extract token types to shared crate</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="flex items-center gap-3 py-2.5" style="border-bottom:1px solid var(--forge-border)">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Add refresh mutex guard</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="flex items-center gap-3 py-2.5" style="border-bottom:1px solid var(--forge-border)">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Add JWT validation middleware</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+
+          <!-- Row 4 -->
+          <div class="flex items-center gap-3 py-2.5" style="border-bottom:1px solid var(--forge-border)">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Update request interceptor</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+
+          <!-- Row 5 -->
+          <div class="flex items-center gap-3 py-2.5" style="border-bottom:1px solid var(--forge-border)">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Add TTL buffer for token expiry</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+
+          <!-- Row 6 -->
+          <div class="flex items-center gap-3 py-2.5" style="border-bottom:1px solid var(--forge-border)">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Migrate session store to Redis</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+
+          <!-- Row 7 -->
+          <div class="flex items-center gap-3 py-2.5" style="border-bottom:1px solid var(--forge-border)">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Remove legacy retry-with-refresh logic</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+
+          <!-- Row 8 -->
+          <div class="flex items-center gap-3 py-2.5">
+            <div class="w-[7px] h-[7px] rounded-full flex-shrink-0" style="background:rgb(var(--forge-status-success))"></div>
+            <span class="text-[14px] t1 flex-1 truncate">Update integration test suite</span>
+            <span class="text-[12px] font-mono t3 flex-shrink-0">Done</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Sticky frosted footer — full-width approve button -->
+  <div class="flex-shrink-0 px-4 pt-3 pb-2 bd border-t footer-frost">
+    <button class="w-full h-12 rounded-xl text-[15px] font-semibold text-white" style="background:rgb(var(--forge-violet))">
+      Approve &amp; Complete
+    </button>
+  </div>
+
+  <!-- Bottom safe area -->
+  <div class="flex-shrink-0 footer-frost" style="height:16px"></div>
+
+</div>
+
+</body>
+</html>

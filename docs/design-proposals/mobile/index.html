@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orkestra Mobile — Design Proposals</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['IBM Plex Sans','system-ui','sans-serif'], mono: ['IBM Plex Mono','monospace'] } } } }</script>
+  <style>
+    :root {
+      --canvas: #FAF8FC; --surface: #FFFFFF; --surface-2: #F4F0F8; --surface-3: #DDD7E4;
+      --text-1: #1C1820; --text-2: #5A5068; --text-3: #7A7288; --text-4: #9E96AC;
+      --border: #E4DFE9; --accent: 232 53 88;
+    }
+    .dark {
+      --canvas: #13111A; --surface: #1C1926; --surface-2: #252033; --surface-3: #2E2A3C;
+      --text-1: #EDEAEF; --text-2: #A89DB8; --text-3: #7A7288; --text-4: #524A63;
+      --border: #2E2A3C; --accent: 240 64 104;
+    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: var(--canvas); color: var(--text-1); min-height: 100vh; }
+  </style>
+</head>
+<body class="max-w-4xl mx-auto px-6 py-16">
+
+  <!-- Header -->
+  <div class="mb-12">
+    <div class="text-[12px] font-mono uppercase tracking-widest mb-3" style="color:var(--text-4)">Design Proposals</div>
+    <h1 class="text-[36px] font-semibold leading-tight mb-4" style="color:var(--text-1)">Orkestra Mobile</h1>
+    <p class="text-[16px] leading-7 max-w-2xl" style="color:var(--text-2)">
+      Three design concepts for an Orkestra mobile experience, produced by a research → UX → visual → creative direction pipeline.
+      Each concept approaches the same core problem differently: <em>how do you make AI agent oversight feel effortless on a phone?</em>
+    </p>
+    <button onclick="document.documentElement.classList.toggle('dark')" class="mt-6 text-[13px] font-medium px-4 py-2 rounded-full border" style="border-color:var(--border);color:var(--text-3)">Toggle dark / light</button>
+  </div>
+
+  <!-- Divider -->
+  <div class="mb-10 h-px" style="background:var(--border)"></div>
+
+  <!-- Concept: Swipe Focus -->
+  <section class="mb-14">
+    <div class="flex items-baseline gap-3 mb-2">
+      <h2 class="text-[22px] font-semibold" style="color:var(--text-1)">Swipe Focus</h2>
+      <span class="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white" style="background:rgb(var(--accent))">Latest</span>
+    </div>
+    <p class="text-[15px] leading-7 mb-1 max-w-2xl" style="color:var(--text-2)">
+      <strong style="color:var(--text-1)">The pager + activity list.</strong> A home screen showing live agent activity, with a swipeable full-screen card pager for everything that needs your attention. One card, one decision, swipe to the next. Diff is a drill-down from the plan review card, not another swipe step.
+    </p>
+    <p class="text-[13px] mb-5" style="color:var(--text-3)">Designed for the flow: check what's running → review a plan → answer a question → approve a diff → merge a PR.</p>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <a href="swipe-focus/list.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Entry point</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Activity List</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Live tasks + "Needs you" queue</div>
+      </a>
+      <a href="swipe-focus/focus-plan.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Card 1 · Amber</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Plan Review</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Approve agent plan or request changes</div>
+      </a>
+      <a href="swipe-focus/focus-question.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Card 2 · Blue</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Agent Question</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Inline multi-choice answer</div>
+      </a>
+      <a href="swipe-focus/focus-diff.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Drill-down · Amber</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Code Diff</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Pushes on top of plan review</div>
+      </a>
+      <a href="swipe-focus/focus-pr.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Card 3 · Green</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">PR Ready</div>
+        <div class="text-[13px]" style="color:var(--text-3)">CI checks + merge action</div>
+      </a>
+      <a href="swipe-focus/focus-logs.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Drill-down · Live</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Agent Logs</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Streaming tool use trace, blinking cursor</div>
+      </a>
+      <a href="swipe-focus/focus-error.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Card · Red</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Failed Task</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Compiler error output + Retry</div>
+      </a>
+    </div>
+
+    <!-- Subtask screens -->
+    <div class="mt-4">
+      <div class="text-[11px] font-semibold uppercase tracking-widest mb-3" style="color:var(--text-4)">Subtask variants</div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <a href="swipe-focus/list-subtasks.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+          <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">List variant</div>
+          <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Activity List + Subtasks</div>
+          <div class="text-[13px]" style="color:var(--text-3)">Parent row promoted, subtask breadcrumb in card</div>
+        </a>
+        <a href="swipe-focus/focus-subtask.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+          <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Focus card · Subtask</div>
+          <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Subtask Focus</div>
+          <div class="text-[13px]" style="color:var(--text-3)">"↳ Parent · 3 of 8" breadcrumb above title</div>
+        </a>
+        <a href="swipe-focus/focus-parent.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+          <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Focus card · Parent</div>
+          <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Parent Task Focus</div>
+          <div class="text-[13px]" style="color:var(--text-3)">Subtask status table, all-done approval</div>
+        </a>
+      </div>
+    </div>
+
+    <!-- Subtask nesting alternative -->
+    <div class="mt-4">
+      <div class="text-[11px] font-semibold uppercase tracking-widest mb-3" style="color:var(--text-4)">Alternative: nested subtasks</div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <a href="swipe-focus/list-nested.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+          <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">List variant</div>
+          <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Nested Subtask List</div>
+          <div class="text-[13px]" style="color:var(--text-3)">Children grouped under parent, only actionable rows tappable</div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Divider -->
+  <div class="mb-10 h-px" style="background:var(--border)"></div>
+
+  <!-- Concept: Pulse -->
+  <section class="mb-14">
+    <div class="flex items-baseline gap-3 mb-2">
+      <h2 class="text-[22px] font-semibold" style="color:var(--text-1)">Pulse — The Decision Inbox</h2>
+      <span class="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded" style="background:var(--surface-3);color:var(--text-3)">Selected</span>
+    </div>
+    <p class="text-[15px] leading-7 mb-1 max-w-2xl" style="color:var(--text-2)">
+      <strong style="color:var(--text-1)">An inbox you clear, not a dashboard you watch.</strong> The Action filter is the default — every card is a pending decision. Inline approve/reject and inline question-answering mean you never navigate to take the most common actions. The stripe → badge → button reading sequence encodes urgency, state, and action in one glance.
+    </p>
+    <p class="text-[13px] mb-5" style="color:var(--text-3)">Emotional register: decisive, surgical, rewarding.</p>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <a href="pulse/feed.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Default view</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Action Feed</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Review, question, failed cards</div>
+      </a>
+      <a href="pulse/action.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Interaction</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Question Answer</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Option selected, Next visible</div>
+      </a>
+      <a href="pulse/detail.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Push screen</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Task Detail</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Pipeline stepper, tabs, artifact</div>
+      </a>
+      <a href="pulse/diff.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Tab view</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Diff View</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Unified diff, gutter numbers</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Divider -->
+  <div class="mb-10 h-px" style="background:var(--border)"></div>
+
+  <!-- Concept: Stack -->
+  <section class="mb-14">
+    <div class="flex items-baseline gap-3 mb-2">
+      <h2 class="text-[22px] font-semibold" style="color:var(--text-1)">Stack — The Focus Queue</h2>
+      <span class="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded" style="background:var(--surface-3);color:var(--text-3)">Selected</span>
+    </div>
+    <p class="text-[15px] leading-7 mb-1 max-w-2xl" style="color:var(--text-2)">
+      <strong style="color:var(--text-1)">Each task that needs you gets the whole screen.</strong> Full-screen immersive cards. The canvas washes green on approve swipe, red on reject. Physics-based spring curves create muscle memory. Visual asymmetry between Approve (accent fill) and Reject (muted border) encodes the happy path.
+    </p>
+    <p class="text-[13px] mb-5" style="color:var(--text-3)">Emotional register: calm focus, quiet confidence, deliberate decisiveness.</p>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <a href="stack/focus.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Core screen</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Focus Card</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Full-screen approval card</div>
+      </a>
+      <a href="stack/detail.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Push screen</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Task Detail</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Same tabs, Stack button style</div>
+      </a>
+      <a href="stack/diff.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Tab view</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Diff View</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Collapsed + expanded files</div>
+      </a>
+      <a href="stack/empty.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Empty state</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">All Caught Up</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Inbox zero moment</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Divider -->
+  <div class="mb-10 h-px" style="background:var(--border)"></div>
+
+  <!-- Concept: Flux (reference) -->
+  <section class="mb-14">
+    <div class="flex items-baseline gap-3 mb-2">
+      <h2 class="text-[22px] font-semibold" style="color:var(--text-1)">Flux</h2>
+      <span class="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded" style="background:var(--surface-3);color:var(--text-3)">Reference</span>
+    </div>
+    <p class="text-[15px] leading-7 mb-1 max-w-2xl" style="color:var(--text-2)">
+      <strong style="color:var(--text-1)">Variable card heights as a communication mechanism.</strong> An earlier iteration (Direction D) where physical card height communicates urgency — tall cards demand attention, compact rows fade into the background. Its key ideas were absorbed into Pulse and Stack. Kept as reference.
+    </p>
+    <p class="text-[13px] mb-5" style="color:var(--text-3)">The <code class="font-mono text-[12px] px-1.5 py-0.5 rounded" style="background:var(--surface-2)">all.html</code> cascade is the clearest demonstration of the height-as-hierarchy concept.</p>
+    <div class="grid grid-cols-2 gap-3">
+      <a href="flux/feed.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">Action filter</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Action Feed</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Tall action cards + compact working rows</div>
+      </a>
+      <a href="flux/all.html" class="block p-4 rounded-xl border hover:border-current transition-colors" style="background:var(--surface);border-color:var(--border)">
+        <div class="text-[12px] font-mono mb-1" style="color:var(--text-4)">All filter</div>
+        <div class="text-[15px] font-semibold mb-1" style="color:var(--text-1)">Full Cascade</div>
+        <div class="text-[13px]" style="color:var(--text-3)">Mixed-height hierarchy in action</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <div class="pt-8 border-t" style="border-color:var(--border)">
+    <p class="text-[13px]" style="color:var(--text-4)">Produced by a 4-agent design pipeline: research → UX × 3 → visual × 3 → creative director synthesis. See <a href="../../../docs/design-proposals/mobile/README.md" class="underline hover:opacity-80">README.md</a> for process notes.</p>
+  </div>
+
+</body>
+</html>

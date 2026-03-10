@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stack — Focus Mode</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          },
+          keyframes: {
+            pulseRing: {
+              '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+              '50%': { opacity: '0.6', transform: 'scale(1.15)' },
+            }
+          },
+          animation: {
+            pulseRing: 'pulseRing 2s ease-in-out infinite',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --forge-canvas: #FAF8FC;
+      --forge-surface: #FFFFFF;
+      --forge-surface-2: #F4F0F8;
+      --forge-surface-3: #DDD7E4;
+      --forge-text-primary: #1C1820;
+      --forge-text-secondary: #5A5068;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #9E96AC;
+      --forge-border: #E4DFE9;
+      --forge-accent: 232 53 88;
+    }
+    .dark {
+      --forge-canvas: #13111A;
+      --forge-surface: #1C1926;
+      --forge-surface-2: #252033;
+      --forge-surface-3: #2E2A3C;
+      --forge-text-primary: #EDEAEF;
+      --forge-text-secondary: #A89DB8;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #524A63;
+      --forge-border: #2E2A3C;
+      --forge-accent: 240 64 104;
+    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    .bg-canvas { background-color: var(--forge-canvas); }
+    .bg-surface { background-color: var(--forge-surface); }
+    .bg-surface-2 { background-color: var(--forge-surface-2); }
+    .text-primary { color: var(--forge-text-primary); }
+    .text-secondary { color: var(--forge-text-secondary); }
+    .text-tertiary { color: var(--forge-text-tertiary); }
+    .text-quaternary { color: var(--forge-text-quaternary); }
+    .border-forge { border-color: var(--forge-border); }
+    .text-accent { color: rgb(var(--forge-accent)); }
+    .bg-accent { background-color: rgb(var(--forge-accent)); }
+    /* Dark mode edge-lit card effect */
+    .dark .card-surface {
+      background-color: var(--forge-surface);
+      box-shadow: inset 1px 1px 0 rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .card-surface {
+      background-color: var(--forge-surface);
+      box-shadow: 0 4px 24px rgba(28,24,32,0.12), 0 1px 4px rgba(28,24,32,0.06);
+    }
+    @keyframes pulseRing {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(var(--forge-accent), 0.3); }
+      50% { box-shadow: 0 0 0 4px rgba(var(--forge-accent), 0.15); }
+    }
+    .seg-active { background-color: var(--forge-surface); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  </style>
+</head>
+<body class="bg-black flex items-start justify-center min-h-screen py-8">
+
+  <div class="w-[390px] min-h-[844px] bg-canvas rounded-[44px] overflow-hidden shadow-2xl relative flex flex-col" style="background-color: var(--forge-canvas);">
+
+    <!-- Status bar -->
+    <div class="flex items-center justify-between px-8 pt-4 pb-2 flex-shrink-0" style="height: 54px;">
+      <span class="text-[15px] font-semibold text-primary" style="font-family: system-ui;">9:41</span>
+      <div class="flex items-center gap-1.5">
+        <svg width="17" height="12" viewBox="0 0 17 12" fill="none" class="text-primary opacity-80">
+          <rect x="0" y="6" width="3" height="6" rx="0.5" fill="currentColor"/>
+          <rect x="4.5" y="4" width="3" height="8" rx="0.5" fill="currentColor"/>
+          <rect x="9" y="2" width="3" height="10" rx="0.5" fill="currentColor"/>
+          <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="currentColor"/>
+        </svg>
+        <svg width="25" height="12" viewBox="0 0 25 12" fill="none" class="text-primary opacity-80">
+          <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="currentColor" stroke-opacity="0.35"/>
+          <rect x="2" y="2" width="17" height="8" rx="1.5" fill="currentColor"/>
+          <path d="M23 4v4a2 2 0 0 0 0-4z" fill="currentColor" opacity="0.4"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Header with centered segmented control -->
+    <div class="flex items-center justify-center px-4 pb-2 flex-shrink-0" style="height: 52px;">
+      <div class="flex p-[3px] rounded-full gap-0.5" style="background-color: var(--forge-surface-2);">
+        <button class="px-4 py-1.5 rounded-full seg-active">
+          <span class="text-[14px] font-semibold text-primary">Focus</span>
+        </button>
+        <button class="px-4 py-1.5 rounded-full">
+          <span class="text-[14px] font-medium text-tertiary">Browse</span>
+        </button>
+        <button class="px-4 py-1.5 rounded-full">
+          <span class="text-[14px] font-medium text-tertiary">Done</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stack indicator — floats on canvas -->
+    <div class="px-5 mb-2 flex-shrink-0">
+      <span class="text-[13px] font-medium text-quaternary">2 of 5</span>
+    </div>
+
+    <!-- Focus card -->
+    <div class="mx-4 flex-1 flex flex-col rounded-2xl overflow-hidden card-surface relative" style="max-height: 560px;">
+
+      <!-- Left stripe — purple for review -->
+      <div class="absolute left-0 inset-y-0 w-1 rounded-l-2xl" style="background-color: rgba(124,58,237,0.8);"></div>
+
+      <!-- Card header -->
+      <div class="p-5 pl-6 flex-shrink-0">
+        <!-- Stage + pipeline dots -->
+        <div class="flex items-center justify-between">
+          <span class="text-[12px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full text-secondary" style="background-color: var(--forge-surface-2);">Review</span>
+          <!-- Pipeline dots -->
+          <div class="flex items-center gap-2">
+            <!-- Completed: Plan -->
+            <div class="w-1.5 h-1.5 rounded-full" style="background-color: rgba(124,58,237,0.5);"></div>
+            <!-- Completed: Task -->
+            <div class="w-1.5 h-1.5 rounded-full" style="background-color: rgba(124,58,237,0.5);"></div>
+            <!-- Completed: Work -->
+            <div class="w-1.5 h-1.5 rounded-full" style="background-color: rgba(124,58,237,0.5);"></div>
+            <!-- Active: Review -->
+            <div class="w-2 h-2 rounded-full" style="background-color: rgb(var(--forge-accent)); animation: pulseRing 2s ease-in-out infinite;"></div>
+            <!-- Future: Compound -->
+            <div class="w-1.5 h-1.5 rounded-full border" style="border-color: var(--forge-text-quaternary);"></div>
+          </div>
+        </div>
+
+        <!-- Title -->
+        <h1 class="mt-4 text-[20px] font-semibold text-primary leading-7">Fix auth token refresh</h1>
+
+        <!-- Meta -->
+        <div class="mt-1 flex items-center gap-1.5 text-[13px] text-tertiary font-mono">
+          <span>handy-fox</span>
+          <span class="text-quaternary">·</span>
+          <span style="background-color: rgba(124,58,237,0.1); color: #a78bfa;" class="px-1.5 py-0.5 rounded text-[12px] font-sans font-medium">hotfix</span>
+          <span class="text-quaternary">·</span>
+          <span>3m ago</span>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div class="mx-5 h-px border-forge flex-shrink-0" style="background-color: var(--forge-border);"></div>
+
+      <!-- Card body — artifact content -->
+      <div class="p-5 pl-6 overflow-y-auto flex-1">
+        <p class="text-[16px] text-primary leading-7 mb-4">Refactored the authentication token refresh flow to eliminate the race condition causing duplicate refresh requests when multiple concurrent API calls each independently detect an expired token.</p>
+
+        <div class="rounded-xl p-4 mb-4 font-mono text-[13px] overflow-x-auto leading-6" style="background-color: var(--forge-surface-2);">
+          <div class="text-tertiary text-[11px] mb-2 uppercase tracking-wider">token_manager.rs</div>
+          <div class="text-primary"><span style="color:#a78bfa;">async fn</span> <span style="color:#60a5fa;">refresh_token</span>(&amp;self) {</div>
+          <div class="pl-4 text-primary"><span style="color:#a78bfa;">let mut</span> guard = self.mutex.lock().<span style="color:#60a5fa;">await</span>;</div>
+          <div class="pl-4 text-primary"><span style="color:#a78bfa;">if let</span> Some(t) = &amp;*guard { <span style="color:#a78bfa;">return</span> Ok(t.clone()); }</div>
+          <div class="pl-4 text-primary"><span style="color:#a78bfa;">let</span> t = self.<span style="color:#60a5fa;">do_refresh</span>().<span style="color:#60a5fa;">await</span>?;</div>
+          <div class="pl-4 text-primary">*guard = Some(t.clone()); Ok(t)</div>
+          <div class="text-primary">}</div>
+        </div>
+
+        <p class="text-[16px] text-secondary leading-7 mb-3">All 14 existing auth tests pass. Added 3 new concurrent-refresh tests. The race condition is no longer reproducible under load testing.</p>
+
+        <button class="text-[14px] font-medium text-accent mt-1">View Diff →</button>
+      </div>
+    </div>
+
+    <!-- Stack spacer -->
+    <div class="flex-shrink-0" style="height: 12px;"></div>
+
+    <!-- Action bar — persistent, frosted -->
+    <div class="flex-shrink-0 px-4 py-3 flex gap-3 border-t border-forge" style="background-color: rgba(19,17,26,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+      <!-- Reject — muted border (deliberate asymmetry, not accent) -->
+      <button class="flex-1 h-12 rounded-xl text-[15px] font-semibold text-primary border-[1.5px]" style="border-color: var(--forge-text-tertiary); background: transparent;">
+        Reject
+      </button>
+      <!-- Approve — accent fill -->
+      <button class="flex-1 h-12 rounded-xl text-[15px] font-semibold text-white bg-accent" style="background-color: rgb(var(--forge-accent));">
+        Approve
+      </button>
+    </div>
+
+    <!-- Bottom safe area -->
+    <div class="flex-shrink-0" style="height: 16px; background-color: rgba(19,17,26,0.85);"></div>
+  </div>
+
+  <button onclick="document.documentElement.classList.toggle('dark')"
+    class="fixed bottom-6 right-6 bg-white text-gray-800 text-sm font-medium px-4 py-2 rounded-full shadow-lg">
+    Toggle dark/light
+  </button>
+
+</body>
+</html>

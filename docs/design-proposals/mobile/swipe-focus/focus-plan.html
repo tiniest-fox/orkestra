@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swipe Focus — Plan Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ====================================================================
+     * Forge Design Tokens — from src/index.css
+     * ==================================================================== */
+    :root {
+      --forge-canvas: #FAF8FC;
+      --forge-surface: #FFFFFF;
+      --forge-surface-raised: #FEFCFA;
+      --forge-surface-2: #F4F0F8;
+      --forge-surface-3: #DDD7E4;
+      --forge-surface-hover: #F5F2F8;
+
+      --forge-text-primary: #1C1820;
+      --forge-text-secondary: #5A5068;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #9E96AC;
+
+      --forge-border: #E4DFE9;
+
+      --forge-accent: 232 53 88;
+      --forge-accent-soft: rgba(232, 53, 88, 0.08);
+
+      --forge-status-warning: 217 119 6;
+      --forge-status-warning-bg: #fef3c7;
+      --forge-status-info: 37 99 235;
+
+      --forge-violet: 124 58 237;
+
+      --forge-shadow-panel: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --forge-canvas: #13111A;
+        --forge-surface: #1C1926;
+        --forge-surface-raised: #221F2E;
+        --forge-surface-2: #252233;
+        --forge-surface-3: #342F44;
+        --forge-surface-hover: #1F1C2A;
+
+        --forge-text-primary: #EDEBF0;
+        --forge-text-secondary: #A9A1B8;
+        --forge-text-tertiary: #7B7490;
+        --forge-text-quaternary: #544E66;
+
+        --forge-border: #2E2A3C;
+
+        --forge-accent: 240 64 104;
+        --forge-accent-soft: rgba(240, 64, 104, 0.12);
+
+        --forge-status-warning: 245 158 11;
+        --forge-status-warning-bg: rgba(245, 158, 11, 0.12);
+        --forge-status-info: 59 130 246;
+
+        --forge-violet: 139 92 246;
+
+        --forge-shadow-panel: 0 0 0 1px rgba(80, 70, 110, 0.25), 0 0 12px 0 rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    /* ====================================================================
+     * Reset + base
+     * ==================================================================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      background: #000;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px 0;
+    }
+
+    /* ====================================================================
+     * Phone frame
+     * ==================================================================== */
+    .phone {
+      width: 390px;
+      min-height: 844px;
+      background: var(--forge-canvas);
+      border-radius: 44px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* ====================================================================
+     * Status bar
+     * ==================================================================== */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px 4px;
+      height: 54px;
+      flex-shrink: 0;
+    }
+    .status-bar-time {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--forge-text-primary);
+    }
+    .status-bar-icons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--forge-text-primary);
+      opacity: 0.8;
+    }
+
+    /* ====================================================================
+     * Swipe header
+     * ==================================================================== */
+    .swipe-header {
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      height: 44px;
+      flex-shrink: 0;
+    }
+    .back-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      margin-left: -4px;
+      border-radius: 4px;
+      min-width: 32px;
+      color: var(--forge-text-secondary);
+      text-decoration: none;
+    }
+    .position-dots {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .pos-dot { border-radius: 9999px; }
+    .pos-dot--active { width: 7px; height: 7px; background: rgb(var(--forge-status-warning)); }
+    .pos-dot--inactive { width: 5px; height: 5px; background: var(--forge-text-quaternary); }
+
+    /* ====================================================================
+     * Card area + edge peek
+     * ==================================================================== */
+    .card-area {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .main-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      margin: 0 8px 0 16px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--forge-surface);
+      box-shadow: var(--forge-shadow-panel);
+      position: relative;
+      min-height: 0;
+    }
+    .card-stripe {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 12px 0 0 12px;
+      background: rgb(var(--forge-status-warning));
+    }
+    .edge-peek {
+      flex-shrink: 0;
+      width: 10px;
+      margin: 16px 0;
+      border-radius: 6px 0 0 6px;
+      background: var(--forge-surface-2);
+      box-shadow: var(--forge-shadow-panel);
+      position: relative;
+    }
+    .edge-peek-stripe {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 6px 0 0 6px;
+      background: rgb(var(--forge-status-info));
+      opacity: 0.5;
+    }
+
+    /* ====================================================================
+     * Card header
+     * ==================================================================== */
+    .card-header {
+      padding: 14px 14px 12px 16px;
+      flex-shrink: 0;
+    }
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .stage-pill {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--forge-surface-2);
+      color: rgb(var(--forge-status-warning));
+    }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .auto-cluster {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .auto-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--forge-text-tertiary);
+      user-select: none;
+    }
+    .auto-toggle {
+      position: relative;
+      width: 28px;
+      height: 16px;
+      border-radius: 8px;
+      background: var(--forge-surface-3);
+      cursor: pointer;
+      flex-shrink: 0;
+      border: none;
+    }
+    .auto-toggle-knob {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 12px;
+      height: 12px;
+      border-radius: 6px;
+      background: var(--forge-text-quaternary);
+      transition: transform 0.15s, background 0.15s;
+    }
+    .menu-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--forge-text-tertiary);
+    }
+
+    /* -- Stage stepper -- */
+    .stage-stepper {
+      display: flex;
+      align-items: flex-start;
+      margin-top: 12px;
+    }
+    .stage-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      flex: 1;
+      min-width: 0;
+    }
+    .stage-dot {
+      border-radius: 9999px;
+      flex-shrink: 0;
+    }
+    .stage-dot--done {
+      width: 5px;
+      height: 5px;
+      background: rgb(var(--forge-status-warning));
+    }
+    .stage-dot--active {
+      width: 7px;
+      height: 7px;
+      background: rgb(var(--forge-status-warning));
+      box-shadow: 0 0 0 3px rgba(var(--forge-status-warning), 0.18);
+      animation: glow 2s ease-in-out infinite;
+    }
+    .stage-dot--upcoming {
+      width: 5px;
+      height: 5px;
+      background: transparent;
+      border: 1.5px solid var(--forge-text-quaternary);
+    }
+    .stage-label {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      color: var(--forge-text-quaternary);
+    }
+    .stage-label--active { color: rgb(var(--forge-status-warning)); }
+
+    /* -- Iteration indicator -- */
+    .iteration-line {
+      margin-top: 8px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      line-height: 16px;
+      color: var(--forge-text-quaternary);
+    }
+
+    /* -- Title + meta -- */
+    .task-title {
+      margin-top: 8px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--forge-text-primary);
+      line-height: 24px;
+    }
+    .task-meta {
+      margin-top: 3px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      line-height: 18px;
+      color: var(--forge-text-tertiary);
+    }
+    .meta-sep { color: var(--forge-text-quaternary); }
+    .flow-badge {
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(var(--forge-status-warning), 0.1);
+      color: rgb(var(--forge-status-warning));
+    }
+
+    /* ====================================================================
+     * Divider
+     * ==================================================================== */
+    .divider {
+      margin: 0 14px;
+      height: 1px;
+      background: var(--forge-border);
+      flex-shrink: 0;
+    }
+
+    /* ====================================================================
+     * Scrollable content
+     * ==================================================================== */
+    .content {
+      padding: 12px 14px 14px 16px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* -- Rejection feedback callout -- */
+    .feedback-callout {
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(var(--forge-status-warning), 0.15);
+      background: rgba(var(--forge-status-warning), 0.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      .feedback-callout {
+        border-color: rgba(var(--forge-status-warning), 0.18);
+        background: rgba(var(--forge-status-warning), 0.08);
+      }
+    }
+    .feedback-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: rgb(var(--forge-status-warning));
+      margin-bottom: 2px;
+    }
+    .feedback-text {
+      font-size: 13px;
+      line-height: 19px;
+      color: var(--forge-text-secondary);
+    }
+
+    /* -- Prose -- */
+    .prose-p {
+      font-size: 14px;
+      line-height: 22px;
+      color: var(--forge-text-primary);
+      margin-bottom: 10px;
+    }
+    .prose-heading {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--forge-text-primary);
+      margin-bottom: 6px;
+    }
+    .prose-list {
+      font-size: 14px;
+      line-height: 22px;
+      color: var(--forge-text-primary);
+      margin-bottom: 10px;
+      padding-left: 18px;
+    }
+    .prose-list li { margin-bottom: 6px; }
+    .prose-list li:last-child { margin-bottom: 0; }
+    .prose-muted {
+      font-size: 14px;
+      line-height: 22px;
+      color: var(--forge-text-secondary);
+      margin-bottom: 10px;
+    }
+
+    code {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--forge-surface-2);
+      color: var(--forge-text-secondary);
+    }
+
+    /* -- Code block -- */
+    .code-block {
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      line-height: 20px;
+      overflow-x: auto;
+      background: var(--forge-surface-2);
+      border: 1px solid var(--forge-border);
+    }
+    .code-block-label {
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--forge-text-tertiary);
+      margin-bottom: 4px;
+    }
+    .code-block .kw { color: rgb(var(--forge-status-warning)); }
+    .code-block .fn { color: rgb(var(--forge-status-info)); }
+    .code-line { color: var(--forge-text-primary); }
+
+    /* -- Action links -- */
+    .action-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+    }
+    .action-link--primary { color: rgb(var(--forge-accent)); }
+    .action-link--secondary { color: var(--forge-text-tertiary); }
+
+    /* ====================================================================
+     * Frosted footer
+     * ==================================================================== */
+    .footer-frost {
+      flex-shrink: 0;
+      padding: 10px 16px 8px;
+      display: flex;
+      gap: 10px;
+      border-top: 1px solid var(--forge-border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: rgba(250, 248, 252, 0.82);
+    }
+    @media (prefers-color-scheme: dark) {
+      .footer-frost { background: rgba(19, 17, 26, 0.82); }
+    }
+    .btn {
+      flex: 1;
+      height: 42px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+    }
+    .btn--outline {
+      background: transparent;
+      border: 1.5px solid var(--forge-text-tertiary);
+      color: var(--forge-text-primary);
+    }
+    .btn--accent {
+      background: rgb(var(--forge-accent));
+      color: #fff;
+    }
+    .safe-area {
+      flex-shrink: 0;
+      height: 16px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: rgba(250, 248, 252, 0.82);
+    }
+    @media (prefers-color-scheme: dark) {
+      .safe-area { background: rgba(19, 17, 26, 0.82); }
+    }
+
+    /* ====================================================================
+     * Animation
+     * ==================================================================== */
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(var(--forge-status-warning), 0.18); }
+      50% { box-shadow: 0 0 0 5px rgba(var(--forge-status-warning), 0.08); }
+    }
+  </style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <span class="status-bar-time">9:41</span>
+    <div class="status-bar-icons">
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor"><rect x="0" y="5.5" width="2.5" height="5.5" rx=".4"/><rect x="4" y="3.5" width="2.5" height="7.5" rx=".4"/><rect x="8" y="1.5" width="2.5" height="9.5" rx=".4"/><rect x="12" y="0" width="2.5" height="11" rx=".4"/></svg>
+      <svg width="24" height="11" viewBox="0 0 24 11" fill="none"><rect x=".5" y=".5" width="20" height="10" rx="2.5" stroke="currentColor" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="7" rx="1.5" fill="currentColor"/><path d="M22 3.5v4a2 2 0 000-4z" fill="currentColor" opacity=".4"/></svg>
+    </div>
+  </div>
+
+  <!-- Swipe header -->
+  <div class="swipe-header">
+    <a href="list.html" class="back-btn">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12.5 4.5L7 10l5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+    <div class="position-dots">
+      <div class="pos-dot pos-dot--active"></div>
+      <div class="pos-dot pos-dot--inactive"></div>
+      <div class="pos-dot pos-dot--inactive"></div>
+    </div>
+    <div style="width:32px"></div>
+  </div>
+
+  <!-- Card + edge peek -->
+  <div class="card-area">
+
+    <div class="main-card">
+      <div class="card-stripe"></div>
+
+      <!-- Card header -->
+      <div class="card-header">
+        <div class="header-top">
+          <span class="stage-pill">Review</span>
+          <div class="header-controls">
+            <div class="auto-cluster">
+              <span class="auto-label">Auto</span>
+              <div class="auto-toggle" role="switch" aria-checked="false" aria-label="Auto mode">
+                <div class="auto-toggle-knob"></div>
+              </div>
+            </div>
+            <button class="menu-btn" aria-label="More options">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Pipeline stage stepper -->
+        <div class="stage-stepper">
+          <div class="stage-step">
+            <div class="stage-dot stage-dot--done"></div>
+            <span class="stage-label">Plan</span>
+          </div>
+          <div class="stage-step">
+            <div class="stage-dot stage-dot--done"></div>
+            <span class="stage-label">Breakdown</span>
+          </div>
+          <div class="stage-step">
+            <div class="stage-dot stage-dot--done"></div>
+            <span class="stage-label">Work</span>
+          </div>
+          <div class="stage-step">
+            <div class="stage-dot stage-dot--done"></div>
+            <span class="stage-label">Checks</span>
+          </div>
+          <div class="stage-step">
+            <div class="stage-dot stage-dot--active"></div>
+            <span class="stage-label stage-label--active">Review</span>
+          </div>
+          <div class="stage-step">
+            <div class="stage-dot stage-dot--upcoming"></div>
+            <span class="stage-label">Compound</span>
+          </div>
+        </div>
+
+        <!-- Iteration indicator -->
+        <div class="iteration-line">Iteration 2 &middot; 1 rejection</div>
+
+        <!-- Task title -->
+        <h1 class="task-title">Fix auth token refresh</h1>
+
+        <!-- Meta -->
+        <div class="task-meta">
+          <span>handy-fox</span>
+          <span class="meta-sep">&middot;</span>
+          <span class="flow-badge">hotfix</span>
+          <span class="meta-sep">&middot;</span>
+          <span>2m ago</span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Scrollable content -->
+      <div class="content">
+
+        <!-- Rejection feedback -->
+        <div class="feedback-callout">
+          <div class="feedback-label">Previous feedback</div>
+          <p class="feedback-text">&ldquo;The mutex guard approach is correct but the error handling needs to propagate properly to callers.&rdquo;</p>
+        </div>
+
+        <p class="prose-p">Refactored the authentication token refresh flow to eliminate the race condition causing duplicate refresh requests when multiple concurrent API calls each independently detect an expired token.</p>
+
+        <p class="prose-p">The core problem: when several requests hit a 401 simultaneously, each spawned its own refresh call. The first would succeed, but subsequent ones would invalidate the token the first just obtained, cascading into a logout.</p>
+
+        <h3 class="prose-heading">Changes</h3>
+
+        <ol class="prose-list">
+          <li>Introduced a <code>Mutex&lt;Option&lt;Token&gt;&gt;</code> guard in <code>TokenManager</code> so only one refresh can proceed at a time. Subsequent callers await the lock and receive the already-refreshed token.</li>
+          <li>Replaced the eager <code>refresh_if_expired()</code> call in the request interceptor with a check-then-lock pattern that reads the token optimistically before acquiring the mutex.</li>
+          <li>Added a 30-second TTL buffer: tokens are refreshed when within 30s of expiry rather than after they expire, preventing the 401 from triggering in the first place.</li>
+          <li>Removed the retry-with-refresh logic from <code>ApiClient::send()</code> since the interceptor now guarantees a valid token.</li>
+        </ol>
+
+        <div class="code-block">
+          <div class="code-block-label">token_manager.rs</div>
+          <div class="code-line"><span class="kw">async fn</span> <span class="fn">refresh_token</span>(&amp;self) -&gt; Result&lt;Token&gt; {</div>
+          <div class="code-line" style="padding-left:16px"><span class="kw">let</span> guard = self.refresh_mutex.<span class="fn">lock</span>().<span class="fn">await</span>;</div>
+          <div class="code-line" style="padding-left:16px"><span class="kw">if let</span> Some(t) = &amp;*guard {</div>
+          <div class="code-line" style="padding-left:32px"><span class="kw">if</span> !t.<span class="fn">expires_within</span>(Duration::from_secs(30)) {</div>
+          <div class="code-line" style="padding-left:48px"><span class="kw">return</span> Ok(t.<span class="fn">clone</span>());</div>
+          <div class="code-line" style="padding-left:32px">}</div>
+          <div class="code-line" style="padding-left:16px">}</div>
+          <div class="code-line" style="padding-left:16px"><span class="kw">let</span> new_token = self.<span class="fn">do_refresh</span>().<span class="fn">await</span>?;</div>
+          <div class="code-line" style="padding-left:16px">*guard = Some(new_token.<span class="fn">clone</span>());</div>
+          <div class="code-line" style="padding-left:16px">Ok(new_token)</div>
+          <div class="code-line">}</div>
+        </div>
+
+        <p class="prose-muted">All 14 existing auth tests pass. Added 3 new concurrent-refresh tests that spawn 50 simultaneous requests against an expiring token. The race condition is no longer reproducible under load.</p>
+
+        <!-- View Logs link -->
+        <div style="margin-bottom:4px">
+          <a href="focus-logs.html" class="action-link action-link--secondary">
+            View Logs
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M5.5 3.5L9 7l-3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
+
+        <!-- View Diff link -->
+        <div>
+          <a href="focus-diff.html" class="action-link action-link--primary">
+            View Diff
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M5.5 3.5L9 7l-3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Edge peek -->
+    <div class="edge-peek">
+      <div class="edge-peek-stripe"></div>
+    </div>
+
+  </div>
+
+  <!-- Frosted footer -->
+  <div class="footer-frost">
+    <button class="btn btn--outline">Request Changes</button>
+    <a href="focus-question.html" class="btn btn--accent">Approve</a>
+  </div>
+
+  <div class="safe-area"></div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stack — All Caught Up</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --forge-canvas: #FAF8FC;
+      --forge-surface: #FFFFFF;
+      --forge-surface-2: #F4F0F8;
+      --forge-text-primary: #1C1820;
+      --forge-text-secondary: #5A5068;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #9E96AC;
+      --forge-border: #E4DFE9;
+      --forge-accent: 232 53 88;
+    }
+    .dark {
+      --forge-canvas: #13111A;
+      --forge-surface: #1C1926;
+      --forge-surface-2: #252033;
+      --forge-text-primary: #EDEAEF;
+      --forge-text-secondary: #A89DB8;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #524A63;
+      --forge-border: #2E2A3C;
+      --forge-accent: 240 64 104;
+    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    .bg-canvas { background-color: var(--forge-canvas); }
+    .text-primary { color: var(--forge-text-primary); }
+    .text-secondary { color: var(--forge-text-secondary); }
+    .text-tertiary { color: var(--forge-text-tertiary); }
+    .text-quaternary { color: var(--forge-text-quaternary); }
+    .text-accent { color: rgb(var(--forge-accent)); }
+    .seg-active { background-color: var(--forge-surface); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  </style>
+</head>
+<body class="bg-black flex items-start justify-center min-h-screen py-8">
+
+  <div class="w-[390px] min-h-[844px] bg-canvas rounded-[44px] overflow-hidden shadow-2xl relative flex flex-col" style="background-color: var(--forge-canvas);">
+
+    <!-- Status bar -->
+    <div class="flex items-center justify-between px-8 pt-4 pb-2 flex-shrink-0" style="height: 54px;">
+      <span class="text-[15px] font-semibold text-primary" style="font-family: system-ui;">9:41</span>
+      <div class="flex items-center gap-1.5">
+        <svg width="17" height="12" viewBox="0 0 17 12" fill="none" class="text-primary opacity-80">
+          <rect x="0" y="6" width="3" height="6" rx="0.5" fill="currentColor"/>
+          <rect x="4.5" y="4" width="3" height="8" rx="0.5" fill="currentColor"/>
+          <rect x="9" y="2" width="3" height="10" rx="0.5" fill="currentColor"/>
+          <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="currentColor"/>
+        </svg>
+        <svg width="25" height="12" viewBox="0 0 25 12" fill="none" class="text-primary opacity-80">
+          <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="currentColor" stroke-opacity="0.35"/>
+          <rect x="2" y="2" width="17" height="8" rx="1.5" fill="currentColor"/>
+          <path d="M23 4v4a2 2 0 0 0 0-4z" fill="currentColor" opacity="0.4"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Header with centered segmented control -->
+    <div class="flex items-center justify-center px-4 pb-2 flex-shrink-0" style="height: 52px;">
+      <div class="flex p-[3px] rounded-full gap-0.5" style="background-color: var(--forge-surface-2);">
+        <button class="px-4 py-1.5 rounded-full seg-active">
+          <span class="text-[14px] font-semibold text-primary">Focus</span>
+        </button>
+        <button class="px-4 py-1.5 rounded-full">
+          <span class="text-[14px] font-medium text-tertiary">Browse</span>
+        </button>
+        <button class="px-4 py-1.5 rounded-full">
+          <span class="text-[14px] font-medium text-tertiary">Done</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- The canvas IS the empty state. Nothing else. -->
+    <div class="flex-1 flex flex-col items-center justify-center px-8">
+
+      <!-- Checkmark — muted purple, NOT green -->
+      <!-- Purple = Orkestra brand. Green would imply task completion (a task state). -->
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style="color: #9B8ACA; opacity: 0.7;">
+        <circle cx="24" cy="24" r="22" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M14 24l7 7 13-13" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+
+      <h2 class="text-[20px] font-semibold text-primary mt-5 text-center">You're all caught up</h2>
+
+      <p class="text-[15px] text-secondary mt-2 text-center">
+        5 tasks running
+        <span class="text-quaternary mx-1.5">|</span>
+        12 completed
+      </p>
+
+      <button class="mt-8 text-[15px] font-medium text-accent h-11 px-6">
+        Browse Tasks
+      </button>
+
+    </div>
+    <!-- The emptiness IS the design. The canvas reward state. Inbox zero for agents. -->
+
+    <!-- Bottom safe area -->
+    <div class="flex-shrink-0" style="height: 34px;"></div>
+  </div>
+
+  <button onclick="document.documentElement.classList.toggle('dark')"
+    class="fixed bottom-6 right-6 bg-white text-gray-800 text-sm font-medium px-4 py-2 rounded-full shadow-lg">
+    Toggle dark/light
+  </button>
+
+</body>
+</html>

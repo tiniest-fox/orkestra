@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pulse — Question Answering Flow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --forge-canvas: #FAF8FC;
+      --forge-surface: #FFFFFF;
+      --forge-surface-2: #F4F0F8;
+      --forge-text-primary: #1C1820;
+      --forge-text-secondary: #5A5068;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #9E96AC;
+      --forge-border: #E4DFE9;
+      --forge-accent: 232 53 88;
+    }
+    .dark {
+      --forge-canvas: #13111A;
+      --forge-surface: #1C1926;
+      --forge-surface-2: #252033;
+      --forge-text-primary: #EDEBF0;
+      --forge-text-secondary: #A89DB8;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #524A63;
+      --forge-border: #2E2A3C;
+      --forge-accent: 240 64 104;
+    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    .bg-canvas { background-color: var(--forge-canvas); }
+    .bg-surface { background-color: var(--forge-surface); }
+    .bg-surface-2 { background-color: var(--forge-surface-2); }
+    .text-primary { color: var(--forge-text-primary); }
+    .text-secondary { color: var(--forge-text-secondary); }
+    .text-tertiary { color: var(--forge-text-tertiary); }
+    .text-quaternary { color: var(--forge-text-quaternary); }
+    .border-forge { border-color: var(--forge-border); }
+    .text-accent { color: rgb(var(--forge-accent)); }
+    .seg-active { background-color: var(--forge-surface); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  </style>
+</head>
+<body class="bg-black flex items-start justify-center min-h-screen py-8">
+
+  <div class="w-[390px] min-h-[844px] bg-canvas rounded-[44px] overflow-hidden shadow-2xl relative flex flex-col" style="background-color: var(--forge-canvas);">
+
+    <!-- Status bar -->
+    <div class="flex items-center justify-between px-8 pt-4 pb-2 flex-shrink-0" style="height: 54px;">
+      <span class="text-[15px] font-semibold text-primary" style="font-family: system-ui;">9:41</span>
+      <div class="flex items-center gap-1.5">
+        <svg width="17" height="12" viewBox="0 0 17 12" fill="none" class="text-primary opacity-80">
+          <rect x="0" y="6" width="3" height="6" rx="0.5" fill="currentColor"/>
+          <rect x="4.5" y="4" width="3" height="8" rx="0.5" fill="currentColor"/>
+          <rect x="9" y="2" width="3" height="10" rx="0.5" fill="currentColor"/>
+          <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="currentColor"/>
+        </svg>
+        <svg width="25" height="12" viewBox="0 0 25 12" fill="none" class="text-primary opacity-80">
+          <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="currentColor" stroke-opacity="0.35"/>
+          <rect x="2" y="2" width="17" height="8" rx="1.5" fill="currentColor"/>
+          <path d="M23 4v4a2 2 0 0 0 0-4z" fill="currentColor" opacity="0.4"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- App header -->
+    <div class="flex items-center justify-between px-5 pb-3 flex-shrink-0" style="height: 48px;">
+      <span class="text-[15px] font-semibold text-primary tracking-tight">orkestra</span>
+      <button class="w-9 h-9 flex items-center justify-center rounded-full">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="text-tertiary">
+          <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M16.5 10c0-.46-.05-.91-.14-1.35l1.75-1.37-1.5-2.6-2.07.7A7 7 0 0 0 12 4.15L11.5 2h-3l-.5 2.15a7 7 0 0 0-2.54 1.23l-2.07-.7-1.5 2.6 1.75 1.37A7.1 7.1 0 0 0 3.5 10c0 .46.05.91.14 1.35L1.89 12.72l1.5 2.6 2.07-.7A7 7 0 0 0 8 15.85L8.5 18h3l.5-2.15a7 7 0 0 0 2.54-1.23l2.07.7 1.5-2.6-1.75-1.37c.09-.44.14-.89.14-1.35z" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Segmented control -->
+    <div class="mx-5 mb-0 flex-shrink-0">
+      <div class="flex p-1 rounded-[10px] gap-1" style="background-color: var(--forge-surface-2);">
+        <button class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg seg-active">
+          <span class="text-[15px] font-semibold text-primary">Action</span>
+          <span class="text-[15px] font-semibold text-secondary">(3)</span>
+        </button>
+        <button class="flex-1 flex items-center justify-center py-2 rounded-lg">
+          <span class="text-[15px] text-tertiary">All (12)</span>
+        </button>
+        <button class="flex-1 flex items-center justify-center py-2 rounded-lg">
+          <span class="text-[15px] text-tertiary">Done (4)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Feed -->
+    <div class="flex-1 overflow-y-auto px-5 pt-4 pb-6 flex flex-col gap-3">
+
+      <!-- Question card: ANSWER SELECTED STATE (the hero interaction) -->
+      <div class="relative rounded-xl overflow-hidden border border-forge bg-surface" style="box-shadow: 0 1px 8px rgba(37,99,235,0.12); border-color: rgba(37,99,235,0.25);">
+        <!-- Blue stripe: Question -->
+        <div class="absolute left-0 inset-y-0 w-[3px] rounded-l-xl" style="background-color: #2563eb;"></div>
+        <div class="p-4 pl-5">
+          <!-- Title -->
+          <div class="text-[17px] font-semibold text-primary truncate">Refactor DB layer</div>
+          <!-- Meta row -->
+          <div class="mt-1.5 flex items-center gap-2">
+            <span class="text-[13px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-md" style="background-color: rgba(37,99,235,0.15); color: #60a5fa;">Question</span>
+            <span class="text-[13px] font-medium px-2 py-0.5 rounded-md text-secondary" style="background-color: var(--forge-surface-2);">Plan</span>
+            <span class="flex-1"></span>
+            <span class="text-[12px] text-quaternary">5m</span>
+          </div>
+          <!-- Question text -->
+          <p class="mt-3 text-[15px] text-primary leading-6">Should the migration be reversible or is a one-way migration acceptable for this use case?</p>
+          <!-- Options — one selected -->
+          <div class="mt-3 flex flex-col gap-2">
+            <!-- SELECTED option -->
+            <button class="w-full h-12 border rounded-xl text-[15px] text-left px-4 flex items-center gap-2" style="background-color: rgba(37,99,235,0.12); border-color: rgba(37,99,235,0.4); color: #93c5fd;">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="flex-shrink-0">
+                <circle cx="8" cy="8" r="7" stroke="#2563eb" stroke-width="1.5"/>
+                <circle cx="8" cy="8" r="4" fill="#2563eb"/>
+              </svg>
+              Reversible (recommended for prod)
+            </button>
+            <!-- Unselected option -->
+            <button class="w-full h-12 border border-forge rounded-xl text-[15px] text-primary text-left px-4 flex items-center gap-2 bg-surface-2">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="flex-shrink-0 text-quaternary">
+                <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
+              </svg>
+              One-way (simpler, fine for dev)
+            </button>
+            <!-- Text input -->
+            <input type="text" placeholder="Type your own answer…"
+              class="w-full h-12 border border-forge rounded-xl text-[15px] px-4 bg-surface-2 outline-none"
+              style="color: var(--forge-text-quaternary);">
+          </div>
+          <!-- Counter + Next button (appears after selection) -->
+          <div class="mt-3 flex items-center justify-between">
+            <span class="text-[12px] text-tertiary">1 of 3 questions</span>
+            <button class="px-5 h-9 rounded-lg text-[14px] font-medium text-white flex items-center gap-1.5" style="background-color: #2563eb;">
+              Next
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Annotation callout -->
+      <div class="flex items-start gap-2 px-1">
+        <div class="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center mt-0.5" style="background-color: rgba(var(--forge-accent),0.15);">
+          <span class="text-[9px] font-bold text-accent">↑</span>
+        </div>
+        <p class="text-[12px] text-tertiary leading-5">Hero interaction: answer selected, Next button appears. No navigation required — the agent receives the answer and resumes without leaving the feed.</p>
+      </div>
+
+      <!-- Card below: Review card (partially visible, shows scrolling context) -->
+      <div class="relative rounded-xl overflow-hidden border border-forge bg-surface" style="box-shadow: 0 1px 4px rgba(0,0,0,0.1);">
+        <div class="absolute left-0 inset-y-0 w-[3px] rounded-l-xl" style="background-color: #d97706;"></div>
+        <div class="p-4 pl-5">
+          <div class="text-[17px] font-semibold text-primary truncate">Fix auth token refresh</div>
+          <div class="mt-1.5 flex items-center gap-2">
+            <span class="text-[13px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-md" style="background-color: rgba(217,119,6,0.15); color: #d97706;">Review</span>
+            <span class="text-[13px] font-medium px-2 py-0.5 rounded-md text-secondary" style="background-color: var(--forge-surface-2);">Work</span>
+            <span class="flex-1"></span>
+            <span class="text-[12px] text-quaternary">2m</span>
+          </div>
+          <p class="mt-3 text-[15px] text-secondary leading-6 line-clamp-2">Refactored the token refresh to use a single retry with exponential backoff. Removed the duplicate refresh logic…</p>
+          <div class="mt-4 flex justify-end gap-3">
+            <button class="px-5 h-11 rounded-[10px] border border-forge text-[15px] font-medium text-primary bg-transparent">Review</button>
+            <button class="px-5 h-11 rounded-[10px] text-[15px] font-semibold text-white" style="background-color: #7c3aed;">Approve</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom safe area -->
+    <div class="flex-shrink-0" style="height: 20px;"></div>
+  </div>
+
+  <button onclick="document.documentElement.classList.toggle('dark')"
+    class="fixed bottom-6 right-6 bg-white text-gray-800 text-sm font-medium px-4 py-2 rounded-full shadow-lg">
+    Toggle dark/light
+  </button>
+
+</body>
+</html>

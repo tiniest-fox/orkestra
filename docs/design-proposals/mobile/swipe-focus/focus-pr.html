@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swipe Focus — PR Review</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>tailwind.config = { darkMode: 'media', theme: { extend: { fontFamily: { sans: ['IBM Plex Sans','system-ui','sans-serif'], mono: ['IBM Plex Mono','monospace'] } } } }</script>
+  <style>
+    :root {
+      --forge-canvas: #FAF8FC; --forge-surface: #FFFFFF; --forge-surface-2: #F4F0F8; --forge-surface-3: #DDD7E4;
+      --forge-text-primary: #1C1820; --forge-text-secondary: #5A5068; --forge-text-tertiary: #7A7288; --forge-text-quaternary: #9E96AC;
+      --forge-border: #E4DFE9; --forge-accent: 232 53 88;
+      --forge-status-success: 22 163 74; --forge-status-error: 220 38 38; --forge-status-warning: 217 119 6; --forge-status-info: 37 99 235;
+      --forge-violet: 124 58 237;
+      --forge-shadow-panel: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
+      --forge-shadow-panel-press: 0px 0px 4px 1px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.02);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --forge-canvas: #13111A; --forge-surface: #1C1926; --forge-surface-2: #252233; --forge-surface-3: #342F44;
+        --forge-text-primary: #EDEBF0; --forge-text-secondary: #A9A1B8; --forge-text-tertiary: #7B7490; --forge-text-quaternary: #544E66;
+        --forge-border: #2E2A3C; --forge-accent: 240 64 104;
+        --forge-status-success: 34 197 94; --forge-status-error: 239 68 68; --forge-status-warning: 245 158 11; --forge-status-info: 59 130 246;
+        --forge-violet: 139 92 246;
+        --forge-shadow-panel: 0 0 0 1px rgba(80,70,110,0.25), 0 0 12px 0 rgba(0,0,0,0.3);
+        --forge-shadow-panel-press: 0 0 0 1px rgba(60,52,85,0.3);
+      }
+    }
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #000; }
+    .bg-canvas { background: var(--forge-canvas); }
+    .bg-surface { background: var(--forge-surface); }
+    .bg-s2 { background: var(--forge-surface-2); }
+    .t1 { color: var(--forge-text-primary); } .t2 { color: var(--forge-text-secondary); } .t3 { color: var(--forge-text-tertiary); } .t4 { color: var(--forge-text-quaternary); }
+    .bd { border-color: var(--forge-border); }
+    .accent { color: rgb(var(--forge-accent)); }
+    @keyframes pulseRing {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(var(--forge-status-success),0.3); }
+      50% { box-shadow: 0 0 0 4px rgba(var(--forge-status-success),0.12); }
+    }
+  </style>
+</head>
+<body class="flex items-start justify-center min-h-screen py-8">
+<div class="w-[390px] min-h-[844px] bg-canvas rounded-[44px] overflow-hidden shadow-2xl flex flex-col relative">
+
+  <!-- Status bar -->
+  <div class="flex items-center justify-between px-8 pt-5 pb-1 flex-shrink-0">
+    <span class="text-[15px] font-semibold t1" style="font-family:system-ui">9:41</span>
+    <div class="flex items-center gap-1.5 t1 opacity-80">
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor"><rect x="0" y="5.5" width="2.5" height="5.5" rx=".4"/><rect x="4" y="3.5" width="2.5" height="7.5" rx=".4"/><rect x="8" y="1.5" width="2.5" height="9.5" rx=".4"/><rect x="12" y="0" width="2.5" height="11" rx=".4"/></svg>
+      <svg width="24" height="11" viewBox="0 0 24 11" fill="none"><rect x=".5" y=".5" width="20" height="10" rx="2.5" stroke="currentColor" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="7" rx="1.5" fill="currentColor"/><path d="M22 3.5v4a2 2 0 000-4z" fill="currentColor" opacity=".4"/></svg>
+    </div>
+  </div>
+
+  <!-- Swipe header: back + position dots -->
+  <div class="flex items-center justify-between px-4 pt-2 pb-2 flex-shrink-0">
+    <a href="list.html" class="p-1 t2">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <path d="M13 5l-6 6 6 6" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+    <!-- Position dots: amber, blue, GREEN active (3rd) -->
+    <div class="flex items-center gap-2">
+      <div class="w-[5px] h-[5px] rounded-full" style="background:var(--forge-text-quaternary)"></div>
+      <div class="w-[5px] h-[5px] rounded-full" style="background:var(--forge-text-quaternary)"></div>
+      <div class="w-[7px] h-[7px] rounded-full" style="background:rgb(var(--forge-status-success))"></div>
+    </div>
+    <!-- Spacer to balance chevron -->
+    <div class="w-[30px]"></div>
+  </div>
+
+  <!-- Card container -->
+  <div class="mx-4 flex-1 flex flex-col rounded-2xl overflow-hidden bg-surface bd border relative" style="margin-bottom:88px;box-shadow:var(--forge-shadow-panel)">
+
+    <!-- Left stripe — green -->
+    <div class="absolute left-0 inset-y-0 w-1 rounded-l-2xl" style="background:rgb(var(--forge-status-success))"></div>
+
+    <!-- Card header -->
+    <div class="p-5 pl-6 flex-shrink-0">
+      <!-- Stage pill + pipeline dots -->
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-[12px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full t2" style="background:var(--forge-surface-2)">Compound</span>
+          <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider text-white" style="background:rgb(var(--forge-status-success))">PR</span>
+        </div>
+        <!-- Pipeline dots — all complete -->
+        <div class="flex items-center gap-2">
+          <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-status-success),0.5)"></div>
+          <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-status-success),0.5)"></div>
+          <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-status-success),0.5)"></div>
+          <div class="w-1.5 h-1.5 rounded-full" style="background:rgba(var(--forge-status-success),0.5)"></div>
+          <div class="w-2 h-2 rounded-full" style="background:rgb(var(--forge-status-success));animation:pulseRing 2s ease-in-out infinite"></div>
+        </div>
+      </div>
+
+      <!-- Task title -->
+      <h1 class="mt-4 text-[20px] font-semibold t1 leading-7">Add rate limiting</h1>
+
+      <!-- Meta line -->
+      <div class="mt-1 flex items-center gap-1.5 text-[13px] t3 font-mono">
+        <span>swift-raven</span>
+        <span class="t4">&middot;</span>
+        <span style="background:rgba(var(--forge-status-success),0.1);color:rgb(var(--forge-status-success))" class="px-1.5 py-0.5 rounded text-[12px] font-sans font-medium">default</span>
+        <span class="t4">&middot;</span>
+        <span>12m ago</span>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="mx-5 h-px flex-shrink-0" style="background:var(--forge-border)"></div>
+
+    <!-- Scrollable content -->
+    <div class="p-5 pl-6 overflow-y-auto flex-1">
+
+      <!-- PR title block -->
+      <div class="mb-4">
+        <h2 class="text-[18px] font-semibold t1 leading-6">PR #47: Add sliding window rate limiter</h2>
+        <div class="mt-1.5 flex items-center gap-1 text-[13px] font-mono t3">
+          <span class="px-1.5 py-0.5 rounded bg-s2 t2 text-[12px]">feature/rate-limiting</span>
+          <span class="t4">&rarr;</span>
+          <span class="px-1.5 py-0.5 rounded bg-s2 t2 text-[12px]">main</span>
+        </div>
+      </div>
+
+      <!-- PR metadata -->
+      <div class="flex items-center gap-3 mb-5 text-[13px] t3">
+        <!-- Author avatar placeholder -->
+        <div class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold" style="background:rgba(var(--forge-status-success),0.15);color:rgb(var(--forge-status-success))">C</div>
+        <span>Opened 8m ago</span>
+        <span class="t4">&middot;</span>
+        <span>3 commits</span>
+      </div>
+
+      <!-- CI checks section -->
+      <div class="mb-5">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="w-2 h-2 rounded-full" style="background:rgb(var(--forge-status-success))"></div>
+          <span class="text-[13px] font-semibold t1">3 checks passing</span>
+        </div>
+
+        <div class="space-y-0">
+          <!-- Check 1 -->
+          <div class="flex items-center gap-3 py-2.5 bd border-b">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="flex-shrink-0">
+              <circle cx="9" cy="9" r="8" fill="rgba(var(--forge-status-success),0.15)"/>
+              <path d="M5.5 9.5l2 2 5-5" stroke="rgb(var(--forge-status-success))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="flex-1 min-w-0">
+              <span class="text-[14px] t1">cargo test</span>
+              <span class="text-[13px] t3 ml-1">&mdash; 156 passed</span>
+            </div>
+            <span class="text-[12px] font-mono t4">42s</span>
+          </div>
+
+          <!-- Check 2 -->
+          <div class="flex items-center gap-3 py-2.5 bd border-b">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="flex-shrink-0">
+              <circle cx="9" cy="9" r="8" fill="rgba(var(--forge-status-success),0.15)"/>
+              <path d="M5.5 9.5l2 2 5-5" stroke="rgb(var(--forge-status-success))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="flex-1 min-w-0">
+              <span class="text-[14px] t1">cargo clippy</span>
+              <span class="text-[13px] t3 ml-1">&mdash; 0 warnings</span>
+            </div>
+            <span class="text-[12px] font-mono t4">8s</span>
+          </div>
+
+          <!-- Check 3 -->
+          <div class="flex items-center gap-3 py-2.5">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" class="flex-shrink-0">
+              <circle cx="9" cy="9" r="8" fill="rgba(var(--forge-status-success),0.15)"/>
+              <path d="M5.5 9.5l2 2 5-5" stroke="rgb(var(--forge-status-success))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="flex-1 min-w-0">
+              <span class="text-[14px] t1">Deploy preview</span>
+              <span class="text-[13px] t3 ml-1">&mdash; ready</span>
+            </div>
+            <span class="text-[12px] font-mono t4">12s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diff stats + View Diff link -->
+      <div class="flex items-center justify-between py-3 bd border-t">
+        <div class="flex items-center gap-2">
+          <span class="text-[13px] font-mono t2">+234</span>
+          <span class="text-[13px] font-mono" style="color:rgb(var(--forge-status-error))">&minus;89</span>
+          <span class="t4 text-[13px]">&middot;</span>
+          <span class="text-[13px] t3">8 files changed</span>
+        </div>
+        <a href="focus-diff.html" class="text-[14px] font-medium accent">View Diff</a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Sticky footer — green merge button -->
+  <div class="absolute bottom-0 left-0 right-0 bd border-t flex-shrink-0" style="background:var(--forge-surface);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
+    <div class="px-5 pt-3 pb-2">
+      <button class="w-full h-12 rounded-xl text-[15px] font-semibold text-white" style="background:rgb(var(--forge-status-success))">Merge Pull Request</button>
+    </div>
+    <div class="h-4"></div>
+  </div>
+
+</div>
+
+</body></html>

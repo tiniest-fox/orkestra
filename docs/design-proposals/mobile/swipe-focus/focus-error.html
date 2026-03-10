@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swipe Focus — Failed Task</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --forge-canvas: #FAF8FC;
+      --forge-surface: #FFFFFF;
+      --forge-surface-2: #F4F0F8;
+      --forge-surface-3: #DDD7E4;
+      --forge-text-primary: #1C1820;
+      --forge-text-secondary: #5A5068;
+      --forge-text-tertiary: #7A7288;
+      --forge-text-quaternary: #9E96AC;
+      --forge-border: #E4DFE9;
+      --forge-accent: 232 53 88;
+      --forge-status-success: 22 163 74;
+      --forge-status-error: 220 38 38;
+      --forge-status-error-bg: rgba(220, 38, 38, 0.06);
+      --forge-status-warning: 217 119 6;
+      --forge-status-info: 37 99 235;
+      --forge-shadow-panel: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --forge-canvas: #13111A;
+        --forge-surface: #1C1926;
+        --forge-surface-2: #252233;
+        --forge-surface-3: #342F44;
+        --forge-text-primary: #EDEBF0;
+        --forge-text-secondary: #A9A1B8;
+        --forge-text-tertiary: #7B7490;
+        --forge-text-quaternary: #544E66;
+        --forge-border: #2E2A3C;
+        --forge-accent: 240 64 104;
+        --forge-status-success: 34 197 94;
+        --forge-status-error: 239 68 68;
+        --forge-status-error-bg: rgba(239, 68, 68, 0.12);
+        --forge-status-warning: 245 158 11;
+        --forge-status-info: 59 130 246;
+        --forge-shadow-panel: 0 0 0 1px rgba(80, 70, 110, 0.25), 0 0 12px 0 rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #000; }
+
+    .footer-frost {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: color-mix(in srgb, var(--forge-canvas) 82%, transparent);
+    }
+  </style>
+</head>
+<body class="flex items-start justify-center min-h-screen py-8">
+<div class="w-[390px] h-[844px] rounded-[44px] overflow-hidden flex flex-col relative" style="background:var(--forge-canvas); box-shadow:var(--forge-shadow-panel)">
+
+  <!-- Status bar -->
+  <div class="flex items-center justify-between px-8 pt-5 pb-1 flex-shrink-0" style="height:54px">
+    <span class="text-[15px] font-semibold" style="color:var(--forge-text-primary); font-family:system-ui">9:41</span>
+    <div class="flex items-center gap-1.5" style="color:var(--forge-text-primary); opacity:0.8">
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor"><rect x="0" y="5.5" width="2.5" height="5.5" rx=".4"/><rect x="4" y="3.5" width="2.5" height="7.5" rx=".4"/><rect x="8" y="1.5" width="2.5" height="9.5" rx=".4"/><rect x="12" y="0" width="2.5" height="11" rx=".4"/></svg>
+      <svg width="24" height="11" viewBox="0 0 24 11" fill="none"><rect x=".5" y=".5" width="20" height="10" rx="2.5" stroke="currentColor" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="7" rx="1.5" fill="currentColor"/><path d="M22 3.5v4a2 2 0 000-4z" fill="currentColor" opacity=".4"/></svg>
+    </div>
+  </div>
+
+  <!-- Swipe header: back chevron + position dot -->
+  <div class="flex items-center px-4 flex-shrink-0" style="height:40px">
+    <a href="list.html" class="flex items-center justify-center w-8 h-8 -ml-1" style="min-width:32px; color:var(--forge-text-secondary); text-decoration:none">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+        <path d="M12.5 4.5L7 10l5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+    <!-- Single red dot — standalone card -->
+    <div class="flex-1 flex items-center justify-center">
+      <div class="w-[6px] h-[6px] rounded-full" style="background:rgb(var(--forge-status-error))"></div>
+    </div>
+    <div style="width:32px"></div>
+  </div>
+
+  <!-- Card -->
+  <div class="flex-1 flex flex-col mx-3 rounded-lg overflow-hidden relative" style="min-height:0; background:var(--forge-surface); border:1px solid var(--forge-border); box-shadow:var(--forge-shadow-panel)">
+
+    <!-- Left red stripe -->
+    <div class="absolute left-0 inset-y-0 w-[3px]" style="background:rgb(var(--forge-status-error))"></div>
+
+    <!-- Card header -->
+    <div class="px-4 pl-5 pt-4 pb-3 flex-shrink-0">
+      <!-- Badge row -->
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider text-white" style="background:rgb(var(--forge-status-error))">Failed</span>
+        <span class="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded" style="background:var(--forge-surface-2); color:var(--forge-text-tertiary)">Checks</span>
+      </div>
+
+      <!-- Task title -->
+      <h1 class="mt-3 text-[18px] font-semibold leading-6" style="color:var(--forge-text-primary)">Setup CI pipeline</h1>
+
+      <!-- Iteration -->
+      <div class="mt-1 text-[11px] font-mono" style="color:var(--forge-text-quaternary)">Iteration 1 / Failed</div>
+    </div>
+
+    <!-- Divider -->
+    <div class="mx-4 h-px flex-shrink-0" style="background:var(--forge-border)"></div>
+
+    <!-- Scrollable content -->
+    <div class="px-4 pl-5 pt-3.5 pb-4 overflow-y-auto flex-1" style="min-height:0">
+
+      <!-- Error callout — thin red left border, no rounded card -->
+      <div class="pl-3 py-2.5 mb-4" style="border-left:2px solid rgb(var(--forge-status-error)); background:var(--forge-status-error-bg)">
+        <div class="text-[13px] font-medium leading-5" style="color:rgb(var(--forge-status-error))">Gate check failed: cargo clippy returned exit code 1</div>
+      </div>
+
+      <!-- Terminal error output -->
+      <div class="rounded px-3 py-2.5 mb-4 font-mono text-[11px] overflow-x-auto" style="background:var(--forge-surface-2); line-height:1.55">
+        <div class="text-[10px] mb-2 uppercase tracking-wider font-sans font-semibold" style="color:var(--forge-text-quaternary)">Error output</div>
+        <div style="color:rgb(var(--forge-status-error)); font-weight:500">error[E0502]: cannot borrow `token` as mutable</div>
+        <div style="color:var(--forge-text-tertiary)"> --&gt; src/auth/service.rs:47:5</div>
+        <div style="color:var(--forge-text-quaternary)">  |</div>
+        <div style="color:var(--forge-text-tertiary)">46 |     <span style="color:var(--forge-text-secondary)">let guard = token.read().await;</span></div>
+        <div style="color:var(--forge-text-quaternary)">  |                  <span style="color:rgb(var(--forge-status-info))">----- immutable borrow occurs here</span></div>
+        <div style="color:var(--forge-text-tertiary)">47 |     <span style="color:var(--forge-text-secondary)">token.refresh().await?;</span></div>
+        <div style="color:var(--forge-text-quaternary)">  |     <span style="color:rgb(var(--forge-status-error))">^^^^^ mutable borrow occurs here</span></div>
+        <div style="color:var(--forge-text-tertiary)">48 |     <span style="color:var(--forge-text-secondary)">guard.validate()?;</span></div>
+        <div style="color:var(--forge-text-quaternary)">  |     <span style="color:rgb(var(--forge-status-info))">----- immutable borrow later used here</span></div>
+        <div class="mt-1.5" style="color:var(--forge-text-quaternary)">For more information about this error, try `rustc --explain E0502`.</div>
+        <div class="mt-0.5" style="color:rgb(var(--forge-status-error)); font-weight:500">error: could not compile `orkestra-auth` (lib) due to 1 previous error</div>
+      </div>
+
+      <!-- View Full Logs link -->
+      <a href="focus-logs.html" class="inline-flex items-center gap-1 text-[13px] font-medium" style="color:rgb(var(--forge-accent)); text-decoration:none">
+        View Full Logs
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M5.5 3.5L9 7l-3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+
+    </div>
+  </div>
+
+  <!-- Sticky footer -->
+  <div class="flex-shrink-0 px-3 pt-3 pb-2 footer-frost" style="border-top:1px solid var(--forge-border)">
+    <button class="w-full h-11 rounded-lg text-[14px] font-semibold text-white" style="background:rgb(var(--forge-accent))">
+      Retry
+    </button>
+  </div>
+
+  <!-- Bottom safe area -->
+  <div class="flex-shrink-0 footer-frost" style="height:16px"></div>
+
+</div>
+</body>
+</html>

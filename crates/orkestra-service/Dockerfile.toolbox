@@ -110,6 +110,7 @@ su - "$USERNAME" -c 'git config --global credential.helper "!f() { echo username
 
 echo 'store-dir=/opt/pnpm-store' > /home/orkestra/.npmrc
 chown 1000:1000 /home/orkestra/.npmrc
+mkdir -p /opt/pnpm-store
 chown 1000:1000 /opt
 find /opt -mindepth 1 -maxdepth 1 ! -name orkestra -exec chown -R 1000:1000 {} +
 SETUP_SCRIPT

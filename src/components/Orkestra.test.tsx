@@ -7,8 +7,16 @@ import { Orkestra } from "./Orkestra";
 const mockConfig = createMockWorkflowConfig();
 
 vi.mock("./Feed", () => ({
-  FeedView: ({ tasks }: { tasks: Array<{ id: string }> }) => (
-    <div data-testid="feed-view">Feed: {tasks.length} tasks</div>
+  FeedView: ({
+    tasks,
+    serviceProjectName,
+  }: {
+    tasks: Array<{ id: string }>;
+    serviceProjectName?: string;
+  }) => (
+    <div data-testid="feed-view">
+      Feed: {tasks.length} tasks{serviceProjectName ? `, project: ${serviceProjectName}` : ""}
+    </div>
   ),
 }));
 
@@ -47,6 +55,14 @@ describe("Orkestra", () => {
       render(<Orkestra />);
     });
     expect(screen.getByTestId("feed-view")).toBeInTheDocument();
+  });
+
+  it("threads serviceProjectName to FeedView", async () => {
+    resetMocks();
+    await act(async () => {
+      render(<Orkestra serviceProjectName="MyProject" />);
+    });
+    expect(screen.getByText(/project: MyProject/)).toBeInTheDocument();
   });
 
   it("passes tasks to FeedView", async () => {

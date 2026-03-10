@@ -10,6 +10,7 @@ import { PairingForm } from "./components/PairingForm";
 import { ProjectList } from "./components/ProjectList";
 import { RepoSearch } from "./components/RepoSearch";
 import { ServiceHeader } from "./components/ServiceHeader";
+import { SERVICE_TITLE } from "./constants";
 
 // ============================================================================
 // Component
@@ -17,6 +18,17 @@ import { ServiceHeader } from "./components/ServiceHeader";
 
 export function PortalPage() {
   const [hasToken, _setHasToken] = useState(() => Boolean(getToken()));
+
+  // Defensively reset the title and strip any stale ?project= param on mount.
+  // These can linger from previous navigation or shared URLs.
+  useEffect(() => {
+    document.title = SERVICE_TITLE;
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("project")) {
+      url.searchParams.delete("project");
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);

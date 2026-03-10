@@ -11,7 +11,7 @@ import { FeedView } from "./Feed";
 import { FeedLoadingSkeleton } from "./Feed/FeedLoadingSkeleton";
 import { ErrorState } from "./ui";
 
-export function Orkestra() {
+export function Orkestra({ serviceProjectName }: { serviceProjectName?: string }) {
   useNotificationPermission();
   const configState = useWorkflowConfigState();
   const { config, error: configError } = configState;
@@ -44,7 +44,7 @@ export function Orkestra() {
 
   return (
     <div className="w-full h-full overflow-clip bg-canvas">
-      <FeedView config={config} tasks={tasks} />
+      <FeedView config={config} tasks={tasks} serviceProjectName={serviceProjectName} />
     </div>
   );
 }

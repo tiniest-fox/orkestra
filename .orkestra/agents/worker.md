@@ -205,6 +205,23 @@ Good (concise):
 
 Omit anything obvious from the diff. The reviewer can see the code — your summary explains *intent*, not *mechanics*.
 
+<!-- compound: moderately-cerebral-pig -->
+## SQLite `get_or_create` Atomicity
+
+**Never use check-then-insert for `get_or_create` patterns in SQLite** — the window between the `SELECT` and `INSERT` is a TOCTOU race. Concurrent callers can both see "not found" and then race to insert, producing opaque `UNIQUE constraint` errors.
+
+Use `INSERT OR IGNORE` + re-query instead:
+```rust
+// 1. Attempt insert (no-op if already exists)
+conn.execute("INSERT OR IGNORE INTO t (id, ...) VALUES (?, ...)", params)?;
+// 2. Re-query — always succeeds regardless of which call won the race
+conn.query_row("SELECT * FROM t WHERE id = ?", params, mapper)
+```
+
+For `InMemoryWorkflowStore` (used in tests), hold the mutex for the entire check-and-insert sequence so the mock faithfully replicates SQLite's behavior. A mock that checks and inserts under separate locks will pass unit tests but miss the race.
+
+This pattern is a HIGH-severity finding reviewers always catch. Apply it whenever you add a `get_or_create` operation to the store layer.
+
 <!-- compound: approvingly-eminent-gopher -->
 ## Rust Conventions
 

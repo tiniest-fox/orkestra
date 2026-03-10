@@ -234,6 +234,28 @@ impl WorkflowStore for SqliteWorkflowStore {
         interactions::assistant::delete_session::execute(&conn, id)
     }
 
+    fn get_assistant_session_for_task(
+        &self,
+        task_id: &str,
+    ) -> WorkflowResult<Option<AssistantSession>> {
+        let conn = self.lock_conn()?;
+        interactions::assistant::get_session_for_task::execute(&conn, task_id)
+    }
+
+    fn get_or_create_assistant_session_for_task(
+        &self,
+        task_id: &str,
+        new_session: &AssistantSession,
+    ) -> WorkflowResult<AssistantSession> {
+        let conn = self.lock_conn()?;
+        interactions::assistant::get_or_create_for_task::execute(&conn, task_id, new_session)
+    }
+
+    fn list_project_assistant_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {
+        let conn = self.lock_conn()?;
+        interactions::assistant::list_project_sessions::execute(&conn)
+    }
+
     fn append_assistant_log_entry(
         &self,
         assistant_session_id: &str,

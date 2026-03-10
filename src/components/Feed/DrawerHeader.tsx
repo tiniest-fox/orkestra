@@ -1,6 +1,6 @@
 //! Shared header for Feed drawers — title row + pipeline + session strip.
 
-import { Play, Square, SquarePen, SquareTerminal, Trash2, X } from "lucide-react";
+import { MessageSquare, Play, Square, SquarePen, SquareTerminal, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { RunStatus } from "../../hooks/useRunScript";
 import { useTransport } from "../../transport";
@@ -38,6 +38,7 @@ interface DrawerHeaderProps {
   runLoading?: boolean;
   onRunStart?: () => Promise<void>;
   onRunStop?: () => Promise<void>;
+  onOpenChat?: () => void;
 }
 
 /** Compute the accent color for a drawer from the task's current state. */
@@ -71,6 +72,7 @@ export function DrawerHeader({
   runLoading,
   onRunStart,
   onRunStop,
+  onOpenChat,
 }: DrawerHeaderProps) {
   const transport = useTransport();
   const effectiveAutoMode = autoModeOverride ?? task.auto_mode;
@@ -95,6 +97,9 @@ export function DrawerHeader({
   });
   useNavHandler("A", () => {
     if (!task.derived.is_done && !task.derived.is_archived) onToggleAutoMode?.();
+  });
+  useNavHandler("C", () => {
+    if (!task.derived.is_done && !task.derived.is_archived) onOpenChat?.();
   });
 
   return (
@@ -182,6 +187,17 @@ export function DrawerHeader({
               </>
             )}
           </div>
+        )}
+        {!task.derived.is_done && !task.derived.is_archived && (
+          <button
+            type="button"
+            onClick={onOpenChat}
+            className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors mt-0.5"
+            title="Chat with task assistant (⇧C)"
+          >
+            <Kbd>⇧C</Kbd>
+            <MessageSquare size={14} />
+          </button>
         )}
         <button
           type="button"

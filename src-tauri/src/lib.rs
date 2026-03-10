@@ -548,6 +548,8 @@ pub fn run() {
             commands::assistant_stop,
             commands::assistant_list_sessions,
             commands::assistant_get_logs,
+            commands::assistant_send_task_message,
+            commands::assistant_list_project_sessions,
             // Stage chat commands
             commands::stage_chat_send,
             commands::stage_chat_stop,

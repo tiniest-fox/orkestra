@@ -237,6 +237,16 @@ async fn container_and_spawn(
             // Setup failure is non-fatal: log a warning and continue.
             tracing::warn!("Container setup command failed for {project_id}: {e}");
         }
+
+        // Step 8b: Re-run toolbox setup to reclaim ownership of any files that
+        // run_setup created as root (e.g. pnpm store directories). setup.sh is
+        // idempotent so running it twice is safe.
+        tokio::task::spawn_blocking({
+            let cid = container_id.clone();
+            move || devcontainer::run_toolbox_setup::execute(&cid)
+        })
+        .await
+        .map_err(|e| ServiceError::Other(e.to_string()))??;
     }
 
     // Step 9: Spawn daemon.

@@ -158,3 +158,10 @@ export async function pairDevice(code: string): Promise<PairResult> {
   await requireOk(res);
   return res.json();
 }
+
+export async function fetchProjectLogs(projectId: string, lines = 50): Promise<string[]> {
+  const res = await apiFetch(`/api/projects/${projectId}/logs?lines=${lines}`);
+  await requireOk(res);
+  const data: { lines: string[] } = await res.json();
+  return data.lines;
+}

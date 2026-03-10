@@ -120,6 +120,12 @@ pub async fn execute(
         "assistant_stop" => assistant::handle_assistant_stop(ctx, params).await,
         "assistant_list_sessions" => assistant::handle_assistant_list_sessions(ctx, params).await,
         "assistant_get_logs" => assistant::handle_assistant_get_logs(ctx, params).await,
+        "assistant_send_task_message" => {
+            assistant::handle_assistant_send_task_message(ctx, params).await
+        }
+        "assistant_list_project_sessions" => {
+            assistant::handle_assistant_list_project_sessions(ctx, params).await
+        }
 
         // -- Queries --
         "get_config" => query::handle_get_config(ctx, params).await,

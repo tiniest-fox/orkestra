@@ -1056,6 +1056,38 @@ async fn test_assistant_dispatch_wiring() {
         stop["error"]["code"], "INVALID_PARAMS",
         "assistant_stop with missing session_id should return INVALID_PARAMS"
     );
+
+    // send_task_message — missing task_id should return INVALID_PARAMS (not METHOD_NOT_FOUND).
+    let task_msg = request(
+        &mut ws,
+        serde_json::json!({
+            "id": "a-task-send",
+            "method": "assistant_send_task_message",
+            "params": { "message": "hello" }
+        }),
+    )
+    .await;
+    assert_eq!(task_msg["id"], "a-task-send");
+    assert_ne!(
+        task_msg["error"]["code"], "METHOD_NOT_FOUND",
+        "assistant_send_task_message must be dispatched (not METHOD_NOT_FOUND)"
+    );
+
+    // list_project_sessions — should return an array (not METHOD_NOT_FOUND).
+    let project_list = request(
+        &mut ws,
+        serde_json::json!({
+            "id": "a-project-list",
+            "method": "assistant_list_project_sessions",
+            "params": {}
+        }),
+    )
+    .await;
+    assert_eq!(project_list["id"], "a-project-list");
+    assert!(
+        project_list["result"].is_array(),
+        "assistant_list_project_sessions should return an array"
+    );
 }
 
 /// A server started with a restricted `allowed_origin` echoes the origin back

@@ -13,8 +13,8 @@ pub fn execute(conn: &Connection, session: &AssistantSession) -> WorkflowResult<
     conn.execute(
         "INSERT OR REPLACE INTO assistant_sessions (
             id, claude_session_id, title, agent_pid, spawn_count,
-            session_state, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            session_state, created_at, updated_at, task_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             session.id,
             session.claude_session_id,
@@ -24,6 +24,7 @@ pub fn execute(conn: &Connection, session: &AssistantSession) -> WorkflowResult<
             state_str,
             session.created_at,
             session.updated_at,
+            session.task_id,
         ],
     )
     .map_err(|e| WorkflowError::Storage(e.to_string()))?;

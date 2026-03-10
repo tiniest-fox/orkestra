@@ -89,3 +89,32 @@ pub fn assistant_get_logs(
     let service = create_assistant_service(&registry, &window)?;
     service.get_session_logs(&session_id).map_err(Into::into)
 }
+
+/// Send a message to the task-scoped assistant session.
+///
+/// Creates a new session if none exists for the task, or reuses the existing one.
+/// Spawns Claude Code in the task's worktree for task-specific context.
+#[tauri::command]
+pub fn assistant_send_task_message(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    message: String,
+) -> Result<AssistantSession, TauriError> {
+    let service = create_assistant_service(&registry, &window)?;
+    service
+        .send_task_message(&task_id, &message)
+        .map_err(Into::into)
+}
+
+/// List project-level assistant sessions (excludes task-scoped sessions).
+///
+/// Returns sessions ordered by creation time (most recent first).
+#[tauri::command]
+pub fn assistant_list_project_sessions(
+    registry: State<ProjectRegistry>,
+    window: Window,
+) -> Result<Vec<AssistantSession>, TauriError> {
+    let service = create_assistant_service(&registry, &window)?;
+    service.list_project_sessions().map_err(Into::into)
+}

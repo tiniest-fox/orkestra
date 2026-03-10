@@ -40,11 +40,12 @@ function deriveDrawerMode(
   isNewTaskOpen: boolean,
   gitHistoryOpen: boolean,
   assistantOpen: boolean,
+  taskAssistantOpen: boolean,
   activeTask: WorkflowTaskView | null,
   rejectMode: boolean,
 ): DrawerMode {
   if (isNewTaskOpen) return "new-task";
-  if (assistantOpen) return "assistant";
+  if (assistantOpen || taskAssistantOpen) return "assistant";
   if (gitHistoryOpen) return "git-history";
   if (!activeTask) return null;
   if (activeTask.derived.needs_review) return rejectMode ? "review-reject" : "review";
@@ -66,9 +67,11 @@ export function FeedView({ config, tasks }: FeedViewProps) {
   const [rejectMode, setRejectMode] = useState(false);
   const [gitHistoryOpen, setGitHistoryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [taskAssistantId, setTaskAssistantId] = useState<string | null>(null);
   const commandBarInputRef = useRef<HTMLInputElement>(null);
 
-  const panelOpen = activeTaskId !== null || gitHistoryOpen || assistantOpen;
+  const panelOpen =
+    activeTaskId !== null || gitHistoryOpen || assistantOpen || taskAssistantId !== null;
   const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
 
@@ -79,6 +82,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
     isNewTaskOpen,
     gitHistoryOpen,
     assistantOpen,
+    taskAssistantId !== null,
     activeTask,
     rejectMode,
   );
@@ -104,11 +108,20 @@ export function FeedView({ config, tasks }: FeedViewProps) {
     setAssistantOpen(true);
     setActiveTaskId(null);
     setGitHistoryOpen(false);
+    setTaskAssistantId(null);
+  }, []);
+
+  const openTaskAssistant = useCallback((taskId: string) => {
+    setTaskAssistantId(taskId);
+    setActiveTaskId(null);
+    setAssistantOpen(false);
+    setGitHistoryOpen(false);
   }, []);
 
   const onStripRowClick = useCallback((taskId: string) => {
     setGitHistoryOpen(false);
     setAssistantOpen(false);
+    setTaskAssistantId(null);
     setActiveTaskId(taskId);
   }, []);
 
@@ -163,6 +176,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           setGitHistoryOpen(true);
           setActiveTaskId(null);
           setAssistantOpen(false);
+          setTaskAssistantId(null);
           break;
       }
     },
@@ -208,6 +222,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           if (!prev) {
             setActiveTaskId(null);
             setGitHistoryOpen(false);
+            setTaskAssistantId(null);
           }
           return !prev;
         });
@@ -311,7 +326,15 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           />
         )}
       </ModalPanel>
-      {assistantOpen && <AssistantDrawer onClose={() => setAssistantOpen(false)} />}
+      {(assistantOpen || taskAssistantId) && (
+        <AssistantDrawer
+          onClose={() => {
+            setAssistantOpen(false);
+            setTaskAssistantId(null);
+          }}
+          taskId={taskAssistantId ?? undefined}
+        />
+      )}
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}
       {activeTask && (
         <TaskDrawer
@@ -320,6 +343,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           onClose={() => setActiveTaskId(null)}
           onOpenTask={setActiveTaskId}
           onRejectModeChange={setRejectMode}
+          onOpenChat={() => openTaskAssistant(activeTask.id)}
         />
       )}
     </div>

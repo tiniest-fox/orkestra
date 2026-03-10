@@ -101,15 +101,17 @@ su - "$USERNAME" -c 'git config --global credential.helper "!f() { echo username
 # Point pnpm at /opt/pnpm-store so it never falls back to creating a store
 # inside /workspace or the user home directory.
 #
-# Transfer ownership of the entire /opt tree to uid 1000. This covers
-# /opt/pnpm-store and any subdirs root created before setup.sh ran (e.g. via
-# postCreateCommand), as well as any future tool stores added under /opt (go
-# module cache, maven repo, etc.). Root ignores ownership so it can still
-# read/write everything. This is idempotent: safe to re-run on every start.
+# Transfer ownership of /opt to uid 1000 so it can create new tool store
+# subdirectories (pnpm-store, go module cache, etc.) freely. Recurse into
+# every subdirectory except /opt/orkestra, which is the read-only toolbox
+# volume mount and cannot be chowned from inside the project container.
+# Root ignores ownership so it can still read/write everything.
+# This is idempotent: safe to re-run on every container start.
 
 echo 'store-dir=/opt/pnpm-store' > /home/orkestra/.npmrc
 chown 1000:1000 /home/orkestra/.npmrc
-chown -R 1000:1000 /opt
+chown 1000:1000 /opt
+find /opt -mindepth 1 -maxdepth 1 ! -name orkestra -exec chown -R 1000:1000 {} +
 SETUP_SCRIPT
 chmod +x /opt/orkestra/setup.sh
 TOOLBOX_BUILD

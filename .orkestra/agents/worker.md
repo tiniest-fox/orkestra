@@ -156,6 +156,9 @@ Don't invent notes for the sake of having notes. Only flag things that were genu
 ### Writing Tests
 If your breakdown instructions specify tests to write, write them as part of your implementation. Load the `/e2e-testing` skill for patterns and infrastructure.
 
+<!-- compound: princely-joint-tinamou -->
+**Handlebars template conditionals require tests for both branches.** When you add `{{#if field}}...{{else}}...{{/if}}` to a `.md` template (e.g., `initial_prompt.md`, `integration.md`), add tests in the corresponding Rust test module that render the template with a value that triggers the `if` branch AND a value that triggers the `else` branch. Templates have separate Handlebars registries: `user_message.rs` covers `initial_prompt.md`; `build_prompt.rs` covers resume templates. A conditional with only one branch tested is a guaranteed MEDIUM rejection. Handlebars treats empty arrays and empty strings as falsy — use that to distinguish paths (e.g., empty `conflict_files` vec → PR path, non-empty → auto-merge path).
+
 <!-- compound: frigidly-brief-archerfish -->
 **Bug fixes in pure functions always need a regression test**, even when breakdown instructions don't mention it. A pure function (no side effects, deterministic) is trivial to test — there's no excuse to skip it. Write at least one test that directly exercises the fixed code path (e.g., "hides tab when task has advanced past the gate stage"). This is the most common cause of rejection on small frontend/Rust fixes.
 

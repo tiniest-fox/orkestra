@@ -15,9 +15,12 @@ import { relativeTime } from "../../utils/relativeTime";
 import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
+import { DiffFindBar } from "../Diff/DiffFindBar";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import { MobileDiffFileListOverlay } from "../Diff/MobileDiffFileListOverlay";
 import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
+import { useDiffFindNavigation } from "../Diff/useDiffFindNavigation";
+import { useDiffSearch } from "../Diff/useDiffSearch";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { EmptyState } from "../ui/EmptyState";
 import { HotkeyScope, useNavHandler } from "../ui/HotkeyScope";
@@ -98,13 +101,26 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
 
   const { diff, loading: diffLoading } = useCommitDiff(selectedHash);
 
-  const { collapsedPaths, toggleCollapsed, resetInteraction } = useAutoCollapsePaths(diff?.files);
+  const { collapsedPaths, toggleCollapsed, resetInteraction, expandForSearch } =
+    useAutoCollapsePaths(diff?.files);
+
+  const search = useDiffSearch(diff?.files ?? []);
+
+  const { findBarOpen, closeFindBar } = useDiffFindNavigation({
+    search,
+    files: diff?.files ?? [],
+    collapsedPaths,
+    expandForSearch,
+    diffContentRef,
+    scrollEl: diffScrollEl,
+  });
 
   // Reset per-commit state when selection changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: selectedHash is the intentional trigger; setters are stable
   useEffect(() => {
     setActivePath(null);
     setBodyExpanded(true);
+    closeFindBar();
     resetInteraction();
   }, [selectedHash]);
 
@@ -147,7 +163,6 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
       return commits[idx - 1]?.hash ?? prev;
     });
   });
-
   function handleToggleCollapsed(path: string) {
     toggleCollapsed(path);
     requestAnimationFrame(() => {
@@ -278,7 +293,18 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
                           />
                         </div>
                       )}
-                      <div ref={setDiffScrollRef} className="flex-1 overflow-y-auto">
+                      <div ref={setDiffScrollRef} className="flex-1 overflow-y-auto relative">
+                        {findBarOpen && (
+                          <DiffFindBar
+                            query={search.query}
+                            onQueryChange={search.setQuery}
+                            currentIndex={search.currentIndex}
+                            count={search.count}
+                            onNext={search.next}
+                            onPrev={search.prev}
+                            onClose={closeFindBar}
+                          />
+                        )}
                         <DiffContent
                           ref={diffContentRef}
                           files={diff.files}
@@ -288,6 +314,8 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
                           scrollElement={diffScrollEl}
                           onActivePathChange={setActivePath}
                           onToggleCollapsed={handleToggleCollapsed}
+                          matches={search.matches}
+                          currentMatch={search.currentMatch}
                         />
                       </div>
                     </div>

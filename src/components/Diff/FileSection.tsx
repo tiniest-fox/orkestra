@@ -7,11 +7,31 @@ import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
 import { DraftCommentBubble } from "./DraftCommentBubble";
 import { FileHeaderContent } from "./FileHeaderContent";
+import type { SearchRange } from "./highlightSearchInHtml";
 import { LineCommentInput } from "./LineCommentInput";
 import type { DraftComment } from "./types";
 import { FILE_HEADER_BUTTON_BASE } from "./types";
+import type { DiffMatch } from "./useDiffSearch";
 
 const COLLAPSE_THRESHOLD = 8;
+
+interface FileSectionProps {
+  file: HighlightedFileDiff;
+  commentsByLine: Map<number, PrComment[]>;
+  draftsByLine: Map<number, DraftComment[]>;
+  isActive: boolean;
+  isCollapsed: boolean;
+  onToggleCollapsed: () => void;
+  activeCommentLine: { filePath: string; lineNumber: number } | null;
+  onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void;
+  onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void;
+  onCancelDraft?: () => void;
+  onDeleteDraft?: (id: string) => void;
+  draftBody?: string;
+  onDraftBodyChange?: (body: string) => void;
+  fileMatches: DiffMatch[];
+  currentMatch: DiffMatch | null;
+}
 
 export function FileSection({
   file,
@@ -27,21 +47,9 @@ export function FileSection({
   onDeleteDraft,
   draftBody,
   onDraftBodyChange,
-}: {
-  file: HighlightedFileDiff;
-  commentsByLine: Map<number, PrComment[]>;
-  draftsByLine: Map<number, DraftComment[]>;
-  isActive: boolean;
-  isCollapsed: boolean;
-  onToggleCollapsed: () => void;
-  activeCommentLine: { filePath: string; lineNumber: number } | null;
-  onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void;
-  onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void;
-  onCancelDraft?: () => void;
-  onDeleteDraft?: (id: string) => void;
-  draftBody?: string;
-  onDraftBodyChange?: (body: string) => void;
-}) {
+  fileMatches,
+  currentMatch,
+}: FileSectionProps) {
   if (file.is_binary) {
     return (
       <div className="p-4">
@@ -66,7 +74,7 @@ export function FileSection({
       </button>
 
       {!isCollapsed &&
-        file.hunks.map((hunk) => (
+        file.hunks.map((hunk, hunkIndex) => (
           <div
             key={`${hunk.old_start}-${hunk.new_start}`}
             className="border-b border-border last:border-b-0"
@@ -74,18 +82,21 @@ export function FileSection({
             <div className="bg-canvas px-4 py-1 font-mono text-forge-mono-label text-text-quaternary">
               @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
             </div>
-            {renderHunkLines(
-              hunk.lines,
-              commentsByLine,
-              draftsByLine,
-              activeCommentLine,
-              onLineClick,
-              onSaveDraft,
-              onCancelDraft,
-              onDeleteDraft,
-              draftBody,
-              onDraftBodyChange,
-            )}
+            <HunkLines
+              lines={hunk.lines}
+              hunkIndex={hunkIndex}
+              commentsByLine={commentsByLine}
+              draftsByLine={draftsByLine}
+              activeCommentLine={activeCommentLine}
+              onLineClick={onLineClick}
+              onSaveDraft={onSaveDraft}
+              onCancelDraft={onCancelDraft}
+              onDeleteDraft={onDeleteDraft}
+              draftBody={draftBody}
+              onDraftBodyChange={onDraftBodyChange}
+              fileMatches={fileMatches}
+              currentMatch={currentMatch}
+            />
           </div>
         ))}
     </>
@@ -94,98 +105,166 @@ export function FileSection({
 
 // -- Helpers --
 
-function flushContext(
-  sections: { type: "render" | "collapse"; lines: HighlightedLine[] }[],
-  context: HighlightedLine[],
-) {
+type Section = {
+  type: "render" | "collapse";
+  lines: HighlightedLine[];
+  /** Index of the first line within the hunk's lines array. */
+  startLineIndex: number;
+};
+
+function flushContext(sections: Section[], context: HighlightedLine[], startIndex: number) {
   if (context.length > COLLAPSE_THRESHOLD) {
-    sections.push({ type: "render", lines: context.slice(0, 3) });
-    sections.push({ type: "collapse", lines: context.slice(3, -3) });
-    sections.push({ type: "render", lines: context.slice(-3) });
+    sections.push({ type: "render", lines: context.slice(0, 3), startLineIndex: startIndex });
+    sections.push({
+      type: "collapse",
+      lines: context.slice(3, -3),
+      startLineIndex: startIndex + 3,
+    });
+    sections.push({
+      type: "render",
+      lines: context.slice(-3),
+      startLineIndex: startIndex + context.length - 3,
+    });
   } else {
-    sections.push({ type: "render", lines: context });
+    sections.push({ type: "render", lines: context, startLineIndex: startIndex });
   }
 }
 
-function renderHunkLines(
-  lines: HighlightedLine[],
-  commentsByLine: Map<number, PrComment[]>,
-  draftsByLine: Map<number, DraftComment[]>,
-  activeCommentLine: { filePath: string; lineNumber: number } | null,
-  onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void,
-  onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void,
-  onCancelDraft?: () => void,
-  onDeleteDraft?: (id: string) => void,
-  draftBody?: string,
-  onDraftBodyChange?: (body: string) => void,
-) {
-  const sections: { type: "render" | "collapse"; lines: HighlightedLine[] }[] = [];
+interface HunkLinesProps {
+  lines: HighlightedLine[];
+  hunkIndex: number;
+  commentsByLine: Map<number, PrComment[]>;
+  draftsByLine: Map<number, DraftComment[]>;
+  activeCommentLine: { filePath: string; lineNumber: number } | null;
+  onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void;
+  onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void;
+  onCancelDraft?: () => void;
+  onDeleteDraft?: (id: string) => void;
+  draftBody?: string;
+  onDraftBodyChange?: (body: string) => void;
+  fileMatches: DiffMatch[];
+  currentMatch: DiffMatch | null;
+}
+
+function HunkLines({
+  lines,
+  hunkIndex,
+  commentsByLine,
+  draftsByLine,
+  activeCommentLine,
+  onLineClick,
+  onSaveDraft,
+  onCancelDraft,
+  onDeleteDraft,
+  draftBody,
+  onDraftBodyChange,
+  fileMatches,
+  currentMatch,
+}: HunkLinesProps) {
+  const sections: Section[] = [];
   let currentContext: HighlightedLine[] = [];
+  let contextStartIndex = 0;
+  let lineIndex = 0;
 
   for (const line of lines) {
     if (line.line_type === "context") {
+      if (currentContext.length === 0) contextStartIndex = lineIndex;
       currentContext.push(line);
     } else {
       if (currentContext.length > 0) {
-        flushContext(sections, currentContext);
+        flushContext(sections, currentContext, contextStartIndex);
         currentContext = [];
       }
-      sections.push({ type: "render", lines: [line] });
+      sections.push({ type: "render", lines: [line], startLineIndex: lineIndex });
     }
+    lineIndex++;
   }
 
   if (currentContext.length > 0) {
-    flushContext(sections, currentContext);
+    flushContext(sections, currentContext, contextStartIndex);
   }
 
-  return sections.map((section, i) =>
-    section.type === "collapse" ? (
-      // biome-ignore lint/suspicious/noArrayIndexKey: section order is stable within hunk
-      <CollapsedSection key={i} lines={section.lines} />
-    ) : (
-      section.lines.map((line, j) => {
-        // Resolve to new_line_number, falling back to old_line_number for deleted lines
-        const lineNumber = line.new_line_number ?? line.old_line_number;
-        const lineComments = lineNumber !== null ? commentsByLine.get(lineNumber) : undefined;
-        const lineDrafts = lineNumber !== null ? draftsByLine.get(lineNumber) : undefined;
-        const isActiveInput = lineNumber !== null && activeCommentLine?.lineNumber === lineNumber;
-        return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: line order is stable within section
-          <Fragment key={`${i}-${j}`}>
-            <DiffLine
-              line={line}
-              onOpenCommentInput={
-                onLineClick && lineNumber !== null
-                  ? () => onLineClick(lineNumber, line.line_type)
-                  : undefined
-              }
-            />
-            {lineComments && lineComments.length > 0 && (
-              <div className="px-4 py-2 font-sans text-forge-body bg-surface-2 border-b border-border">
-                {lineComments.map((c) => (
-                  <div key={c.id} className="text-text-tertiary">
-                    {c.author}: {c.body}
-                  </div>
-                ))}
-              </div>
-            )}
-            {isActiveInput && onSaveDraft && onCancelDraft && lineNumber !== null && (
-              <LineCommentInput
-                onSave={(body) => onSaveDraft(lineNumber, line.line_type, body)}
-                onCancel={onCancelDraft}
-                value={draftBody}
-                onChange={onDraftBodyChange}
-              />
-            )}
-            {lineDrafts &&
-              lineDrafts.length > 0 &&
-              onDeleteDraft &&
-              lineDrafts.map((draft) => (
-                <DraftCommentBubble key={draft.id} comment={draft} onDelete={onDeleteDraft} />
+  return sections.map((section, i) => {
+    if (section.type === "collapse") {
+      const forceExpanded = fileMatches.some(
+        (m) =>
+          m.hunkIndex === hunkIndex &&
+          m.lineIndex >= section.startLineIndex &&
+          m.lineIndex < section.startLineIndex + section.lines.length,
+      );
+      return (
+        <CollapsedSection
+          key={section.startLineIndex}
+          lines={section.lines}
+          forceExpanded={forceExpanded}
+          hunkIndex={hunkIndex}
+          startLineIndex={section.startLineIndex}
+          fileMatches={fileMatches}
+          currentMatch={currentMatch}
+        />
+      );
+    }
+    return section.lines.map((line, j) => {
+      // Resolve to new_line_number, falling back to old_line_number for deleted lines
+      const lineNumber = line.new_line_number ?? line.old_line_number;
+      const lineComments = lineNumber !== null ? commentsByLine.get(lineNumber) : undefined;
+      const lineDrafts = lineNumber !== null ? draftsByLine.get(lineNumber) : undefined;
+      const isActiveInput = lineNumber !== null && activeCommentLine?.lineNumber === lineNumber;
+      const absLineIndex = section.startLineIndex + j;
+
+      const lineMatches = fileMatches.filter(
+        (m) => m.hunkIndex === hunkIndex && m.lineIndex === absLineIndex,
+      );
+      const searchRanges: SearchRange[] = lineMatches.map((m) => ({
+        charStart: m.charStart,
+        charEnd: m.charEnd,
+        isCurrent:
+          currentMatch !== null &&
+          m.hunkIndex === currentMatch.hunkIndex &&
+          m.lineIndex === currentMatch.lineIndex &&
+          m.charStart === currentMatch.charStart &&
+          m.charEnd === currentMatch.charEnd,
+      }));
+      const isCurrentMatchLine = searchRanges.some((r) => r.isCurrent);
+
+      return (
+        // biome-ignore lint/suspicious/noArrayIndexKey: line order is stable within section
+        <Fragment key={`${i}-${j}`}>
+          <DiffLine
+            line={line}
+            onOpenCommentInput={
+              onLineClick && lineNumber !== null
+                ? () => onLineClick(lineNumber, line.line_type)
+                : undefined
+            }
+            searchRanges={searchRanges.length > 0 ? searchRanges : undefined}
+            isCurrentMatchLine={isCurrentMatchLine}
+          />
+          {lineComments && lineComments.length > 0 && (
+            <div className="px-4 py-2 font-sans text-forge-body bg-surface-2 border-b border-border">
+              {lineComments.map((c) => (
+                <div key={c.id} className="text-text-tertiary">
+                  {c.author}: {c.body}
+                </div>
               ))}
-          </Fragment>
-        );
-      })
-    ),
-  );
+            </div>
+          )}
+          {isActiveInput && onSaveDraft && onCancelDraft && lineNumber !== null && (
+            <LineCommentInput
+              onSave={(body) => onSaveDraft(lineNumber, line.line_type, body)}
+              onCancel={onCancelDraft}
+              value={draftBody}
+              onChange={onDraftBodyChange}
+            />
+          )}
+          {lineDrafts &&
+            lineDrafts.length > 0 &&
+            onDeleteDraft &&
+            lineDrafts.map((draft) => (
+              <DraftCommentBubble key={draft.id} comment={draft} onDelete={onDeleteDraft} />
+            ))}
+        </Fragment>
+      );
+    });
+  });
 }

@@ -2,13 +2,22 @@
 
 import type { HighlightedLine } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import type { SearchRange } from "./highlightSearchInHtml";
+import { highlightSearchInHtml } from "./highlightSearchInHtml";
 
 interface DiffLineProps {
   line: HighlightedLine;
   onOpenCommentInput?: () => void;
+  searchRanges?: SearchRange[];
+  isCurrentMatchLine?: boolean; // kept for data-search-current scroll targeting
 }
 
-export function DiffLine({ line, onOpenCommentInput }: DiffLineProps) {
+export function DiffLine({
+  line,
+  onOpenCommentInput,
+  searchRanges,
+  isCurrentMatchLine,
+}: DiffLineProps) {
   const isMobile = useIsMobile();
   const bgColor =
     line.line_type === "add"
@@ -39,10 +48,15 @@ export function DiffLine({ line, onOpenCommentInput }: DiffLineProps) {
         ? "text-status-error"
         : "text-text-quaternary";
 
+  const displayHtml = searchRanges?.length
+    ? highlightSearchInHtml(line.html, searchRanges)
+    : line.html;
+
   return (
     // min-w-max ensures the row expands to content width so the bg color fills behind long lines.
     // Wrapping rows (markdown) fill the container naturally and don't need this.
     <div
+      data-search-current={isCurrentMatchLine ? "true" : undefined}
       className={`group relative flex font-mono text-forge-mono-md transition-colors ${bgColor} ${hoverColor}`}
     >
       <div className={`flex flex-shrink-0 ${gutterBg}`}>
@@ -77,7 +91,7 @@ export function DiffLine({ line, onOpenCommentInput }: DiffLineProps) {
       <div
         className="whitespace-pre-wrap break-words px-2 text-text-primary"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect output is trusted
-        dangerouslySetInnerHTML={{ __html: line.html }}
+        dangerouslySetInnerHTML={{ __html: displayHtml }}
       />
     </div>
   );

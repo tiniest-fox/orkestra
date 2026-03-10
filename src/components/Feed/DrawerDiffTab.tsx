@@ -11,10 +11,13 @@ import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
 import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
+import { DiffFindBar } from "../Diff/DiffFindBar";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import { MobileDiffFileListOverlay } from "../Diff/MobileDiffFileListOverlay";
 import type { DraftComment } from "../Diff/types";
 import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
+import { useDiffFindNavigation } from "../Diff/useDiffFindNavigation";
+import { useDiffSearch } from "../Diff/useDiffSearch";
 import { EmptyState } from "../ui/EmptyState";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { useDrawerDiff } from "./DrawerTaskProvider";
@@ -70,7 +73,19 @@ export function DrawerDiffTab({
 
   const diff = hasDrafts ? diffSnapshotRef.current : liveDiff;
 
-  const { collapsedPaths, toggleCollapsed } = useAutoCollapsePaths(diff?.files);
+  const { collapsedPaths, toggleCollapsed, expandForSearch } = useAutoCollapsePaths(diff?.files);
+
+  const search = useDiffSearch(diff?.files ?? []);
+
+  const { findBarOpen, closeFindBar } = useDiffFindNavigation({
+    search,
+    files: diff?.files ?? [],
+    collapsedPaths,
+    expandForSearch,
+    diffContentRef,
+    scrollEl,
+    active,
+  });
 
   // Pre-select the first file when the diff loads.
   useEffect(() => {
@@ -146,7 +161,6 @@ export function DrawerDiffTab({
     const prev = paths[(activePath ? paths.indexOf(activePath) : paths.length) - 1];
     if (prev) handleJumpTo(prev);
   });
-
   const isCommentingEnabled = !!onAddDraftComment;
 
   return (
@@ -176,7 +190,18 @@ export function DrawerDiffTab({
                 <DiffFileList files={diff.files} activePath={activePath} onJumpTo={handleJumpTo} />
               </div>
             )}
-            <div ref={setScrollRef} className="flex-1 overflow-y-auto">
+            <div ref={setScrollRef} className="flex-1 overflow-y-auto relative">
+              {findBarOpen && (
+                <DiffFindBar
+                  query={search.query}
+                  onQueryChange={search.setQuery}
+                  currentIndex={search.currentIndex}
+                  count={search.count}
+                  onNext={search.next}
+                  onPrev={search.prev}
+                  onClose={closeFindBar}
+                />
+              )}
               <DiffContent
                 ref={diffContentRef}
                 files={diff.files}
@@ -194,6 +219,8 @@ export function DrawerDiffTab({
                 onDeleteDraft={onRemoveDraftComment}
                 draftBody={draftBody}
                 onDraftBodyChange={setDraftBody}
+                matches={search.matches}
+                currentMatch={search.currentMatch}
               />
             </div>
           </div>

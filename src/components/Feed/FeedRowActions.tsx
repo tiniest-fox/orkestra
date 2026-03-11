@@ -41,7 +41,14 @@ export function FeedRowActions({
   if (derived.is_failed) {
     return (
       <div className="flex items-center gap-1.5">
-        <Button hotkey="r" variant="outline-destructive" size="sm">
+        <Button
+          hotkey="r"
+          variant="outline-destructive"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        >
           Retry
         </Button>
       </div>
@@ -82,10 +89,26 @@ export function FeedRowActions({
   if (derived.is_done && !task.pr_url) {
     return (
       <div className="flex items-center gap-1.5">
-        <Button hotkey="m" variant="merge-outline" size="sm" onClick={onMerge}>
+        <Button
+          hotkey="m"
+          variant="merge-outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onMerge();
+          }}
+        >
           Merge
         </Button>
-        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onOpenPr}>
+        <Button
+          hotkey="p"
+          variant="merge-outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenPr();
+          }}
+        >
           Open PR
         </Button>
       </div>

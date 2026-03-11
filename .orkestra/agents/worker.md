@@ -260,6 +260,9 @@ When implementing or extending the `transport.call()` / WebSocket dispatch layer
 
 **Parallel structures** — `METHOD_MAP` in `TauriTransport.ts` and the Rust dispatch table are maintained in parallel. When adding a new command, update both and add a cross-reference comment to make the link explicit.
 
+<!-- compound: doubly-endearing-turaco -->
+**Always use canonical command names** — When calling backend commands from the frontend, always use `transport.call("canonical-name", ...)` where the name matches the key in `METHOD_MAP` (e.g. `"archive"`, `"approve"`). Never use the raw Tauri command string (e.g. `"workflow_archive"`) — it bypasses the transport abstraction and breaks WebSocket clients. The `METHOD_MAP` in `TauriTransport.ts` is the single source of truth for command names.
+
 <!-- compound: usually-moving-mollusk -->
 ## Blocking Operations in Async Handlers
 

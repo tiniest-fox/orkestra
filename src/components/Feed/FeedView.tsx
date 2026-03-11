@@ -273,7 +273,8 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
                 transport.call("open_pr", { task_id: taskId }).catch(console.error);
               }}
               onArchive={(taskId) => {
-                transport.call("workflow_archive", { task_id: taskId }).catch(console.error);
+                if (!window.confirm("Archive this task?")) return;
+                transport.call("archive", { task_id: taskId }).catch(console.error);
               }}
               onRowClick={onStripRowClick}
             />

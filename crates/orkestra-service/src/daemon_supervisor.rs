@@ -287,11 +287,8 @@ impl DaemonSupervisor {
                                     None,
                                     None,
                                 );
-                                let _ = project::update_container_id::execute(
-                                    &conn,
-                                    &project_id,
-                                    None,
-                                );
+                                let _ =
+                                    project::update_container_id::execute(&conn, &project_id, None);
                                 return;
                             }
                             // Re-exec into the same container (container is still running).

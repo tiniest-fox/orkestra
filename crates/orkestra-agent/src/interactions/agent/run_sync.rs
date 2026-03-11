@@ -110,8 +110,22 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
         None => parser.extract_output(&full_output).and_then(|json_str| {
             StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string())
         }),
-    }
-    .map_err(RunError::ParseFailed)?;
+    };
+
+    let parsed_output = match parsed_output {
+        Ok(output) => output,
+        Err(e) => {
+            orkestra_debug!(
+                "runner",
+                "parse failed — raw output ({} bytes):\n{}",
+                full_output.len(),
+                full_output
+            );
+            return Err(RunError::ParseFailed(format!(
+                "{e}\n\nRaw output:\n{full_output}"
+            )));
+        }
+    };
 
     orkestra_debug!("runner", "run_sync: parsed output successfully");
 

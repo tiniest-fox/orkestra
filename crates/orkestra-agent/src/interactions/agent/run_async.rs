@@ -222,6 +222,17 @@ fn send_completion(
             StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string())
         }),
     };
+
+    let result = result.map_err(|e| {
+        orkestra_debug!(
+            "runner",
+            "parse failed — raw output ({} bytes):\n{}",
+            full_output.len(),
+            full_output
+        );
+        format!("{e}\n\nRaw output:\n{full_output}")
+    });
+
     orkestra_debug!("runner", "parse result: {:?}", result.is_ok());
 
     if tx.send(RunEvent::Completed(result)).is_err() {

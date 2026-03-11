@@ -444,6 +444,8 @@ flows:
 
 Access the effective restrictions (respecting flow overrides) via `WorkflowConfig::effective_disallowed_tools(stage, task_flow)`.
 
+**Platform-level invariants** (not user-configurable): The Claude Code spawner (`crates/orkestra-agent/src/interactions/spawner/claude.rs`) unconditionally prepends `EnterPlanMode` and `ExitPlanMode` to `--disallowedTools` for every invocation. These are hardcoded because Claude Code's built-in plan mode conflicts with Orkestra's planning pipeline — this applies to all agent stages and assistant/chat sessions. User-configured restrictions are merged on top. Note: the assistant service (`crates/orkestra-core/src/workflow/assistant/service.rs`) spawns Claude Code directly via its own `Command::new("claude")` and must maintain its own hardcoded disallowed tools string that includes these invariants — it does not go through the spawner.
+
 ### Tauri Commands
 
 Commands in `src-tauri/src/commands/` are thin wrappers around `WorkflowApi` methods, organized by concern: task CRUD, human actions (approve/reject/answer), read-only queries, and external tools. See `src-tauri/CLAUDE.md` for details on adding new commands.

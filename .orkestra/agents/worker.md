@@ -289,6 +289,18 @@ Pattern:
 
 **Re-exporting third-party types from the crate that uses them**: When a public API method accepts a type from a third-party crate (e.g., `axum::http::HeaderValue`), re-export it from your crate (`pub use axum::http::HeaderValue`) so callers don't need a direct dependency on `axum`. Without this, callers must add `axum` to their `Cargo.toml` just to pass a value to your API.
 
+<!-- compound: supposedly-sustained-tuatara -->
+## Verifying "Already Implemented" Claims
+
+When the breakdown says "X is already done, the remaining fix is Y", you **must complete Y** — not just verify X. A task is only complete when EVERY item in the breakdown is done.
+
+Before outputting a completion summary, explicitly verify each file or change the breakdown mentions:
+1. Read the breakdown artifact and extract every distinct file/change it specifies
+2. For each item, check whether it was actually done in the worktree (`git diff --merge-base main`)
+3. Only conclude "complete" if all items are verified
+
+**Anti-pattern to avoid:** Finding that the primary file is already changed, then concluding the task is complete without checking every other file the breakdown mentions. This is the most common cause of repeated rejection cycles — the reviewer catches the missed file every time.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:

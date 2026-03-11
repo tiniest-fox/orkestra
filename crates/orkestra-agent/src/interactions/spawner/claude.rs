@@ -49,11 +49,13 @@ fn spawn_claude_process(
         cmd.args(["--append-system-prompt", sp]);
     }
 
-    // Pass disallowed tools if any are configured
-    if !config.disallowed_tools.is_empty() {
-        let joined = config.disallowed_tools.join(",");
-        cmd.args(["--disallowedTools", &joined]);
-    }
+    // Always disable Claude Code's built-in plan mode — it conflicts with
+    // Orkestra's own planning stage pipeline. Merge with any user-configured
+    // restrictions from workflow.yaml.
+    let mut disallowed = vec!["EnterPlanMode".to_string(), "ExitPlanMode".to_string()];
+    disallowed.extend_from_slice(&config.disallowed_tools);
+    let joined = disallowed.join(",");
+    cmd.args(["--disallowedTools", &joined]);
 
     cmd.args(["--dangerously-skip-permissions"]);
 

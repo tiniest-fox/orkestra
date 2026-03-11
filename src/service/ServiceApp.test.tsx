@@ -129,6 +129,43 @@ describe("ServiceApp", () => {
     expect(await screen.findByText("Network error")).toBeInTheDocument();
   });
 
+  // -- Skeleton visibility --
+
+  it("shows skeleton before first fetch resolves", async () => {
+    mockGetToken.mockReturnValue("test-token");
+    let resolve: (v: never[]) => void = () => {};
+    const deferred = new Promise<never[]>((res) => {
+      resolve = res;
+    });
+    mockFetchProjects.mockReturnValue(deferred);
+    renderApp();
+    expect(screen.getByRole("status", { name: "Loading projects" })).toBeInTheDocument();
+    expect(screen.queryByText("No projects yet.")).not.toBeInTheDocument();
+    resolve?.([]);
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Loading projects" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("hides skeleton after first fetch resolves", async () => {
+    mockGetToken.mockReturnValue("test-token");
+    mockFetchProjects.mockResolvedValue([]);
+    renderApp();
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Loading projects" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("No projects yet.")).toBeInTheDocument();
+  });
+
+  it("hides skeleton after first fetch fails", async () => {
+    mockGetToken.mockReturnValue("test-token");
+    mockFetchProjects.mockRejectedValue(new Error("Network error"));
+    renderApp();
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Loading projects" })).not.toBeInTheDocument(),
+    );
+  });
+
   // -- Interval cleanup --
 
   it("clears polling interval on unmount", async () => {

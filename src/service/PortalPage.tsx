@@ -54,6 +54,7 @@ export function PortalPage() {
 
   // -- Data state --
   const [projects, setProjects] = useState<Project[]>([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -73,6 +74,8 @@ export function PortalPage() {
       setProjects(data);
     } catch {
       // 401 is handled in apiFetch (reloads); other errors are silent retries
+    } finally {
+      setHasLoaded(true);
     }
   }, []);
 
@@ -240,7 +243,7 @@ export function PortalPage() {
     return <PairingForm />;
   }
 
-  const hasNoProjects = projects.length === 0;
+  const hasNoProjects = hasLoaded && projects.length === 0;
   const hasNoFilterMatches = filterText.length > 0 && !hasNoProjects && sections.length === 0;
 
   return (
@@ -266,7 +269,27 @@ export function PortalPage() {
       {pairingError && <p className="px-6 py-2 text-sm text-status-error">{pairingError}</p>}
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
-          {hasNoProjects && !filterText ? (
+          {!hasLoaded ? (
+            // biome-ignore lint/a11y/useSemanticElements: status div is not a form output
+            <div role="status" aria-label="Loading projects">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[24px_minmax(0,1fr)_auto_auto] gap-4 px-6 py-2 min-h-[40px] items-center border-l-2 border-l-transparent animate-pulse"
+                >
+                  <div className="flex items-center justify-center">
+                    <span className="w-2 h-2 rounded-full bg-surface-2" />
+                  </div>
+                  <div className="min-w-0 flex flex-col gap-1">
+                    <div className="h-3 w-40 rounded bg-surface-2" />
+                    <div className="h-2 w-16 rounded bg-surface-2" />
+                  </div>
+                  <div className="h-6 w-14 rounded bg-surface-2" />
+                  <div className="h-6 w-6 rounded bg-surface-2" />
+                </div>
+              ))}
+            </div>
+          ) : hasNoProjects && !filterText ? (
             <EmptyState
               className="flex-1"
               icon={Inbox}

@@ -99,7 +99,7 @@ export function DrawerHeader({
     if (!task.derived.is_done && !task.derived.is_archived) onToggleAutoMode?.();
   });
   useNavHandler("C", () => {
-    if (!task.derived.is_done && !task.derived.is_archived) onOpenChat?.();
+    if (!task.derived.is_archived) onOpenChat?.();
   });
 
   return (
@@ -188,7 +188,7 @@ export function DrawerHeader({
             )}
           </div>
         )}
-        {!task.derived.is_done && !task.derived.is_archived && (
+        {!task.derived.is_archived && (
           <button
             type="button"
             onClick={onOpenChat}

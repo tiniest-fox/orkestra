@@ -12,6 +12,12 @@ body,
   height: 100%;
 }
 
+/* Prevent document-level scroll on mobile PWAs */
+html,
+body {
+  overflow: hidden;
+}
+
 /* ============================================================================
  * Forge Design Token CSS Variables
  * ============================================================================
@@ -188,6 +194,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
+  overscroll-behavior: none;
 }
 
 /* Artifact markdown table styling */

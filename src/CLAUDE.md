@@ -138,6 +138,25 @@ Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvide
   The exception: `PROSE_CLASSES` from `utils/prose.ts` has its own sizing — always pair it with `text-forge-body` and never use arbitrary sizes alongside it.
 - Use `PROSE_CLASSES` from `utils/prose.ts` for markdown rendering. Always pair with `text-forge-body` for font size — never use arbitrary values like `text-[13px]` alongside `PROSE_CLASSES`.
 
+## Android PWA Viewport
+
+<!-- compound: unseemly-sunny-blowfish -->
+
+To prevent the document from scrolling on Android when installed as a PWA, apply all three together in `src/index.css`:
+
+```css
+body {
+  height: 100vh;       /* fallback for browsers without dvh support */
+  height: 100dvh;      /* dynamic viewport height — excludes browser chrome on Android */
+  overflow: hidden;    /* prevents content overflow from being scrollable */
+  overscroll-behavior: none; /* prevents pull-to-refresh and elastic scroll */
+}
+```
+
+**Why `100dvh` needs the `100vh` fallback**: CSS assigns properties in order — the second `height` declaration overrides the first only if the browser understands `dvh`. Older browsers that don't support `dvh` ignore the second line and use the `vh` fallback. Do not write just `height: 100dvh` without the fallback.
+
+**`maximum-scale=1.0, user-scalable=no`** in `index.html`'s viewport meta tag disables pinch-to-zoom. This is intentional for native-app-like PWA behavior but must be revisited if accessibility zoom support becomes a requirement.
+
 ## Vite Build Modes
 
 <!-- compound: abysmally-conquering-leafroller -->

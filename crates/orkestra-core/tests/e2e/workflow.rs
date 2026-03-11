@@ -6280,8 +6280,8 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
 /// 1. Task reaches Done status after review approval
 /// 2. User calls `request_update` with feedback
 /// 3. Task returns to the recovery stage (work)
-/// 4. A new iteration is created with `IterationTrigger::Feedback`
-/// 5. Agent receives the feedback in its resume prompt
+/// 4. A new iteration is created with `IterationTrigger::Rejection { from_stage: "done" }`
+/// 5. Agent receives a fresh full prompt (not resume) with the feedback included
 #[test]
 fn test_request_update_on_done_task() {
     use orkestra_core::testutil::fixtures::test_default_workflow;
@@ -6327,16 +6327,20 @@ fn test_request_update_on_done_task() {
         "completed_at should be cleared"
     );
 
-    // Verify iteration was created with Feedback trigger
+    // Verify iteration was created with Rejection trigger (from_stage: "done")
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let work_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "work").collect();
     let last_work_iter = work_iterations.last().expect("Should have work iterations");
 
     match &last_work_iter.incoming_context {
-        Some(IterationTrigger::Feedback { feedback: fb }) => {
+        Some(IterationTrigger::Rejection {
+            from_stage,
+            feedback: fb,
+        }) => {
+            assert_eq!(from_stage, "done");
             assert_eq!(fb, "Please add more error handling");
         }
-        other => panic!("Expected Feedback trigger, got {other:?}"),
+        other => panic!("Expected Rejection trigger, got {other:?}"),
     }
 
     // Set mock output for the work stage
@@ -6349,11 +6353,17 @@ fn test_request_update_on_done_task() {
         },
     );
 
-    // Advance orchestrator — agent should receive feedback in prompt
+    // Advance orchestrator — agent spawns with a fresh session (Rejection trigger supersedes)
     ctx.advance();
 
-    // Verify resume prompt contains the feedback
-    ctx.assert_resume_prompt_contains("feedback", &["Please add more error handling"]);
+    // Verify agent receives a FULL prompt (not resume), with feedback included
+    ctx.assert_full_prompt("summary", false, false);
+    let prompt = ctx.last_prompt();
+    assert!(
+        prompt.contains("Please add more error handling"),
+        "Full prompt should contain the feedback. Got prompt starting with: {}...",
+        &prompt[..prompt.len().min(200)]
+    );
 }
 
 // =============================================================================

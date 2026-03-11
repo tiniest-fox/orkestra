@@ -41,11 +41,14 @@ pub fn execute(
         recovery_stage
     );
 
-    // Create new iteration with feedback trigger
+    // Create new iteration with rejection trigger — this is a "returning" scenario
+    // (task is coming back from Done to a previous stage), so we use Rejection to
+    // start a fresh session instead of resuming the stale one.
     iteration_service.create_iteration(
         task_id,
         &recovery_stage,
-        Some(IterationTrigger::Feedback {
+        Some(IterationTrigger::Rejection {
+            from_stage: "done".to_string(),
             feedback: feedback.to_string(),
         }),
     )?;
@@ -143,10 +146,14 @@ mod tests {
         let last = iterations.last().unwrap();
 
         match &last.incoming_context {
-            Some(IterationTrigger::Feedback { feedback }) => {
+            Some(IterationTrigger::Rejection {
+                from_stage,
+                feedback,
+            }) => {
+                assert_eq!(from_stage, "done");
                 assert_eq!(feedback, "Add more tests");
             }
-            other => panic!("Expected Feedback trigger, got {other:?}"),
+            other => panic!("Expected Rejection trigger, got {other:?}"),
         }
     }
 

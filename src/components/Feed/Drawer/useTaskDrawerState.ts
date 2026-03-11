@@ -457,7 +457,10 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
 
   const handleOpenPr = useCallback(() => callAndClose("open_pr"), [callAndClose]);
 
-  const handleArchive = useCallback(() => callAndClose("archive"), [callAndClose]);
+  const handleArchive = useCallback(() => {
+    if (!window.confirm("Archive this task?")) return Promise.resolve();
+    return callAndClose("archive");
+  }, [callAndClose]);
 
   const handleFixConflicts = useCallback(
     () =>

@@ -15,7 +15,7 @@ import {
   useState,
 } from "react";
 import { type StartupData, startupData, startupError } from "../startup";
-import { useTransport } from "../transport";
+import { useConnectionState, useTransport } from "../transport";
 import type { WorkflowConfig } from "../types/workflow";
 
 interface WorkflowConfigState {
@@ -54,14 +54,36 @@ function getProjectPath(): string {
   return new URLSearchParams(window.location.search).get("project") ?? "";
 }
 
+let cachedConfig: { projectUrl: string; config: WorkflowConfig } | null = null;
+
 export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps) {
   const transport = useTransport();
-  const [config, setConfig] = useState<WorkflowConfig | null>(null);
-  const [loading, setLoading] = useState(true);
+  const connectionState = useConnectionState();
+  const projectUrl = window.location.href;
+  const initialConfig = cachedConfig?.projectUrl === projectUrl ? cachedConfig.config : null;
+  const [config, setConfig] = useState<WorkflowConfig | null>(initialConfig);
+  const [loading, setLoading] = useState(!initialConfig);
   const [error, setError] = useState<unknown>(null);
   // Incrementing retryKey re-triggers the fetch effect after a retry call.
   const [retryKey, setRetryKey] = useState(0);
   const retriesRef = useRef(0);
+  const prevConnectionStateRef = useRef(connectionState);
+
+  // Clear stale config and re-fetch when connection transitions from disconnected to connected.
+  // Unlike TasksProvider and GitHistoryProvider (which rely on their polling loop to naturally
+  // refresh after reconnect), this provider fetches only once and is not polled — so it must
+  // explicitly invalidate on reconnect to avoid serving a stale config indefinitely.
+  useEffect(() => {
+    const prev = prevConnectionStateRef.current;
+    prevConnectionStateRef.current = connectionState;
+    if (prev === "disconnected" && connectionState === "connected") {
+      cachedConfig = null;
+      setConfig(null);
+      setLoading(true);
+      setError(null);
+      setRetryKey((k) => k + 1);
+    }
+  }, [connectionState]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: retryKey triggers effect re-run on retry
   useEffect(() => {
@@ -94,6 +116,7 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
         if (data) {
           startupData.value = data;
           console.timeEnd("[startup] config");
+          cachedConfig = { projectUrl, config: data.config };
           setConfig(data.config);
           setLoading(false);
         } else if (transport.supportsLocalOperations) {
@@ -140,6 +163,7 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
     const path = getProjectPath();
     startupError.value = null;
     startupData.value = null;
+    cachedConfig = null;
     setError(null);
     setConfig(null);
     setLoading(true);

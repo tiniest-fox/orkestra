@@ -1,6 +1,6 @@
-//! React context provider that creates and exposes the transport singleton.
+// React context provider that creates and exposes the transport singleton.
 
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { createTransport } from "./factory";
 import type { ConnectionState, Transport } from "./types";
 
@@ -69,4 +69,25 @@ export function useConnectionState(): ConnectionState {
   }, [transport]);
 
   return state;
+}
+
+/**
+ * Returns true once the transport has connected at least once.
+ * Uses a ref latch — once true, never resets to false.
+ * For Tauri, connectionState starts as "connected", so this returns true immediately.
+ *
+ * Mutating hasConnectedRef.current during render is safe here because:
+ * 1. The mutation is monotonic (false → true only, never reversed).
+ * 2. The returned value is always consistent within a render.
+ * 3. Missing a transition frame in concurrent mode doesn't matter — the
+ *    latch catches up on the next render automatically.
+ * Do NOT copy this pattern for non-monotonic state; use useState instead.
+ */
+export function useHasConnected(): boolean {
+  const connectionState = useConnectionState();
+  const hasConnectedRef = useRef(connectionState === "connected");
+  if (connectionState === "connected") {
+    hasConnectedRef.current = true;
+  }
+  return hasConnectedRef.current;
 }

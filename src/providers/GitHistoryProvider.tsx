@@ -15,10 +15,21 @@ import {
   useState,
 } from "react";
 import { prefetchCommitDiff } from "../hooks/useCommitDiff";
+import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
-import { useTransport } from "../transport";
+import { useConnectionState, useTransport } from "../transport";
 import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
 import { extractErrorMessage } from "../utils/errors";
+import { isDisconnectError } from "../utils/transportErrors";
+
+interface GitCache {
+  projectUrl: string;
+  commits: CommitInfo[];
+  currentBranch: string | null;
+  branches: string[];
+  syncStatus: SyncStatus | null;
+}
+let gitCache: GitCache | null = null;
 
 interface OperationError {
   type: "push" | "pull";
@@ -68,13 +79,17 @@ interface GitHistoryProviderProps {
 
 export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const transport = useTransport();
-  const [commits, setCommits] = useState<CommitInfo[]>([]);
+  const projectUrl = window.location.href;
+  const cached = gitCache?.projectUrl === projectUrl ? gitCache : null;
+  const [commits, setCommits] = useState<CommitInfo[]>(() => cached?.commits ?? []);
   const [fileCounts, setFileCounts] = useState<Map<string, number>>(new Map());
-  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
-  const [branches, setBranches] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [currentBranch, setCurrentBranch] = useState<string | null>(
+    () => cached?.currentBranch ?? null,
+  );
+  const [branches, setBranches] = useState<string[]>(() => cached?.branches ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<unknown>(null);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(() => cached?.syncStatus ?? null);
   const [pushLoading, setPushLoading] = useState(false);
   const [pullLoading, setPullLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(false);
@@ -92,13 +107,22 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
       setCurrentBranch(branchResult.current);
       setBranches(branchResult.branches);
       setSyncStatus(syncResult);
+      gitCache = {
+        projectUrl,
+        commits: commitResult,
+        currentBranch: branchResult.current,
+        branches: branchResult.branches,
+        syncStatus: syncResult,
+      };
       setError(null);
     } catch (err) {
-      setError(err);
+      if (!isDisconnectError(err)) {
+        setError(err);
+      }
     } finally {
       setLoading(false);
     }
-  }, [transport]);
+  }, [transport, projectUrl]);
 
   const pushToOrigin = useCallback(async () => {
     setPushLoading(true);
@@ -149,7 +173,11 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     }
   }, [transport]);
 
-  usePolling(fetchCommits, 2000);
+  const isVisible = usePageVisibility();
+  const connectionState = useConnectionState();
+  const canPoll = isVisible && connectionState === "connected";
+
+  usePolling(canPoll ? fetchCommits : null, 2000);
 
   // Pre-warm the diff cache for the most recent commit so the first open is instant.
   useEffect(() => {

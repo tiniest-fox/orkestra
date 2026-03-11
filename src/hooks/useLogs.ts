@@ -6,8 +6,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTransport } from "../transport";
+import { useConnectionState, useTransport } from "../transport";
 import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../types/workflow";
+import { isDisconnectError } from "../utils/transportErrors";
+import { usePageVisibility } from "./usePageVisibility";
 import { usePolling } from "./usePolling";
 
 interface UseLogsResult {
@@ -111,23 +113,30 @@ export function useLogs(
         activeLogStageRef.current === stageToFetch &&
         activeSessionIdRef.current === sessionToFetch
       ) {
-        setLogs([]);
-        setError(err);
+        if (!isDisconnectError(err)) {
+          setLogs([]);
+          setError(err);
+        }
       }
     } finally {
       setIsLoading(false);
     }
   }, [transport, task.id, activeLogStage, activeSessionId]);
 
+  const isVisible = usePageVisibility();
+  const connectionState = useConnectionState();
+
   // Fetch logs when stage/session changes (handles non-polling cases and initial load)
   useEffect(() => {
-    if (!isActive || !activeLogStage) return;
+    if (!isActive || !activeLogStage || !isVisible || connectionState !== "connected") return;
     fetchLogs();
-  }, [isActive, activeLogStage, fetchLogs]);
+  }, [isActive, activeLogStage, isVisible, connectionState, fetchLogs]);
 
   // Poll while agent is running on the current stage, or during chat mode
   const shouldPoll =
     isActive &&
+    isVisible &&
+    connectionState === "connected" &&
     !!activeLogStage &&
     (task.derived.is_working || !!isChatting) &&
     activeLogStage === task.derived.current_stage &&

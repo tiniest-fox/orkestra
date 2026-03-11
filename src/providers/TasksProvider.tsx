@@ -14,11 +14,20 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
 import { startupData } from "../startup";
-import { useTransport } from "../transport";
+import { useConnectionState, useTransport } from "../transport";
 import { useTransportListener } from "../transport/useTransportListener";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
+import { isDisconnectError } from "../utils/transportErrors";
+
+interface TasksCacheEntry<T> {
+  projectUrl: string;
+  data: T;
+}
+let tasksCacheEntry: TasksCacheEntry<WorkflowTaskView[]> | null = null;
+let archivedTasksCacheEntry: TasksCacheEntry<WorkflowTaskView[]> | null = null;
 
 interface TasksContextValue {
   tasks: WorkflowTaskView[];
@@ -56,9 +65,15 @@ interface TasksProviderProps {
 
 export function TasksProvider({ children }: TasksProviderProps) {
   const transport = useTransport();
-  const [tasks, setTasks] = useState<WorkflowTaskView[]>([]);
-  const [archivedTasks, setArchivedTasks] = useState<WorkflowTaskView[]>([]);
-  const [loading, setLoading] = useState(true);
+  const projectUrl = window.location.href;
+  const cachedTasks = tasksCacheEntry?.projectUrl === projectUrl ? tasksCacheEntry.data : null;
+  const cachedArchived =
+    archivedTasksCacheEntry?.projectUrl === projectUrl ? archivedTasksCacheEntry.data : null;
+  const [tasks, setTasks] = useState<WorkflowTaskView[]>(() => cachedTasks ?? []);
+  const [archivedTasks, setArchivedTasks] = useState<WorkflowTaskView[]>(
+    () => cachedArchived ?? [],
+  );
+  const [loading, setLoading] = useState(!cachedTasks);
   const [error, setError] = useState<unknown>(null);
 
   // Track task IDs with pending deletes so polling doesn't re-add them
@@ -92,27 +107,38 @@ export function TasksProvider({ children }: TasksProviderProps) {
           }
         }
         setTasks(fetched);
+        tasksCacheEntry = { projectUrl, data: fetched };
       } else {
         setTasks(result);
+        tasksCacheEntry = { projectUrl, data: result };
       }
       setError(null);
     } catch (err) {
-      setError(err);
+      if (!isDisconnectError(err)) {
+        setError(err);
+      }
     } finally {
       setLoading(false);
     }
-  }, [transport]);
+  }, [transport, projectUrl]);
 
   const fetchArchivedTasks = useCallback(async () => {
     try {
       const result = await transport.call<WorkflowTaskView[]>("get_archived_tasks");
       setArchivedTasks(result);
+      archivedTasksCacheEntry = { projectUrl, data: result };
     } catch (err) {
-      console.error("[fetchArchivedTasks] Error:", err);
+      if (!isDisconnectError(err)) {
+        console.error("[fetchArchivedTasks] Error:", err);
+      }
     }
-  }, [transport]);
+  }, [transport, projectUrl]);
 
-  const { reset: resetPolling } = usePolling(fetchTasks, 2000);
+  const isVisible = usePageVisibility();
+  const connectionState = useConnectionState();
+  const canPoll = isVisible && connectionState === "connected";
+
+  const { reset: resetPolling } = usePolling(canPoll ? fetchTasks : null, 2000);
 
   useEffect(() => {
     fetchArchivedTasks();

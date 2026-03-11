@@ -1,13 +1,16 @@
-//! Root component with transport provider and PWA connection gate.
-//!
-//! In Tauri, renders directly into the main app tree.
-//! In PWA mode, shows the ConnectionPage until a project is configured,
-//! then a loading screen while the WebSocket connects.
+// Root component with transport provider and PWA connection gate.
+//
+// In Tauri, renders directly into the main app tree.
+// In PWA mode, shows the ConnectionPage until a project is configured,
+// then a loading screen while the WebSocket connects for the first time.
+// After the first successful connection, the provider tree stays mounted
+// during reconnects — a ReconnectingBanner overlay shows instead.
 
 import { useEffect } from "react";
 import { ConnectionPage } from "./components/ConnectionPage/ConnectionPage";
 import { FeedLoadingSkeleton } from "./components/Feed/FeedLoadingSkeleton";
 import { Orkestra } from "./components/Orkestra";
+import { ReconnectingBanner } from "./components/ReconnectingBanner";
 import { Button } from "./components/ui";
 import {
   GitHistoryProvider,
@@ -17,7 +20,7 @@ import {
   useProjects,
   WorkflowConfigProvider,
 } from "./providers";
-import { TransportProvider, useConnectionState, useTransport } from "./transport";
+import { TransportProvider, useConnectionState, useHasConnected, useTransport } from "./transport";
 
 // ============================================================================
 // Root
@@ -50,12 +53,14 @@ export default App;
  *
  * Handles the PWA connection gate:
  * - No stored project OR actively adding a new project → show ConnectionPage
- * - Project present but WebSocket connecting → show loading screen
- * - Connected (or Tauri) → show the main app
+ * - Project present, never connected yet → show loading skeleton
+ * - Has connected before → keep provider tree mounted, show ReconnectingBanner overlay
+ * - Tauri → renders directly (useHasConnected returns true immediately)
  */
 function AppContent() {
   const transport = useTransport();
   const connectionState = useConnectionState();
+  const hasConnected = useHasConnected();
   const { currentProject, addingProject, cancelAddProject, removeProject } = useProjects();
 
   // All hooks must run unconditionally before any early returns.
@@ -78,11 +83,30 @@ function AppContent() {
 
   // PWA path: gate access behind pairing and WebSocket connection.
   if (transport.requiresAuthentication) {
+    // No project or actively adding one → show pairing flow.
     if (!currentProject || addingProject) {
       return <ConnectionPage onCancel={addingProject ? cancelAddProject : undefined} />;
     }
 
-    if (connectionState === "connecting") {
+    // First-time connecting (never connected yet) → show skeleton.
+    if (!hasConnected) {
+      if (connectionState === "disconnected") {
+        // Failed to connect initially — show skeleton with Disconnect button.
+        return (
+          <FeedLoadingSkeleton
+            statusText="Reconnecting to daemon…"
+            projectName={currentProject.projectName || undefined}
+          >
+            <Button
+              variant="secondary"
+              className="mt-4"
+              onClick={() => removeProject(currentProject.id)}
+            >
+              Disconnect
+            </Button>
+          </FeedLoadingSkeleton>
+        );
+      }
       return (
         <FeedLoadingSkeleton
           statusText="Connecting to daemon…"
@@ -91,32 +115,18 @@ function AppContent() {
       );
     }
 
-    if (connectionState === "disconnected") {
-      return (
-        <FeedLoadingSkeleton
-          statusText="Reconnecting to daemon…"
-          projectName={currentProject.projectName || undefined}
-        >
-          <Button
-            variant="secondary"
-            className="mt-4"
-            onClick={() => {
-              removeProject(currentProject.id);
-            }}
-          >
-            Disconnect
-          </Button>
-        </FeedLoadingSkeleton>
-      );
-    }
+    // Has connected before → fall through to render provider tree with banner.
   }
 
-  // Tauri path or PWA connected: render the full app tree.
+  // Tauri path or PWA (post-first-connection): render the full app tree.
+  // ReconnectingBanner appears as an overlay during WebSocket disconnects
+  // without unmounting the provider tree.
   return (
     <WorkflowConfigProvider>
       <TasksProvider>
         <PrStatusProvider>
           <GitHistoryProvider>
+            <ReconnectingBanner />
             <Orkestra />
           </GitHistoryProvider>
         </PrStatusProvider>

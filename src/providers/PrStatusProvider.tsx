@@ -7,18 +7,12 @@
  * Polling pauses when app loses focus (document.visibilityState === "hidden").
  */
 
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useRef, useState } from "react";
+import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
-import { useTransport } from "../transport";
+import { useConnectionState, useTransport } from "../transport";
 import type { PrStatus } from "../types/workflow";
+import { isDisconnectError } from "../utils/transportErrors";
 import { useTasks } from "./TasksProvider";
 
 interface PrStatusContextValue {
@@ -59,7 +53,9 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
   const { tasks } = useTasks();
   const [statuses, setStatuses] = useState<Map<string, PrStatus>>(new Map());
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
-  const [isVisible, setIsVisible] = useState(() => document.visibilityState === "visible");
+  const isVisible = usePageVisibility();
+  const connectionState = useConnectionState();
+  const canPoll = isVisible && connectionState === "connected";
   const [activePollTaskId, setActivePollTaskId] = useState<string | null>(null);
 
   // Track in-flight fetches to avoid duplicate requests
@@ -75,13 +71,6 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
   // Stable ref for activePollTaskId — avoids re-creating activePoll callback
   const activePollTaskIdRef = useRef(activePollTaskId);
   activePollTaskIdRef.current = activePollTaskId;
-
-  // Track visibility changes
-  useEffect(() => {
-    const handler = () => setIsVisible(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", handler);
-    return () => document.removeEventListener("visibilitychange", handler);
-  }, []);
 
   const fetchPrStatus = useCallback(
     async (taskId: string, prUrl: string) => {
@@ -103,7 +92,9 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
           terminalTasksRef.current.add(taskId);
         }
       } catch (err) {
-        console.error(`[PrStatusProvider] Failed to fetch PR status for ${taskId}:`, err);
+        if (!isDisconnectError(err)) {
+          console.error(`[PrStatusProvider] Failed to fetch PR status for ${taskId}:`, err);
+        }
       } finally {
         inFlightRef.current.delete(taskId);
         setLoadingIds((prev) => {
@@ -130,7 +121,7 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
     }
   }, [fetchPrStatus]);
 
-  usePolling(isVisible ? backgroundPoll : null, 10_000);
+  usePolling(canPoll ? backgroundPoll : null, 10_000);
 
   // Active polling (2s) — only when visible and a task is focused
   // activePollTaskId in deps so the cycle restarts immediately on task change
@@ -145,7 +136,7 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
     await fetchPrStatus(taskId, task.pr_url);
   }, [activePollTaskId, fetchPrStatus]); // activePollTaskId restarts cycle on task change
 
-  usePolling(isVisible && activePollTaskId ? activePoll : null, 2000);
+  usePolling(canPoll && activePollTaskId ? activePoll : null, 2000);
 
   const getPrStatus = useCallback((taskId: string) => statuses.get(taskId), [statuses]);
 

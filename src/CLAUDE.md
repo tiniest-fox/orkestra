@@ -106,6 +106,19 @@ When a provider holds `useState` initialized from a prop (e.g., a connection key
 - Access shared state via the provider hooks (`useTasks()`, `useWorkflowConfig()`). Don't prop-drill shared data.
 - Local UI state (open/closed, selected tab, form inputs, drawer visibility) stays in the component via `useState`.
 
+<!-- compound: insensibly-beneficial-codling -->
+### Module-Level Cache Pattern
+
+Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvider`) use module-level variables for cross-mount caching — data survives component unmounts and is available immediately on remount without a loading flash.
+
+**Shape**: `{ projectUrl: string; data: T } | null` — always keyed by project URL to prevent cross-project stale data.
+
+**Rules:**
+- Use **separate variables** for logically distinct datasets (e.g., `tasksCacheEntry` and `archivedTasksCacheEntry` are independent). Never merge them into one object with spread — concurrent async fetches clobber each other's data via the read-then-write pattern.
+- Polled providers (tasks, git history) self-heal after reconnect via natural polling resumption — **do not add explicit reconnect invalidation** to them.
+- One-shot providers (workflow config) **must** explicitly clear their cache and re-fetch on reconnect; polling won't do it for them.
+- Always check `cachedEntry?.projectUrl === projectUrl` before using cached data — this is the only cross-project isolation mechanism.
+
 ## Styling
 
 - Tailwind classes only. No CSS modules, styled-components, or inline style objects.

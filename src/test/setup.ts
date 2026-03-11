@@ -9,6 +9,10 @@ vi.mock("../transport/TransportProvider", async (importOriginal) => {
   return {
     ...actual,
     useTransport: () => mockTransport,
+    // useConnectionState reads connectionState from the mock transport.
+    // Mocked here because internal module calls bypass the exported binding mock.
+    useConnectionState: () => mockTransport.connectionState,
+    useHasConnected: () => true,
     // TransportProvider renders children without creating a real transport.
     TransportProvider: ({ children }: { children: React.ReactNode }) => children,
   };

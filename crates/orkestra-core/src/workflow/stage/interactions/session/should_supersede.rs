@@ -17,7 +17,7 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 ///
 /// Triggers that do NOT supersede (agent resumes in the existing session):
 /// - `Feedback`: resume with new context. Sources: human same-stage rejection
-///   (`reject.rs`), `request_update`, or the reviewer-override path in `reject.rs`.
+///   (`reject.rs`) or the reviewer-override path in `reject.rs`.
 /// - `GateFailure`: gate script failed — agent re-runs in the existing session with
 ///   the gate error as feedback context.
 /// - `PrFeedback`: PR comments, failing checks, or guidance submitted for a Done task
@@ -116,7 +116,7 @@ mod tests {
         let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
         assert!(
             !result,
-            "Feedback trigger (from request_update) must NOT supersede — resume the session"
+            "Feedback trigger (same-stage rejection) must NOT supersede — resume the session"
         );
     }
 

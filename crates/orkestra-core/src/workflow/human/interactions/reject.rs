@@ -80,8 +80,10 @@ pub fn execute(
 
     // Create new iteration in same stage with feedback context.
     // Using Feedback (not Rejection) so the agent resumes in its existing
-    // session with the feedback. Human rejection means "address this feedback" —
-    // the agent keeps its context and conversation history.
+    // session with the feedback. Same-stage human rejection means "address this
+    // feedback" — the agent keeps its context and conversation history.
+    // Contrast with request_update (returning from Done), which uses Rejection
+    // to start a fresh session.
     iteration_service.create_iteration(
         &task.id,
         &current_stage,

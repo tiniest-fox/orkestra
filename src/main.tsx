@@ -106,6 +106,17 @@ function main() {
   } else {
     // PWA: always mount the app. The connection gate inside AppContent handles
     // the no-credentials and connecting states.
+    import("virtual:pwa-register")
+      .then(({ registerSW }) => {
+        registerSW({
+          onRegistrationError(error) {
+            console.error("[pwa] SW registration failed:", error);
+          },
+        });
+      })
+      .catch((err) => {
+        console.error("[pwa] Failed to load PWA module:", err);
+      });
     mountApp();
   }
 }

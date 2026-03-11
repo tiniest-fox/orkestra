@@ -1,23 +1,16 @@
-//! Displays a generated pairing code with a live countdown until expiry.
+// Displays a generated pairing code as an inline banner with countdown and dismiss button.
 
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Panel } from "../../components/ui";
-
-// ============================================================================
-// Types
-// ============================================================================
 
 interface PairingCodeBoxProps {
   code: string;
   expiresAt: number; // epoch ms
   onExpired: () => void;
+  onDismiss: () => void;
 }
 
-// ============================================================================
-// Component
-// ============================================================================
-
-export function PairingCodeBox({ code, expiresAt, onExpired }: PairingCodeBoxProps) {
+export function PairingCodeBox({ code, expiresAt, onExpired, onDismiss }: PairingCodeBoxProps) {
   const [remaining, setRemaining] = useState(() =>
     Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)),
   );
@@ -39,14 +32,28 @@ export function PairingCodeBox({ code, expiresAt, onExpired }: PairingCodeBoxPro
   const secs = remaining % 60;
 
   return (
-    <Panel autoFill={false} className="mt-3 text-center">
-      <Panel.Body>
-        <p className="text-sm text-text-secondary">Pairing Code</p>
-        <p className="font-mono text-3xl font-bold tracking-wider text-text-primary my-2">{code}</p>
-        <p className="text-sm text-text-tertiary">
-          Expires in {mins}:{String(secs).padStart(2, "0")}
-        </p>
-      </Panel.Body>
-    </Panel>
+    <div className="flex items-center justify-between px-6 h-12 bg-surface border-b border-border shrink-0">
+      <div className="flex items-center">
+        <span className="font-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-text-quaternary mr-3">
+          PAIRING CODE
+        </span>
+        <span className="font-mono text-[16px] font-bold text-text-primary tracking-wider">
+          {code}
+        </span>
+      </div>
+      <div className="flex items-center">
+        <span className="font-mono text-[11px] text-text-tertiary mr-3">
+          {mins}:{String(secs).padStart(2, "0")}
+        </span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss pairing code"
+          className="text-text-quaternary hover:text-text-secondary p-1 rounded"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
   );
 }

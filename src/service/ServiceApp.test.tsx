@@ -1,4 +1,4 @@
-//! Tests for ServiceApp — root auth gating, project polling, and GitHub status handling.
+// Tests for ServiceApp — root auth gating, project polling, and GitHub status handling.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -70,8 +70,8 @@ describe("ServiceApp", () => {
   it("renders main UI when token exists", async () => {
     mockGetToken.mockReturnValue("test-token");
     renderApp();
-    expect(screen.getByText("Orkestra Service")).toBeInTheDocument();
-    expect(screen.getByText("Projects")).toBeInTheDocument();
+    expect(screen.getByText("ORKESTRA")).toBeInTheDocument();
+    expect(screen.getByText("SERVICE")).toBeInTheDocument();
   });
 
   // -- Project fetching --
@@ -105,7 +105,7 @@ describe("ServiceApp", () => {
     await waitFor(() => expect(mockCheckGithubStatus).toHaveBeenCalled());
 
     // Open the add panel
-    fireEvent.click(screen.getByRole("button", { name: "+ Add Project" }));
+    fireEvent.click(screen.getByRole("button", { name: /Add project/i }));
 
     // The fallback githubStatus has available: false, so GitHub CLI instructions appear
     expect(await screen.findByText("GitHub CLI not configured.")).toBeInTheDocument();
@@ -117,7 +117,7 @@ describe("ServiceApp", () => {
     mockGetToken.mockReturnValue("test-token");
     mockGeneratePairingCode.mockResolvedValue({ code: "123456" });
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: "Generate Pairing Code" }));
+    fireEvent.click(screen.getByRole("button", { name: /Pairing code/i }));
     expect(await screen.findByText("123456")).toBeInTheDocument();
   });
 
@@ -125,7 +125,7 @@ describe("ServiceApp", () => {
     mockGetToken.mockReturnValue("test-token");
     mockGeneratePairingCode.mockRejectedValue(new Error("Network error"));
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: "Generate Pairing Code" }));
+    fireEvent.click(screen.getByRole("button", { name: /Pairing code/i }));
     expect(await screen.findByText("Network error")).toBeInTheDocument();
   });
 

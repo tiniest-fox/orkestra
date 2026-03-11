@@ -187,6 +187,31 @@ onClick={(e) => {
 
 The `FeedRowActions.tsx` "View" button demonstrates this pattern. All new action buttons in row components must follow it.
 
+<!-- compound: sensitively-jaunty-shad -->
+
+**Clickable rows with inner buttons must use `div role="button"`, not `<button>`**: Nesting `<button>` inside `<button>` is invalid HTML — browsers handle it inconsistently (often ejecting the inner button). When a row is keyboard-navigable AND contains action buttons, the row wrapper must be a `<div role="button" tabIndex={0}>` with an `onKeyDown` handler for Enter/Space.
+
+```tsx
+// Correct — div wrapper allows inner <button> elements
+<div
+  role="button"
+  tabIndex={0}
+  onClick={handleRowClick}
+  onKeyDown={(e) => {
+    if (e.key === "Enter" || e.key === " ") handleRowClick();
+  }}
+>
+  <button onClick={(e) => { e.stopPropagation(); onAction(); }}>Action</button>
+</div>
+
+// Wrong — nested <button> inside <button> is invalid HTML
+<button onClick={handleRowClick}>
+  <button onClick={(e) => { e.stopPropagation(); onAction(); }}>Action</button>
+</button>
+```
+
+**Reference:** `FeedRow.tsx` lines 61-70 and `ProjectRow.tsx` are the canonical examples.
+
 ## Error Surfacing in Action Handlers
 
 <!-- compound: prodigally-forgiving-ibex -->

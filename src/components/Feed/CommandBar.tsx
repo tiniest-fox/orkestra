@@ -1,7 +1,8 @@
-//! Command bar with accent prompt, monospace input, and autocomplete dropdown.
+// Command bar with accent prompt, monospace input, and autocomplete dropdown.
 
 import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { WorkflowTaskView } from "../../types/workflow";
 import type { CommandBarItem } from "./useCommandBar";
 import { useCommandBar } from "./useCommandBar";
@@ -80,6 +81,7 @@ export function CommandBar({
   inputRef,
 }: CommandBarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   const {
     items,
     highlightedIndex,
@@ -107,7 +109,7 @@ export function CommandBar({
   return (
     <div
       ref={containerRef}
-      className="relative flex items-center h-9 px-6 bg-surface border-b border-border shrink-0"
+      className={`relative flex items-center ${isMobile ? "h-12" : "h-9"} px-6 bg-surface border-b border-border shrink-0`}
     >
       <span className="text-accent font-semibold font-mono text-[12px] mr-2 select-none">&gt;</span>
       <input

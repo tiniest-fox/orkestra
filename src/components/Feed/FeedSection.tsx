@@ -1,5 +1,6 @@
-//! Sticky section header with task rows for one feed section.
+// Sticky section header with task rows for one feed section.
 
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import type { FeedSection as FeedSectionData } from "../../utils/feedGrouping";
 import { FeedSubtaskRow } from "./FeedSubtaskRow";
@@ -34,6 +35,7 @@ export function FeedSection({
   onArchive,
   onRowClick,
 }: FeedSectionProps) {
+  const isMobile = useIsMobile();
   const subtasks = surfacedSubtasks ?? [];
   const totalCount = section.tasks.length;
 
@@ -41,7 +43,7 @@ export function FeedSection({
 
   return (
     <div>
-      <div className="sticky top-0 z-10 px-6 pt-4 bg-canvas">
+      <div className={`sticky top-0 z-10 px-6 ${isMobile ? "pt-5" : "pt-4"} bg-canvas`}>
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-accent">
             {section.label}

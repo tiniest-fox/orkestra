@@ -1,4 +1,4 @@
-//! Top bar for the Feed view — logo, live task metrics, keyboard hint.
+// Top bar for the Feed view — logo, live task metrics, keyboard hint.
 
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
@@ -53,71 +53,102 @@ export function FeedHeader({
   }, [tasks]);
 
   return (
-    <div className="flex items-center justify-between px-6 h-11 border-b border-border bg-surface shrink-0">
-      <div className="flex items-center gap-2">
-        {serviceProjectName ? (
-          <Link
-            to="/"
-            className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none hover:text-text-secondary transition-colors"
-          >
-            Orkestra
-          </Link>
-        ) : (
-          <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
-            Orkestra
-          </span>
-        )}
-        {serviceProjectName ? (
-          <>
-            <span className="text-text-quaternary select-none">·</span>
-            <span className="text-[13px] font-medium text-text-secondary select-none">
-              {serviceProjectName}
+    <div className="shrink-0">
+      <div className="flex items-center justify-between px-6 h-11 border-b border-border bg-surface">
+        <div className="flex items-center gap-2">
+          {serviceProjectName ? (
+            <Link
+              to="/"
+              className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none hover:text-text-secondary transition-colors"
+            >
+              Orkestra
+            </Link>
+          ) : (
+            <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
+              Orkestra
             </span>
-          </>
-        ) : (
-          <>
-            {transport.requiresAuthentication && currentProject && <ProjectSwitcher />}
-            {transport.requiresAuthentication && currentProject && metrics.length > 0 && (
+          )}
+          {serviceProjectName ? (
+            <>
               <span className="text-text-quaternary select-none">·</span>
-            )}
-          </>
-        )}
-        {metrics.length > 0 && (
-          <div className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">
-            {metrics.map((m, i) => (
-              <span key={m.label} className="flex items-center gap-1">
-                {i > 0 && <span className="text-text-quaternary mx-0.5">·</span>}
-                <span className={`font-semibold ${m.colorClass}`}>{m.value}</span>
-                <span>{m.label}</span>
+              <span className="text-[13px] font-medium text-text-secondary select-none">
+                {serviceProjectName}
               </span>
-            ))}
+            </>
+          ) : (
+            <>
+              {transport.requiresAuthentication && currentProject && <ProjectSwitcher />}
+              {!isMobile &&
+                transport.requiresAuthentication &&
+                currentProject &&
+                metrics.length > 0 && <span className="text-text-quaternary select-none">·</span>}
+            </>
+          )}
+          {!isMobile && metrics.length > 0 && (
+            <div className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">
+              {metrics.map((m, i) => (
+                <span key={m.label} className="flex items-center gap-1">
+                  {i > 0 && <span className="text-text-quaternary mx-0.5">·</span>}
+                  <span className={`font-semibold ${m.colorClass}`}>{m.value}</span>
+                  <span>{m.label}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        {!isMobile && (
+          <div className="flex items-center gap-2">
+            <HotkeyScope active={hotkeyActive}>
+              <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask} onAccent>
+                New task
+              </Button>
+              <Button
+                hotkey="shift+a"
+                variant="secondary"
+                size="sm"
+                onClick={onAssistant}
+                onAccent={assistantActive}
+                className={
+                  assistantActive
+                    ? "bg-accent/8 border-accent/35 text-accent hover:bg-accent/12"
+                    : ""
+                }
+              >
+                Assistant
+              </Button>
+            </HotkeyScope>
+            <kbd className="font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 select-none">
+              cmd+k
+            </kbd>
           </div>
         )}
       </div>
-      <div className="flex items-center gap-2">
-        <HotkeyScope active={hotkeyActive}>
-          <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask} onAccent>
-            New task
-          </Button>
-          <Button
-            hotkey="shift+a"
-            variant="secondary"
-            size="sm"
-            onClick={onAssistant}
-            onAccent={assistantActive}
-            className={
-              assistantActive ? "bg-accent/8 border-accent/35 text-accent hover:bg-accent/12" : ""
-            }
-          >
-            Assistant
-          </Button>
-        </HotkeyScope>
-        {!isMobile && (
-          <kbd className="font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 select-none">
-            cmd+k
-          </kbd>
-        )}
-      </div>
+      {isMobile && (
+        <div className="flex items-center gap-2 px-6 h-12 border-b border-border bg-surface">
+          <HotkeyScope active={hotkeyActive}>
+            <Button
+              hotkey="n"
+              variant="primary"
+              size="sm"
+              onClick={onNewTask}
+              onAccent
+              className="flex-1"
+            >
+              New task
+            </Button>
+            <Button
+              hotkey="shift+a"
+              variant="secondary"
+              size="sm"
+              onClick={onAssistant}
+              onAccent={assistantActive}
+              className={`flex-1 ${assistantActive ? "bg-accent/8 border-accent/35 text-accent hover:bg-accent/12" : ""}`}
+            >
+              Assistant
+            </Button>
+          </HotkeyScope>
+        </div>
+      )}
     </div>
   );
 }

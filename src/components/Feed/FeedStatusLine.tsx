@@ -1,4 +1,4 @@
-//! Footer status line — git info and keyboard hints, swaps content when drawer is open.
+// Footer status line — git info and keyboard hints, swaps content when drawer is open.
 
 import { useEffect } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -94,7 +94,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
   const hasSyncActions = canPush || canPull;
 
   return (
-    <div className="flex items-center justify-between px-6 h-7 border-t border-border bg-surface shrink-0 font-mono text-[11px] text-text-tertiary">
+    <div className="flex items-center justify-between px-6 min-h-7 pt-1 pb-[max(4px,env(safe-area-inset-bottom))] border-t border-border bg-surface shrink-0 font-mono text-[11px] text-text-tertiary">
       <div className="flex items-center gap-3 min-w-0">
         {hasGitInfo && <span className="font-medium shrink-0 text-accent">{currentBranch}</span>}
         {latestCommit && (

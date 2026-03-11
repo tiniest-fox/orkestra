@@ -1,4 +1,4 @@
-//! Shared 7-column grid row used by FeedTaskRow and FeedSubtaskRow.
+// Shared row used by FeedTaskRow and FeedSubtaskRow.
 
 import { useMemo, useRef } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -57,35 +57,86 @@ export function FeedRow({
   const isMobile = useIsMobile();
   useNavItem(task.id, rowRef);
 
+  const stateClasses = [
+    isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas",
+    faded && !isFocused ? "opacity-50" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const sharedEventProps = {
+    onMouseEnter,
+    onClick,
+    onKeyDown: (e: { key: string }) => {
+      if (e.key === "Enter" || e.key === " ") onClick?.();
+    },
+  };
+
+  if (isMobile) {
+    return (
+      // biome-ignore lint/a11y/useSemanticElements: flex layout requires div; role+tabIndex+onKeyDown provide accessibility
+      <div
+        ref={rowRef}
+        role="button"
+        tabIndex={0}
+        {...sharedEventProps}
+        className={[
+          "flex flex-col gap-1",
+          paddingClass,
+          "py-2.5 min-h-[48px]",
+          "border-l-2 transition-[background-color,border-color] duration-100 ease-out",
+          stateClasses,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <div className="flex items-center gap-2">
+          <StatusSymbol task={task} waiting={waiting} />
+          <div className="min-w-0 flex-1">
+            <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
+              {isSubtask && <span className="text-text-quaternary mr-1">↳</span>}
+              {task.title || task.description}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 pl-8 min-h-[44px]">
+          {actionsSlot ?? (
+            <HotkeyScope active={isFocused ?? false}>
+              <FeedRowActions
+                task={task}
+                onReview={onReview ?? (() => {})}
+                onAnswer={onAnswer ?? (() => {})}
+                onApprove={onApprove ?? (() => {})}
+                onMerge={onMerge ?? (() => {})}
+                onOpenPr={onOpenPr ?? (() => {})}
+                onArchive={onArchive ?? (() => {})}
+              />
+            </HotkeyScope>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     // biome-ignore lint/a11y/useSemanticElements: grid layout requires div; role+tabIndex+onKeyDown provide accessibility
     <div
       ref={rowRef}
       role="button"
       tabIndex={0}
-      onMouseEnter={onMouseEnter}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onClick?.();
-      }}
+      {...sharedEventProps}
       className={[
         "grid",
-        isMobile
-          ? "grid-cols-[24px_minmax(0,1fr)_auto] gap-2"
-          : "grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_80px_minmax(0,1fr)] gap-4",
+        "grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_80px_minmax(0,1fr)] gap-4",
         paddingClass,
-        "py-2",
-        isMobile ? "min-h-[48px]" : "min-h-[40px]",
+        "py-2 min-h-[40px]",
         "items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out",
-        isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas",
-        faded && !isFocused ? "opacity-50" : "",
+        stateClasses,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      {isMobile ? (
-        <StatusSymbol task={task} waiting={waiting} />
-      ) : isSubtask ? (
+      {isSubtask ? (
         <>
           <div />
           <span className="text-center font-mono text-sm text-text-quaternary self-start">↳</span>
@@ -93,27 +144,22 @@ export function FeedRow({
       ) : (
         <StatusSymbol task={task} waiting={waiting} />
       )}
-      <div className={`min-w-0 ${!isSubtask && !isMobile ? "col-span-2" : ""}`}>
+      <div className={`min-w-0 ${!isSubtask ? "col-span-2" : ""}`}>
         <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
-          {isMobile && isSubtask && <span className="text-text-quaternary mr-1">↳</span>}
           {task.title || task.description}
         </div>
         <div className="font-mono text-[10px] text-text-quaternary">{task.id}</div>
         <div className="font-mono text-[10px] font-medium text-text-tertiary">{subtitle}</div>
       </div>
-      {!isMobile && (
-        <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-text-quaternary text-right truncate">
-          {task.derived.current_stage ?? ""}
-        </div>
-      )}
-      {!isMobile && <PipelineBar segments={segments} />}
-      {!isMobile && (
-        <div>
-          {task.derived.subtask_progress && (
-            <SubtaskProgressBar progress={task.derived.subtask_progress} />
-          )}
-        </div>
-      )}
+      <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-text-quaternary text-right truncate">
+        {task.derived.current_stage ?? ""}
+      </div>
+      <PipelineBar segments={segments} />
+      <div>
+        {task.derived.subtask_progress && (
+          <SubtaskProgressBar progress={task.derived.subtask_progress} />
+        )}
+      </div>
       {actionsSlot ?? (
         <HotkeyScope active={isFocused ?? false}>
           <div className="flex items-center gap-2 shrink-0 justify-end">

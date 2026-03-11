@@ -129,13 +129,12 @@ When a provider holds `useState` initialized from a prop (e.g., a connection key
 
 <!-- compound: abysmally-conquering-leafroller -->
 
-The project has three Vite build modes configured in `vite.config.ts`: default (Tauri), `service`, and `pwa`.
+The project has two Vite build modes configured in `vite.config.ts`: default (Tauri) and `service`.
 
-- `pnpm build` — Tauri mode (default). Externalizes `virtual:pwa-register` since the VitePWA plugin is absent.
-- `pnpm build --mode service` — Service mode. Returns early before the main config block.
-- `pnpm build --mode pwa` — **Fails in the dev environment** due to a missing `workbox-window` dependency. Do not use this to verify PWA-related changes.
+- `pnpm build` — Tauri mode (default).
+- `pnpm build --mode service` — Service mode. Uses `service.html` as the entry point and outputs to `dist-service/`.
 
-The `virtual:pwa-register` import in `main.tsx` is a dynamic import with a `.catch()` handler — it fails gracefully at runtime when externalized.
+PWA installability is provided by a static `public/manifest.json` linked from `index.html`. There is no service worker — the app requires the daemon to function and has no meaningful offline behaviour.
 
 ## Pre-React HTML Skeleton (`index.html`)
 

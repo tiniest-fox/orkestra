@@ -29,9 +29,9 @@ vi.mock("../transport", () => ({
   useConnectionState: () => "connecting",
 }));
 
-// WorkflowConfigProvider and TasksProvider import src/main.tsx, which calls
-// ReactDOM.createRoot() at module level — that crashes in jsdom without a #root element.
-vi.mock("../main", () => ({
+// WorkflowConfigProvider and TasksProvider import src/startup.ts — mock to
+// provide controlled startupData/startupError values without real signal handler setup.
+vi.mock("../startup", () => ({
   startupData: { value: null },
   startupError: { value: null },
 }));

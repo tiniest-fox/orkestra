@@ -4,26 +4,8 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ProjectPicker } from "./components/ProjectPicker";
 import "./index.css";
-import type { WorkflowConfig, WorkflowTaskView } from "./types/workflow";
-
-interface StartupData {
-  config: WorkflowConfig;
-  tasks: WorkflowTaskView[];
-}
-
-/**
- * Module-level slot for startup data pushed from Tauri before React mounts.
- * Providers consume this on first render to skip IPC calls.
- * Only populated in the Tauri fast path.
- */
-export const startupData: { value: StartupData | null } = { value: null };
-
-/**
- * Module-level slot for a startup error emitted before React's provider mounts.
- * WorkflowConfigProvider checks this on mount and surfaces it as a retryable error.
- * Only populated in the Tauri fast path.
- */
-export const startupError: { value: string | null } = { value: null };
+import type { StartupData } from "./startup";
+import { startupData, startupError } from "./startup";
 
 /**
  * Extract the project path from URL query parameters.
@@ -64,8 +46,10 @@ function mountApp() {
  * main app. Registers Tauri event listeners before React mounts to capture
  * startup data that arrives during bundle evaluation.
  *
- * PWA: skips the project param check and always mounts the app. The connection
+ * PWA: skips the project param check, always mounts the app. The connection
  * gate inside AppContent handles the no-credentials and connecting states.
+ * Service worker registration is omitted — the app requires the daemon to
+ * function and has no meaningful offline behaviour.
  */
 function main() {
   const hasTauri = !!import.meta.env.TAURI_ENV_PLATFORM;
@@ -106,17 +90,6 @@ function main() {
   } else {
     // PWA: always mount the app. The connection gate inside AppContent handles
     // the no-credentials and connecting states.
-    import("virtual:pwa-register")
-      .then(({ registerSW }) => {
-        registerSW({
-          onRegistrationError(error) {
-            console.error("[pwa] SW registration failed:", error);
-          },
-        });
-      })
-      .catch((err) => {
-        console.error("[pwa] Failed to load PWA module:", err);
-      });
     mountApp();
   }
 }

@@ -14,9 +14,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { startupData, startupError } from "../main";
+import { type StartupData, startupData, startupError } from "../startup";
 import { useTransport } from "../transport";
-import type { WorkflowConfig, WorkflowTaskView } from "../types/workflow";
+import type { WorkflowConfig } from "../types/workflow";
 
 interface WorkflowConfigState {
   config: WorkflowConfig | null;
@@ -52,11 +52,6 @@ interface WorkflowConfigProviderProps {
 
 function getProjectPath(): string {
   return new URLSearchParams(window.location.search).get("project") ?? "";
-}
-
-interface StartupData {
-  config: WorkflowConfig;
-  tasks: WorkflowTaskView[];
 }
 
 export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps) {

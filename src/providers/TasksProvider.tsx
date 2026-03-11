@@ -15,7 +15,7 @@ import {
   useState,
 } from "react";
 import { usePolling } from "../hooks/usePolling";
-import { startupData } from "../main";
+import { startupData } from "../startup";
 import { useTransport } from "../transport";
 import { useTransportListener } from "../transport/useTransportListener";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";

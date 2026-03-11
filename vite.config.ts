@@ -64,6 +64,10 @@ export default defineConfig(async ({ mode }) => {
     base: mode === "pwa" ? "/app/" : "/",
     envPrefix: ["VITE_", "TAURI_ENV_"],
     clearScreen: false,
+    build:
+      mode !== "pwa"
+        ? { rollupOptions: { external: ["virtual:pwa-register"] } }
+        : undefined,
     server: {
       port: 1420,
       strictPort: true,

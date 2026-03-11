@@ -299,6 +299,34 @@ See `submitLineCommentsForReview` / `submitLineCommentsForDoneTask` in `useTaskD
 </div>
 ```
 
+<!-- compound: lengthily-enchanted-fieldfare -->
+
+**`useSemanticElements` conflicts with `role="status"` for loading skeletons**: Biome's `useSemanticElements` rule flags `<div role="status">` and suggests using `<output>`, but `<output>` is semantically for form calculation results — not loading indicators. Use `<div role="status">` with a `biome-ignore` line comment:
+
+```tsx
+// biome-ignore lint/a11y/useSemanticElements: role="status" is correct for loading indicators; <output> is for form results
+<div role="status" aria-label="Loading...">
+```
+
+## Loading State Patterns
+
+<!-- compound: lengthily-enchanted-fieldfare -->
+
+**Always set `hasLoaded` in `finally`, never just in the success path**: When using a boolean flag to guard against false empty-states during initial fetch, always set it in `finally` so a failed fetch doesn't leave the skeleton spinning forever:
+
+```tsx
+const [hasLoaded, setHasLoaded] = useState(false);
+
+useEffect(() => {
+  fetchProjects()
+    .then(setProjects)
+    .catch(console.error)
+    .finally(() => setHasLoaded(true)); // not in .then — failure must also resolve the loading state
+}, []);
+```
+
+Show the skeleton (or empty state guard) with `{!hasLoaded ? <Skeleton /> : <Content />}`. `hasLoaded` is write-once — never reset it to `false` on re-fetch; a brief stale render is better than re-showing the skeleton on every poll cycle.
+
 ## Gate Execution Data Model
 
 <!-- compound: veritably-soaring-kinkajou -->

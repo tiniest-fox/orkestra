@@ -17,7 +17,9 @@ import {
 import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
 import { startupData } from "../startup";
+
 import { useConnectionState, useTransport } from "../transport";
+
 import { useTransportListener } from "../transport/useTransportListener";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { isDisconnectError } from "../utils/transportErrors";

@@ -15,7 +15,9 @@ import {
   useState,
 } from "react";
 import { type StartupData, startupData, startupError } from "../startup";
+
 import { useConnectionState, useTransport } from "../transport";
+
 import type { WorkflowConfig } from "../types/workflow";
 
 interface WorkflowConfigState {

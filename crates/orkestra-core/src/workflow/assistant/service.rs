@@ -551,7 +551,7 @@ fn spawn_claude_assistant_process(
     // Orkestra tasks but never modifies files directly
     cmd.args([
         "--disallowedTools",
-        "Edit,Write,NotebookEdit,AskUserQuestion",
+        "EnterPlanMode,ExitPlanMode,Edit,Write,NotebookEdit,AskUserQuestion",
     ]);
 
     if !is_resume {

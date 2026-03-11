@@ -125,6 +125,18 @@ When a provider holds `useState` initialized from a prop (e.g., a connection key
   The exception: `PROSE_CLASSES` from `utils/prose.ts` has its own sizing — always pair it with `text-forge-body` and never use arbitrary sizes alongside it.
 - Use `PROSE_CLASSES` from `utils/prose.ts` for markdown rendering. Always pair with `text-forge-body` for font size — never use arbitrary values like `text-[13px]` alongside `PROSE_CLASSES`.
 
+## Vite Build Modes
+
+<!-- compound: abysmally-conquering-leafroller -->
+
+The project has three Vite build modes configured in `vite.config.ts`: default (Tauri), `service`, and `pwa`.
+
+- `pnpm build` — Tauri mode (default). Externalizes `virtual:pwa-register` since the VitePWA plugin is absent.
+- `pnpm build --mode service` — Service mode. Returns early before the main config block.
+- `pnpm build --mode pwa` — **Fails in the dev environment** due to a missing `workbox-window` dependency. Do not use this to verify PWA-related changes.
+
+The `virtual:pwa-register` import in `main.tsx` is a dynamic import with a `.catch()` handler — it fails gracefully at runtime when externalized.
+
 ## Pre-React HTML Skeleton (`index.html`)
 
 <!-- compound: slickly-continuous-bonobo -->

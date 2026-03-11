@@ -2,6 +2,7 @@
 
 import { Inbox } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDrawerHistory } from "../../hooks/useDrawerHistory";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { useTransport } from "../../transport";
@@ -78,6 +79,16 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
 
   const drawerOpen = panelOpen || isNewTaskOpen;
   const activeTask = activeTaskId ? (tasks.find((t) => t.id === activeTaskId) ?? null) : null;
+
+  const closeAllDrawers = useCallback(() => {
+    setActiveTaskId(null);
+    setGitHistoryOpen(false);
+    setAssistantOpen(false);
+    setTaskAssistantId(null);
+    closeNewTask();
+  }, [closeNewTask]);
+
+  useDrawerHistory(drawerOpen, closeAllDrawers);
 
   const drawerMode = deriveDrawerMode(
     isNewTaskOpen,

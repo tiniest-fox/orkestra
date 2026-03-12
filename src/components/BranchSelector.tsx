@@ -11,9 +11,11 @@ import type { BranchList } from "../types/workflow";
 interface BranchSelectorProps {
   value: string | null;
   onChange: (branch: string) => void;
+  /** Pre-seeded branch name shown immediately while list_branches loads. Avoids layout jump. */
+  initialBranch?: string | null;
 }
 
-export function BranchSelector({ value, onChange }: BranchSelectorProps) {
+export function BranchSelector({ value, onChange, initialBranch }: BranchSelectorProps) {
   const transport = useTransport();
   const [branches, setBranches] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
@@ -68,13 +70,13 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const displayValue = value || currentBranch || "main";
+  const displayValue = value || currentBranch || initialBranch || "main";
 
   if (loading) {
     return (
-      <div className="text-xs text-text-quaternary flex items-center gap-1.5">
+      <div className="inline-flex items-center gap-1.5 text-xs text-text-quaternary px-1.5 py-1">
         <BranchIcon />
-        <span>Loading...</span>
+        <span>{initialBranch ?? "…"}</span>
       </div>
     );
   }

@@ -1,6 +1,7 @@
 //! Shared tab bar for all task drawers. Divides width equally across tabs.
 //! Registers , and . hotkeys for prev/next tab navigation automatically.
 
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { Kbd } from "../ui/Kbd";
 
@@ -20,6 +21,7 @@ interface DrawerTabBarProps {
 }
 
 export function DrawerTabBar({ tabs, activeTab, onTabChange, accent }: DrawerTabBarProps) {
+  const isMobile = useIsMobile();
   useNavHandler(",", () => {
     const idx = tabs.findIndex((t) => t.id === activeTab);
     const prev = tabs[Math.max(0, idx - 1)];
@@ -48,7 +50,7 @@ export function DrawerTabBar({ tabs, activeTab, onTabChange, accent }: DrawerTab
             style={isActive ? { color: accent, borderBottomColor: accent } : {}}
           >
             {tab.label}
-            {tab.hotkey && <Kbd>{tab.hotkey}</Kbd>}
+            {tab.hotkey && !isMobile && <Kbd>{tab.hotkey}</Kbd>}
           </button>
         );
       })}

@@ -123,32 +123,6 @@ export function FeedHeader({
           </div>
         )}
       </div>
-      {isMobile && (
-        <div className="flex items-center gap-2 px-6 h-12 border-b border-border bg-surface">
-          <HotkeyScope active={hotkeyActive}>
-            <Button
-              hotkey="n"
-              variant="primary"
-              size="sm"
-              onClick={onNewTask}
-              onAccent
-              className="flex-1"
-            >
-              New task
-            </Button>
-            <Button
-              hotkey="shift+a"
-              variant="secondary"
-              size="sm"
-              onClick={onAssistant}
-              onAccent={assistantActive}
-              className={`flex-1 ${assistantActive ? "bg-accent/8 border-accent/35 text-accent hover:bg-accent/12" : ""}`}
-            >
-              Assistant
-            </Button>
-          </HotkeyScope>
-        </div>
-      )}
     </div>
   );
 }

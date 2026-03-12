@@ -3,7 +3,7 @@
 //! Mounted/unmounted by the parent (FeedView). The Drawer is always open while
 //! this component exists; data comes from GitHistoryProvider which polls independently.
 
-import { ChevronDown, ChevronRight, GitCompare, X } from "lucide-react";
+import { ChevronDown, ChevronRight, GitCompare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -22,9 +22,9 @@ import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
 import { useDiffFindNavigation } from "../Diff/useDiffFindNavigation";
 import { useDiffSearch } from "../Diff/useDiffSearch";
 import { Drawer } from "../ui/Drawer/Drawer";
+import { DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { EmptyState } from "../ui/EmptyState";
 import { HotkeyScope, useNavHandler } from "../ui/HotkeyScope";
-import { Kbd } from "../ui/Kbd";
 
 // ============================================================================
 // CommitRow
@@ -188,24 +188,19 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
         />
       )}
       <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="shrink-0 flex items-center gap-3 px-6 h-11 border-b border-border">
-          <span className="font-sans text-[13px] font-semibold text-text-primary flex-1">
-            Git History
-          </span>
-          {currentBranch && (
-            <span className="font-mono text-[11px] shrink-0 text-accent">{currentBranch}</span>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
-            title="Close (Esc)"
-          >
-            <Kbd>esc</Kbd>
-            <X size={14} />
-          </button>
-        </div>
+        <DrawerHeader
+          title={
+            <span className="flex items-center gap-2.5">
+              Git History
+              {currentBranch && (
+                <span className="font-mono text-[11px] font-normal text-accent shrink-0">
+                  {currentBranch}
+                </span>
+              )}
+            </span>
+          }
+          onClose={onClose}
+        />
 
         {/* Body: commit list (left) + commit detail (right) */}
         <div className="flex flex-1 overflow-hidden">

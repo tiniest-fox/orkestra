@@ -1,6 +1,6 @@
-//! Shared header for Feed drawers — title row + pipeline + session strip.
+//! Task drawer header — title row (via shared DrawerHeader) + pipeline/session strip row.
 
-import { MessageSquare, Play, Square, SquarePen, SquareTerminal, Trash2, X } from "lucide-react";
+import { MessageSquare, Play, Square, SquarePen, SquareTerminal, Trash2, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { RunStatus } from "../../hooks/useRunScript";
 import { useTransport } from "../../transport";
@@ -8,8 +8,8 @@ import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
 import { Button } from "../ui/Button";
+import { type DrawerAction, DrawerHeader as SharedDrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { useNavHandler } from "../ui/HotkeyScope";
-import { Kbd } from "../ui/Kbd";
 import { ModalPanel } from "../ui/ModalPanel";
 import { STATUS_HEX } from "../ui/taskStateColors";
 import { PipelineBar } from "./PipelineBar";
@@ -92,9 +92,7 @@ export function DrawerHeader({
     if (transport.supportsLocalOperations && worktreePath)
       transport.call("open_in_editor", { path: worktreePath });
   });
-  useNavHandler("D", () => {
-    setShowDeleteConfirm(true);
-  });
+  useNavHandler("D", () => setShowDeleteConfirm(true));
   useNavHandler("A", () => {
     if (!task.derived.is_done && !task.derived.is_archived) onToggleAutoMode?.();
   });
@@ -102,127 +100,97 @@ export function DrawerHeader({
     if (!task.derived.is_archived) onOpenChat?.();
   });
 
-  return (
-    <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border">
-      {/* Row 1: Title + external tool links + close */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="font-sans text-[14px] font-semibold tracking-[-0.01em] text-text-primary leading-snug truncate">
-            {task.title || task.description}
-          </div>
-          <div className="text-[12px] font-mono text-text-quaternary mt-0.5">{task.id}</div>
-        </div>
-        {task.worktree_path && (
-          <div className="shrink-0 flex items-center gap-2 mt-0.5">
-            {!task.derived.is_done && !task.derived.is_archived && (
-              <label
-                className="flex items-center gap-1.5 cursor-pointer select-none mr-1"
-                title={`${effectiveAutoMode ? "Disable" : "Enable"} auto mode (⇧A)`}
-              >
-                <Kbd>⇧A</Kbd>
-                <span
-                  className={`text-[11px] font-medium transition-colors ${
-                    effectiveAutoMode ? "text-purple-500" : "text-text-quaternary"
-                  }`}
-                >
-                  Auto
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={effectiveAutoMode}
-                  onClick={onToggleAutoMode}
-                  className={`relative inline-flex h-[18px] w-8 items-center rounded-full transition-colors ${
-                    effectiveAutoMode ? "bg-purple-500" : "bg-surface-3"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${
-                      effectiveAutoMode ? "translate-x-[17px]" : "translate-x-[3px]"
-                    }`}
-                  />
-                </button>
-              </label>
-            )}
-            {showRunButton && runStatus && (
-              <button
-                type="button"
-                onClick={runStatus.running ? onRunStop : onRunStart}
-                disabled={runLoading}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors disabled:opacity-50 ${
-                  runStatus.running
-                    ? "text-status-success bg-status-success/10 hover:bg-status-success/20"
-                    : "text-text-quaternary hover:text-text-secondary"
-                }`}
-                title={runStatus.running ? "Stop run script" : "Run project script"}
-              >
-                {runStatus.running ? (
-                  <Square size={10} fill="currentColor" />
-                ) : (
-                  <Play size={10} fill="currentColor" />
-                )}
-                {runStatus.running ? "Stop" : "Run"}
-              </button>
-            )}
-            {transport.supportsLocalOperations && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => transport.call("open_in_terminal", { path: task.worktree_path })}
-                  className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
-                  title="Open in terminal (⇧T)"
-                >
-                  <Kbd>⇧T</Kbd>
-                  <SquareTerminal size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => transport.call("open_in_editor", { path: task.worktree_path })}
-                  className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
-                  title="Open in editor (⇧E)"
-                >
-                  <Kbd>⇧E</Kbd>
-                  <SquarePen size={14} />
-                </button>
-              </>
-            )}
-          </div>
-        )}
-        {!task.derived.is_archived && (
-          <button
-            type="button"
-            onClick={onOpenChat}
-            className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors mt-0.5"
-            title="Chat with task assistant (⇧C)"
-          >
-            <Kbd>⇧C</Kbd>
-            <MessageSquare size={14} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setShowDeleteConfirm(true)}
-          className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-status-error transition-colors mt-0.5"
-          title="Delete task (⇧D)"
-        >
-          <Kbd>⇧D</Kbd>
-          <Trash2 size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors mt-0.5"
-          title="Close (Esc)"
-        >
-          <span className={`flex items-center ${escHidden ? "invisible" : "visible"}`}>
-            <Kbd>esc</Kbd>
-          </span>
-          <X size={14} />
-        </button>
-      </div>
+  // Build actions array for the shared header.
+  const actions: DrawerAction[] = [
+    // Auto mode, run, terminal, editor — only when worktree exists
+    ...(worktreePath
+      ? [
+          ...(!task.derived.is_done && !task.derived.is_archived && onToggleAutoMode
+            ? [
+                {
+                  icon: <Zap fill={effectiveAutoMode ? "currentColor" : "none"} />,
+                  label: `${effectiveAutoMode ? "Disable" : "Enable"} auto mode`,
+                  shortLabel: "Auto",
+                  hotkeyLabel: "⇧A",
+                  onClick: onToggleAutoMode,
+                  active: effectiveAutoMode,
+                  activeClassName: "text-purple-500",
+                },
+              ]
+            : []),
+          ...(showRunButton && runStatus
+            ? [
+                {
+                  icon: runStatus.running ? (
+                    <Square fill="currentColor" />
+                  ) : (
+                    <Play fill="currentColor" />
+                  ),
+                  label: runStatus.running ? "Stop run script" : "Run project script",
+                  shortLabel: runStatus.running ? "Stop" : "Run",
+                  onClick: runStatus.running
+                    ? (onRunStop ?? (() => {}))
+                    : (onRunStart ?? (() => {})),
+                  disabled: runLoading,
+                  active: runStatus.running,
+                  activeClassName: "text-status-success",
+                },
+              ]
+            : []),
+          ...(transport.supportsLocalOperations
+            ? [
+                {
+                  icon: <SquareTerminal />,
+                  label: "Open in terminal",
+                  shortLabel: "Terminal",
+                  hotkeyLabel: "⇧T",
+                  onClick: () => transport.call("open_in_terminal", { path: worktreePath }),
+                },
+                {
+                  icon: <SquarePen />,
+                  label: "Open in editor",
+                  shortLabel: "Editor",
+                  hotkeyLabel: "⇧E",
+                  onClick: () => transport.call("open_in_editor", { path: worktreePath }),
+                },
+              ]
+            : []),
+        ]
+      : []),
+    // Chat — available without a worktree
+    ...(!task.derived.is_done && !task.derived.is_archived && onOpenChat
+      ? [
+          {
+            icon: <MessageSquare />,
+            label: "Chat with task assistant",
+            shortLabel: "Chat",
+            hotkeyLabel: "⇧C",
+            onClick: onOpenChat,
+          },
+        ]
+      : []),
+    // Delete — always available
+    {
+      icon: <Trash2 />,
+      label: "Delete task",
+      shortLabel: "Delete",
+      hotkeyLabel: "⇧D",
+      onClick: () => setShowDeleteConfirm(true),
+      destructive: true,
+    },
+  ];
 
-      {/* Row 2: Session strip + [subtask progress] + pipeline */}
-      <div className="mt-2 flex items-center gap-3 min-w-0">
+  return (
+    <>
+      <SharedDrawerHeader
+        title={task.title || task.description}
+        onClose={onClose}
+        actions={actions}
+        escHidden={escHidden}
+      />
+
+      {/* Pipeline row: session strip + subtask progress + pipeline bar */}
+      <div className="shrink-0 px-6 py-2.5 border-b border-border flex items-center gap-3 min-w-0">
         {runs.length > 0 && (
           <SessionStrip
             runs={runs}
@@ -272,6 +240,6 @@ export function DrawerHeader({
           </div>
         </div>
       </ModalPanel>
-    </div>
+    </>
   );
 }

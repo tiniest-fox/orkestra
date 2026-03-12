@@ -1,6 +1,7 @@
 //! Flow card grid for selecting an alternate workflow pipeline during task creation.
 
 import { useEffect, useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { FlowConfig, FlowStageEntry, StageConfig } from "../../types/workflow";
 
 interface FlowPickerProps {
@@ -22,6 +23,7 @@ function stageNameFromEntry(entry: FlowStageEntry): string {
 }
 
 export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProps) {
+  const isMobile = useIsMobile();
   const flowEntries = Object.entries(flows);
   const allStageNames = stages.map((s) => s.display_name ?? s.name);
 
@@ -60,7 +62,9 @@ export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProp
         <span className="font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] select-none">
           Flow
         </span>
-        <span className="font-mono text-[10px] text-text-quaternary select-none">⌥← ⌥→</span>
+        {!isMobile && (
+          <span className="font-mono text-[10px] text-text-quaternary select-none">⌥← ⌥→</span>
+        )}
       </div>
       <div
         role="radiogroup"

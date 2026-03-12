@@ -18,6 +18,7 @@ interface FeedRowActionsProps {
   onMerge: () => void;
   onOpenPr: () => void;
   onArchive: () => void;
+  fullWidth?: boolean;
 }
 
 export function FeedRowActions({
@@ -28,10 +29,13 @@ export function FeedRowActions({
   onMerge,
   onOpenPr,
   onArchive,
+  fullWidth = false,
 }: FeedRowActionsProps) {
   const config = useWorkflowConfig();
   const { getPrStatus } = usePrStatus();
   const { derived } = task;
+  const containerCls = fullWidth ? "flex gap-1.5 w-full" : "flex items-center gap-1.5";
+  const btnCls = fullWidth ? "flex-1 justify-center" : undefined;
 
   const approveVariant = (() => {
     const stage = config.stages.find((s) => s.name === derived.current_stage);
@@ -40,15 +44,8 @@ export function FeedRowActions({
 
   if (derived.is_failed) {
     return (
-      <div className="flex items-center gap-1.5">
-        <Button
-          hotkey="r"
-          variant="outline-destructive"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-        >
+      <div className={containerCls}>
+        <Button hotkey="r" variant="outline-destructive" size="sm" className={btnCls}>
           Retry
         </Button>
       </div>
@@ -57,8 +54,8 @@ export function FeedRowActions({
 
   if (derived.has_questions) {
     return (
-      <div className="flex items-center gap-1.5">
-        <Button hotkey="a" variant="outline-submit" size="sm" onClick={onAnswer}>
+      <div className={containerCls}>
+        <Button hotkey="a" variant="outline-submit" size="sm" onClick={onAnswer} className={btnCls}>
           Answer
         </Button>
       </div>
@@ -67,14 +64,15 @@ export function FeedRowActions({
 
   if (derived.needs_review) {
     return (
-      <div className="flex items-center gap-1.5">
-        <Button hotkey="r" variant={approveVariant} size="sm" onClick={onReview}>
+      <div className={containerCls}>
+        <Button hotkey="r" variant={approveVariant} size="sm" onClick={onReview} className={btnCls}>
           Review
         </Button>
         <Button
           hotkey="a"
           variant="secondary"
           size="sm"
+          className={btnCls}
           onClick={(e) => {
             e.stopPropagation();
             onApprove();
@@ -88,27 +86,11 @@ export function FeedRowActions({
 
   if (derived.is_done && !task.pr_url) {
     return (
-      <div className="flex items-center gap-1.5">
-        <Button
-          hotkey="m"
-          variant="merge-outline"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            onMerge();
-          }}
-        >
+      <div className={containerCls}>
+        <Button hotkey="m" variant="merge-outline" size="sm" onClick={onMerge} className={btnCls}>
           Merge
         </Button>
-        <Button
-          hotkey="p"
-          variant="merge-outline"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenPr();
-          }}
-        >
+        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onOpenPr} className={btnCls}>
           Open PR
         </Button>
       </div>
@@ -121,11 +103,12 @@ export function FeedRowActions({
 
     if (prStatus?.state === "merged") {
       return (
-        <div className="flex items-center gap-1.5">
+        <div className={containerCls}>
           <Button
             hotkey="x"
             variant="secondary"
             size="sm"
+            className={btnCls}
             onClick={(e) => {
               e.stopPropagation();
               onArchive();
@@ -137,6 +120,7 @@ export function FeedRowActions({
             hotkey="v"
             variant="secondary"
             size="sm"
+            className={btnCls}
             onClick={(e) => {
               e.stopPropagation();
               openExternal(prUrl);
@@ -149,14 +133,15 @@ export function FeedRowActions({
     }
 
     return (
-      <div className="flex items-center gap-1.5">
-        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onReview}>
+      <div className={containerCls}>
+        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onReview} className={btnCls}>
           PR
         </Button>
         <Button
           hotkey="v"
           variant="secondary"
           size="sm"
+          className={btnCls}
           onClick={(e) => {
             e.stopPropagation();
             openExternal(prUrl);

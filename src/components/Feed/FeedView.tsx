@@ -18,6 +18,8 @@ import { FeedHeader } from "./FeedHeader";
 import { FeedSection } from "./FeedSection";
 import { FeedStatusLine } from "./FeedStatusLine";
 import { GitHistoryDrawer } from "./GitHistoryDrawer";
+import { MobileTabBar } from "./MobileTabBar";
+import { NewTaskDrawer } from "./NewTaskDrawer";
 import { NewTaskModal } from "./NewTaskModal";
 import { taskMatchesFilter } from "./useCommandBar";
 import { useFeedNavigation } from "./useFeedNavigation";
@@ -317,29 +319,73 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
           setAssistantOpen(false);
         }}
       />
-      <ModalPanel
-        isOpen={isNewTaskOpen}
-        onClose={closeNewTask}
-        className={
-          isMobile ? "top-[10%] left-0 right-0 px-4" : "top-[15%] left-0 right-0 mx-auto w-fit"
-        }
-      >
-        {isNewTaskOpen && (
-          <NewTaskModal
-            config={config}
-            onClose={closeNewTask}
-            onCreate={async (description, autoMode, baseBranch, flow) => {
-              await transport.call("create_task", {
-                title: "",
-                description,
-                base_branch: baseBranch || null,
-                auto_mode: autoMode,
-                flow: flow ?? null,
-              });
-            }}
-          />
-        )}
-      </ModalPanel>
+      {isMobile && (
+        <MobileTabBar
+          gitActive={gitHistoryOpen}
+          assistantActive={assistantOpen || taskAssistantId !== null}
+          onGitOpen={() => {
+            setGitHistoryOpen((o) => !o);
+            setActiveTaskId(null);
+            setAssistantOpen(false);
+            setTaskAssistantId(null);
+          }}
+          onNewTask={() => {
+            setGitHistoryOpen(false);
+            setAssistantOpen(false);
+            setTaskAssistantId(null);
+            setActiveTaskId(null);
+            openNewTask();
+          }}
+          onAssistantOpen={() => {
+            setAssistantOpen((prev) => {
+              if (!prev) {
+                setActiveTaskId(null);
+                setGitHistoryOpen(false);
+                setTaskAssistantId(null);
+              }
+              return !prev;
+            });
+          }}
+        />
+      )}
+      {isMobile && isNewTaskOpen && (
+        <NewTaskDrawer
+          config={config}
+          onClose={closeNewTask}
+          onCreate={async (description, autoMode, baseBranch, flow) => {
+            await transport.call("create_task", {
+              title: "",
+              description,
+              base_branch: baseBranch || null,
+              auto_mode: autoMode,
+              flow: flow ?? null,
+            });
+          }}
+        />
+      )}
+      {!isMobile && (
+        <ModalPanel
+          isOpen={isNewTaskOpen}
+          onClose={closeNewTask}
+          className="top-[15%] left-0 right-0 mx-auto w-fit"
+        >
+          {isNewTaskOpen && (
+            <NewTaskModal
+              config={config}
+              onClose={closeNewTask}
+              onCreate={async (description, autoMode, baseBranch, flow) => {
+                await transport.call("create_task", {
+                  title: "",
+                  description,
+                  base_branch: baseBranch || null,
+                  auto_mode: autoMode,
+                  flow: flow ?? null,
+                });
+              }}
+            />
+          )}
+        </ModalPanel>
+      )}
       {(assistantOpen || taskAssistantId) && (
         <AssistantDrawer
           onClose={() => {

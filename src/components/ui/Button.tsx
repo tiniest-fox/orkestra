@@ -150,7 +150,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
   const badge = hotkeyLabel ?? (hotkey ? formatHotkeyBadge(hotkey) : undefined);
   const sizeClass = sizeStyles[size];
-  const mobileSizeOverride = isMobile && size === "sm" ? " min-h-[44px]" : "";
+  const mobileSizeOverride = isMobile ? " min-h-[36px]" : "";
 
   return (
     <button

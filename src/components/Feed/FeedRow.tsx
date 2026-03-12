@@ -58,7 +58,9 @@ export function FeedRow({
   useNavItem(task.id, rowRef);
 
   const stateClasses = [
-    isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas",
+    isFocused && !isMobile
+      ? "bg-accent-soft border-l-accent"
+      : "border-l-transparent hover:bg-canvas",
     faded && !isFocused ? "opacity-50" : "",
   ]
     .filter(Boolean)
@@ -97,9 +99,10 @@ export function FeedRow({
               {isSubtask && <span className="text-text-quaternary mr-1">↳</span>}
               {task.title || task.description}
             </div>
+            <div className="font-mono text-[10px] text-text-quaternary">{task.id}</div>
           </div>
         </div>
-        <div className="flex items-center gap-2 pl-8 min-h-[44px]">
+        <div className="flex items-center gap-2 pl-8 min-h-[36px] w-full">
           {actionsSlot ?? (
             <HotkeyScope active={isFocused ?? false}>
               <FeedRowActions
@@ -110,6 +113,7 @@ export function FeedRow({
                 onMerge={onMerge ?? (() => {})}
                 onOpenPr={onOpenPr ?? (() => {})}
                 onArchive={onArchive ?? (() => {})}
+                fullWidth
               />
             </HotkeyScope>
           )}

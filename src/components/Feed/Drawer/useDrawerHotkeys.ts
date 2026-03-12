@@ -2,6 +2,7 @@
 
 import type { RefObject } from "react";
 import { useEffect } from "react";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import type { WorkflowTaskView } from "../../../types/workflow";
 import type { StageRun } from "../../../utils/stageRuns";
 import { useNavHandler } from "../../ui/HotkeyScope";
@@ -29,7 +30,10 @@ export function useDrawerHotkeys({
   runs,
   onArchive,
 }: DrawerHotkeysOptions) {
+  const isMobile = useIsMobile();
+
   useEffect(() => {
+    if (isMobile) return;
     if (activeTab === "questions" || activeTab === "subtasks") return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -38,7 +42,7 @@ export function useDrawerHotkeys({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeTab, activeScrollRef]);
+  }, [isMobile, activeTab, activeScrollRef]);
 
   useNavHandler("j", () => activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
   useNavHandler("k", () => activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));

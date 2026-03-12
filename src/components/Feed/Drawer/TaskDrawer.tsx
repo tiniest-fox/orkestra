@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../../hooks/useAutoScroll";
+import { useIsMobile } from "../../../hooks/useIsMobile";
 import { useLogs } from "../../../hooks/useLogs";
 import { useProjectInfo } from "../../../hooks/useProjectInfo";
 import { useRunScript } from "../../../hooks/useRunScript";
@@ -235,6 +236,7 @@ export function TaskDrawer({
   onOpenChat,
 }: TaskDrawerProps) {
   const [rejectModeActive, setRejectModeActive] = useState(false);
+  const isMobile = useIsMobile();
 
   function handleRejectModeChange(active: boolean) {
     setRejectModeActive(active);
@@ -246,7 +248,7 @@ export function TaskDrawer({
       {task && (
         <ProjectInfoProvider>
           <DrawerTaskProvider taskId={task.id}>
-            <HotkeyScope active>
+            <HotkeyScope active={!isMobile}>
               <TaskDrawerBody
                 task={task}
                 allTasks={allTasks}

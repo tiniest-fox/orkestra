@@ -89,6 +89,8 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
     onToggleHistory,
   ]);
 
+  if (isMobile) return null;
+
   const hasGitInfo = currentBranch !== null;
   const latestCommit = commits[0]?.message ?? null;
   const hasSyncActions = canPush || canPull;

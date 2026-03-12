@@ -1,6 +1,6 @@
 //! Assistant chat drawer — project-level and task-scoped AI chat with session management.
 
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,6 +17,7 @@ import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer/Drawer";
+import { DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
 import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 import { QuestionCard } from "./QuestionCard";
@@ -392,48 +393,22 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
     <Drawer onClose={onClose} disableEscape={showSessionList}>
       <HotkeyScope active>
         <div className="flex flex-col h-full relative overflow-hidden">
-          {/* Header */}
-          <div className="shrink-0 flex items-center justify-between px-6 h-11 border-b border-border bg-surface">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="font-sans text-[13px] font-semibold text-text-primary shrink-0">
-                {taskId ? "Task Assistant" : "Assistant"}
+          <DrawerHeader
+            title={
+              <span className="flex items-center gap-2.5">
+                <span>{taskId ? "Task Assistant" : "Assistant"}</span>
+                {sessionTitle && (
+                  <>
+                    <span className="text-border select-none">/</span>
+                    <span className="font-mono text-[11px] font-normal text-text-tertiary truncate">
+                      {sessionTitle}
+                    </span>
+                  </>
+                )}
               </span>
-              {sessionTitle && (
-                <>
-                  <span className="text-border shrink-0 select-none">/</span>
-                  <span className="font-mono text-[11px] text-text-tertiary truncate">
-                    {sessionTitle}
-                  </span>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {!taskId && activeSessionId !== null && (
-                <Button variant="ghost" size="sm" hotkey="n" onClick={handleNewSession}>
-                  New Session
-                </Button>
-              )}
-              {!taskId && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  hotkey="s"
-                  onClick={() => setShowSessionList(true)}
-                >
-                  Sessions
-                </Button>
-              )}
-              <div className="w-px h-3 bg-border" />
-              <button
-                type="button"
-                onClick={onClose}
-                className="text-text-quaternary hover:text-text-secondary transition-colors"
-                title="Close (Esc)"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
+            }
+            onClose={onClose}
+          />
 
           {/* Message List */}
           <div
@@ -542,7 +517,32 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
               className="w-full font-mono text-[12px] bg-surface-2 border border-border rounded-md px-2.5 py-2 outline-none resize-none overflow-hidden text-text-primary placeholder:text-text-quaternary focus:border-accent/40 transition-colors leading-relaxed disabled:opacity-50 min-h-[36px] max-h-[120px]"
             />
             <div className="flex items-center justify-between mt-2">
-              <span className="font-mono text-[11px] text-accent select-none">&gt;_</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] text-accent select-none">&gt;_</span>
+                {!taskId && (
+                  <>
+                    {activeSessionId !== null && (
+                      <button
+                        type="button"
+                        onClick={handleNewSession}
+                        className="font-mono text-[10px] text-text-quaternary hover:text-text-secondary transition-colors"
+                      >
+                        New session
+                      </button>
+                    )}
+                    {activeSessionId !== null && (
+                      <span className="text-text-quaternary select-none">·</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowSessionList(true)}
+                      className="font-mono text-[10px] text-text-quaternary hover:text-text-secondary transition-colors"
+                    >
+                      Sessions
+                    </button>
+                  </>
+                )}
+              </div>
               <div className="flex items-center gap-3">
                 <span className="font-mono text-[10px] text-text-quaternary">⌘↵ to send</span>
                 {isAgentRunning && (

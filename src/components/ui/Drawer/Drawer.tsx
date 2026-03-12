@@ -1,10 +1,9 @@
 // Slide-in drawer panel anchored to the right edge of its positioned container.
 //
-// Starts below the FeedHeader (top-11 on desktop, top-[92px] on mobile for the two-row header).
-// On desktop, the 240px feed strip on the left remains interactive behind the drawer.
-// On mobile, the drawer covers the full viewport width below the header.
+// Starts below the FeedHeader (top-11). On desktop, the 240px feed strip on the
+// left remains interactive behind the drawer. On mobile, covers the full width.
 //
-// A close button (X icon) is rendered in the top-right corner for touch accessibility.
+// Close affordance is provided by DrawerHeader in each child — not by this component.
 // Swiping from the left screen edge (0-20px) rightward closes the drawer on mobile.
 //
 // The outer div is a permanent clipping container at the target dimensions.
@@ -12,7 +11,6 @@
 // the slide-in fires reliably on mount without any JS timing tricks.
 // Parent controls mounting/unmounting — there is no open/close animation on exit.
 
-import { X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 
@@ -77,7 +75,7 @@ export function Drawer({ onClose, disableEscape = false, children }: DrawerProps
   return (
     // Clipping container: always occupies the target area, clips the slide animation.
     <div
-      className={`absolute ${isMobile ? "top-[92px]" : "top-11"} ${isMobile ? "left-0" : "left-60"} right-0 bottom-0 z-30 overflow-hidden`}
+      className={`absolute ${isMobile ? "top-0 left-0" : "top-11 left-60"} right-0 bottom-0 z-30 overflow-hidden`}
     >
       <div
         ref={panelRef}
@@ -86,16 +84,6 @@ export function Drawer({ onClose, disableEscape = false, children }: DrawerProps
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        {isMobile && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute top-3 right-3 z-10 w-11 h-11 flex items-center justify-center rounded-full bg-surface-2 text-text-secondary hover:text-text-primary transition-colors"
-            aria-label="Close drawer"
-          >
-            <X size={16} />
-          </button>
-        )}
         {children}
       </div>
     </div>

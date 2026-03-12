@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { parseOptionIndex } from "../../../lib/optionKey";
 import { useTransport } from "../../../transport";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
-import type { DraftComment, PrTabFooterState } from "./drawerTabs";
+import type { DraftComment, DrawerTabId, PrTabFooterState } from "./drawerTabs";
 
 // ============================================================================
 // Types
@@ -84,7 +84,7 @@ export interface TaskDrawerState {
   handleEnterChatMode: () => void;
 
   // -- Refs --
-  feedbackRef: React.RefObject<HTMLInputElement>;
+  feedbackRef: React.RefObject<HTMLTextAreaElement>;
   submitRef: React.RefObject<HTMLButtonElement>;
 
   // -- Action handlers --
@@ -121,7 +121,11 @@ function mapDraftsToPrComments(drafts: DraftComment[]) {
 // Hook
 // ============================================================================
 
-export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void): TaskDrawerState {
+export function useTaskDrawerState(
+  task: WorkflowTaskView,
+  onClose: () => void,
+  setActiveTab: (tab: DrawerTabId) => void,
+): TaskDrawerState {
   const transport = useTransport();
   const questions = task.derived.pending_questions;
 
@@ -208,7 +212,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   }, [task.derived.is_failed, task.derived.is_blocked]);
 
   // -- Feedback input auto-focus --
-  const feedbackRef = useRef<HTMLInputElement>(null);
+  const feedbackRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (rejectMode) feedbackRef.current?.focus();
   }, [rejectMode]);
@@ -346,7 +350,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
 
   const handleEnterChatMode = useCallback(() => {
     setShowChatInput(true);
-  }, []);
+    setActiveTab("logs");
+  }, [setActiveTab]);
 
   // Reset chat state when task changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change

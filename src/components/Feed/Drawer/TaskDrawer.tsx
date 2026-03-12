@@ -85,7 +85,7 @@ function TaskDrawerBody({
   }, [task.id]);
 
   // -- Action state from hook --
-  const state = useTaskDrawerState(task, onClose);
+  const state = useTaskDrawerState(task, onClose, (tab) => setActiveTab(tab));
   const { rejectMode } = state;
 
   useEffect(() => {

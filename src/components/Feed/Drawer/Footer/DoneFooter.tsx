@@ -52,7 +52,7 @@ export function DoneFooter({
 }: DoneFooterProps) {
   if (updateMode) {
     return (
-      <FooterBar className="flex-col h-auto py-3 px-4 gap-2">
+      <FooterBar paddedBottom className="flex-col h-auto pt-3 gap-2">
         <textarea
           ref={updateNotesRef}
           value={updateNotes}
@@ -71,10 +71,10 @@ export function DoneFooter({
           rows={2}
           className="w-full font-sans text-[13px] text-text-primary placeholder:text-text-quaternary bg-surface-2 border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
         />
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full">
           <Button
             variant="primary"
-            fullWidth
+            className="flex-1 justify-center"
             onClick={onRequestUpdate}
             disabled={loading || !updateNotes.trim()}
           >
@@ -87,7 +87,12 @@ export function DoneFooter({
               </>
             )}
           </Button>
-          <Button variant="secondary" onClick={onExitUpdateMode} disabled={loading}>
+          <Button
+            variant="secondary"
+            className="flex-1 justify-center"
+            onClick={onExitUpdateMode}
+            disabled={loading}
+          >
             Cancel
           </Button>
         </div>

@@ -30,7 +30,7 @@ export function ReviewFooter({
         Approve
       </Button>
       <Button hotkey="r" variant="secondary" onClick={onEnterRejectMode} disabled={loading}>
-        Reject
+        Reject…
       </Button>
       <Button hotkey="c" variant="secondary" onClick={onEnterChatMode} disabled={loading}>
         Chat

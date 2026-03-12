@@ -1,10 +1,11 @@
 //! Assistant chat drawer — project-level and task-scoped AI chat with session management.
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowUp, History, Plus, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { usePolling } from "../../hooks/usePolling";
 import { useTransport } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
@@ -17,7 +18,7 @@ import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer/Drawer";
-import { DrawerHeader } from "../ui/Drawer/DrawerHeader";
+import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
 import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 import { QuestionCard } from "./QuestionCard";
@@ -171,6 +172,7 @@ interface AssistantDrawerProps {
 
 export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
   const transport = useTransport();
+  const isMobile = useIsMobile();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -378,16 +380,34 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
     setInputValue("");
   }, []);
 
-  // -- Textarea keydown: Cmd+Enter to send --
+  // -- Textarea keydown: Cmd+Enter to send, Cmd+. to stop --
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && e.metaKey) {
       e.preventDefault();
       handleSend();
     }
+    if (e.key === "." && e.metaKey && isAgentRunning) {
+      e.preventDefault();
+      handleStop();
+    }
   }
 
   const displayMessages = buildDisplayMessages(logs);
   const sessionTitle = activeSession?.title ?? null;
+
+  const headerActions: DrawerAction[] = taskId
+    ? []
+    : [
+        ...(activeSessionId !== null
+          ? [{ icon: <Plus />, label: "New session", shortLabel: "New", onClick: handleNewSession }]
+          : []),
+        {
+          icon: <History />,
+          label: "Sessions",
+          shortLabel: "Sessions",
+          onClick: () => setShowSessionList(true),
+        },
+      ];
 
   return (
     <Drawer onClose={onClose} disableEscape={showSessionList}>
@@ -408,6 +428,7 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
               </span>
             }
             onClose={onClose}
+            actions={headerActions}
           />
 
           {/* Message List */}
@@ -505,56 +526,50 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
           </div>
 
           {/* Compose Area */}
-          <div className="shrink-0 border-t border-border bg-surface px-6 py-3">
-            <textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={sending}
-              placeholder={sending ? "Sending…" : "Ask the assistant…"}
-              rows={1}
-              className="w-full font-mono text-[12px] bg-surface-2 border border-border rounded-md px-2.5 py-2 outline-none resize-none overflow-hidden text-text-primary placeholder:text-text-quaternary focus:border-accent/40 transition-colors leading-relaxed disabled:opacity-50 min-h-[36px] max-h-[120px]"
-            />
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-accent select-none">&gt;_</span>
-                {!taskId && (
-                  <>
-                    {activeSessionId !== null && (
-                      <button
-                        type="button"
-                        onClick={handleNewSession}
-                        className="font-mono text-[10px] text-text-quaternary hover:text-text-secondary transition-colors"
-                      >
-                        New session
-                      </button>
-                    )}
-                    {activeSessionId !== null && (
-                      <span className="text-text-quaternary select-none">·</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowSessionList(true)}
-                      className="font-mono text-[10px] text-text-quaternary hover:text-text-secondary transition-colors"
-                    >
-                      Sessions
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-[10px] text-text-quaternary">⌘↵ to send</span>
-                {isAgentRunning && (
-                  <button
-                    type="button"
-                    onClick={handleStop}
-                    className="font-mono text-[10px] text-status-error hover:underline transition-colors"
-                  >
-                    Stop
-                  </button>
-                )}
-              </div>
+          <div className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] bg-canvas">
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isAgentRunning || sending}
+                placeholder={isAgentRunning ? "Assistant is responding…" : "Ask the assistant…"}
+                rows={1}
+                className="flex-1 font-sans text-[13px] bg-surface border border-border rounded-xl px-3.5 py-2.5 outline-none resize-none overflow-hidden text-text-primary placeholder:text-text-quaternary focus:border-text-quaternary transition-colors leading-relaxed disabled:opacity-40 min-h-[42px] max-h-[120px]"
+              />
+              {isAgentRunning ? (
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  aria-label="Stop"
+                  className={`shrink-0 h-10 rounded-full bg-status-warning hover:opacity-90 flex items-center justify-center text-white transition-opacity gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
+                >
+                  <Square size={13} fill="currentColor" />
+                  {!isMobile && (
+                    <span className="font-mono text-[11px] font-semibold">
+                      Stop
+                      <span className="opacity-60 ml-1.5">⌘.</span>
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || sending}
+                  aria-label="Send"
+                  className={`shrink-0 h-10 rounded-full bg-accent hover:bg-accent-hover flex items-center justify-center text-white transition-colors disabled:opacity-30 gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
+                >
+                  <ArrowUp size={15} />
+                  {!isMobile && (
+                    <span className="font-mono text-[11px] font-semibold">
+                      Send
+                      <span className="opacity-60 ml-1.5">⌘↵</span>
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 

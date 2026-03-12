@@ -85,7 +85,7 @@ function TaskDrawerBody({
   }, [task.id]);
 
   // -- Action state from hook --
-  const state = useTaskDrawerState(task, onClose, (tab) => setActiveTab(tab));
+  const state = useTaskDrawerState(task, onClose);
   const { rejectMode } = state;
 
   useEffect(() => {
@@ -94,7 +94,7 @@ function TaskDrawerBody({
 
   // -- Logs (logs tab) --
   const showLogs = activeTab === "logs" && selectedRunIdx === null;
-  const isChatting = task.derived.is_chatting || state.showChatInput;
+  const isChatting = task.derived.is_chatting;
   const { logs, error: logsError } = useLogs(task, showLogs, undefined, isChatting);
   const logScrollRef = useRef<HTMLDivElement>(null);
   const { containerRef: logAutoScrollRef, handleScroll: handleLogScroll } =

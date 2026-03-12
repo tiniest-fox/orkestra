@@ -1,11 +1,10 @@
 //! Assistant chat drawer — project-level and task-scoped AI chat with session management.
 
-import { ArrowLeft, ArrowUp, History, Plus, Square } from "lucide-react";
+import { History, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
-import { useIsMobile } from "../../hooks/useIsMobile";
 import { usePolling } from "../../hooks/usePolling";
 import { useTransport } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
@@ -16,10 +15,10 @@ import { relativeTime } from "../../utils/relativeTime";
 import { toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
-import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
+import { ChatComposeArea } from "./ChatComposeArea";
 import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 import { QuestionCard } from "./QuestionCard";
 
@@ -172,7 +171,6 @@ interface AssistantDrawerProps {
 
 export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
   const transport = useTransport();
-  const isMobile = useIsMobile();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -263,15 +261,6 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
   }, [transport, activeSessionId, taskId, fetchTaskSession]);
 
   usePolling(isAgentRunning ? fetchLogs : null, 1000);
-
-  // -- Textarea auto-resize --
-  // biome-ignore lint/correctness/useExhaustiveDependencies: inputValue is the intentional resize trigger
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [inputValue]);
 
   // -- Escape closes session list before panel --
   useEffect(() => {
@@ -379,18 +368,6 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
     setShowSessionList(false);
     setInputValue("");
   }, []);
-
-  // -- Textarea keydown: Cmd+Enter to send, Cmd+. to stop --
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && e.metaKey) {
-      e.preventDefault();
-      handleSend();
-    }
-    if (e.key === "." && e.metaKey && isAgentRunning) {
-      e.preventDefault();
-      handleStop();
-    }
-  }
 
   const displayMessages = buildDisplayMessages(logs);
   const sessionTitle = activeSession?.title ?? null;
@@ -526,52 +503,17 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
           </div>
 
           {/* Compose Area */}
-          <div className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] bg-canvas">
-            <div className="flex items-end gap-2">
-              <textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={isAgentRunning || sending}
-                placeholder={isAgentRunning ? "Assistant is responding…" : "Ask the assistant…"}
-                rows={1}
-                className="flex-1 font-sans text-[13px] bg-surface border border-border rounded-xl px-3.5 py-2.5 outline-none resize-none overflow-hidden text-text-primary placeholder:text-text-quaternary focus:border-text-quaternary transition-colors leading-relaxed disabled:opacity-40 min-h-[42px] max-h-[120px]"
-              />
-              {isAgentRunning ? (
-                <button
-                  type="button"
-                  onClick={handleStop}
-                  aria-label="Stop"
-                  className={`shrink-0 h-10 rounded-full bg-status-warning hover:opacity-90 flex items-center justify-center text-white transition-opacity gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
-                >
-                  <Square size={13} fill="currentColor" />
-                  {!isMobile && (
-                    <span className="font-mono text-[11px] font-semibold">
-                      Stop
-                      <span className="opacity-60 ml-1.5">⌘.</span>
-                    </span>
-                  )}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={!inputValue.trim() || sending}
-                  aria-label="Send"
-                  className={`shrink-0 h-10 rounded-full bg-accent hover:bg-accent-hover flex items-center justify-center text-white transition-colors disabled:opacity-30 gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
-                >
-                  <ArrowUp size={15} />
-                  {!isMobile && (
-                    <span className="font-mono text-[11px] font-semibold">
-                      Send
-                      <span className="opacity-60 ml-1.5">⌘↵</span>
-                    </span>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
+          <ChatComposeArea
+            value={inputValue}
+            onChange={setInputValue}
+            textareaRef={textareaRef}
+            sending={sending}
+            agentActive={isAgentRunning}
+            onSend={handleSend}
+            onStop={handleStop}
+            placeholder="Ask the assistant…"
+            className="shrink-0 px-4 pt-2 pb-4 bg-canvas"
+          />
 
           {/* Session List Overlay — slides in from right (project mode only) */}
           <div
@@ -580,31 +522,20 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
               !taskId && showSessionList ? "translate-x-0" : "translate-x-full",
             ].join(" ")}
           >
-            <div className="shrink-0 flex items-center px-6 h-11 border-b border-border">
-              <button
-                type="button"
-                onClick={() => setShowSessionList(false)}
-                className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary hover:text-text-secondary transition-colors mr-auto"
-              >
-                <ArrowLeft size={12} />
-                Back
-              </button>
-              <span className="font-sans text-[13px] font-semibold text-text-primary absolute left-1/2 -translate-x-1/2">
-                Sessions
-              </span>
-            </div>
+            <DrawerHeader
+              title="Sessions"
+              onClose={onClose}
+              onBack={() => setShowSessionList(false)}
+              actions={[
+                {
+                  icon: <Plus />,
+                  label: "New session",
+                  shortLabel: "New",
+                  onClick: handleNewSession,
+                },
+              ]}
+            />
             <div className="flex-1 overflow-y-auto">
-              <div className="px-4 py-3 border-b border-border">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  hotkey="n"
-                  onClick={handleNewSession}
-                  fullWidth
-                >
-                  New Session
-                </Button>
-              </div>
               {sessions.length === 0 && (
                 <div className="p-4 font-mono text-[11px] text-text-quaternary">
                   No sessions yet.

@@ -52,7 +52,7 @@ export function DoneFooter({
 }: DoneFooterProps) {
   if (updateMode) {
     return (
-      <FooterBar paddedBottom className="flex-col h-auto pt-3 gap-2">
+      <FooterBar className="flex-col h-auto pt-3 pb-3 gap-2">
         <textarea
           ref={updateNotesRef}
           value={updateNotes}

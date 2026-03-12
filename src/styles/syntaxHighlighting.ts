@@ -12,21 +12,29 @@
 //! Dark mode block adjusts hues for legibility on dark backgrounds.
 
 export const FORGE_SYNTAX_OVERRIDES = `
+/* ── Base — fallthrough to near-black for any unmatched token ─────────────── */
+
+[class*="syn-"] { color: #1C1820; }
+
+@media (prefers-color-scheme: dark) {
+  [class*="syn-"] { color: var(--forge-text-primary); }
+}
+
 /* ── Light mode (default) ─────────────────────────────────────────────────── */
 
 /* -- Comments — intentionally muted, italic -- */
 .syn-comment,
-.syn-comment span { color: #A090B8 !important; font-style: italic !important; }
+.syn-comment span { color: #7A6896 !important; font-style: italic !important; }
 
-/* -- Strings — sky blue (#0284C7), passive/data feel -- */
+/* -- Strings — deep sky blue, passive/data feel -- */
 [class*="syn-string"],
-[class*="syn-string"] span { color: #0284C7 !important; }
+[class*="syn-string"] span { color: #075985 !important; }
 
-/* -- String escapes — teal (#0D9488), distinct from string body -- */
+/* -- String escapes — deeper teal, distinct from string body -- */
 [class*="syn-string"] [class*="syn-escape"],
-[class*="syn-constant"][class*="syn-character"][class*="syn-escape"] { color: #0D9488 !important; }
+[class*="syn-constant"][class*="syn-character"][class*="syn-escape"] { color: #0F766E !important; }
 
-/* -- Keywords and storage — vivid violet (#7C3AED) -- */
+/* -- Keywords and storage — deep violet -- */
 .syn-keyword,
 .syn-keyword span,
 .syn-storage,
@@ -40,33 +48,41 @@ export const FORGE_SYNTAX_OVERRIDES = `
 .syn-keyword.syn-operator,
 .syn-keyword.syn-operator span,
 .syn-keyword.syn-other,
-.syn-keyword.syn-other span { color: #7C3AED !important; }
+.syn-keyword.syn-other span { color: #6D28D9 !important; }
 
-/* -- Numeric constants — deep amber (#C96800) -- */
+/* -- Numeric constants — rich amber -- */
 .syn-constant.syn-numeric,
-.syn-constant.syn-numeric span { color: #C96800 !important; }
+.syn-constant.syn-numeric span { color: #B45309 !important; }
 
-/* -- Language constants (true/false/nil/null) — peach (#EA580C) -- */
+/* -- Language constants (true/false/nil/null) — deep orange -- */
 .syn-constant.syn-language,
-.syn-constant.syn-language span { color: #EA580C !important; }
+.syn-constant.syn-language span { color: #C2410C !important; }
 
-/* -- Character constants — teal (#0D9488) -- */
+/* -- Character constants — deep teal -- */
 .syn-constant.syn-character,
-.syn-constant.syn-character span { color: #0D9488 !important; }
+.syn-constant.syn-character span { color: #0F766E !important; }
 
-/* -- Other constants — amber -- */
+/* -- Other constants — rich amber -- */
 .syn-constant.syn-other,
-.syn-constant.syn-other span { color: #C96800 !important; }
+.syn-constant.syn-other span { color: #B45309 !important; }
 
-/* -- Function names — royal blue (#1D64D8), deeper than sky strings -- */
+/* -- Function names — deep blue -- */
 .syn-entity.syn-name.syn-function,
-.syn-entity.syn-name.syn-function span { color: #1D64D8 !important; }
+.syn-entity.syn-name.syn-function span { color: #1D4ED8 !important; }
 
-/* -- Support/builtin functions — same blue family, slightly lighter -- */
+/* -- Support/builtin functions — same blue family -- */
 .syn-support.syn-function,
-.syn-support.syn-function span { color: #2B74D6 !important; }
+.syn-support.syn-function span { color: #1E5FBF !important; }
 
-/* -- Type / class names — golden amber -- */
+/* -- Support constants (CSS property values: flex, bold, none…) — deep orange -- */
+.syn-support.syn-constant,
+.syn-support.syn-constant span { color: #C2410C !important; }
+
+/* -- CSS selectors — deep violet -- */
+.syn-meta.syn-selector.syn-css,
+.syn-meta.syn-selector.syn-css span { color: #6D28D9 !important; }
+
+/* -- Type / class names — deep golden amber -- */
 .syn-entity.syn-name.syn-type,
 .syn-entity.syn-name.syn-type span,
 .syn-entity.syn-name.syn-class,
@@ -74,45 +90,45 @@ export const FORGE_SYNTAX_OVERRIDES = `
 .syn-support.syn-type,
 .syn-support.syn-type span,
 .syn-support.syn-class,
-.syn-support.syn-class span { color: #B8850A !important; }
+.syn-support.syn-class span { color: #92600A !important; }
 
-/* -- HTML/JSX tag names — dark pink-red (#C42444) -- */
+/* -- HTML/JSX tag names — deep rose -- */
 .syn-entity.syn-name.syn-tag,
-.syn-entity.syn-name.syn-tag span { color: #C42444 !important; }
+.syn-entity.syn-name.syn-tag span { color: #9F1239 !important; }
 
-/* -- HTML/JSX attribute names — rust-orange -- */
+/* -- HTML/JSX attribute names — deep rust -- */
 .syn-entity.syn-other.syn-attribute-name,
-.syn-entity.syn-other.syn-attribute-name span { color: #AD5C1A !important; }
+.syn-entity.syn-other.syn-attribute-name span { color: #9A3412 !important; }
 
-/* -- Variable parameters — vivid violet, lighter than keyword violet -- */
+/* -- Variable parameters — vivid purple, distinct from keyword violet -- */
 .syn-variable.syn-parameter,
-.syn-variable.syn-parameter span { color: #8B5CF6 !important; }
+.syn-variable.syn-parameter span { color: #9333EA !important; }
 
 /* -- Other variables — base text, don't over-color -- */
 .syn-variable,
 .syn-variable span { color: #1C1820 !important; }
 
-/* -- Punctuation — intentionally muted purple-neutral -- */
+/* -- Punctuation — muted but readable -- */
 .syn-punctuation,
 .syn-punctuation span,
 .syn-meta.syn-brace,
-.syn-meta.syn-brace span { color: #7A7090 !important; }
+.syn-meta.syn-brace span { color: #5C546E !important; }
 
-/* -- Preprocessor / macros — peach (#EA580C) -- */
+/* -- Preprocessor / macros — deep orange -- */
 .syn-meta.syn-preprocessor,
 .syn-meta.syn-preprocessor span,
 .syn-support.syn-other.syn-macro,
-.syn-support.syn-other.syn-macro span { color: #EA580C !important; }
+.syn-support.syn-other.syn-macro span { color: #C2410C !important; }
 
-/* -- Module / namespace names — golden amber -- */
+/* -- Module / namespace names — deep golden amber -- */
 .syn-entity.syn-name.syn-module,
 .syn-entity.syn-name.syn-module span,
 .syn-entity.syn-name.syn-namespace,
-.syn-entity.syn-name.syn-namespace span { color: #B8850A !important; }
+.syn-entity.syn-name.syn-namespace span { color: #92600A !important; }
 
-/* -- Invalid tokens — red (#DC2626) -- */
+/* -- Invalid tokens — deep red -- */
 .syn-invalid,
-.syn-invalid span { color: #DC2626 !important; }
+.syn-invalid span { color: #B91C1C !important; }
 
 /* ── Dark mode ────────────────────────────────────────────────────────────── */
 
@@ -168,6 +184,14 @@ export const FORGE_SYNTAX_OVERRIDES = `
   /* -- Support/builtin functions -- */
   .syn-support.syn-function,
   .syn-support.syn-function span { color: #7AB8F5 !important; }
+
+  /* -- Support constants (CSS property values) -- */
+  .syn-support.syn-constant,
+  .syn-support.syn-constant span { color: #F97316 !important; }
+
+  /* -- CSS selectors -- */
+  .syn-meta.syn-selector.syn-css,
+  .syn-meta.syn-selector.syn-css span { color: #A78BFA !important; }
 
   /* -- Type / class names — golden amber, brightened -- */
   .syn-entity.syn-name.syn-type,

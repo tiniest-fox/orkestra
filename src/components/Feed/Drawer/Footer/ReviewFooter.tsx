@@ -8,7 +8,6 @@ interface ReviewFooterProps {
   loading: boolean;
   onApprove: () => void;
   onEnterRejectMode: () => void;
-  onEnterChatMode: () => void;
 }
 
 export function ReviewFooter({
@@ -16,7 +15,6 @@ export function ReviewFooter({
   loading,
   onApprove,
   onEnterRejectMode,
-  onEnterChatMode,
 }: ReviewFooterProps) {
   return (
     <FooterBar>
@@ -31,9 +29,6 @@ export function ReviewFooter({
       </Button>
       <Button hotkey="r" variant="secondary" onClick={onEnterRejectMode} disabled={loading}>
         Reject…
-      </Button>
-      <Button hotkey="c" variant="secondary" onClick={onEnterChatMode} disabled={loading}>
-        Chat
       </Button>
     </FooterBar>
   );

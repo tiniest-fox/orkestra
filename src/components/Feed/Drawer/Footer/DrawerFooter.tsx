@@ -92,19 +92,10 @@ export function DrawerFooter({
       />
     );
   }
-  if (
-    (task.derived.is_chatting || state.showChatInput) &&
-    (task.derived.needs_review || task.derived.is_interrupted) &&
-    activeTab === "logs"
-  ) {
+  if (task.derived.is_chatting && activeTab === "logs") {
     return (
       <ChatFooter
-        chatMessage={state.chatMessage}
-        onChatMessageChange={state.setChatMessage}
-        chatTextareaRef={state.chatTextareaRef}
-        chatSending={state.chatSending}
         chatAgentActive={task.derived.chat_agent_active}
-        onSendChat={state.handleSendChat}
         onReturnToWork={state.handleReturnToWork}
         onApprove={state.handleApprove}
         loading={state.loading}
@@ -133,23 +124,13 @@ export function DrawerFooter({
         loading={state.loading}
         onApprove={state.handleApprove}
         onEnterRejectMode={state.enterRejectMode}
-        onEnterChatMode={state.handleEnterChatMode}
       />
     );
   }
   if (task.derived.is_interrupted) {
-    return (
-      <InterruptedFooter
-        resumeMessage={state.resumeMessage}
-        onResumeMessageChange={state.setResumeMessage}
-        resumeTextareaRef={state.resumeTextareaRef}
-        resuming={state.resuming}
-        onResume={state.handleResume}
-        onEnterChatMode={state.handleEnterChatMode}
-      />
-    );
+    return <InterruptedFooter resuming={state.resuming} onResume={state.handleResume} />;
   }
-  if (task.derived.is_working) {
+  if (task.derived.is_working && activeTab !== "logs") {
     return <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />;
   }
   if (task.derived.is_done) {

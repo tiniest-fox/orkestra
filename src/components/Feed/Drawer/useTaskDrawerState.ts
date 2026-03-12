@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { parseOptionIndex } from "../../../lib/optionKey";
 import { useTransport } from "../../../transport";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
-import type { DraftComment, DrawerTabId, PrTabFooterState } from "./drawerTabs";
+import type { DraftComment, PrTabFooterState } from "./drawerTabs";
 
 // ============================================================================
 // Types
@@ -77,11 +77,10 @@ export interface TaskDrawerState {
   setChatMessage: (v: string) => void;
   chatTextareaRef: React.RefObject<HTMLTextAreaElement>;
   chatSending: boolean;
-  showChatInput: boolean;
   chatError: string | null;
   handleSendChat: () => Promise<void>;
+  handleChatStop: () => Promise<void>;
   handleReturnToWork: () => Promise<void>;
-  handleEnterChatMode: () => void;
 
   // -- Refs --
   feedbackRef: React.RefObject<HTMLTextAreaElement>;
@@ -121,11 +120,7 @@ function mapDraftsToPrComments(drafts: DraftComment[]) {
 // Hook
 // ============================================================================
 
-export function useTaskDrawerState(
-  task: WorkflowTaskView,
-  onClose: () => void,
-  setActiveTab: (tab: DrawerTabId) => void,
-): TaskDrawerState {
+export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void): TaskDrawerState {
   const transport = useTransport();
   const questions = task.derived.pending_questions;
 
@@ -344,30 +339,16 @@ export function useTaskDrawerState(
   // -- Chat mode --
   const [chatMessage, setChatMessage] = useState("");
   const [chatSending, setChatSending] = useState(false);
-  const [showChatInput, setShowChatInput] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const handleEnterChatMode = useCallback(() => {
-    setShowChatInput(true);
-    setActiveTab("logs");
-  }, [setActiveTab]);
 
   // Reset chat state when task changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
   useEffect(() => {
     setChatMessage("");
     setChatSending(false);
-    setShowChatInput(false);
     setChatError(null);
   }, [task.id]);
-
-  // Reset local chat input flag when task is no longer in review/interrupted
-  useEffect(() => {
-    if (!task.derived.needs_review && !task.derived.is_interrupted) {
-      setShowChatInput(false);
-    }
-  }, [task.derived.needs_review, task.derived.is_interrupted]);
 
   const handleSendChat = useCallback(async () => {
     if (!chatMessage.trim() || chatSending) return;
@@ -384,17 +365,25 @@ export function useTaskDrawerState(
     }
   }, [transport, task.id, chatMessage, chatSending]);
 
+  const handleChatStop = useCallback(async () => {
+    try {
+      await transport.call("stage_chat_stop", { task_id: task.id });
+    } catch (err) {
+      console.error("Failed to stop chat agent:", err);
+    }
+  }, [transport, task.id]);
+
   const handleReturnToWork = useCallback(async () => {
     setLoading(true);
     setChatError(null);
     const pendingMessage = chatMessage.trim() || null;
     try {
       await transport.call("return_to_work", { task_id: task.id, message: pendingMessage });
-      setShowChatInput(false);
       setChatMessage("");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setChatError(message);
+    } finally {
       setLoading(false);
     }
   }, [transport, task.id, chatMessage]);
@@ -645,11 +634,10 @@ export function useTaskDrawerState(
     setChatMessage,
     chatTextareaRef,
     chatSending,
-    showChatInput,
     chatError,
     handleSendChat,
+    handleChatStop,
     handleReturnToWork,
-    handleEnterChatMode,
     feedbackRef,
     submitRef,
     handleApprove,

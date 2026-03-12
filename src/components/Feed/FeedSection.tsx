@@ -43,7 +43,7 @@ export function FeedSection({
 
   return (
     <div>
-      <div className={`sticky top-0 z-10 px-6 ${isMobile ? "pt-5" : "pt-4"} bg-canvas`}>
+      <div className={`sticky top-0 z-10 px-6 ${isMobile ? "pt-3" : "pt-4"} bg-canvas`}>
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-accent">
             {section.label}
@@ -52,7 +52,7 @@ export function FeedSection({
             {totalCount}
           </span>
         </div>
-        <div className="border-b mt-3 mx-0 border-border" />
+        <div className={`border-b ${isMobile ? "mt-2" : "mt-3"} mx-0 border-border`} />
       </div>
       <div>
         {section.tasks.map((task) => {

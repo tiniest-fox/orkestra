@@ -5,7 +5,7 @@
 //         separated by dividers, each flex-1.
 // The caller passes actions[] once; layout is handled automatically.
 
-import { X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { Kbd } from "../Kbd";
@@ -30,12 +30,20 @@ export interface DrawerAction {
 interface DrawerHeaderProps {
   title: ReactNode;
   onClose: () => void;
+  /** When provided, renders a back-arrow button to the left of the title. */
+  onBack?: () => void;
   actions?: DrawerAction[];
   /** Hides the esc hint without collapsing its space (prevents layout jump in reject mode). */
   escHidden?: boolean;
 }
 
-export function DrawerHeader({ title, onClose, actions = [], escHidden }: DrawerHeaderProps) {
+export function DrawerHeader({
+  title,
+  onClose,
+  onBack,
+  actions = [],
+  escHidden,
+}: DrawerHeaderProps) {
   const isMobile = useIsMobile();
   const hasActions = actions.length > 0;
 
@@ -43,6 +51,16 @@ export function DrawerHeader({ title, onClose, actions = [], escHidden }: Drawer
     <div className="shrink-0 border-b border-border">
       {/* Title row — always h-11 */}
       <div className="flex items-center h-11 px-6 gap-3">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="shrink-0 -ml-1 flex items-center justify-center w-6 h-6 text-text-tertiary hover:text-text-secondary transition-colors"
+          >
+            <ArrowLeft size={14} />
+          </button>
+        )}
         <div className="flex-1 min-w-0 font-sans text-[13px] font-semibold text-text-primary truncate">
           {title}
         </div>

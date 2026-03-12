@@ -190,7 +190,7 @@ export function DrawerDiffTab({
                 <DiffFileList files={diff.files} activePath={activePath} onJumpTo={handleJumpTo} />
               </div>
             )}
-            <div ref={setScrollRef} className="flex-1 overflow-y-auto relative">
+            <div ref={setScrollRef} className="flex-1 overflow-y-auto relative bg-surface">
               {findBarOpen && (
                 <DiffFindBar
                   query={search.query}

@@ -39,7 +39,7 @@ export function DiffLine({
       ? "bg-[var(--forge-diff-add-gutter)]"
       : line.line_type === "delete"
         ? "bg-[var(--forge-diff-del-gutter)]"
-        : "bg-canvas";
+        : "bg-surface";
 
   const prefixColor =
     line.line_type === "add"

@@ -79,7 +79,7 @@ export function Drawer({ onClose, disableEscape = false, children }: DrawerProps
     >
       <div
         ref={panelRef}
-        className="absolute inset-0 bg-surface border-l border-border animate-drawer-in"
+        className="absolute inset-0 bg-surface border-l border-border animate-drawer-in pb-[env(safe-area-inset-bottom)]"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}

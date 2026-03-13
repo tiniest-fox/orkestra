@@ -1,8 +1,12 @@
 //! Diff content — all files stacked for continuous scrolling with file-level virtualization.
+//!
+//! Uses Virtua's Virtualizer for auto-measured variable-height items. No height estimation
+//! is needed — Virtua measures each file section after render via ResizeObserver, so wrapped
+//! lines, collapsed files, and draft comments all resolve to the correct height automatically.
 
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { GitCompare } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { Virtualizer, type VirtualizerHandle } from "virtua";
 import type { HighlightedFileDiff } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
 import { EmptyState } from "../ui/EmptyState";
@@ -11,8 +15,6 @@ import { FileSection } from "./FileSection";
 import type { DraftComment } from "./types";
 import { FILE_HEADER_BUTTON_BASE } from "./types";
 import type { DiffMatch } from "./useDiffSearch";
-
-const HEADER_HEIGHT = 36;
 
 export interface DiffContentHandle {
   scrollToFile(path: string): void;
@@ -23,7 +25,7 @@ interface DiffContentProps {
   comments: PrComment[];
   activePath: string | null;
   collapsedPaths: Set<string>;
-  /** The parent's overflow-scroll container. DiffContent does NOT render its own overflow wrapper. */
+  /** The parent's overflow-scroll container. Used for scroll event tracking. */
   scrollElement: HTMLElement | null;
   onToggleCollapsed: (path: string) => void;
   /** Called when the topmost visible file changes. */
@@ -55,17 +57,6 @@ interface DiffContentProps {
   currentMatch?: DiffMatch | null;
 }
 
-function estimateFileHeight(file: HighlightedFileDiff, collapsed: Set<string>): number {
-  const HUNK_HEADER_HEIGHT = 28;
-  const LINE_HEIGHT = 20;
-
-  if (collapsed.has(file.path)) return HEADER_HEIGHT;
-  if (file.is_binary) return 72;
-
-  const totalLines = file.hunks.reduce((sum, h) => sum + h.lines.length, 0);
-  return HEADER_HEIGHT + totalLines * LINE_HEIGHT + file.hunks.length * HUNK_HEADER_HEIGHT;
-}
-
 export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(function DiffContent(
   {
     files,
@@ -89,6 +80,7 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
   ref,
 ) {
   const isScrollingRef = useRef(false);
+  const virtualizerRef = useRef<VirtualizerHandle>(null);
 
   const commentsByFile = useMemo(() => {
     const map = new Map<string, Map<number, PrComment[]>>();
@@ -119,34 +111,29 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
     return map;
   }, [draftComments]);
 
-  const virtualizer = useVirtualizer({
-    count: files.length,
-    getScrollElement: () => scrollElement,
-    estimateSize: (index) => estimateFileHeight(files[index], collapsedPaths),
-    overscan: 3,
-  });
-
-  // Re-measure when collapsed state changes (sizes changed).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: adding virtualizer to the dep array causes an infinite measure loop
+  // Track the topmost visible file by listening to scroll events on the container.
+  // Since VirtualizerHandle has no findStartIndex, we compute it: find the last file
+  // whose getItemOffset is <= current scrollOffset.
   useEffect(() => {
-    virtualizer.measure();
-  }, [collapsedPaths]);
-
-  const virtualItems = virtualizer.getVirtualItems();
-
-  // Track the topmost visible file as the active path.
-  // Suppressed during programmatic scrolls to prevent sidebar flickering.
-  // virtualItems[0] may be an overscan item above the viewport, so filter
-  // to items whose start position is at or below the current scroll offset.
-  useEffect(() => {
-    if (isScrollingRef.current) return;
-    if (virtualItems.length === 0) return;
-    const scrollTop = scrollElement?.scrollTop ?? 0;
-    const firstVisible =
-      [...virtualItems].reverse().find((item) => item.start <= scrollTop) ?? virtualItems[0];
-    const activePth = files[firstVisible.index]?.path ?? null;
-    onActivePathChange(activePth);
-  }, [virtualItems, files, scrollElement, onActivePathChange]);
+    const el = scrollElement;
+    if (!el) return;
+    const onScroll = () => {
+      if (isScrollingRef.current) return;
+      const handle = virtualizerRef.current;
+      if (!handle || files.length === 0) return;
+      const offset = handle.scrollOffset;
+      let idx = 0;
+      for (let i = files.length - 1; i >= 0; i--) {
+        if (handle.getItemOffset(i) <= offset) {
+          idx = i;
+          break;
+        }
+      }
+      onActivePathChange(files[idx]?.path ?? null);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [scrollElement, files, onActivePathChange]);
 
   useImperativeHandle(
     ref,
@@ -155,14 +142,14 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
         const index = files.findIndex((f) => f.path === path);
         if (index >= 0) {
           isScrollingRef.current = true;
-          virtualizer.scrollToIndex(index, { align: "start", behavior: "smooth" });
+          virtualizerRef.current?.scrollToIndex(index, { align: "start", smooth: true });
           setTimeout(() => {
             isScrollingRef.current = false;
-          }, 150);
+          }, 500);
         }
       },
     }),
-    [files, virtualizer],
+    [files],
   );
 
   const activeFile = files.find((f) => f.path === activePath) ?? null;
@@ -191,27 +178,12 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
           />
         </button>
       )}
-      <div
-        style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
-      >
-        {virtualItems.map((virtualItem) => {
-          const file = files[virtualItem.index];
-          const isMatchFile = currentMatch?.fileIndex === virtualItem.index;
-          const fileMatches = (matches ?? []).filter((m) => m.fileIndex === virtualItem.index);
+      <Virtualizer ref={virtualizerRef}>
+        {files.map((file, index) => {
+          const isMatchFile = currentMatch?.fileIndex === index;
+          const fileMatches = (matches ?? []).filter((m) => m.fileIndex === index);
           return (
-            <div
-              key={file.path}
-              ref={virtualizer.measureElement}
-              data-index={virtualItem.index}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-              className="border-b border-border"
-            >
+            <div key={file.path} className="border-b border-border">
               <FileSection
                 file={file}
                 commentsByLine={commentsByFile.get(file.path) ?? new Map()}
@@ -236,7 +208,7 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
             </div>
           );
         })}
-      </div>
+      </Virtualizer>
     </>
   );
 });

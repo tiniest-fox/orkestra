@@ -32,7 +32,8 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.1",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "virtua": "^0.48.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",

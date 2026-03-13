@@ -260,7 +260,10 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
   const diffContentRef = useRef<DiffContentHandle>(null);
   const diffScrollRef = useRef<HTMLDivElement>(null);
 
-  const { diff, loading: diffLoading } = useCommitDiff(selectedHash);
+  const { diff: rawDiff, loading: diffLoading } = useCommitDiff(selectedHash);
+  const diff = rawDiff
+    ? { ...rawDiff, files: [...rawDiff.files].sort((a, b) => a.path.localeCompare(b.path)) }
+    : rawDiff;
 
   const { collapsedPaths, toggleCollapsed, resetInteraction, expandForSearch } =
     useAutoCollapsePaths(diff?.files);

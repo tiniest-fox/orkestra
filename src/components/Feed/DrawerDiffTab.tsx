@@ -69,7 +69,10 @@ export function DrawerDiffTab({
     }
   }, [hasDrafts, liveDiff]);
 
-  const diff = hasDrafts ? diffSnapshotRef.current : liveDiff;
+  const rawDiff = hasDrafts ? diffSnapshotRef.current : liveDiff;
+  const diff = rawDiff
+    ? { ...rawDiff, files: [...rawDiff.files].sort((a, b) => a.path.localeCompare(b.path)) }
+    : rawDiff;
 
   const { collapsedPaths, toggleCollapsed, expandForSearch } = useAutoCollapsePaths(diff?.files);
 

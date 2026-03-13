@@ -65,45 +65,46 @@ export function DrawerHeader({
           {title}
         </div>
 
-        {/* Desktop: actions + esc + X inline */}
+        {/* Desktop: actions + esc + X inline, separated by full-height dividers */}
         {!isMobile && (
-          <>
-            {hasActions && (
-              <div className="flex items-center gap-1 shrink-0">
-                {actions.map((action) => (
-                  <button
-                    key={action.label}
-                    type="button"
-                    onClick={action.onClick}
-                    disabled={action.disabled}
-                    title={`${action.label}${action.hotkeyLabel ? ` (${action.hotkeyLabel})` : ""}`}
-                    className={[
-                      "flex items-center gap-1.5 transition-colors disabled:opacity-40 [&>span>svg]:w-[14px] [&>span>svg]:h-[14px]",
-                      action.destructive
-                        ? "text-text-quaternary hover:text-status-error"
-                        : action.active
-                          ? (action.activeClassName ?? "text-accent")
-                          : "text-text-quaternary hover:text-text-secondary",
-                    ].join(" ")}
-                  >
-                    {action.hotkeyLabel && <Kbd>{action.hotkeyLabel}</Kbd>}
-                    <span>{action.icon}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="flex items-stretch shrink-0 self-stretch border-l border-border">
+            {actions.map((action) => (
+              <>
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  title={`${action.label}${action.hotkeyLabel ? ` (${action.hotkeyLabel})` : ""}`}
+                  className={[
+                    "flex items-center gap-1.5 px-3 transition-colors disabled:opacity-40 [&>span>svg]:w-[14px] [&>span>svg]:h-[14px]",
+                    action.destructive
+                      ? "text-text-quaternary hover:text-status-error"
+                      : action.active
+                        ? (action.activeClassName ?? "text-accent")
+                        : "text-text-quaternary hover:text-text-secondary",
+                  ].join(" ")}
+                >
+                  <span>{action.icon}</span>
+                  {action.hotkeyLabel && <Kbd>{action.hotkeyLabel}</Kbd>}
+                </button>
+                <div className="w-px self-stretch bg-border" />
+              </>
+            ))}
             <button
               type="button"
               onClick={onClose}
               title="Close (Esc)"
-              className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
+              className="flex items-center gap-1.5 px-3 text-text-quaternary hover:text-text-secondary transition-colors"
             >
-              <span className={escHidden ? "invisible" : undefined}>
+              <span>
+                <X size={14} />
+              </span>
+              <span className={`inline-flex items-center${escHidden ? " invisible" : ""}`}>
                 <Kbd>esc</Kbd>
               </span>
-              <X size={14} />
             </button>
-          </>
+          </div>
         )}
 
         {/* Mobile: X only in title row */}

@@ -106,6 +106,34 @@ When a provider holds `useState` initialized from a prop (e.g., a connection key
 - Access shared state via the provider hooks (`useTasks()`, `useWorkflowConfig()`). Don't prop-drill shared data.
 - Local UI state (open/closed, selected tab, form inputs, drawer visibility) stays in the component via `useState`.
 
+<!-- compound: fairly-prolific-jabiru -->
+### Optimistic Updates Pattern
+
+Mutation operations (approve, reject, answer question, etc.) apply an optimistic state transition immediately so the UI reflects the expected next state while the server request is in flight. Polling then self-corrects if anything diverges.
+
+**Key files:**
+- `src/utils/optimisticTransitions.ts` — pure function `applyOptimisticTransition(task, action, config)` mapping (current state, action) → next `WorkflowTaskView` using a **shallow merge** (spread existing derived, only override relevant fields). Centralizes all transition logic for auditability.
+- `src/utils/workflowNavigation.ts` — `resolveFlowStageNames(config, flow?)` provides flow-aware stage name resolution; consumed by both `pipelineSegments.ts` and `optimisticTransitions.ts` as the single source of truth.
+- `TasksProvider.tsx` — holds the `pendingOptimisticUpdates: Map<taskId, PendingEntry>` ref and `applyOptimistic` callback.
+
+**Three invariants to maintain:**
+1. **Stale closure avoidance**: `applyOptimistic` reads from `tasksRef.current.find(...)`, NOT the `tasks` state variable. Using `tasks` directly creates a stale closure that re-runs on every 2s poll. The dependency array must be `[config]` only.
+2. **Convergence-based clearing**: Entries are cleared when `server.updated_at !== entry.preActionUpdatedAt` (server acknowledged the change). Do NOT clear on the server response event — the task might not have been re-fetched yet.
+3. **TTL sweep for error paths**: `reconcileWithPendingOptimistic` sweeps entries older than 30s (`addedAt` field on `PendingEntry`) and entries for task IDs absent from the server result (archived tasks). This self-heals when the server never received the request.
+
+**Pattern for adding a new optimistic action:**
+```ts
+// 1. Add case to optimisticTransitions.ts
+case "my_action":
+  return { ...task, derived: { ...task.derived, current_phase: "agent_working" } };
+
+// 2. Call applyOptimistic before transport.call in useTaskDrawerState.ts
+applyOptimistic(task.id, "my_action");
+await transport.call("my_action", { taskId: task.id });
+```
+
+**Out-of-scope actions** (skip optimistic updates): `create_task` (requires temporary ID synthesis), `archive_task` (moves task off the board), `set_auto_mode` (already has its own optimistic pattern), `delete_task` (different list-mutation pattern).
+
 <!-- compound: insensibly-beneficial-codling -->
 ### Module-Level Cache Pattern
 

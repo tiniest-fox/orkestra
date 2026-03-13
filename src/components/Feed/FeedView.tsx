@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawerHistory } from "../../hooks/useDrawerHistory";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
+import { useTasks } from "../../providers/TasksProvider";
 import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
@@ -65,6 +66,7 @@ interface FeedViewProps {
 
 export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
   const transport = useTransport();
+  const { applyOptimistic } = useTasks();
   const isMobile = useIsMobile();
   const feedBodyRef = useRef<HTMLDivElement>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -277,6 +279,7 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
               onReview={setActiveTaskId}
               onAnswer={setActiveTaskId}
               onApprove={(taskId) => {
+                applyOptimistic(taskId, { type: "approve" });
                 transport.call("approve", { task_id: taskId }).catch(console.error);
               }}
               onMerge={(taskId) => {
@@ -287,6 +290,7 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
               }}
               onArchive={(taskId) => {
                 if (!window.confirm("Archive this task?")) return;
+                applyOptimistic(taskId, { type: "archive" });
                 transport.call("archive", { task_id: taskId }).catch(console.error);
               }}
               onRowClick={onStripRowClick}

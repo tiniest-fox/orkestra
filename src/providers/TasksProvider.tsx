@@ -22,7 +22,10 @@ import { useConnectionState, useTransport } from "../transport";
 
 import { useTransportListener } from "../transport/useTransportListener";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
+import type { OptimisticAction } from "../utils/optimisticTransitions";
+import { applyOptimisticTransition } from "../utils/optimisticTransitions";
 import { isDisconnectError } from "../utils/transportErrors";
+import { useWorkflowConfigState } from "./WorkflowConfigProvider";
 
 interface TasksCacheEntry<T> {
   projectUrl: string;
@@ -30,6 +33,55 @@ interface TasksCacheEntry<T> {
 }
 let tasksCacheEntry: TasksCacheEntry<WorkflowTaskView[]> | null = null;
 let archivedTasksCacheEntry: TasksCacheEntry<WorkflowTaskView[]> | null = null;
+
+// Tracks a pre-action snapshot of updated_at plus when the entry was added,
+// so fetchTasks can hold the optimistic state until the server confirms the change.
+interface PendingEntry {
+  preActionUpdatedAt: string;
+  addedAt: number;
+}
+
+const PENDING_ENTRY_TTL_MS = 30_000;
+
+// Merges server-fetched tasks with any pending optimistic state.
+// Keeps the local optimistic version while updated_at is unchanged on the server.
+// Sweeps entries for tasks absent from the result (e.g. archived) or older than TTL.
+function reconcileWithPendingOptimistic(
+  serverTasks: WorkflowTaskView[],
+  pendingMap: Map<string, PendingEntry>,
+  currentTasks: WorkflowTaskView[],
+): WorkflowTaskView[] {
+  if (pendingMap.size === 0) return serverTasks;
+
+  const currentMap = new Map(currentTasks.map((t) => [t.id, t]));
+  const result = serverTasks
+    .map((serverTask): WorkflowTaskView | null => {
+      const entry = pendingMap.get(serverTask.id);
+      if (entry) {
+        if (serverTask.updated_at === entry.preActionUpdatedAt) {
+          // Server hasn't processed the action yet — keep optimistic version,
+          // or drop if the task was removed (e.g. archived).
+          return currentMap.get(serverTask.id) ?? null;
+        }
+        // Server has updated — clear pending and use server state.
+        pendingMap.delete(serverTask.id);
+      }
+      return serverTask;
+    })
+    .filter((t): t is WorkflowTaskView => t !== null);
+
+  // Sweep entries for tasks no longer in the result (archived) or stuck past TTL
+  // (error-path: server never received the request).
+  const resultIds = new Set(result.map((t) => t.id));
+  const now = Date.now();
+  for (const [id, entry] of pendingMap) {
+    if (!resultIds.has(id) || now - entry.addedAt > PENDING_ENTRY_TTL_MS) {
+      pendingMap.delete(id);
+    }
+  }
+
+  return result;
+}
 
 interface TasksContextValue {
   tasks: WorkflowTaskView[];
@@ -45,6 +97,7 @@ interface TasksContextValue {
   ) => Promise<WorkflowTask>;
   createSubtask: (parentId: string, title: string, description: string) => Promise<WorkflowTask>;
   deleteTask: (taskId: string) => Promise<void>;
+  applyOptimistic: (taskId: string, action: OptimisticAction) => void;
   refetch: () => Promise<void>;
 }
 
@@ -67,6 +120,7 @@ interface TasksProviderProps {
 
 export function TasksProvider({ children }: TasksProviderProps) {
   const transport = useTransport();
+  const { config } = useWorkflowConfigState();
   const projectUrl = window.location.href;
   const cachedTasks = tasksCacheEntry?.projectUrl === projectUrl ? tasksCacheEntry.data : null;
   const cachedArchived =
@@ -80,6 +134,11 @@ export function TasksProvider({ children }: TasksProviderProps) {
 
   // Track task IDs with pending deletes so polling doesn't re-add them
   const deletingIdsRef = useRef<Set<string>>(new Set());
+  // Track tasks with pending optimistic updates — maps taskId to PendingEntry
+  const pendingOptimisticUpdates = useRef<Map<string, PendingEntry>>(new Map());
+  // Always-current ref so fetchTasks can read tasks without a stale closure
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
 
   const firstFetchRef = useRef(true);
 
@@ -99,6 +158,12 @@ export function TasksProvider({ children }: TasksProviderProps) {
           console.timeEnd("[startup] tasks");
         }
       }
+
+      result = reconcileWithPendingOptimistic(
+        result,
+        pendingOptimisticUpdates.current,
+        tasksRef.current,
+      );
 
       const deleting = deletingIdsRef.current;
       if (deleting.size > 0) {
@@ -202,6 +267,35 @@ export function TasksProvider({ children }: TasksProviderProps) {
     [transport],
   );
 
+  const applyOptimistic = useCallback(
+    (taskId: string, action: OptimisticAction) => {
+      const task = tasksRef.current.find((t) => t.id === taskId);
+      if (!task || !config) return;
+
+      const predicted = applyOptimisticTransition(task, action, config);
+      if (!predicted) return; // action not valid from current state
+
+      // Store pre-action snapshot for convergence check and TTL-based cleanup
+      pendingOptimisticUpdates.current.set(taskId, {
+        preActionUpdatedAt: task.updated_at,
+        addedAt: Date.now(),
+      });
+
+      if (action.type === "archive") {
+        // Move from tasks to archivedTasks
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        setArchivedTasks((prev) => {
+          // Deduplicate by ID
+          if (prev.some((t) => t.id === taskId)) return prev;
+          return [predicted, ...prev];
+        });
+      } else {
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? predicted : t)));
+      }
+    },
+    [config],
+  );
+
   const value: TasksContextValue = {
     tasks,
     archivedTasks,
@@ -210,6 +304,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
     createTask,
     createSubtask,
     deleteTask,
+    applyOptimistic,
     refetch: fetchTasks,
   };
 

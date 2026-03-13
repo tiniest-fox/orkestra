@@ -10,10 +10,8 @@ import { Virtualizer, type VirtualizerHandle } from "virtua";
 import type { HighlightedFileDiff } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
 import { EmptyState } from "../ui/EmptyState";
-import { FileHeaderContent } from "./FileHeaderContent";
 import { FileSection } from "./FileSection";
 import type { DraftComment } from "./types";
-import { FILE_HEADER_BUTTON_BASE } from "./types";
 import type { DiffMatch } from "./useDiffSearch";
 
 export interface DiffContentHandle {
@@ -152,8 +150,6 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
     [files],
   );
 
-  const activeFile = files.find((f) => f.path === activePath) ?? null;
-
   if (files.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -163,52 +159,36 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
   }
 
   return (
-    <>
-      {activeFile && (
-        <button
-          type="button"
-          onClick={() => onToggleCollapsed(activeFile.path)}
-          className={`sticky top-0 z-20 ${FILE_HEADER_BUTTON_BASE}`}
-        >
-          <FileHeaderContent
-            path={activeFile.path}
-            oldPath={activeFile.old_path}
-            isCollapsed={collapsedPaths.has(activeFile.path)}
-            showKbd
-          />
-        </button>
-      )}
-      <Virtualizer ref={virtualizerRef}>
-        {files.map((file, index) => {
-          const isMatchFile = currentMatch?.fileIndex === index;
-          const fileMatches = (matches ?? []).filter((m) => m.fileIndex === index);
-          return (
-            <div key={file.path} className="border-b border-border">
-              <FileSection
-                file={file}
-                commentsByLine={commentsByFile.get(file.path) ?? new Map()}
-                draftsByLine={draftsByFile.get(file.path) ?? new Map()}
-                isActive={file.path === activePath}
-                isCollapsed={collapsedPaths.has(file.path)}
-                onToggleCollapsed={() => onToggleCollapsed(file.path)}
-                activeCommentLine={
-                  activeCommentLine?.filePath === file.path ? activeCommentLine : null
-                }
-                onLineClick={onLineClick ? (ln, lt) => onLineClick(file.path, ln, lt) : undefined}
-                onSaveDraft={
-                  onSaveDraft ? (ln, lt, body) => onSaveDraft(file.path, ln, lt, body) : undefined
-                }
-                onCancelDraft={onCancelDraft}
-                onDeleteDraft={onDeleteDraft}
-                draftBody={draftBody}
-                onDraftBodyChange={onDraftBodyChange}
-                fileMatches={fileMatches}
-                currentMatch={isMatchFile ? (currentMatch ?? null) : null}
-              />
-            </div>
-          );
-        })}
-      </Virtualizer>
-    </>
+    <Virtualizer ref={virtualizerRef}>
+      {files.map((file, index) => {
+        const isMatchFile = currentMatch?.fileIndex === index;
+        const fileMatches = (matches ?? []).filter((m) => m.fileIndex === index);
+        return (
+          <div key={file.path} className="border-b border-border">
+            <FileSection
+              file={file}
+              commentsByLine={commentsByFile.get(file.path) ?? new Map()}
+              draftsByLine={draftsByFile.get(file.path) ?? new Map()}
+              isActive={file.path === activePath}
+              isCollapsed={collapsedPaths.has(file.path)}
+              onToggleCollapsed={() => onToggleCollapsed(file.path)}
+              activeCommentLine={
+                activeCommentLine?.filePath === file.path ? activeCommentLine : null
+              }
+              onLineClick={onLineClick ? (ln, lt) => onLineClick(file.path, ln, lt) : undefined}
+              onSaveDraft={
+                onSaveDraft ? (ln, lt, body) => onSaveDraft(file.path, ln, lt, body) : undefined
+              }
+              onCancelDraft={onCancelDraft}
+              onDeleteDraft={onDeleteDraft}
+              draftBody={draftBody}
+              onDraftBodyChange={onDraftBodyChange}
+              fileMatches={fileMatches}
+              currentMatch={isMatchFile ? (currentMatch ?? null) : null}
+            />
+          </div>
+        );
+      })}
+    </Virtualizer>
   );
 });

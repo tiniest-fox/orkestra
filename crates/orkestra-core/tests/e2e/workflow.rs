@@ -5474,21 +5474,24 @@ fn test_address_pr_feedback_returns_to_work_stage() {
         },
     );
 
-    ctx.advance(); // spawns work agent with PR comments resume prompt
+    ctx.advance(); // spawns work agent with PR comments as fresh session (superseded)
 
-    // VERIFY: PR comments reach the agent prompt
-    ctx.assert_resume_prompt_contains(
-        "pr_comments",
-        &[
-            "reviewer1",
-            "Fix formatting in main.rs",
-            "src/main.rs",
-            "line 42",
-            "reviewer2",
-            "General feedback",
-            "Please fix the formatting", // The guidance
-        ],
-    );
+    // VERIFY: PR comments reach the agent prompt (full prompt, not resume — session superseded)
+    let prompt = ctx.last_prompt_for(&task_id);
+    for expected in &[
+        "reviewer1",
+        "Fix formatting in main.rs",
+        "src/main.rs",
+        "line 42",
+        "reviewer2",
+        "General feedback",
+        "Please fix the formatting", // The guidance
+    ] {
+        assert!(
+            prompt.contains(expected),
+            "Full prompt should contain '{expected}'"
+        );
+    }
 }
 
 /// Test that `address_pr_feedback` rejects empty comments AND empty checks, but
@@ -5631,20 +5634,23 @@ fn test_address_pr_feedback_with_checks() {
         },
     );
 
-    ctx.advance(); // spawns work agent with PR feedback resume prompt
+    ctx.advance(); // spawns work agent with PR feedback as fresh session (superseded)
 
-    // Verify the resume prompt contains both comment and check content
-    ctx.assert_resume_prompt_contains(
-        "pr_comments",
-        &[
-            "Fix this method",
-            "src/lib.rs",
-            "CI / build",
-            "3 tests failed",
-            "CI / lint",
-            "Fix all issues",
-        ],
-    );
+    // Verify the full prompt contains both comment and check content
+    let prompt = ctx.last_prompt_for(&task_id);
+    for expected in &[
+        "Fix this method",
+        "src/lib.rs",
+        "CI / build",
+        "3 tests failed",
+        "CI / lint",
+        "Fix all issues",
+    ] {
+        assert!(
+            prompt.contains(expected),
+            "Full prompt should contain '{expected}'"
+        );
+    }
 }
 
 // =============================================================================
@@ -7728,16 +7734,19 @@ fn test_pr_comments_context_reaches_agent_prompt() {
     // Advance once — orchestrator spawns the work agent with PrComments context
     ctx.advance();
 
-    // The resume prompt should contain the PR comment data
-    ctx.assert_resume_prompt_contains(
-        "pr_comments",
-        &[
-            "Fix this implementation",
-            "src/lib.rs",
-            "line 10",
-            "Please address the comment",
-        ],
-    );
+    // The full prompt should contain the PR comment data (session superseded)
+    let prompt = ctx.last_prompt_for(&task_id);
+    for expected in &[
+        "Fix this implementation",
+        "src/lib.rs",
+        "line 10",
+        "Please address the comment",
+    ] {
+        assert!(
+            prompt.contains(expected),
+            "Full prompt should contain '{expected}'"
+        );
+    }
 }
 
 // =============================================================================

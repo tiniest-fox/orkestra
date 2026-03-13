@@ -11,6 +11,8 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 /// - `Rejection`: cross-stage rejection (reviewer or agent rejects to an earlier
 ///   stage) — start fresh in the target stage.
 /// - `Integration`: merge conflict recovery returned the task here.
+/// - `PrFeedback`: PR comments, failing checks, or guidance submitted for a Done task
+///   — the old session context is stale (task was Done/integrated), so start fresh.
 /// - Untriggered re-entry: no trigger AND the active iteration has not been
 ///   linked to a session yet, meaning this is a clean re-entry (not a
 ///   crash-recovery or `ManualResume`).
@@ -20,8 +22,6 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 ///   (`reject.rs`) or the reviewer-override path in `reject.rs`.
 /// - `GateFailure`: gate script failed — agent re-runs in the existing session with
 ///   the gate error as feedback context.
-/// - `PrFeedback`: PR comments, failing checks, or guidance submitted for a Done task
-///   — agent re-runs in the existing session with the PR feedback as new context.
 /// - All other triggers (`RetryFailed`, `RetryBlocked`, `Answers`, etc.) also fall
 ///   through to `Ok(false)`.
 pub fn execute(
@@ -33,7 +33,11 @@ pub fn execute(
     // Returning triggers always create a fresh session.
     if matches!(
         trigger,
-        Some(IterationTrigger::Rejection { .. } | IterationTrigger::Integration { .. })
+        Some(
+            IterationTrigger::Rejection { .. }
+                | IterationTrigger::Integration { .. }
+                | IterationTrigger::PrFeedback { .. }
+        )
     ) {
         return Ok(true);
     }
@@ -130,6 +134,21 @@ mod tests {
         assert!(
             !result,
             "RetryFailed trigger must NOT supersede — resume so agent can continue where it left off"
+        );
+    }
+
+    #[test]
+    fn test_supersede_pr_feedback_trigger() {
+        let store = InMemoryWorkflowStore::new();
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![],
+            checks: vec![],
+            guidance: Some("Please fix".to_string()),
+        };
+        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
+        assert!(
+            result,
+            "PrFeedback trigger must supersede — old session context is stale after Done"
         );
     }
 

@@ -10,9 +10,8 @@ use crate::orkestra_debug;
 use crate::workflow::config::{ToolRestriction, WorkflowConfig};
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
-    build_resume_prompt, AgentRunnerTrait, IntegrationErrorContext, PrComment,
-    ProviderCapabilities, ProviderRegistry, ResumeQuestionAnswer, ResumeType, RunConfig,
-    SiblingTaskContext,
+    build_resume_prompt, AgentRunnerTrait, IntegrationErrorContext, ProviderCapabilities,
+    ProviderRegistry, ResumeQuestionAnswer, ResumeType, RunConfig, SiblingTaskContext,
 };
 use crate::workflow::prompt::PromptService;
 use crate::workflow::stage::agents::{ExecutionError, ExecutionHandle};
@@ -237,13 +236,15 @@ fn build_user_prompt(
     } else {
         // Fresh spawn: embed feedback and integration error context from trigger
         let feedback = extract_feedback_text(trigger);
+        let pr_feedback = format_pr_feedback(trigger);
+        let effective_feedback = feedback.or(pr_feedback.as_deref());
         let integration_error = extract_integration_context(trigger, &task.base_branch);
 
         let config = prompt_service.resolve_config(
             workflow,
             task,
             artifact_names,
-            feedback,
+            effective_feedback,
             integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
@@ -288,6 +289,58 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
     })
 }
 
+/// Format PR feedback data as text for inclusion in the full prompt.
+///
+/// Returns `None` if the trigger is not `PrFeedback`. When it is, formats
+/// comments, checks, and guidance into a human-readable feedback block.
+fn format_pr_feedback(trigger: Option<&IterationTrigger>) -> Option<String> {
+    let Some(IterationTrigger::PrFeedback {
+        comments,
+        checks,
+        guidance,
+    }) = trigger
+    else {
+        return None;
+    };
+
+    let mut parts = Vec::new();
+
+    if let Some(guidance) = guidance {
+        parts.push(format!("**User guidance:** {guidance}"));
+    }
+
+    if !comments.is_empty() {
+        parts.push("## PR Comments\n\nThe following PR comments need to be addressed:".to_string());
+        for c in comments {
+            let location = match (&c.path, c.line) {
+                (Some(path), Some(line)) => format!(" on `{path}` (line {line})"),
+                (Some(path), None) => format!(" on `{path}`"),
+                _ => String::new(),
+            };
+            parts.push(format!(
+                "### Comment by {}{location}\n\n{}",
+                c.author, c.body
+            ));
+        }
+    }
+
+    if !checks.is_empty() {
+        parts.push(
+            "## Failed CI Checks\n\nThe following CI checks have failed and need to be fixed:"
+                .to_string(),
+        );
+        for check in checks {
+            let summary = check
+                .summary
+                .as_deref()
+                .unwrap_or("No failure details available.");
+            parts.push(format!("### {}\n\n{summary}", check.name));
+        }
+    }
+
+    Some(parts.join("\n\n"))
+}
+
 /// Convert `IterationTrigger` to `ResumeType` for prompt building.
 fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
     match trigger {
@@ -327,23 +380,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
         Some(IterationTrigger::ManualResume { message }) => ResumeType::ManualResume {
             message: message.clone(),
         },
-        Some(IterationTrigger::PrFeedback {
-            comments,
-            checks,
-            guidance,
-        }) => ResumeType::PrComments {
-            comments: comments
-                .iter()
-                .map(|c| PrComment {
-                    author: c.author.clone(),
-                    body: c.body.clone(),
-                    path: c.path.clone().unwrap_or_default(),
-                    line: c.line,
-                })
-                .collect(),
-            checks: checks.clone(),
-            guidance: guidance.clone(),
-        },
+        Some(IterationTrigger::PrFeedback { .. }) => unreachable!(
+            "PrFeedback triggers always supersede the session; is_resume cannot be true here"
+        ),
         Some(IterationTrigger::ReturnToWork { message }) => ResumeType::ReturnToWork {
             message: message.clone(),
         },
@@ -538,7 +577,7 @@ fn build_run_config(
 mod tests {
     use super::*;
     use crate::workflow::config::ToolRestriction;
-    use crate::workflow::domain::PrCommentData;
+
     use crate::workflow::execution::ProviderCapabilities;
 
     #[test]
@@ -672,54 +711,18 @@ mod tests {
     }
 
     #[test]
-    fn test_trigger_to_resume_type_pr_comments() {
-        use crate::workflow::domain::PrCheckData;
+    #[should_panic(
+        expected = "PrFeedback triggers always supersede the session; is_resume cannot be true here"
+    )]
+    fn test_trigger_to_resume_type_pr_feedback_is_unreachable() {
+        // Documents the invariant: PrFeedback always supersedes the session, so
+        // trigger_to_resume_type can never be called with a PrFeedback trigger.
         let trigger = IterationTrigger::PrFeedback {
-            comments: vec![
-                PrCommentData {
-                    author: "reviewer1".to_string(),
-                    body: "Fix this bug".to_string(),
-                    path: Some("src/main.rs".to_string()),
-                    line: Some(42),
-                },
-                PrCommentData {
-                    author: "reviewer2".to_string(),
-                    body: "PR-level comment".to_string(),
-                    path: None,
-                    line: None,
-                },
-            ],
-            checks: vec![PrCheckData {
-                name: "CI / build".to_string(),
-                summary: Some("2 tests failed".to_string()),
-            }],
-            guidance: Some("Focus on error handling".to_string()),
+            comments: vec![],
+            checks: vec![],
+            guidance: None,
         };
-
-        let resume = trigger_to_resume_type(Some(&trigger));
-
-        match resume {
-            ResumeType::PrComments {
-                comments,
-                checks,
-                guidance,
-            } => {
-                assert_eq!(comments.len(), 2);
-                assert_eq!(comments[0].author, "reviewer1");
-                assert_eq!(comments[0].body, "Fix this bug");
-                assert_eq!(comments[0].path, "src/main.rs");
-                assert_eq!(comments[0].line, Some(42));
-                assert_eq!(comments[1].author, "reviewer2");
-                assert_eq!(comments[1].body, "PR-level comment");
-                assert_eq!(comments[1].path, ""); // None becomes empty string
-                assert_eq!(comments[1].line, None);
-                assert_eq!(checks.len(), 1);
-                assert_eq!(checks[0].name, "CI / build");
-                assert_eq!(checks[0].summary.as_deref(), Some("2 tests failed"));
-                assert_eq!(guidance, Some("Focus on error handling".to_string()));
-            }
-            _ => panic!("Expected PrComments resume type"),
-        }
+        trigger_to_resume_type(Some(&trigger));
     }
 
     #[test]

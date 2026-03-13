@@ -5,11 +5,11 @@
 //         separated by dividers, each flex-1.
 // The caller passes actions[] once; layout is handled automatically.
 //
-// When `expandable` is provided, clicking the title expands it in-place to
-// show the full (unwrapped) title, the task ID (copy-on-click), and the
-// description. The actions toolbar stays pinned to the top-right.
+// When `expandable` is provided, clicking the title shows a chevron toggle.
+// Expanding reveals task ID (copy-on-click) and description in a separate
+// section below the fixed-height title row — nothing in the title row moves.
 
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { Kbd } from "../Kbd";
@@ -65,10 +65,8 @@ export function DrawerHeader({
 
   return (
     <div className="shrink-0 border-b border-border">
-      {/* Title row — h-11 when collapsed, grows when expanded */}
-      <div
-        className={`flex px-6 gap-3 ${expanded ? "items-start min-h-11 pt-2.5 pb-3" : "items-center h-11"}`}
-      >
+      {/* Title row — always h-11, never grows */}
+      <div className="flex items-center h-11 px-6 gap-3">
         {onBack && (
           <button
             type="button"
@@ -80,8 +78,8 @@ export function DrawerHeader({
           </button>
         )}
 
-        {/* Title + expanded details */}
-        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+        {/* Title — with optional chevron toggle */}
+        <div className="flex-1 min-w-0">
           {expandable ? (
             // biome-ignore lint/a11y/useSemanticElements: title is a toggle; div+role avoids button nesting issues with inner copy button
             <div
@@ -91,44 +89,26 @@ export function DrawerHeader({
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") setExpanded((v) => !v);
               }}
-              className={`font-sans text-[13px] font-semibold text-text-primary cursor-pointer select-none ${!expanded ? "truncate" : ""}`}
+              className="flex items-center gap-1.5 cursor-pointer select-none min-w-0"
             >
-              {title}
+              <span className="font-sans text-forge-body font-semibold text-text-primary truncate">
+                {title}
+              </span>
+              <ChevronDown
+                size={12}
+                className={`shrink-0 text-text-quaternary transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
+              />
             </div>
           ) : (
-            <div className="font-sans text-[13px] font-semibold text-text-primary truncate">
+            <div className="font-sans text-forge-body font-semibold text-text-primary truncate">
               {title}
-            </div>
-          )}
-
-          {expanded && expandable && (
-            <div className="flex flex-col gap-1.5">
-              {/* Task ID — copy on click */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopyId();
-                }}
-                onKeyDown={() => {}}
-                className="font-mono text-forge-mono-label text-text-quaternary hover:text-text-secondary transition-colors text-left w-fit"
-              >
-                {copied ? "copied!" : expandable.taskId}
-              </button>
-              {expandable.description && (
-                <p className="font-sans text-forge-body text-text-secondary whitespace-pre-wrap">
-                  {expandable.description}
-                </p>
-              )}
             </div>
           )}
         </div>
 
         {/* Desktop: actions + esc + X inline, separated by full-height dividers */}
         {!isMobile && (
-          <div
-            className={`flex items-stretch shrink-0 border-l border-border ${expanded ? "self-start h-11" : "self-stretch"}`}
-          >
+          <div className="flex items-stretch self-stretch shrink-0 border-l border-border">
             {actions.map((action) => (
               <>
                 <button
@@ -180,6 +160,26 @@ export function DrawerHeader({
           </button>
         )}
       </div>
+
+      {/* Expanded details — separate section, never moves title row */}
+      {expanded && expandable && (
+        <div className="px-6 pt-1 pb-3 flex flex-col gap-1.5 border-t border-border">
+          {/* Task ID — copy on click */}
+          <button
+            type="button"
+            onClick={handleCopyId}
+            onKeyDown={() => {}}
+            className="font-mono text-forge-mono-label text-text-quaternary hover:text-text-secondary transition-colors text-left w-fit"
+          >
+            {copied ? "copied!" : expandable.taskId}
+          </button>
+          {expandable.description && (
+            <p className="font-sans text-forge-body text-text-secondary whitespace-pre-wrap max-h-36 overflow-y-auto">
+              {expandable.description}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Mobile actions row — icon + label buttons, divided, each flex-1 */}
       {isMobile && hasActions && (

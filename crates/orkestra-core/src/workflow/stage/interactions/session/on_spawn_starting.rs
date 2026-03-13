@@ -60,22 +60,24 @@ pub(crate) fn execute(
     // Compute is_resume BEFORE saving the session or linking the iteration.
     // is_resume: true if we have a session ID AND either:
     //   - the agent produced output (has_activity), OR
-    //   - the user explicitly resumed from interrupt (ManualResume trigger).
+    //   - the user explicitly chose to resume (ManualResume or ReturnToWork trigger).
     //
-    // The ManualResume case handles agents interrupted before producing structured output:
-    // has_activity stays false, but we still want to resume the existing session.
+    // ManualResume and ReturnToWork both handle agents interrupted before producing
+    // structured output: has_activity stays false (only set on successful completion),
+    // but we still want to resume the existing session since the user is explicitly
+    // continuing work.
     //
     // Crash-recovery note: when an agent crashes before producing any output,
     // has_activity=false and trigger may be Feedback or another non-superseding type.
     // In that case is_resume=false, so we spawn fresh. This is correct — resuming
     // a dead provider session (no output) would fail; fresh spawn with the full
     // initial prompt is the right recovery path.
-    let is_manual_resume = matches!(
+    let is_human_resume = matches!(
         iteration.incoming_context,
-        Some(IterationTrigger::ManualResume { .. })
+        Some(IterationTrigger::ManualResume { .. } | IterationTrigger::ReturnToWork { .. })
     );
     let is_resume =
-        session.claude_session_id.is_some() && (session.has_activity || is_manual_resume);
+        session.claude_session_id.is_some() && (session.has_activity || is_human_resume);
 
     // When not resuming, replace stale session ID with fresh one (or clear it for
     // own-ID providers). This prevents "Session ID already in use" errors when
@@ -87,14 +89,14 @@ pub(crate) fn execute(
 
     orkestra_debug!(
         "session",
-        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}, is_manual_resume={}, is_resume={}",
+        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}, is_human_resume={}, is_resume={}",
         task_id,
         stage,
         session.claude_session_id,
         session.session_state,
         session.spawn_count,
         session.has_activity,
-        is_manual_resume,
+        is_human_resume,
         is_resume
     );
 

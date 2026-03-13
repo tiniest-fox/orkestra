@@ -4,7 +4,7 @@
 // Mobile: full-width commit list; clicking a commit slides in a detail overlay.
 
 import { ChevronDown, ChevronRight, Download, GitCompare, RefreshCw, Upload } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -92,8 +92,7 @@ interface CommitDetailPanelProps {
   findBarOpen: boolean;
   search: UseDiffSearchResult;
   diffContentRef: React.RefObject<DiffContentHandle>;
-  diffScrollEl: HTMLDivElement | null;
-  setDiffScrollRef: (el: HTMLDivElement | null) => void;
+  diffScrollRef: React.RefObject<HTMLDivElement>;
   onActivePathChange: (path: string | null) => void;
   onToggleCollapsed: (path: string) => void;
   onJumpTo: (path: string) => void;
@@ -115,8 +114,7 @@ function CommitDetailPanel({
   findBarOpen,
   search,
   diffContentRef,
-  diffScrollEl,
-  setDiffScrollRef,
+  diffScrollRef,
   onActivePathChange,
   onToggleCollapsed,
   onJumpTo,
@@ -188,7 +186,7 @@ function CommitDetailPanel({
                   <DiffFileList files={diff.files} activePath={activePath} onJumpTo={onJumpTo} />
                 </div>
               )}
-              <div ref={setDiffScrollRef} className="flex-1 overflow-y-auto relative bg-surface">
+              <div ref={diffScrollRef} className="flex-1 overflow-y-auto relative bg-surface">
                 {findBarOpen && (
                   <DiffFindBar
                     query={search.query}
@@ -206,7 +204,7 @@ function CommitDetailPanel({
                   comments={[]}
                   activePath={activePath}
                   collapsedPaths={collapsedPaths}
-                  scrollElement={diffScrollEl}
+                  scrollRef={diffScrollRef}
                   onActivePathChange={onActivePathChange}
                   onToggleCollapsed={onToggleCollapsed}
                   matches={search.matches}
@@ -260,10 +258,7 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
 
   const listRef = useRef<HTMLDivElement>(null);
   const diffContentRef = useRef<DiffContentHandle>(null);
-  const [diffScrollEl, setDiffScrollEl] = useState<HTMLDivElement | null>(null);
-  const setDiffScrollRef = useCallback((el: HTMLDivElement | null) => {
-    setDiffScrollEl(el);
-  }, []);
+  const diffScrollRef = useRef<HTMLDivElement>(null);
 
   const { diff, loading: diffLoading } = useCommitDiff(selectedHash);
 
@@ -278,7 +273,7 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
     collapsedPaths,
     expandForSearch,
     diffContentRef,
-    scrollEl: diffScrollEl,
+    scrollEl: diffScrollRef.current,
   });
 
   // Reset per-commit state when selection changes.
@@ -355,8 +350,7 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
     findBarOpen,
     search,
     diffContentRef,
-    diffScrollEl,
-    setDiffScrollRef,
+    diffScrollRef,
     onActivePathChange: setActivePath,
     onToggleCollapsed: handleToggleCollapsed,
     onJumpTo: handleJumpTo,

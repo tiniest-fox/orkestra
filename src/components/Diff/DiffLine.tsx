@@ -26,13 +26,6 @@ export function DiffLine({
         ? "bg-status-error-bg"
         : "bg-transparent";
 
-  const hoverColor =
-    line.line_type === "add"
-      ? "hover:bg-[var(--forge-diff-add-hover)]"
-      : line.line_type === "delete"
-        ? "hover:bg-[var(--forge-diff-del-hover)]"
-        : "hover:bg-surface-2";
-
   // Gutter must be fully opaque so it occludes code that scrolls behind it.
   const gutterBg =
     line.line_type === "add"
@@ -69,7 +62,7 @@ export function DiffLine({
             }
           : undefined
       }
-      className={`group relative flex font-mono text-forge-mono-md transition-colors ${bgColor} ${isMobile && onOpenCommentInput ? "active:brightness-95" : hoverColor}`}
+      className={`group relative flex font-mono text-forge-mono-md ${bgColor} ${isMobile && onOpenCommentInput ? "active:brightness-95" : ""}`}
     >
       <div className={`flex flex-shrink-0 ${gutterBg}`}>
         <div className="relative w-10 select-none text-right pr-2 text-text-quaternary">

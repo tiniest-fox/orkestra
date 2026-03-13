@@ -89,7 +89,7 @@ describe("DiffContent", () => {
         comments={[]}
         activePath={null}
         collapsedPaths={new Set()}
-        scrollElement={null}
+        scrollRef={{ current: null }}
         onToggleCollapsed={noop}
         onActivePathChange={noop}
       />,

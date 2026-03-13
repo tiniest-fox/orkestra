@@ -23,8 +23,9 @@ interface DiffContentProps {
   comments: PrComment[];
   activePath: string | null;
   collapsedPaths: Set<string>;
-  /** The parent's overflow-scroll container. Used for scroll event tracking. */
-  scrollElement: HTMLElement | null;
+  /** The parent's overflow-scroll container ref. Passed to Virtua so it correctly
+   *  tracks scroll-end events (re-enables pointer-events after scroll stops). */
+  scrollRef: React.RefObject<HTMLElement>;
   onToggleCollapsed: (path: string) => void;
   /** Called when the topmost visible file changes. */
   onActivePathChange: (path: string | null) => void;
@@ -61,7 +62,7 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
     comments,
     activePath,
     collapsedPaths,
-    scrollElement,
+    scrollRef,
     onToggleCollapsed,
     onActivePathChange,
     onLineClick,
@@ -113,7 +114,7 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
   // Since VirtualizerHandle has no findStartIndex, we compute it: find the last file
   // whose getItemOffset is <= current scrollOffset.
   useEffect(() => {
-    const el = scrollElement;
+    const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
       if (isScrollingRef.current) return;
@@ -131,7 +132,7 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [scrollElement, files, onActivePathChange]);
+  }, [scrollRef, files, onActivePathChange]);
 
   useImperativeHandle(
     ref,
@@ -159,7 +160,7 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
   }
 
   return (
-    <Virtualizer ref={virtualizerRef}>
+    <Virtualizer ref={virtualizerRef} scrollRef={scrollRef}>
       {files.map((file, index) => {
         const isMatchFile = currentMatch?.fileIndex === index;
         const fileMatches = (matches ?? []).filter((m) => m.fileIndex === index);

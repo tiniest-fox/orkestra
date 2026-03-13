@@ -187,6 +187,7 @@ export function DrawerHeader({
         onClose={onClose}
         actions={actions}
         escHidden={escHidden}
+        expandable={{ taskId: task.id, description: task.description }}
       />
 
       {/* Pipeline row: session strip + subtask progress + pipeline bar */}

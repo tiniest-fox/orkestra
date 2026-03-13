@@ -4,9 +4,13 @@
 // Mobile: h-11 title row, then optional actions row with icon+label buttons
 //         separated by dividers, each flex-1.
 // The caller passes actions[] once; layout is handled automatically.
+//
+// When `expandable` is provided, clicking the title expands it in-place to
+// show the full (unwrapped) title, the task ID (copy-on-click), and the
+// description. The actions toolbar stays pinned to the top-right.
 
 import { ArrowLeft, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { Kbd } from "../Kbd";
 
@@ -35,6 +39,8 @@ interface DrawerHeaderProps {
   actions?: DrawerAction[];
   /** Hides the esc hint without collapsing its space (prevents layout jump in reject mode). */
   escHidden?: boolean;
+  /** When provided, the title becomes clickable and expands to show full details. */
+  expandable?: { taskId: string; description?: string | null };
 }
 
 export function DrawerHeader({
@@ -43,14 +49,26 @@ export function DrawerHeader({
   onBack,
   actions = [],
   escHidden,
+  expandable,
 }: DrawerHeaderProps) {
   const isMobile = useIsMobile();
   const hasActions = actions.length > 0;
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function handleCopyId() {
+    if (!expandable) return;
+    navigator.clipboard.writeText(expandable.taskId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
     <div className="shrink-0 border-b border-border">
-      {/* Title row — always h-11 */}
-      <div className="flex items-center h-11 px-6 gap-3">
+      {/* Title row — h-11 when collapsed, grows when expanded */}
+      <div
+        className={`flex px-6 gap-3 ${expanded ? "items-start min-h-11 pt-2.5 pb-3" : "items-center h-11"}`}
+      >
         {onBack && (
           <button
             type="button"
@@ -61,13 +79,56 @@ export function DrawerHeader({
             <ArrowLeft size={14} />
           </button>
         )}
-        <div className="flex-1 min-w-0 font-sans text-[13px] font-semibold text-text-primary truncate">
-          {title}
+
+        {/* Title + expanded details */}
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+          {expandable ? (
+            // biome-ignore lint/a11y/useSemanticElements: title is a toggle; div+role avoids button nesting issues with inner copy button
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setExpanded((e) => !e)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setExpanded((v) => !v);
+              }}
+              className={`font-sans text-[13px] font-semibold text-text-primary cursor-pointer select-none ${!expanded ? "truncate" : ""}`}
+            >
+              {title}
+            </div>
+          ) : (
+            <div className="font-sans text-[13px] font-semibold text-text-primary truncate">
+              {title}
+            </div>
+          )}
+
+          {expanded && expandable && (
+            <div className="flex flex-col gap-1.5">
+              {/* Task ID — copy on click */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyId();
+                }}
+                onKeyDown={() => {}}
+                className="font-mono text-forge-mono-label text-text-quaternary hover:text-text-secondary transition-colors text-left w-fit"
+              >
+                {copied ? "copied!" : expandable.taskId}
+              </button>
+              {expandable.description && (
+                <p className="font-sans text-forge-body text-text-secondary whitespace-pre-wrap">
+                  {expandable.description}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Desktop: actions + esc + X inline, separated by full-height dividers */}
         {!isMobile && (
-          <div className="flex items-stretch shrink-0 self-stretch border-l border-border">
+          <div
+            className={`flex items-stretch shrink-0 border-l border-border ${expanded ? "self-start h-11" : "self-stretch"}`}
+          >
             {actions.map((action) => (
               <>
                 <button

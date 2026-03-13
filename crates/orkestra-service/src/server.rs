@@ -688,11 +688,8 @@ async fn project_logs_handler(
 // -- GitHub --
 
 /// `GET /api/github/repos` — list repos via the `gh` CLI.
-async fn github_repos_handler(
-    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-) -> Response<Body> {
-    let search = params.get("search").cloned();
-    match run_blocking(move || github::list_repos::execute(search.as_deref())).await {
+async fn github_repos_handler() -> Response<Body> {
+    match run_blocking(github::list_repos::execute).await {
         Ok(repos) => Json(repos).into_response(),
         Err(r) => r,
     }

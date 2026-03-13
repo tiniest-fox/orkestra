@@ -34,10 +34,10 @@ export function ProjectList({
           {showSectionHeaders && (
             <div className="sticky top-0 z-10 px-6 pt-4 bg-canvas">
               <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-accent">
+                <span className="font-mono text-forge-mono-label font-semibold tracking-[0.10em] uppercase text-accent">
                   {section.label}
                 </span>
-                <span className="font-mono text-[10px] font-medium text-text-quaternary">
+                <span className="font-mono text-forge-mono-label font-medium text-text-quaternary">
                   {section.projects.length}
                 </span>
               </div>

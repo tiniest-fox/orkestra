@@ -217,7 +217,7 @@ export function DrawerHeader({
       <ModalPanel
         isOpen={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
-        className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80"
+        className="inset-0 m-auto h-fit w-80"
       >
         <div className="bg-canvas border border-border rounded-panel shadow-lg p-5 flex flex-col gap-4">
           <div>

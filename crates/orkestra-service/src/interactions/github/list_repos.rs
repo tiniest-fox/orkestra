@@ -2,19 +2,11 @@
 
 use crate::types::{GithubRepo, ServiceError};
 
-/// List the authenticated user's repositories.
+/// List all repositories accessible to the authenticated user.
 ///
-/// If `search` is provided it is passed as a positional argument to `gh repo
-/// list` to filter results by owner or name. Returns up to 100 repos ordered
-/// by most recently updated.
-///
-/// If `search` is `None`, returns repos from the personal account and all orgs
-/// the user is a member of.
-pub fn execute(search: Option<&str>) -> Result<Vec<GithubRepo>, ServiceError> {
-    if let Some(query) = search {
-        return list_for_owner(query);
-    }
-
+/// Returns repos from the personal account and all orgs the user is a member
+/// of. Filtering by name or description is the caller's responsibility.
+pub fn execute() -> Result<Vec<GithubRepo>, ServiceError> {
     let mut repos = list_personal()?;
     for org in fetch_org_names()? {
         repos.extend(list_for_owner(&org)?);

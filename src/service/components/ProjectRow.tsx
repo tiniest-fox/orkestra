@@ -7,6 +7,7 @@ import { Button } from "../../components/ui";
 import { Dropdown } from "../../components/ui/Dropdown";
 import { HotkeyScope } from "../../components/ui/HotkeyScope";
 import { useNavItem } from "../../components/ui/NavigationScope";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { categoryForStatus } from "../../utils/projectGrouping";
 import type { Project, ProjectStatus } from "../api";
 import { ProjectLogsModal } from "./ProjectLogsModal";
@@ -85,6 +86,7 @@ export function ProjectRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   useNavItem(project.id, rowRef);
 
@@ -113,8 +115,10 @@ export function ProjectRow({
             if (effectiveStatus === "running") onOpen();
           }
         }}
-        className={`w-full text-left grid grid-cols-[24px_minmax(0,1fr)_auto_auto] gap-4 px-6 py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out cursor-default ${
-          isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas"
+        className={`w-full text-left grid grid-cols-[24px_minmax(0,1fr)_auto_auto] gap-4 px-6 py-2 ${isMobile ? "min-h-[48px]" : "min-h-[40px]"} items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out cursor-default ${
+          !isMobile && isFocused
+            ? "bg-accent-soft border-l-accent"
+            : "border-l-transparent hover:bg-canvas"
         }`}
       >
         {/* Col 1: Status dot */}
@@ -125,12 +129,12 @@ export function ProjectRow({
         {/* Col 2: Name + status label */}
         <div className="min-w-0">
           <div
-            className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary"
+            className="font-sans text-forge-body font-medium tracking-[-0.01em] truncate text-text-primary"
             title={project.name}
           >
             {project.name}
           </div>
-          <div className="font-mono text-[10px] text-text-quaternary">
+          <div className="font-mono text-forge-mono-label text-text-quaternary">
             {statusLabel(effectiveStatus)}
           </div>
         </div>
@@ -175,7 +179,7 @@ export function ProjectRow({
               </Button>
             )}
             {transitioning && (
-              <span className="font-mono text-[10px] text-text-quaternary">
+              <span className="font-mono text-forge-mono-label text-text-quaternary">
                 {statusLabel(effectiveStatus)}
               </span>
             )}
@@ -196,7 +200,7 @@ export function ProjectRow({
               }}
               disabled={busy || transitioning}
               aria-label="Project actions"
-              className="p-1 rounded text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 rounded text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <EllipsisVertical className="w-4 h-4" />
             </button>

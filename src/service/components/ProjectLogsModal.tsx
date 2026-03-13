@@ -2,7 +2,7 @@
 // polling every 3 seconds while open.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "../../components/ui";
+import { DrawerHeader } from "../../components/ui/Drawer/DrawerHeader";
 import { ModalPanel } from "../../components/ui/ModalPanel";
 import { Panel } from "../../components/ui/Panel/Panel";
 import { fetchProjectLogs } from "../api";
@@ -58,15 +58,10 @@ export function ProjectLogsModal({
     <ModalPanel
       isOpen={isOpen}
       onClose={onClose}
-      className="left-1/2 -translate-x-1/2 top-[10%] w-full max-w-[700px] px-4"
+      className="left-0 right-0 mx-auto top-[10%] w-full max-w-[700px] px-4"
     >
       <Panel autoFill={false}>
-        <Panel.Header>
-          <Panel.Title>{projectName} — Logs</Panel.Title>
-          <Button variant="secondary" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </Panel.Header>
+        <DrawerHeader title={`${projectName} — Logs`} onClose={onClose} />
         <Panel.Body scrollable className="max-h-[60vh]">
           {loading && lines.length === 0 && (
             <p className="text-text-secondary text-sm p-4">Loading logs...</p>

@@ -1,7 +1,7 @@
-// Displays a generated pairing code as an inline banner with countdown and dismiss button.
+// Pairing code modal content — large code display with countdown and instructions.
 
-import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { DrawerHeader } from "../../components/ui/Drawer/DrawerHeader";
 
 interface PairingCodeBoxProps {
   code: string;
@@ -32,27 +32,23 @@ export function PairingCodeBox({ code, expiresAt, onExpired, onDismiss }: Pairin
   const secs = remaining % 60;
 
   return (
-    <div className="flex items-center justify-between px-6 h-12 bg-surface border-b border-border shrink-0">
-      <div className="flex items-center">
-        <span className="font-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-text-quaternary mr-3">
-          PAIRING CODE
+    <div className="bg-surface border border-border rounded-panel shadow-panel w-full">
+      <DrawerHeader title="Pair a device" onClose={onDismiss} />
+
+      <div className="px-5 py-6 flex flex-col items-center gap-4">
+        <p className="font-mono text-forge-mono-sm text-text-tertiary text-center">
+          Enter this code in the Orkestra app to connect your device.
+        </p>
+
+        <div className="bg-canvas rounded-panel-sm px-8 py-4 w-full flex items-center justify-center">
+          <span className="font-mono text-[28px] font-bold tracking-[0.18em] text-text-primary select-all">
+            {code}
+          </span>
+        </div>
+
+        <span className="font-mono text-forge-mono-sm text-text-quaternary">
+          Expires in {mins}:{String(secs).padStart(2, "0")}
         </span>
-        <span className="font-mono text-[16px] font-bold text-text-primary tracking-wider">
-          {code}
-        </span>
-      </div>
-      <div className="flex items-center">
-        <span className="font-mono text-[11px] text-text-tertiary mr-3">
-          {mins}:{String(secs).padStart(2, "0")}
-        </span>
-        <button
-          type="button"
-          onClick={onDismiss}
-          aria-label="Dismiss pairing code"
-          className="text-text-quaternary hover:text-text-secondary p-1 rounded"
-        >
-          <X className="w-4 h-4" />
-        </button>
       </div>
     </div>
   );

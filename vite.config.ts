@@ -1,13 +1,176 @@
 import { resolve } from "path";
-import { defineConfig } from "vite";
+import { execFile } from "node:child_process";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
+// ============================================================================
+// Service mock plugin
+// ============================================================================
+//
+// Activated only when running `pnpm dev --mode service` (command === 'serve').
+// Provides:
+//   - URL rewrite so / serves service.html
+//   - In-memory mock API at /api/* with realistic project states + transitions
+//   - Auth token injection so PortalPage skips the PairingForm gate
+//
+// State lives in this module's closure and persists across HMR but resets on
+// server restart.
+
+type MockProject = {
+  id: string;
+  name: string;
+  status: string;
+  error_message?: string;
+};
+
+function serviceMockPlugin(): Plugin {
+  const projects: MockProject[] = [
+    { id: "proj-1", name: "orkestra", status: "running" },
+    { id: "proj-2", name: "my-rails-app", status: "stopped" },
+    {
+      id: "proj-3",
+      name: "data-pipeline",
+      status: "error",
+      error_message: "Container failed to start: OOMKilled",
+    },
+    { id: "proj-4", name: "frontend", status: "starting" },
+  ];
+
+  function readBody(req: IncomingMessage): Promise<Record<string, string>> {
+    return new Promise((resolve) => {
+      let raw = "";
+      req.on("data", (chunk) => {
+        raw += chunk;
+      });
+      req.on("end", () => {
+        try {
+          resolve(JSON.parse(raw || "{}"));
+        } catch {
+          resolve({});
+        }
+      });
+    });
+  }
+
+  function json(res: ServerResponse, data: unknown, status = 200) {
+    res.statusCode = status;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(data));
+  }
+
+  return {
+    name: "service-mock",
+
+    // Inject a dev auth token so PortalPage skips the PairingForm gate.
+    // Only runs in serve mode — not during pnpm build --mode service.
+    transformIndexHtml(html) {
+      return html.replace(
+        "</head>",
+        `<script>localStorage.setItem('orkestra.service_token','dev-mock');</script></head>`,
+      );
+    },
+
+    configureServer(server) {
+      // Rewrite / → /service.html so Vite serves the right entry point.
+      server.middlewares.use((req, _res, next) => {
+        if (req.url === "/" || req.url === "/index.html") req.url = "/service.html";
+        next();
+      });
+
+      // Mock /api/* — req.url here is the path AFTER the /api prefix (connect behaviour).
+      server.middlewares.use("/api", async (req, res) => {
+        const urlPath = req.url ?? "";
+        const projectMatch = urlPath.match(/^\/projects\/([^/]+)(\/.*)?$/);
+
+        if (urlPath === "/projects" && req.method === "GET") {
+          json(res, projects);
+        } else if (urlPath === "/projects" && req.method === "POST") {
+          const body = await readBody(req);
+          const p: MockProject = {
+            id: `proj-${Date.now()}`,
+            name: body.name ?? "new-project",
+            status: "cloning",
+          };
+          projects.push(p);
+          setTimeout(() => {
+            p.status = "stopped";
+          }, 3000);
+          json(res, {});
+        } else if (projectMatch && req.method === "DELETE") {
+          const i = projects.findIndex((p) => p.id === projectMatch[1]);
+          if (i >= 0) projects.splice(i, 1);
+          json(res, {});
+        } else if (projectMatch?.[2] === "/start" && req.method === "POST") {
+          const p = projects.find((p) => p.id === projectMatch[1]);
+          if (p) {
+            p.status = "starting";
+            setTimeout(() => {
+              p.status = "running";
+            }, 2000);
+          }
+          json(res, {});
+        } else if (projectMatch?.[2] === "/stop" && req.method === "POST") {
+          const p = projects.find((p) => p.id === projectMatch[1]);
+          if (p) {
+            p.status = "stopping";
+            setTimeout(() => {
+              p.status = "stopped";
+            }, 2000);
+          }
+          json(res, {});
+        } else if (projectMatch?.[2] === "/rebuild" && req.method === "POST") {
+          const p = projects.find((p) => p.id === projectMatch[1]);
+          if (p) {
+            p.status = "rebuilding";
+            setTimeout(() => {
+              p.status = "running";
+            }, 3000);
+          }
+          json(res, {});
+        } else if (projectMatch?.[2] === "/logs") {
+          json(res, { lines: ["[dev] Mock server — no real logs available."] });
+        } else if (urlPath === "/github/status") {
+          const available = await new Promise<boolean>((resolve) => {
+            execFile("gh", ["auth", "status"], (err) => resolve(!err));
+          });
+          json(res, available ? { available: true } : { available: false, error: "gh auth status failed — run: gh auth login" });
+        } else if (urlPath.startsWith("/github/repos")) {
+          const search = new URL(req.url!, "http://localhost").searchParams.get("search")?.toLowerCase() ?? "";
+          type Repo = { name: string; nameWithOwner: string; description: string; url: string };
+          const all = await new Promise<Repo[]>((resolve) => {
+            execFile("gh", ["repo", "list", "--json", "name,nameWithOwner,description,url", "--limit", "100"], (err, stdout) => {
+              if (err) { resolve([]); return; }
+              try { resolve(JSON.parse(stdout)); } catch { resolve([]); }
+            });
+          });
+          const repos = search
+            ? all.filter((r) => r.nameWithOwner.toLowerCase().includes(search) || (r.description ?? "").toLowerCase().includes(search))
+            : all;
+          json(res, repos);
+        } else if (urlPath === "/pairing-code" && req.method === "POST") {
+          json(res, { code: "DEV-1234" });
+        } else {
+          json(res, { error: "Not found" }, 404);
+        }
+      });
+    },
+  };
+}
+
 // https://vitejs.dev/config/
-export default defineConfig(async ({ mode }) => {
+export default defineConfig(async ({ mode, command }) => {
   if (mode === "service") {
     return {
-      plugins: [react()],
+      plugins: [react(), ...(command === "serve" ? [serviceMockPlugin()] : [])],
       base: "/",
+      server: {
+        port: 5174,
+        strictPort: true,
+        watch: {
+          ignored: ["**/src-tauri/**", "**/.orkestra/**"],
+        },
+      },
       build: {
         outDir: "dist-service",
         rollupOptions: {

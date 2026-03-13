@@ -1,8 +1,8 @@
-//! GitHub repo picker panel with debounced search and focus-stable input.
-//! Uses a controlled React input to prevent focus loss during re-renders.
+// GitHub repo picker — fetches all accessible repos once, filters locally as you type.
 
-import { useEffect, useRef, useState } from "react";
-import { Button, LoadingState, Panel } from "../../components/ui";
+import { useEffect, useMemo, useState } from "react";
+import { LoadingState, Panel } from "../../components/ui";
+import { DrawerHeader } from "../../components/ui/Drawer/DrawerHeader";
 import type { GithubRepo, GithubStatus } from "../api";
 import { addProject, searchRepos } from "../api";
 
@@ -22,48 +22,30 @@ interface RepoSearchProps {
 
 export function RepoSearch({ githubStatus, onClose, onProjectAdded }: RepoSearchProps) {
   const [query, setQuery] = useState("");
-  const [repos, setRepos] = useState<GithubRepo[]>([]);
+  const [allRepos, setAllRepos] = useState<GithubRepo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  // Load repos on open and debounce subsequent searches
+  // Fetch all repos once when GitHub is available.
   useEffect(() => {
     if (!githubStatus?.available) return;
+    setLoadingRepos(true);
+    searchRepos()
+      .then(setAllRepos)
+      .catch(() => {})
+      .finally(() => setLoadingRepos(false));
+  }, [githubStatus?.available]);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    debounceRef.current = setTimeout(
-      async () => {
-        // Cancel any in-flight request
-        abortRef.current?.abort();
-        const controller = new AbortController();
-        abortRef.current = controller;
-
-        setLoadingRepos(true);
-        try {
-          const results = await searchRepos(query || undefined);
-          if (!controller.signal.aborted) {
-            setRepos(results);
-          }
-        } catch {
-          // Silent — show stale results (ignore abort errors)
-        } finally {
-          if (!controller.signal.aborted) {
-            setLoadingRepos(false);
-          }
-        }
-      },
-      query ? 300 : 0,
+  const filteredRepos = useMemo(() => {
+    if (!query) return allRepos;
+    const lower = query.toLowerCase();
+    return allRepos.filter(
+      (r) =>
+        r.nameWithOwner.toLowerCase().includes(lower) ||
+        (r.description ?? "").toLowerCase().includes(lower),
     );
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      abortRef.current?.abort();
-    };
-  }, [query, githubStatus?.available]);
+  }, [allRepos, query]);
 
   async function handleSelectRepo(repo: GithubRepo) {
     setAddError(null);
@@ -78,13 +60,8 @@ export function RepoSearch({ githubStatus, onClose, onProjectAdded }: RepoSearch
   }
 
   return (
-    <Panel autoFill={false} className="mt-3">
-      <Panel.Header>
-        <Panel.Title>Add Project</Panel.Title>
-        <Button variant="secondary" size="sm" onClick={onClose}>
-          Close
-        </Button>
-      </Panel.Header>
+    <Panel autoFill={false}>
+      <DrawerHeader title="Add Project" onClose={onClose} />
       <Panel.Body>
         {githubStatus && !githubStatus.available ? (
           <div className="text-sm text-text-secondary space-y-1">
@@ -105,20 +82,20 @@ export function RepoSearch({ githubStatus, onClose, onProjectAdded }: RepoSearch
           <>
             <input
               type="text"
-              placeholder="Search repos..."
+              placeholder="Filter repos..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-full mb-3 px-3 py-2 bg-canvas border border-border rounded-panel-sm text-text-primary text-sm focus:outline-none focus:border-accent"
             />
             {loadingRepos ? (
               <LoadingState message="Loading repos..." />
-            ) : repos.length === 0 ? (
+            ) : filteredRepos.length === 0 ? (
               <p className="text-sm text-text-secondary text-center py-4">
-                {query ? "No repos found." : "Start typing to search repos."}
+                {query ? "No matching repos." : "No repos found."}
               </p>
             ) : (
               <div className="max-h-[280px] overflow-y-auto -mx-4 px-4">
-                {repos.map((repo) => (
+                {filteredRepos.map((repo) => (
                   <button
                     key={repo.nameWithOwner}
                     type="button"

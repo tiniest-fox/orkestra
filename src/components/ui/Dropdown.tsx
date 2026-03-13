@@ -83,7 +83,9 @@ function DropdownRoot({
   const alignmentClass = align === "right" ? "right-0" : "left-0";
 
   return (
-    <div ref={containerRef} className="relative">
+    // biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only, no interactive action
+    // biome-ignore lint/a11y/noStaticElementInteractions: stopPropagation only, no interactive action
+    <div ref={containerRef} className="relative" onClick={(e) => e.stopPropagation()}>
       {trigger({ onClick: handleToggle })}
 
       {isOpen && (

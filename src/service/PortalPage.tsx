@@ -27,6 +27,7 @@ import type { ProjectRowActions } from "./components/ProjectRow";
 import { RepoSearch } from "./components/RepoSearch";
 import { ServiceFilterBar } from "./components/ServiceFilterBar";
 import { ServiceHeader } from "./components/ServiceHeader";
+import { ServiceMobileTabBar } from "./components/ServiceMobileTabBar";
 import { ServiceStatusLine } from "./components/ServiceStatusLine";
 import { SERVICE_TITLE } from "./constants";
 
@@ -258,14 +259,6 @@ export function PortalPage() {
         onFilterChange={setFilterText}
         inputRef={commandBarInputRef}
       />
-      {pairingCode && pairingExpiresAt && (
-        <PairingCodeBox
-          code={pairingCode}
-          expiresAt={pairingExpiresAt}
-          onExpired={handlePairingExpired}
-          onDismiss={handlePairingDismissed}
-        />
-      )}
       {pairingError && <p className="px-6 py-2 text-sm text-status-error">{pairingError}</p>}
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
@@ -275,7 +268,7 @@ export function PortalPage() {
               {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="grid grid-cols-[24px_minmax(0,1fr)_auto_auto] gap-4 px-6 py-2 min-h-[40px] items-center border-l-2 border-l-transparent animate-pulse"
+                  className={`grid grid-cols-[24px_minmax(0,1fr)_auto_auto] gap-4 px-6 py-2 ${isMobile ? "min-h-[48px]" : "min-h-[40px]"} items-center border-l-2 border-l-transparent animate-pulse`}
                 >
                   <div className="flex items-center justify-center">
                     <span className="w-2 h-2 rounded-full bg-surface-2" />
@@ -294,7 +287,7 @@ export function PortalPage() {
               className="flex-1"
               icon={Inbox}
               message="No projects yet."
-              description="Press A to add a project."
+              description={isMobile ? "Tap + to add a project." : "Press A to add a project."}
             />
           ) : hasNoFilterMatches ? (
             <EmptyState className="flex-1" icon={Inbox} message="No matching projects." />
@@ -310,16 +303,36 @@ export function PortalPage() {
         </NavigationScope>
       </div>
       <ServiceStatusLine projects={projects} modalOpen={modalOpen} />
+      {isMobile && (
+        <ServiceMobileTabBar
+          onAddProject={() => setShowAddModal(true)}
+          onGeneratePairingCode={handleGeneratePairingCode}
+        />
+      )}
       <ModalPanel
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        className="left-1/2 -translate-x-1/2 top-[15%] w-full max-w-[520px] px-4"
+        className="left-0 right-0 mx-auto top-[15%] w-full max-w-[520px] px-4"
       >
         <RepoSearch
           githubStatus={githubStatus}
           onClose={() => setShowAddModal(false)}
           onProjectAdded={handleProjectAdded}
         />
+      </ModalPanel>
+      <ModalPanel
+        isOpen={pairingCode !== null && pairingExpiresAt !== null}
+        onClose={handlePairingDismissed}
+        className="left-0 right-0 mx-auto top-[15%] w-full max-w-[380px] px-4"
+      >
+        {pairingCode && pairingExpiresAt && (
+          <PairingCodeBox
+            code={pairingCode}
+            expiresAt={pairingExpiresAt}
+            onExpired={handlePairingExpired}
+            onDismiss={handlePairingDismissed}
+          />
+        )}
       </ModalPanel>
     </div>
   );

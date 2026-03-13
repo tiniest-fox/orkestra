@@ -1,4 +1,4 @@
-// Bottom status bar — project count summary and keyboard hints.
+// Bottom status bar — project count summary and keyboard hints (desktop only).
 
 import { Kbd } from "../../components/ui/Kbd";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -13,6 +13,8 @@ interface ServiceStatusLineProps {
 export function ServiceStatusLine({ projects, modalOpen }: ServiceStatusLineProps) {
   const isMobile = useIsMobile();
 
+  if (isMobile) return null;
+
   const running = projects.filter((p) => categoryForStatus(p.status) === "running").length;
   const starting = projects.filter((p) => categoryForStatus(p.status) === "starting").length;
   const stopped = projects.filter((p) => categoryForStatus(p.status) === "stopped").length;
@@ -26,7 +28,7 @@ export function ServiceStatusLine({ projects, modalOpen }: ServiceStatusLineProp
   ].filter((c) => c.value > 0);
 
   return (
-    <div className="flex items-center justify-between px-6 h-7 border-t border-border bg-surface shrink-0 font-mono text-[11px] text-text-tertiary">
+    <div className="flex items-center justify-between px-6 min-h-7 pt-1 pb-[max(4px,env(safe-area-inset-bottom))] border-t border-border bg-surface shrink-0 font-mono text-forge-mono-sm text-text-tertiary">
       <div className="flex items-center gap-1">
         {counts.length === 0 && <span className="text-text-quaternary">No projects</span>}
         {counts.map((c, i) => (
@@ -37,38 +39,36 @@ export function ServiceStatusLine({ projects, modalOpen }: ServiceStatusLineProp
           </span>
         ))}
       </div>
-      {!isMobile && (
-        <div className="flex items-center gap-3 shrink-0">
-          {modalOpen ? (
+      <div className="flex items-center gap-3 shrink-0">
+        {modalOpen ? (
+          <span className="flex items-center gap-1.5">
+            <Kbd>esc</Kbd>
+            <span>cancel</span>
+          </span>
+        ) : (
+          <>
             <span className="flex items-center gap-1.5">
-              <Kbd>esc</Kbd>
-              <span>cancel</span>
+              <Kbd>a</Kbd>
+              <span>add</span>
             </span>
-          ) : (
-            <>
-              <span className="flex items-center gap-1.5">
-                <Kbd>a</Kbd>
-                <span>add</span>
-              </span>
-              <span className="text-text-quaternary">·</span>
-              <span className="flex items-center gap-1.5">
-                <Kbd>p</Kbd>
-                <span>pair</span>
-              </span>
-              <span className="text-text-quaternary">·</span>
-              <span className="flex items-center gap-1.5">
-                <Kbd>↵</Kbd>
-                <span>open</span>
-              </span>
-              <span className="text-text-quaternary">·</span>
-              <span className="flex items-center gap-1.5">
-                <Kbd>j/k</Kbd>
-                <span>navigate</span>
-              </span>
-            </>
-          )}
-        </div>
-      )}
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>p</Kbd>
+              <span>pair</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>↵</Kbd>
+              <span>open</span>
+            </span>
+            <span className="text-text-quaternary">·</span>
+            <span className="flex items-center gap-1.5">
+              <Kbd>j/k</Kbd>
+              <span>navigate</span>
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }

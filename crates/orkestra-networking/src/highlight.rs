@@ -30,13 +30,13 @@ impl SyntaxHighlighter {
         let syntax_set = SyntaxSet::load_defaults_newlines();
 
         let themes_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
-        let theme_set = ThemeSet::load_from_folder(&themes_dir)
-            .unwrap_or_else(|_| ThemeSet::load_defaults());
+        let custom_themes = ThemeSet::load_from_folder(&themes_dir).ok();
+        let defaults = ThemeSet::load_defaults();
 
-        let light_theme = theme_set
-            .themes
-            .get("Catppuccin Latte")
-            .or_else(|| theme_set.themes.get("Solarized (light)"))
+        let light_theme = custom_themes
+            .as_ref()
+            .and_then(|ts| ts.themes.get("Catppuccin Latte"))
+            .or_else(|| defaults.themes.get("Solarized (light)"))
             .expect("No light theme available");
         let light_css = syntect::html::css_for_theme_with_class_style(
             light_theme,
@@ -44,10 +44,10 @@ impl SyntaxHighlighter {
         )
         .expect("Failed to generate light theme CSS");
 
-        let dark_theme = theme_set
-            .themes
-            .get("Catppuccin Mocha")
-            .or_else(|| theme_set.themes.get("base16-ocean.dark"))
+        let dark_theme = custom_themes
+            .as_ref()
+            .and_then(|ts| ts.themes.get("Catppuccin Mocha"))
+            .or_else(|| defaults.themes.get("base16-ocean.dark"))
             .expect("No dark theme available");
         let dark_css = syntect::html::css_for_theme_with_class_style(
             dark_theme,

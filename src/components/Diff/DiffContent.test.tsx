@@ -1,7 +1,7 @@
 /**
  * Tests for DiffContent and FileSection — comment grouping, context collapsing, and rendering logic.
  *
- * DiffContent uses @tanstack/react-virtual which requires a real scroll container with layout.
+ * DiffContent uses Virtua which requires a real scroll container with layout.
  * jsdom has no layout engine, so the virtualizer renders 0 items. We test FileSection directly
  * for per-file rendering behavior, and test DiffContent only for the empty-state branch.
  */

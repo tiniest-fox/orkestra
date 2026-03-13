@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseOptionIndex } from "../../../lib/optionKey";
+import { useTasks } from "../../../providers/TasksProvider";
 import { useTransport } from "../../../transport";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
 import type { DraftComment, PrTabFooterState } from "./drawerTabs";
@@ -122,6 +123,7 @@ function mapDraftsToPrComments(drafts: DraftComment[]) {
 
 export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void): TaskDrawerState {
   const transport = useTransport();
+  const { applyOptimistic } = useTasks();
   const questions = task.derived.pending_questions;
 
   // -- Answers --
@@ -405,10 +407,14 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     [transport, task.id, loading, onClose],
   );
 
-  const handleApprove = useCallback(() => callAndClose("approve"), [callAndClose]);
+  const handleApprove = useCallback(() => {
+    applyOptimistic(task.id, { type: "approve" });
+    return callAndClose("approve");
+  }, [callAndClose, applyOptimistic, task.id]);
 
   const handleReject = useCallback(async () => {
     if (loading || !feedback.trim()) return;
+    applyOptimistic(task.id, { type: "reject", feedback: feedback.trim() });
     setLoading(true);
     try {
       await transport.call("reject", { task_id: task.id, feedback: feedback.trim() });
@@ -417,10 +423,11 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       console.error("Failed to reject:", err);
       setLoading(false);
     }
-  }, [transport, task.id, feedback, loading, onClose]);
+  }, [transport, task.id, feedback, loading, onClose, applyOptimistic]);
 
   const handleInterrupt = useCallback(async () => {
     if (interrupting) return;
+    applyOptimistic(task.id, { type: "interrupt" });
     setInterrupting(true);
     try {
       await transport.call("interrupt", { task_id: task.id });
@@ -429,10 +436,11 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     } finally {
       setInterrupting(false);
     }
-  }, [transport, task.id, interrupting]);
+  }, [transport, task.id, interrupting, applyOptimistic]);
 
   const handleResume = useCallback(async () => {
     if (resuming) return;
+    applyOptimistic(task.id, { type: "resume" });
     setResuming(true);
     try {
       await transport.call("resume", {
@@ -445,7 +453,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       console.error("Failed to resume:", err);
       setResuming(false);
     }
-  }, [transport, task.id, resumeMessage, resuming, onClose]);
+  }, [transport, task.id, resumeMessage, resuming, onClose, applyOptimistic]);
 
   const handleMerge = useCallback(() => callAndClose("merge_task"), [callAndClose]);
 
@@ -453,8 +461,9 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
 
   const handleArchive = useCallback(() => {
     if (!window.confirm("Archive this task?")) return Promise.resolve();
+    applyOptimistic(task.id, { type: "archive" });
     return callAndClose("archive");
-  }, [callAndClose]);
+  }, [callAndClose, applyOptimistic, task.id]);
 
   const handleFixConflicts = useCallback(
     () =>
@@ -512,6 +521,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   const handleSubmitAnswers = useCallback(
     async (qs: WorkflowQuestion[]) => {
       if (loading || !allAnswered) return;
+      applyOptimistic(task.id, { type: "answer_questions" });
       setLoading(true);
       try {
         const now = new Date().toISOString();
@@ -538,7 +548,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
         setLoading(false);
       }
     },
-    [transport, task.id, answers, allAnswered, loading, onClose],
+    [transport, task.id, answers, allAnswered, loading, onClose, applyOptimistic],
   );
 
   const handleRetry = useCallback(async () => {

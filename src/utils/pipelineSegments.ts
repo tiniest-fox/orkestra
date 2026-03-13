@@ -1,7 +1,8 @@
-//! Pure function that computes pipeline segment states for a task.
+// Pure function that computes pipeline segment states for a task.
 
 import type { WorkflowConfig, WorkflowTaskView } from "../types/workflow";
 import { isActivelyProgressing } from "./taskStatus";
+import { resolveFlowStageNames } from "./workflowNavigation";
 
 export type SegmentState =
   | "done"
@@ -27,7 +28,7 @@ export function computePipelineSegments(
   task: WorkflowTaskView,
   config: WorkflowConfig,
 ): PipelineSegmentData[] {
-  const stages = resolveStageNames(task, config);
+  const stages = resolveFlowStageNames(task.flow, config);
   const { derived } = task;
 
   if (derived.is_done || derived.is_archived) {
@@ -58,15 +59,4 @@ export function computePipelineSegments(
     if (derived.is_failed) return { stageName, state: "dim" };
     return { stageName, state: "pending" };
   });
-}
-
-// -- Helpers --
-
-function resolveStageNames(task: WorkflowTaskView, config: WorkflowConfig): string[] {
-  if (task.flow && config.flows?.[task.flow]) {
-    return config.flows[task.flow].stages.map((entry) =>
-      typeof entry === "string" ? entry : Object.keys(entry)[0],
-    );
-  }
-  return config.stages.map((s) => s.name);
 }

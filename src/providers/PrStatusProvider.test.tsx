@@ -63,6 +63,7 @@ function createMockTasksValue(tasks: WorkflowTaskView[]) {
     createTask: vi.fn(),
     createSubtask: vi.fn(),
     deleteTask: vi.fn(),
+    applyOptimistic: vi.fn(),
     refetch: vi.fn(),
   };
 }

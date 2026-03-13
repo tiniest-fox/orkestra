@@ -168,7 +168,12 @@ export function DrawerDiffTab({
       {css && (
         <style
           // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
-          dangerouslySetInnerHTML={{ __html: css.light + FORGE_SYNTAX_OVERRIDES }}
+          dangerouslySetInnerHTML={{
+            __html:
+              css.light +
+              `@media (prefers-color-scheme: dark) {${css.dark}}` +
+              FORGE_SYNTAX_OVERRIDES,
+          }}
         />
       )}
       {diffLoading && !diff ? (

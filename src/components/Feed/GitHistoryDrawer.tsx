@@ -371,7 +371,12 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
       {css && (
         <style
           // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
-          dangerouslySetInnerHTML={{ __html: css.light + FORGE_SYNTAX_OVERRIDES }}
+          dangerouslySetInnerHTML={{
+            __html:
+              css.light +
+              `@media (prefers-color-scheme: dark) {${css.dark}}` +
+              FORGE_SYNTAX_OVERRIDES,
+          }}
         />
       )}
       <div className="flex flex-col h-full relative overflow-hidden">

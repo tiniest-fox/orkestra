@@ -55,14 +55,26 @@ export function DiffLine({
   return (
     // min-w-max ensures the row expands to content width so the bg color fills behind long lines.
     // Wrapping rows (markdown) fill the container naturally and don't need this.
+    // On mobile the entire row is the tap target — no hover button needed.
+    // biome-ignore lint/a11y/noStaticElementInteractions: role="button" is set conditionally alongside the handlers
     <div
       data-search-current={isCurrentMatchLine ? "true" : undefined}
-      className={`group relative flex font-mono text-forge-mono-md transition-colors ${bgColor} ${hoverColor}`}
+      role={isMobile && onOpenCommentInput ? "button" : undefined}
+      tabIndex={isMobile && onOpenCommentInput ? 0 : undefined}
+      onClick={isMobile && onOpenCommentInput ? onOpenCommentInput : undefined}
+      onKeyDown={
+        isMobile && onOpenCommentInput
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") onOpenCommentInput();
+            }
+          : undefined
+      }
+      className={`group relative flex font-mono text-forge-mono-md transition-colors ${bgColor} ${isMobile && onOpenCommentInput ? "active:brightness-95" : hoverColor}`}
     >
       <div className={`flex flex-shrink-0 ${gutterBg}`}>
         <div className="relative w-10 select-none text-right pr-2 text-text-quaternary">
           {line.old_line_number ?? ""}
-          {onOpenCommentInput && (
+          {!isMobile && onOpenCommentInput && (
             <button
               type="button"
               onClick={(e) => {
@@ -72,7 +84,7 @@ export function DiffLine({
               // Satisfies Biome useKeyWithClickEvents — button is click-only
               onKeyDown={() => {}}
               aria-label="Add comment"
-              className={`absolute inset-y-0 left-0 right-0 flex items-center justify-center ${isMobile ? "opacity-30" : "opacity-0 group-hover:opacity-100"} transition-opacity`}
+              className="absolute inset-y-0 left-0 right-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <span className="w-4 h-4 rounded-full bg-status-info text-white text-[10px] font-bold flex items-center justify-center leading-none">
                 +

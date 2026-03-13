@@ -18,11 +18,15 @@ const COLLAPSE_THRESHOLD = 8;
 interface FileSectionProps {
   file: HighlightedFileDiff;
   commentsByLine: Map<number, PrComment[]>;
-  draftsByLine: Map<number, DraftComment[]>;
+  draftsByLine: Map<string, DraftComment[]>;
   isActive: boolean;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
-  activeCommentLine: { filePath: string; lineNumber: number } | null;
+  activeCommentLine: {
+    filePath: string;
+    lineNumber: number;
+    lineType: "add" | "delete" | "context";
+  } | null;
   onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void;
   onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void;
   onCancelDraft?: () => void;
@@ -134,8 +138,12 @@ interface HunkLinesProps {
   lines: HighlightedLine[];
   hunkIndex: number;
   commentsByLine: Map<number, PrComment[]>;
-  draftsByLine: Map<number, DraftComment[]>;
-  activeCommentLine: { filePath: string; lineNumber: number } | null;
+  draftsByLine: Map<string, DraftComment[]>;
+  activeCommentLine: {
+    filePath: string;
+    lineNumber: number;
+    lineType: "add" | "delete" | "context";
+  } | null;
   onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void;
   onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void;
   onCancelDraft?: () => void;
@@ -208,8 +216,12 @@ function HunkLines({
       // Resolve to new_line_number, falling back to old_line_number for deleted lines
       const lineNumber = line.new_line_number ?? line.old_line_number;
       const lineComments = lineNumber !== null ? commentsByLine.get(lineNumber) : undefined;
-      const lineDrafts = lineNumber !== null ? draftsByLine.get(lineNumber) : undefined;
-      const isActiveInput = lineNumber !== null && activeCommentLine?.lineNumber === lineNumber;
+      const draftKey = lineNumber !== null ? `${line.line_type}:${lineNumber}` : null;
+      const lineDrafts = draftKey !== null ? draftsByLine.get(draftKey) : undefined;
+      const isActiveInput =
+        lineNumber !== null &&
+        activeCommentLine?.lineNumber === lineNumber &&
+        activeCommentLine?.lineType === line.line_type;
       const absLineIndex = section.startLineIndex + j;
 
       const lineMatches = fileMatches.filter(

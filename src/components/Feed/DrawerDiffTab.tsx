@@ -56,6 +56,7 @@ export function DrawerDiffTab({
   const [activeCommentLine, setActiveCommentLine] = useState<{
     filePath: string;
     lineNumber: number;
+    lineType: "add" | "delete" | "context";
   } | null>(null);
   const [draftBody, setDraftBody] = useState("");
 
@@ -111,9 +112,9 @@ export function DrawerDiffTab({
   function handleLineClick(
     filePath: string,
     lineNumber: number,
-    _lineType: "add" | "delete" | "context",
+    lineType: "add" | "delete" | "context",
   ) {
-    setActiveCommentLine({ filePath, lineNumber });
+    setActiveCommentLine({ filePath, lineNumber, lineType });
     setDraftBody("");
   }
 

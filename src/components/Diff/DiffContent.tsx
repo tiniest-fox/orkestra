@@ -35,7 +35,11 @@ interface DiffContentProps {
     lineType: "add" | "delete" | "context",
   ) => void;
   draftComments?: DraftComment[];
-  activeCommentLine?: { filePath: string; lineNumber: number } | null;
+  activeCommentLine?: {
+    filePath: string;
+    lineNumber: number;
+    lineType: "add" | "delete" | "context";
+  } | null;
   onSaveDraft?: (
     filePath: string,
     lineNumber: number,
@@ -101,15 +105,16 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
   }, [comments]);
 
   const draftsByFile = useMemo(() => {
-    if (!draftComments) return new Map<string, Map<number, DraftComment[]>>();
-    const map = new Map<string, Map<number, DraftComment[]>>();
+    if (!draftComments) return new Map<string, Map<string, DraftComment[]>>();
+    const map = new Map<string, Map<string, DraftComment[]>>();
     for (const draft of draftComments) {
       if (!map.has(draft.filePath)) map.set(draft.filePath, new Map());
       const byLine = map.get(draft.filePath);
       if (!byLine) continue;
-      const existing = byLine.get(draft.lineNumber) ?? [];
+      const key = `${draft.lineType}:${draft.lineNumber}`;
+      const existing = byLine.get(key) ?? [];
       existing.push(draft);
-      byLine.set(draft.lineNumber, existing);
+      byLine.set(key, existing);
     }
     return map;
   }, [draftComments]);

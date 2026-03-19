@@ -5,6 +5,8 @@
  * indefinitely. Subsequent accesses to the same hash are instant.
  *
  * Use prefetchCommitDiff() to warm the cache before the drawer opens.
+ *
+ * Cache key includes contextLines so expanding context triggers a fresh fetch.
  */
 
 import { useEffect, useState } from "react";
@@ -16,15 +18,23 @@ const diffCache = new Map<string, HighlightedTaskDiff>();
 const pendingFetches = new Map<string, Promise<HighlightedTaskDiff>>();
 
 /** Pre-warm the diff cache for a commit. No-op if already cached or in-flight. */
-export function prefetchCommitDiff(commitHash: string, transport: Transport): void {
-  if (diffCache.has(commitHash) || pendingFetches.has(commitHash)) return;
-  const p = transport.call<HighlightedTaskDiff>("get_commit_diff", { commit_hash: commitHash });
-  pendingFetches.set(commitHash, p);
+export function prefetchCommitDiff(
+  commitHash: string,
+  transport: Transport,
+  contextLines = 3,
+): void {
+  const cacheKey = `${commitHash}:${contextLines}`;
+  if (diffCache.has(cacheKey) || pendingFetches.has(cacheKey)) return;
+  const p = transport.call<HighlightedTaskDiff>("get_commit_diff", {
+    commit_hash: commitHash,
+    context_lines: contextLines,
+  });
+  pendingFetches.set(cacheKey, p);
   p.then((result) => {
-    diffCache.set(commitHash, result);
-    pendingFetches.delete(commitHash);
+    diffCache.set(cacheKey, result);
+    pendingFetches.delete(cacheKey);
   }).catch(() => {
-    pendingFetches.delete(commitHash);
+    pendingFetches.delete(cacheKey);
   });
 }
 
@@ -34,18 +44,19 @@ interface UseCommitDiffResult {
   error: unknown;
 }
 
-export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
+export function useCommitDiff(commitHash: string | null, contextLines = 3): UseCommitDiffResult {
+  const cacheKey = commitHash ? `${commitHash}:${contextLines}` : null;
   const transport = useTransport();
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(() =>
-    commitHash ? (diffCache.get(commitHash) ?? null) : null,
+    cacheKey ? (diffCache.get(cacheKey) ?? null) : null,
   );
   const [loading, setLoading] = useState<boolean>(
-    () => commitHash !== null && !diffCache.has(commitHash),
+    () => cacheKey !== null && !diffCache.has(cacheKey),
   );
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    if (!commitHash) {
+    if (!cacheKey || !commitHash) {
       setDiff(null);
       setLoading(false);
       setError(null);
@@ -53,7 +64,7 @@ export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
     }
 
     // Cache hit — serve immediately, no fetch needed.
-    const cached = diffCache.get(commitHash);
+    const cached = diffCache.get(cacheKey);
     if (cached) {
       setDiff(cached);
       setLoading(false);
@@ -66,25 +77,26 @@ export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
 
     // Reuse an in-flight promise (e.g. started by prefetchCommitDiff) or
     // start a new one.
-    let promise = pendingFetches.get(commitHash);
+    let promise = pendingFetches.get(cacheKey);
     if (!promise) {
       promise = transport.call<HighlightedTaskDiff>("get_commit_diff", {
         commit_hash: commitHash,
+        context_lines: contextLines,
       });
-      pendingFetches.set(commitHash, promise);
+      pendingFetches.set(cacheKey, promise);
     }
 
     promise
       .then((result) => {
-        diffCache.set(commitHash, result);
-        pendingFetches.delete(commitHash);
+        diffCache.set(cacheKey, result);
+        pendingFetches.delete(cacheKey);
         if (!cancelled) {
           setDiff(result);
           setLoading(false);
         }
       })
       .catch((err) => {
-        pendingFetches.delete(commitHash);
+        pendingFetches.delete(cacheKey);
         if (!cancelled) {
           setError(err);
           setLoading(false);
@@ -94,7 +106,7 @@ export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
     return () => {
       cancelled = true;
     };
-  }, [transport, commitHash]);
+  }, [transport, cacheKey, commitHash, contextLines]);
 
   return { diff, loading, error };
 }

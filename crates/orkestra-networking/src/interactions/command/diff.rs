@@ -21,12 +21,17 @@ use super::dispatch::CommandContext;
 ///
 /// Uses two-tier caching: SHA check (Tier 1) and per-file content hash (Tier 2).
 ///
-/// Expected params: `{ "task_id": "<id>" }`
+/// Expected params: `{ "task_id": "<id>", "context_lines": <n> }`
 pub(super) async fn handle_get_task_diff(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(&params)?;
+    let context_lines = params
+        .get("context_lines")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .unwrap_or(3);
     let api = Arc::clone(&ctx.api);
     let highlighter = Arc::clone(&ctx.highlighter);
     let diff_cache = Arc::clone(&ctx.diff_cache);
@@ -55,15 +60,25 @@ pub(super) async fn handle_get_task_diff(
         // Tier 1: clean worktree + matching SHA → return full cached result.
         if let Ok(wt_state) = git.get_worktree_state(worktree_path) {
             if !wt_state.is_dirty {
-                if let Some(files) = diff_cache.get_all_if_clean(&task_id, &wt_state.head_sha) {
+                let cache_sha = if context_lines == 3 {
+                    wt_state.head_sha.clone()
+                } else {
+                    format!("{}:{}", wt_state.head_sha, context_lines)
+                };
+                if let Some(files) = diff_cache.get_all_if_clean(&task_id, &cache_sha) {
                     return Ok(
                         serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null)
                     );
                 }
             }
 
+            let cache_sha = if context_lines == 3 {
+                wt_state.head_sha.clone()
+            } else {
+                format!("{}:{}", wt_state.head_sha, context_lines)
+            };
             let raw_diff = git
-                .diff_against_base(worktree_path, branch_name, &task.base_branch)
+                .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                 .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
 
             // Tier 2: per-file content hash — only re-highlight changed files.
@@ -91,13 +106,13 @@ pub(super) async fn handle_get_task_diff(
                 })
                 .collect();
 
-            diff_cache.store(&task_id, &wt_state.head_sha, to_store);
+            diff_cache.store(&task_id, &cache_sha, to_store);
             return Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null));
         }
 
         // get_worktree_state failed — fall back to direct diff with no caching.
         let raw_diff = git
-            .diff_against_base(worktree_path, branch_name, &task.base_branch)
+            .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
             .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
 
         let files = raw_diff
@@ -249,7 +264,7 @@ pub(super) async fn handle_get_batch_file_counts(
 
 /// Handle the `get_commit_diff` method — returns the highlighted diff for a commit.
 ///
-/// Expected params: `{ "commit_hash": "<hash>" }`
+/// Expected params: `{ "commit_hash": "<hash>", "context_lines": <n> }`
 pub(super) async fn handle_get_commit_diff(
     ctx: Arc<CommandContext>,
     params: Value,
@@ -259,6 +274,11 @@ pub(super) async fn handle_get_commit_diff(
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: commit_hash"))?
         .to_string();
+    let context_lines = params
+        .get("context_lines")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .unwrap_or(3);
 
     let api = Arc::clone(&ctx.api);
     let highlighter = Arc::clone(&ctx.highlighter);
@@ -274,7 +294,7 @@ pub(super) async fn handle_get_commit_diff(
         }; // lock released — git subprocess runs off the lock
 
         let task_diff = git
-            .commit_diff(&commit_hash)
+            .commit_diff(&commit_hash, context_lines)
             .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
 
         let files = task_diff
@@ -323,6 +343,7 @@ fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> Highl
         deletions: file.deletions,
         is_binary: file.is_binary,
         hunks,
+        total_new_lines: file.total_new_lines,
     }
 }
 

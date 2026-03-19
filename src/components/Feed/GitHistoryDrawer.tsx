@@ -4,7 +4,7 @@
 // Mobile: full-width commit list; clicking a commit slides in a detail overlay.
 
 import { ChevronDown, ChevronRight, Download, GitCompare, RefreshCw, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -260,10 +260,15 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
   const diffContentRef = useRef<DiffContentHandle>(null);
   const diffScrollRef = useRef<HTMLDivElement>(null);
 
-  const { diff: rawDiff, loading: diffLoading } = useCommitDiff(selectedHash);
-  const diff = rawDiff
-    ? { ...rawDiff, files: [...rawDiff.files].sort((a, b) => a.path.localeCompare(b.path)) }
-    : rawDiff;
+  const { diff: rawDiff, loading: diffLoading } = useCommitDiff(selectedHash, 3);
+  // Memoize sorted files so useAutoCollapsePaths doesn't re-run on every render.
+  const diff = useMemo(
+    () =>
+      rawDiff
+        ? { ...rawDiff, files: [...rawDiff.files].sort((a, b) => a.path.localeCompare(b.path)) }
+        : rawDiff,
+    [rawDiff],
+  );
 
   const { collapsedPaths, toggleCollapsed, resetInteraction, expandForSearch } =
     useAutoCollapsePaths(diff?.files);

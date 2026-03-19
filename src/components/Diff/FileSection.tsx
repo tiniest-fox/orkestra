@@ -7,6 +7,7 @@ import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
 import { DraftCommentBubble } from "./DraftCommentBubble";
 import { FileHeaderContent } from "./FileHeaderContent";
+import { HunkGap } from "./HunkGap";
 import type { SearchRange } from "./highlightSearchInHtml";
 import { LineCommentInput } from "./LineCommentInput";
 import type { DraftComment } from "./types";
@@ -35,6 +36,12 @@ interface FileSectionProps {
   onDraftBodyChange?: (body: string) => void;
   fileMatches: DiffMatch[];
   currentMatch: DiffMatch | null;
+  onExpandContext?: (
+    hunkIndex: number,
+    position: "above" | "between" | "below",
+    amount: number,
+  ) => void;
+  contextLines?: number;
 }
 
 export function FileSection({
@@ -53,6 +60,8 @@ export function FileSection({
   onDraftBodyChange,
   fileMatches,
   currentMatch,
+  onExpandContext,
+  contextLines = 3,
 }: FileSectionProps) {
   if (file.is_binary) {
     return (
@@ -78,31 +87,83 @@ export function FileSection({
       </button>
 
       {!isCollapsed &&
-        file.hunks.map((hunk, hunkIndex) => (
-          <div
-            key={`${hunk.old_start}-${hunk.new_start}`}
-            className="border-b border-border last:border-b-0"
-          >
-            <div className="bg-canvas px-4 py-1 font-mono text-forge-mono-label text-text-quaternary">
-              @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
-            </div>
-            <HunkLines
-              lines={hunk.lines}
-              hunkIndex={hunkIndex}
-              commentsByLine={commentsByLine}
-              draftsByLine={draftsByLine}
-              activeCommentLine={activeCommentLine}
-              onLineClick={onLineClick}
-              onSaveDraft={onSaveDraft}
-              onCancelDraft={onCancelDraft}
-              onDeleteDraft={onDeleteDraft}
-              draftBody={draftBody}
-              onDraftBodyChange={onDraftBodyChange}
-              fileMatches={fileMatches}
-              currentMatch={currentMatch}
-            />
-          </div>
-        ))}
+        (() => {
+          const hunks = file.hunks;
+          const isDeleted = file.change_type === "deleted";
+          return hunks.map((hunk, hunkIndex) => {
+            const aboveGap = hunkIndex === 0 && !isDeleted ? hunk.new_start - 1 : null;
+            const betweenGap =
+              hunkIndex < hunks.length - 1
+                ? hunks[hunkIndex + 1].new_start - (hunk.new_start + hunk.new_count)
+                : null;
+            const isLast = hunkIndex === hunks.length - 1;
+
+            return (
+              <div
+                key={`${hunk.old_start}-${hunk.new_start}`}
+                className="border-b border-border last:border-b-0"
+              >
+                {hunkIndex === 0 &&
+                  !isDeleted &&
+                  onExpandContext &&
+                  aboveGap !== null &&
+                  aboveGap > 0 && (
+                    <HunkGap
+                      gapSize={aboveGap}
+                      position="above"
+                      onExpand={(amount) => onExpandContext(0, "above", amount)}
+                    />
+                  )}
+                <div className="bg-canvas px-4 py-1 font-mono text-forge-mono-label text-text-quaternary">
+                  @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
+                </div>
+                <HunkLines
+                  lines={hunk.lines}
+                  hunkIndex={hunkIndex}
+                  commentsByLine={commentsByLine}
+                  draftsByLine={draftsByLine}
+                  activeCommentLine={activeCommentLine}
+                  onLineClick={onLineClick}
+                  onSaveDraft={onSaveDraft}
+                  onCancelDraft={onCancelDraft}
+                  onDeleteDraft={onDeleteDraft}
+                  draftBody={draftBody}
+                  onDraftBodyChange={onDraftBodyChange}
+                  fileMatches={fileMatches}
+                  currentMatch={currentMatch}
+                  contextLines={contextLines}
+                />
+                {betweenGap !== null && onExpandContext && (
+                  <HunkGap
+                    gapSize={betweenGap}
+                    position="between"
+                    onExpand={(amount) => onExpandContext(hunkIndex, "between", amount)}
+                  />
+                )}
+                {isLast &&
+                  !isDeleted &&
+                  onExpandContext &&
+                  (() => {
+                    const lastShownLine =
+                      [...hunk.lines].reverse().find((l) => l.new_line_number !== null)
+                        ?.new_line_number ?? null;
+                    const totalLines = file.total_new_lines ?? null;
+                    const hasMoreBelow =
+                      totalLines !== null && lastShownLine !== null
+                        ? lastShownLine < totalLines
+                        : false;
+                    return hasMoreBelow ? (
+                      <HunkGap
+                        gapSize={null}
+                        position="below"
+                        onExpand={(amount) => onExpandContext(hunkIndex, "below", amount)}
+                      />
+                    ) : null;
+                  })()}
+              </div>
+            );
+          });
+        })()}
     </>
   );
 }
@@ -116,8 +177,13 @@ type Section = {
   startLineIndex: number;
 };
 
-function flushContext(sections: Section[], context: HighlightedLine[], startIndex: number) {
-  if (context.length > COLLAPSE_THRESHOLD) {
+function flushContext(
+  sections: Section[],
+  context: HighlightedLine[],
+  startIndex: number,
+  threshold: number,
+) {
+  if (context.length > threshold) {
     sections.push({ type: "render", lines: context.slice(0, 3), startLineIndex: startIndex });
     sections.push({
       type: "collapse",
@@ -152,6 +218,7 @@ interface HunkLinesProps {
   onDraftBodyChange?: (body: string) => void;
   fileMatches: DiffMatch[];
   currentMatch: DiffMatch | null;
+  contextLines?: number;
 }
 
 function HunkLines({
@@ -168,7 +235,9 @@ function HunkLines({
   onDraftBodyChange,
   fileMatches,
   currentMatch,
+  contextLines = 3,
 }: HunkLinesProps) {
+  const collapseThreshold = Math.max(COLLAPSE_THRESHOLD, contextLines * 2 + 2);
   const sections: Section[] = [];
   let currentContext: HighlightedLine[] = [];
   let contextStartIndex = 0;
@@ -180,7 +249,7 @@ function HunkLines({
       currentContext.push(line);
     } else {
       if (currentContext.length > 0) {
-        flushContext(sections, currentContext, contextStartIndex);
+        flushContext(sections, currentContext, contextStartIndex, collapseThreshold);
         currentContext = [];
       }
       sections.push({ type: "render", lines: [line], startLineIndex: lineIndex });
@@ -189,7 +258,7 @@ function HunkLines({
   }
 
   if (currentContext.length > 0) {
-    flushContext(sections, currentContext, contextStartIndex);
+    flushContext(sections, currentContext, contextStartIndex, collapseThreshold);
   }
 
   return sections.map((section, i) => {

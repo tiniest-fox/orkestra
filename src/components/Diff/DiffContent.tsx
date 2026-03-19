@@ -54,6 +54,14 @@ interface DiffContentProps {
   // -- Search props (all optional) --
   matches?: DiffMatch[];
   currentMatch?: DiffMatch | null;
+  onExpandContext?: (
+    filePath: string,
+    hunkIndex: number,
+    position: "above" | "between" | "below",
+    amount: number,
+  ) => void;
+  /** Per-file context line counts for collapse threshold. Falls back to 3 for unexpanded files. */
+  fileContextLines?: Map<string, number>;
 }
 
 export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(function DiffContent(
@@ -75,6 +83,8 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
     onDraftBodyChange,
     matches,
     currentMatch,
+    onExpandContext,
+    fileContextLines,
   },
   ref,
 ) {
@@ -186,6 +196,13 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
               onDraftBodyChange={onDraftBodyChange}
               fileMatches={fileMatches}
               currentMatch={isMatchFile ? (currentMatch ?? null) : null}
+              onExpandContext={
+                onExpandContext
+                  ? (hunkIndex, position, amount) =>
+                      onExpandContext(file.path, hunkIndex, position, amount)
+                  : undefined
+              }
+              contextLines={fileContextLines?.get(file.path) ?? 3}
             />
           </div>
         );

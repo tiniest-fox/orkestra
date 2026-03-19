@@ -3,7 +3,7 @@
 //! Registers c / ] / [ / j·k hotkeys when active.
 
 import { GitCompare } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
@@ -41,7 +41,7 @@ export function DrawerDiffTab({
   onAddDraftComment,
   onRemoveDraftComment,
 }: DrawerDiffTabProps) {
-  const { diff: liveDiff, diffLoading } = useDrawerDiff();
+  const { diff: liveDiff, diffLoading, fileContextLines, expandContext } = useDrawerDiff();
   const { css } = useSyntaxCss();
   const isMobile = useIsMobile();
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -70,9 +70,14 @@ export function DrawerDiffTab({
   }, [hasDrafts, liveDiff]);
 
   const rawDiff = hasDrafts ? diffSnapshotRef.current : liveDiff;
-  const diff = rawDiff
-    ? { ...rawDiff, files: [...rawDiff.files].sort((a, b) => a.path.localeCompare(b.path)) }
-    : rawDiff;
+  // Memoize sorted files so useAutoCollapsePaths doesn't re-run on every render.
+  const diff = useMemo(
+    () =>
+      rawDiff
+        ? { ...rawDiff, files: [...rawDiff.files].sort((a, b) => a.path.localeCompare(b.path)) }
+        : rawDiff,
+    [rawDiff],
+  );
 
   const { collapsedPaths, toggleCollapsed, expandForSearch } = useAutoCollapsePaths(diff?.files);
 
@@ -132,6 +137,15 @@ export function DrawerDiffTab({
   function handleDismissCommentInput() {
     setActiveCommentLine(null);
     setDraftBody("");
+  }
+
+  function handleExpandContext(
+    filePath: string,
+    hunkIndex: number,
+    position: "above" | "between" | "below",
+    amount: number,
+  ) {
+    void expandContext(filePath, hunkIndex, position, amount);
   }
 
   // Keyboard navigation — only meaningful when this tab is active.
@@ -227,6 +241,8 @@ export function DrawerDiffTab({
                 onDraftBodyChange={setDraftBody}
                 matches={search.matches}
                 currentMatch={search.currentMatch}
+                onExpandContext={handleExpandContext}
+                fileContextLines={fileContextLines}
               />
             </div>
           </div>

@@ -71,6 +71,8 @@ pub struct HighlightedFileDiff {
     pub is_binary: bool,
     /// Parsed and highlighted hunks.
     pub hunks: Vec<HighlightedHunk>,
+    /// Total lines in the new version of the file (None for deleted/binary).
+    pub total_new_lines: Option<u32>,
 }
 
 /// Complete task diff with highlighting.
@@ -99,14 +101,17 @@ pub struct SyntaxCss {
 ///
 /// - Tier 1: If HEAD SHA matches and worktree is clean, return cached result immediately.
 /// - Tier 2: Run git diff, but only re-highlight files whose content hash changed.
+#[allow(clippy::too_many_lines)]
 #[tauri::command]
 pub async fn workflow_get_task_diff(
     task_id: String,
+    context_lines: Option<u32>,
     registry: tauri::State<'_, ProjectRegistry>,
     window: tauri::Window,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
     diff_cache: tauri::State<'_, DiffCacheState>,
 ) -> Result<HighlightedTaskDiff, TauriError> {
+    let context_lines = context_lines.unwrap_or(3);
     registry.with_project(window.label(), |state| {
         let (task, git) = {
             let api = state.api()?;
@@ -133,16 +138,57 @@ pub async fn workflow_get_task_diff(
         // Use ok() so a transient git2 error doesn't block the diff.
         if let Ok(wt_state) = git.get_worktree_state(worktree_path) {
             if !wt_state.is_dirty {
+                let cache_sha = if context_lines == 3 {
+                    wt_state.head_sha.clone()
+                } else {
+                    format!("{}:{}", wt_state.head_sha, context_lines)
+                };
                 if let Some(files) =
-                    diff_cache.get_all_if_clean(window.label(), &task_id, &wt_state.head_sha)
+                    diff_cache.get_all_if_clean(window.label(), &task_id, &cache_sha)
                 {
                     return Ok(HighlightedTaskDiff { files });
                 }
+
+                // Tier 1 miss or dirty — run git diff subprocess.
+                let raw_diff = git
+                    .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
+                    .map_err(|e| {
+                        orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string())
+                    })?;
+
+                // Tier 2: per-file content hash — only re-highlight changed files.
+                let file_hashes: Vec<(String, u64)> = raw_diff
+                    .files
+                    .iter()
+                    .map(|f| (f.path.clone(), file_content_hash(f)))
+                    .collect();
+                let mut cached_files =
+                    diff_cache.get_files_by_hash(window.label(), &task_id, &file_hashes);
+
+                let mut to_store: Vec<(String, u64, HighlightedFileDiff)> = Vec::new();
+                let files: Vec<HighlightedFileDiff> = raw_diff
+                    .files
+                    .into_iter()
+                    .zip(file_hashes.iter())
+                    .map(|(file, (path, hash))| {
+                        if let Some(Some(cached)) = cached_files.remove(path) {
+                            to_store.push((path.clone(), *hash, cached.clone()));
+                            cached
+                        } else {
+                            let result = highlight_file_diff(file, &highlighter);
+                            to_store.push((path.clone(), *hash, result.clone()));
+                            result
+                        }
+                    })
+                    .collect();
+
+                diff_cache.store(window.label(), &task_id, &cache_sha, to_store);
+                return Ok(HighlightedTaskDiff { files });
             }
 
-            // Tier 1 miss or dirty — run git diff subprocess.
+            // Worktree is dirty — run git diff subprocess without Tier 1 caching.
             let raw_diff = git
-                .diff_against_base(worktree_path, branch_name, &task.base_branch)
+                .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                 .map_err(|e| {
                     orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string())
                 })?;
@@ -173,13 +219,14 @@ pub async fn workflow_get_task_diff(
                 })
                 .collect();
 
+            // Store with dirty-state SHA (no Tier 1 key) for Tier 2 re-use only.
             diff_cache.store(window.label(), &task_id, &wt_state.head_sha, to_store);
             return Ok(HighlightedTaskDiff { files });
         }
 
         // get_worktree_state failed — fall back to direct diff with no caching.
         let raw_diff = git
-            .diff_against_base(worktree_path, branch_name, &task.base_branch)
+            .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
             .map_err(|e| orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()))?;
 
         let files = raw_diff
@@ -288,6 +335,7 @@ fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> Highl
         deletions: file.deletions,
         is_binary: file.is_binary,
         hunks,
+        total_new_lines: file.total_new_lines,
     }
 }
 
@@ -475,8 +523,10 @@ pub fn workflow_get_commit_diff(
     registry: State<ProjectRegistry>,
     window: tauri::Window,
     commit_hash: String,
+    context_lines: Option<u32>,
     highlighter: State<SyntaxHighlighter>,
 ) -> Result<HighlightedTaskDiff, TauriError> {
+    let context_lines = context_lines.unwrap_or(3);
     registry.with_project(window.label(), |state| {
         let git = {
             let api = state.api()?;
@@ -486,7 +536,7 @@ pub fn workflow_get_commit_diff(
             Arc::clone(git)
         }; // mutex released here — git subprocess runs off the lock
         let task_diff = git
-            .commit_diff(&commit_hash)
+            .commit_diff(&commit_hash, context_lines)
             .map_err(|e| orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()))?;
 
         let files = task_diff

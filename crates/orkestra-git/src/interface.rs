@@ -134,12 +134,14 @@ pub trait GitService: Send + Sync {
     /// to the HEAD of `branch_name`, showing only changes made on the task branch.
     ///
     /// Returns structured diff data including file paths, change types, and
-    /// unified diff content for each file.
+    /// unified diff content for each file. `context_lines` controls how many
+    /// surrounding context lines are included in each hunk (default: 3).
     fn diff_against_base(
         &self,
         worktree_path: &Path,
         branch_name: &str,
         base_branch: &str,
+        context_lines: u32,
     ) -> Result<TaskDiff, GitError>;
 
     /// Get the diff of uncommitted changes in a worktree.
@@ -152,8 +154,9 @@ pub trait GitService: Send + Sync {
     /// Get the diff for a specific commit.
     ///
     /// Returns the same `TaskDiff` format as `diff_against_base`,
-    /// showing all changes introduced by the given commit.
-    fn commit_diff(&self, commit_hash: &str) -> Result<TaskDiff, GitError>;
+    /// showing all changes introduced by the given commit. `context_lines`
+    /// controls how many surrounding context lines are included (default: 3).
+    fn commit_diff(&self, commit_hash: &str, context_lines: u32) -> Result<TaskDiff, GitError>;
 
     // -- Merge --
 

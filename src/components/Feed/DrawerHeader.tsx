@@ -158,7 +158,7 @@ export function DrawerHeader({
         ]
       : []),
     // Chat — available without a worktree
-    ...(!task.derived.is_done && !task.derived.is_archived && onOpenChat
+    ...(!task.derived.is_archived && onOpenChat
       ? [
           {
             icon: <MessageSquare />,

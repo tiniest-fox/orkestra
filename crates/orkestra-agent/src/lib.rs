@@ -35,7 +35,7 @@ pub use script_handle::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
 
 // Env resolution
 pub use interactions::env::resolve_project_env::execute as resolve_project_env;
-pub use interactions::spawner::cli_path::prepend_cli_dir;
+pub use interactions::spawner::cli_path::{prepend_cli_dir, set_bundled_ork_path};
 
 /// Resolve the full agent environment for a project.
 ///

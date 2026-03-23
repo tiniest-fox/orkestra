@@ -39,6 +39,13 @@ pub static PROJECT_ROOTS: std::sync::LazyLock<std::sync::Mutex<Vec<PathBuf>>> =
 /// `Err(msg)` — fix failed; `msg` includes the error and current PATH.
 pub static PATH_FIX_RESULT: OnceLock<Result<String, String>> = OnceLock::new();
 
+/// Bundled `ork` CLI binary path, detected at app startup.
+///
+/// `Some(path)` when a real (non-empty) binary was found in the app's resource directory.
+/// `None` in development builds where `build.rs` creates an empty placeholder so
+/// Tauri's resource validation passes.
+pub struct OrkBinPath(pub Option<PathBuf>);
+
 /// Cleanup function to kill all tracked agents for all open projects.
 fn cleanup_all_agents(app_handle: &AppHandle) {
     orkestra_debug!("cleanup", "Killing agents for all open projects...");
@@ -285,6 +292,15 @@ fn handle_window_close(app_handle: &AppHandle, window_label: &str) {
 // Application Entry Point
 // =============================================================================
 
+/// Returns `true` if `path` refers to a non-empty file (i.e. a real compiled binary).
+///
+/// In development, `build.rs` creates an empty placeholder at the resource path so
+/// Tauri's build-time resource validation passes before `ork` has been compiled.
+/// The size check distinguishes this placeholder (0 bytes) from a real binary.
+fn is_real_ork_binary(path: &std::path::Path) -> bool {
+    path.metadata().map(|m| m.len() > 0).unwrap_or(false)
+}
+
 /// Run the Tauri application.
 ///
 /// The app supports multiple project windows. On first launch (or when no valid
@@ -317,10 +333,9 @@ pub fn run() {
 
     // Create the project registry early so run_pids can be shared with the signal handler.
     let registry = ProjectRegistry::new();
+    // Capture run_pids for the signal handler, which is set up inside .setup() below
+    // so the handler thread starts only after the environment is fully configured.
     let run_pids = registry.run_pids();
-
-    // Set up signal handlers to ensure cleanup on external termination
-    setup_signal_handlers(run_pids);
 
     // Load .env files. More specific files are loaded first so their values
     // take precedence. Neither call uses _override, so process environment
@@ -339,6 +354,26 @@ pub fn run() {
         .manage(registry)
         .manage(diff_cache::DiffCacheState::new())
         .setup(move |app| {
+            // Detect the bundled ork binary. `build.rs` creates an empty placeholder
+            // at the resource path so Tauri's build-time validation passes in dev
+            // builds — the size guard (`is_real_ork_binary`) distinguishes the
+            // placeholder (0 bytes) from a real compiled binary.
+            let bundled_ork: Option<PathBuf> = app.path().resource_dir().ok().and_then(|dir| {
+                let p = dir.join("ork");
+                is_real_ork_binary(&p).then_some(p)
+            });
+            if let Some(ref ork_path) = bundled_ork {
+                // Register the bundled binary path via OnceLock so the agent spawner
+                // can find it without process-environment mutation (set_var is UB
+                // when other threads exist, and Tauri's Builder spawns threads before
+                // the setup closure runs).
+                orkestra_agent::set_bundled_ork_path(ork_path.clone());
+            }
+            app.manage(OrkBinPath(bundled_ork));
+
+            // Start signal handlers now that the environment is fully configured.
+            setup_signal_handlers(run_pids);
+
             // Initialize syntax highlighter (Send + Sync, shared across commands)
             app.manage(highlight::SyntaxHighlighter::new());
 
@@ -376,9 +411,16 @@ pub fn run() {
                 .select_all()
                 .build()?;
 
+            let install_ork =
+                MenuItemBuilder::with_id("install_ork", "Install 'ork' CLI Tool...").build(app)?;
+            let help_menu = SubmenuBuilder::new(app, "Help")
+                .item(&install_ork)
+                .build()?;
+
             let menu = MenuBuilder::new(app)
                 .item(&file_menu)
                 .item(&edit_menu)
+                .item(&help_menu)
                 .build()?;
 
             app.set_menu(menu)?;
@@ -387,6 +429,29 @@ pub fn run() {
             let app_handle = app.handle().clone();
             app.on_menu_event(move |_app, event| {
                 match event.id().as_ref() {
+                    "install_ork" => {
+                        use tauri_plugin_notification::NotificationExt;
+                        let ork_bin = app_handle.state::<OrkBinPath>().0.clone();
+                        let (title, body) = match ork_bin {
+                            None => (
+                                "ork CLI — Install failed",
+                                "ork binary not found in app bundle. Run Orkestra from the installed .app.".to_string(),
+                            ),
+                            Some(ref ork_bin) => {
+                                let target = std::path::Path::new("/usr/local/bin/ork");
+                                match commands::setup::install_ork_to_path(ork_bin, target) {
+                                    Ok(msg) => ("ork CLI — Installed", msg),
+                                    Err(e) => ("ork CLI — Install failed", e.message),
+                                }
+                            }
+                        };
+                        let _ = app_handle
+                            .notification()
+                            .builder()
+                            .title(title)
+                            .body(body)
+                            .show();
+                    }
                     "new_window" | "open_project" => {
                         // Find a window that is still showing the picker UI (no
                         // "?project=" in its URL). Once load_project_in_window runs,
@@ -543,6 +608,7 @@ pub fn run() {
             commands::open_in_terminal,
             commands::open_in_editor,
             commands::detect_external_tools,
+            commands::install_cli_tools,
             // Assistant commands
             commands::assistant_send_message,
             commands::assistant_stop,

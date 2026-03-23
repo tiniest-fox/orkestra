@@ -64,6 +64,19 @@ Produce a summary artifact as usual, focusing on integration quality rather than
 
 ## Implementation Mindset
 
+<!-- compound: blindly-profound-thorntail -->
+### Grep for Mirrored String Constants When Renaming
+
+When you rename a section heading, concept name, or output field in a prompt template or schema, **grep for the old string before finishing**. Text constants in prompt templates are mirrored in at least four places:
+
+1. **JSON schema description** (`schema.json` or inline schema string)
+2. **Trait/interface doc comment** (the `///` above the method)
+3. **Mock implementation** (the hardcoded string a mock returns)
+4. **Test assertions** (any `assert!(output.contains("Old Name"))`)
+5. **Hardcoded fallback values** (integration code that builds a default body when the AI call fails)
+
+Updating the template but missing any of these is a Single Source of Truth violation (principle #2) and is a guaranteed rejection. The fallback path in integration code is the easiest to miss — search for it explicitly with `grep -r "Old Name" .` before submitting.
+
 <!-- compound: evilly-happening-teal -->
 ### Update Docstrings When Changing Behavior
 

@@ -65,7 +65,7 @@ pub(crate) fn execute(
         .unwrap_or_else(|_| {
             // Fallback: use task title and basic body with new format + footer
             let body = format!(
-                "## Summary\n\n{}\n\n## Decisions\n\n_AI generation failed_\n\n## Verification\n\n_Manual verification required_{}",
+                "## Summary\n\n{}\n\n## Decisions\n\n_AI generation failed_\n\n## Change Walkthrough\n\n_AI generation failed — add walkthrough manually_{}",
                 task.description,
                 crate::pr_description::format_pr_footer(model_names)
             );

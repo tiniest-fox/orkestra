@@ -526,3 +526,67 @@ fn test_return_to_work_from_interrupted() {
 
     ctx.assert_resume_prompt_contains("return_to_work", &["structured output", "done chatting"]);
 }
+
+// =============================================================================
+// Test: return_to_work resumes session even without has_activity
+// =============================================================================
+
+#[test]
+fn test_return_to_work_resumes_without_has_activity() {
+    // Reproduces the bug: agent was interrupted before producing structured output
+    // (has_activity=false), user chatted, then clicked Return to Work. Before the
+    // fix, this would spawn fresh with the initial prompt instead of resuming.
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Resume without activity",
+        "Test return_to_work resumes when has_activity is false",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Create session WITHOUT has_activity — simulates an agent that was interrupted
+    // before producing structured output. The agent streamed log lines (visible in UI)
+    // but never completed, so persist_activity_flag was never called.
+    let db_path = ctx.temp_dir().join(".orkestra/.database/orkestra.db");
+    let conn =
+        orkestra_core::adapters::sqlite::DatabaseConnection::open(&db_path).expect("open db");
+    let store: std::sync::Arc<dyn orkestra_core::workflow::ports::WorkflowStore> =
+        std::sync::Arc::new(orkestra_core::workflow::SqliteWorkflowStore::new(
+            conn.shared(),
+        ));
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut session = StageSession::new("no-activity-session", &task_id, "work", &now);
+    session.claude_session_id = Some("no-activity-session".to_string());
+    session.has_activity = false; // Key: agent was interrupted before completion
+    store.save_stage_session(&session).expect("save session");
+
+    ctx.api().agent_started(&task_id).unwrap();
+    ctx.api().interrupt(&task_id).unwrap();
+
+    // Chat while interrupted
+    ctx.api()
+        .send_chat_message(&task_id, "This is totally wrong, just submit a rejection")
+        .expect("send_chat_message should succeed");
+
+    // Return to work
+    ctx.api()
+        .return_to_work(&task_id, None)
+        .expect("return_to_work should succeed");
+
+    // Advance orchestrator — should resume with return_to_work prompt, NOT fresh initial prompt
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done after returning from chat.".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output
+
+    // Verify the resume prompt was used (not the initial prompt)
+    ctx.assert_resume_prompt_contains("return_to_work", &["structured output", "done chatting"]);
+}

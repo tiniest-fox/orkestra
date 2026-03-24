@@ -182,7 +182,7 @@ fn perform_git_integration(
     // If there's nothing to merge (e.g., task made no file modifications),
     // skip AI message generation and use a plain fast-forward merge.
     let has_changes = params.worktree_path.as_ref().is_some_and(|wp| {
-        git.diff_against_base(Path::new(wp), &params.branch_name, &params.target_branch)
+        git.diff_against_base(Path::new(wp), &params.branch_name, &params.target_branch, 3)
             .is_ok_and(|diff| !diff.files.is_empty())
     });
 

@@ -53,13 +53,11 @@ export function useDiffFindNavigation({
     if (collapsedPaths.has(file.path)) expandForSearch(file.path);
     // Phase 1: scroll file into virtualizer viewport.
     diffContentRef.current?.scrollToFile(file.path);
-    // Phase 2: wait for React to commit the expandForSearch state update (first rAF),
-    // then scroll to the specific matching line after paint (second rAF).
+    // Phase 2: wait for React to commit the expandForSearch state update, then
+    // scroll to the specific matching line.
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = scrollEl?.querySelector('[data-search-current="true"]');
-        el?.scrollIntoView({ block: "center", behavior: "smooth" });
-      });
+      const el = scrollEl?.querySelector('[data-search-current="true"]');
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
     });
   }
 

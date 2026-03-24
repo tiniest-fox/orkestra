@@ -59,6 +59,7 @@ pub fn execute(output: &str) -> TaskDiff {
                         } else {
                             Some(current_diff.clone())
                         },
+                        total_new_lines: None,
                     });
                 }
                 current_diff.clear();
@@ -100,6 +101,7 @@ pub fn execute(output: &str) -> TaskDiff {
                 } else {
                     Some(current_diff)
                 },
+                total_new_lines: None,
             });
         }
     }

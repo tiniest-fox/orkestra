@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Usage: bin/bump-version <version>
+# Updates the version in all four canonical locations.
+set -euo pipefail
+
+VERSION=${1:?Usage: bin/bump-version <version>  (e.g. 0.2.0)}
+
+# Strip leading 'v' if provided
+VERSION="${VERSION#v}"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+echo "Bumping version to $VERSION..."
+
+# package.json
+cd "$REPO_ROOT"
+node -e "
+  const fs = require('fs');
+  const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  p.version = '$VERSION';
+  fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+"
+echo "  ✓ package.json"
+
+# src-tauri/tauri.conf.json
+node -e "
+  const fs = require('fs');
+  const p = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+  p.version = '$VERSION';
+  fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(p, null, 2) + '\n');
+"
+echo "  ✓ src-tauri/tauri.conf.json"
+
+# src-tauri/Cargo.toml — replace version only within the [package] section
+node -e "
+  const fs = require('fs');
+  const content = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
+  // Match version = \"...\" only within the leading [package] block (before any other section)
+  const updated = content.replace(
+    /^(\[package\][^\[]*\nversion\s*=\s*)\"[^\"]*\"/ms,
+    '\$1\"$VERSION\"'
+  );
+  if (updated === content) { console.error('src-tauri/Cargo.toml: version line not found'); process.exit(1); }
+  fs.writeFileSync('src-tauri/Cargo.toml', updated);
+"
+echo "  ✓ src-tauri/Cargo.toml"
+
+# cli/Cargo.toml — same approach
+node -e "
+  const fs = require('fs');
+  const content = fs.readFileSync('cli/Cargo.toml', 'utf8');
+  const updated = content.replace(
+    /^(\[package\][^\[]*\nversion\s*=\s*)\"[^\"]*\"/ms,
+    '\$1\"$VERSION\"'
+  );
+  if (updated === content) { console.error('cli/Cargo.toml: version line not found'); process.exit(1); }
+  fs.writeFileSync('cli/Cargo.toml', updated);
+"
+echo "  ✓ cli/Cargo.toml"
+
+# Regenerate Cargo.lock to reflect the version change
+cargo generate-lockfile --quiet 2>/dev/null || true
+echo "  ✓ Cargo.lock"
+
+echo "Done. Version is now $VERSION."

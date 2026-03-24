@@ -17,7 +17,7 @@ Rules:
 - Body must be valid GitHub-flavored markdown with exactly three sections:
   1. `## Summary` — 1-3 bullet points describing what changed and why. Focus on intent, not mechanics.
   2. `## Decisions` — 1-3 bullet points highlighting key implementation choices or tradeoffs made.
-  3. `## Verification` — 1-3 bullet points describing how the changes were tested or verified.
+  3. `## Change Walkthrough` — A brief walkthrough of how the changes connect. Describe the flow: what triggers what, how new/modified components interact, and the path data or control takes through the changed code. Write so someone unfamiliar with this part of the codebase can follow the logical chain.
 - Write for a human reviewer who has not seen the task description. The PR body should stand alone.
 - If a plan is provided, use it to write a better summary. Do not copy the plan verbatim.
 - Each section should be substantive but concise. Omit a section only if genuinely not applicable.

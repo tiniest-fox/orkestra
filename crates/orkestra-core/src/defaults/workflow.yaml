@@ -28,7 +28,7 @@ stages:
   # Subtasks are assigned to the "subtask" flow (work → review only).
   - name: breakdown
     display_name: Breaking Down
-    description: Research the codebase and split the plan into subtasks
+    description: Research the codebase and split the plan into subtasks and provide technical and implementation guidance
     artifact:
       name: breakdown
       description: Subtask breakdown with dependencies

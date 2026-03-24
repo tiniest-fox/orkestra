@@ -311,6 +311,7 @@ impl GitService for MockGitService {
         _worktree_path: &Path,
         _branch_name: &str,
         _base_branch: &str,
+        _context_lines: u32,
     ) -> Result<TaskDiff, GitError> {
         Ok(TaskDiff { files: vec![] })
     }
@@ -319,7 +320,7 @@ impl GitService for MockGitService {
         Ok(TaskDiff { files: vec![] })
     }
 
-    fn commit_diff(&self, _commit_hash: &str) -> Result<TaskDiff, GitError> {
+    fn commit_diff(&self, _commit_hash: &str, _context_lines: u32) -> Result<TaskDiff, GitError> {
         Ok(TaskDiff { files: vec![] })
     }
 

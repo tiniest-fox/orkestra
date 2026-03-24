@@ -35,7 +35,7 @@ export function LineCommentInput({ onSave, onCancel, value, onChange }: LineComm
   }
 
   return (
-    <div className="bg-surface-2 border border-border rounded-panel-sm mx-2 my-1 p-2 flex flex-col gap-2">
+    <div className="bg-canvas border border-border rounded-panel-sm mx-2 my-1 p-2 flex flex-col gap-2">
       <textarea
         ref={textareaRef}
         value={body}
@@ -45,19 +45,19 @@ export function LineCommentInput({ onSave, onCancel, value, onChange }: LineComm
         rows={2}
         className="w-full font-sans text-forge-body text-text-primary placeholder:text-text-quaternary bg-transparent resize-none focus:outline-none"
       />
-      <div className="flex gap-2 justify-end">
+      <div className="flex gap-2">
         <button
           type="button"
           onClick={() => onSave(body.trim())}
           disabled={!body.trim()}
-          className="px-3 py-1 rounded-panel-sm font-sans text-forge-body font-medium bg-accent text-white disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          className="flex-1 px-3 py-1 rounded-panel-sm font-sans text-forge-body font-medium bg-accent text-white disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
         >
           Save
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1 rounded-panel-sm font-sans text-forge-body font-medium bg-canvas border border-border text-text-secondary hover:bg-surface-2 transition-colors"
+          className="flex-1 px-3 py-1 rounded-panel-sm font-sans text-forge-body font-medium bg-surface border border-border text-text-secondary hover:bg-surface-2 transition-colors"
         >
           Cancel
         </button>

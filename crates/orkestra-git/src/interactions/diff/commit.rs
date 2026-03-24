@@ -6,13 +6,17 @@ use std::process::Command;
 use crate::types::{GitError, TaskDiff};
 
 /// Get the diff for a specific commit.
-pub fn execute(repo_path: &Path, commit_hash: &str) -> Result<TaskDiff, GitError> {
+pub fn execute(
+    repo_path: &Path,
+    commit_hash: &str,
+    context_lines: u32,
+) -> Result<TaskDiff, GitError> {
     // Try normal case (commit with parent)
     let output = Command::new("git")
         .args([
             "diff",
             &format!("{commit_hash}^..{commit_hash}"),
-            "--unified=3",
+            &format!("--unified={context_lines}"),
             "--no-color",
             "--numstat",
             "--no-renames",
@@ -29,7 +33,7 @@ pub fn execute(repo_path: &Path, commit_hash: &str) -> Result<TaskDiff, GitError
             let fallback = Command::new("git")
                 .args([
                     "show",
-                    "--unified=3",
+                    &format!("--unified={context_lines}"),
                     "--no-color",
                     "--numstat",
                     "--no-renames",

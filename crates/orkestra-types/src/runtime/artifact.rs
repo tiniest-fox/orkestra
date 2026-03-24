@@ -67,6 +67,30 @@ pub fn absolute_artifact_file_path(worktree_path: &str, name: &str) -> String {
         .into_owned()
 }
 
+/// Returns the artifact file path, using an absolute path when `worktree_path` is provided.
+///
+/// Combines `absolute_artifact_file_path` and `artifact_file_path` into a single call,
+/// eliminating the repeated `match worktree_path { Some(wt) => ..., None => ... }` pattern.
+///
+/// # Example
+/// ```
+/// use orkestra_types::runtime::resolve_artifact_path;
+/// assert_eq!(
+///     resolve_artifact_path(Some("/worktrees/task"), "plan"),
+///     "/worktrees/task/.orkestra/.artifacts/plan.md"
+/// );
+/// assert_eq!(
+///     resolve_artifact_path(None, "plan"),
+///     ".orkestra/.artifacts/plan.md"
+/// );
+/// ```
+pub fn resolve_artifact_path(worktree_path: Option<&str>, name: &str) -> String {
+    match worktree_path {
+        Some(wt) => absolute_artifact_file_path(wt, name),
+        None => artifact_file_path(name),
+    }
+}
+
 /// A named artifact produced by a stage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Artifact {
@@ -397,5 +421,21 @@ mod tests {
     #[test]
     fn test_artifacts_directory() {
         assert_eq!(artifacts_directory(), ".orkestra/.artifacts");
+    }
+
+    #[test]
+    fn test_resolve_artifact_path_with_worktree() {
+        assert_eq!(
+            resolve_artifact_path(Some("/worktrees/my-task"), "plan"),
+            "/worktrees/my-task/.orkestra/.artifacts/plan.md"
+        );
+    }
+
+    #[test]
+    fn test_resolve_artifact_path_without_worktree() {
+        assert_eq!(
+            resolve_artifact_path(None, "summary"),
+            ".orkestra/.artifacts/summary.md"
+        );
     }
 }

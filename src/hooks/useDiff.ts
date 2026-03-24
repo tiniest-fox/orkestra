@@ -33,6 +33,7 @@ export interface HighlightedFileDiff {
   deletions: number;
   is_binary: boolean;
   hunks: HighlightedHunk[];
+  total_new_lines?: number | null;
 }
 
 export interface HighlightedTaskDiff {
@@ -62,7 +63,7 @@ export function buildDiffFingerprint(files: HighlightedFileDiff[]): string {
   );
 }
 
-export function useDiff(taskId: string | null): UseDiffResult {
+export function useDiff(taskId: string | null, contextLines = 3): UseDiffResult {
   const transport = useTransport();
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,6 +83,7 @@ export function useDiff(taskId: string | null): UseDiffResult {
       setError(null);
       const result = await transport.call<HighlightedTaskDiff>("get_task_diff", {
         task_id: taskId,
+        context_lines: contextLines,
       });
       // Skip state update when content hasn't changed, preventing re-renders and flash.
       const fingerprint = buildDiffFingerprint(result.files);
@@ -95,7 +97,7 @@ export function useDiff(taskId: string | null): UseDiffResult {
     } finally {
       setLoading(false);
     }
-  }, [transport, taskId]);
+  }, [transport, taskId, contextLines]);
 
   usePolling(taskId ? fetchDiff : null, 2000);
 

@@ -32,7 +32,7 @@ pub(crate) fn execute_for_committed(git: &dyn GitService, task: &Task) -> String
         return String::from("No branch");
     };
 
-    match git.diff_against_base(Path::new(worktree_path), branch_name, &task.base_branch) {
+    match git.diff_against_base(Path::new(worktree_path), branch_name, &task.base_branch, 3) {
         Ok(diff) => format_diff_summary(&diff),
         Err(e) => {
             crate::orkestra_debug!(

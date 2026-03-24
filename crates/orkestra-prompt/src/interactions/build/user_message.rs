@@ -256,6 +256,36 @@ mod tests {
     }
 
     #[test]
+    fn test_workflow_overview_shows_artifact_path_for_prior_stages() {
+        let templates = test_templates();
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("plan", "plan").with_description("Create a plan"),
+            StageConfig::new("work", "summary").with_description("Implement the plan"),
+            StageConfig::new("review", "verdict").with_description("Review the work"),
+        ]);
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "work", "now")
+            .with_worktree("/worktrees/task-1");
+        // "plan" artifact is materialized; current stage is "work".
+        let artifact_names = vec!["plan".to_string()];
+        let ctx = builder
+            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .unwrap();
+
+        let user_message = execute(&templates, &ctx);
+
+        // Prior stage with materialized artifact shows its path.
+        assert!(
+            user_message.contains("/worktrees/task-1/.orkestra/.artifacts/plan.md"),
+            "expected artifact path in workflow overview, got:\n{user_message}"
+        );
+        // Current and future stages do not show artifact paths.
+        assert!(!user_message.contains(".orkestra/.artifacts/summary.md"));
+        assert!(!user_message.contains(".orkestra/.artifacts/verdict.md"));
+    }
+
+    #[test]
     fn test_integration_error_auto_merge() {
         let templates = test_templates();
         let workflow = test_workflow();

@@ -9,8 +9,8 @@ mod outcome;
 mod status;
 
 pub use artifact::{
-    absolute_artifact_file_path, artifact_file_path, artifacts_directory, Artifact, ArtifactStore,
-    ACTIVITY_LOG_ARTIFACT_NAME,
+    absolute_artifact_file_path, artifact_file_path, artifacts_directory, resolve_artifact_path,
+    Artifact, ArtifactStore, ACTIVITY_LOG_ARTIFACT_NAME,
 };
 pub use markdown::markdown_to_html;
 pub use outcome::Outcome;

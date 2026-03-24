@@ -27,6 +27,6 @@ pub fn execute(
         .as_ref()
         .ok_or_else(|| WorkflowError::GitError("Task has no branch".into()))?;
 
-    git.diff_against_base(Path::new(worktree_path), branch_name, &task.base_branch)
+    git.diff_against_base(Path::new(worktree_path), branch_name, &task.base_branch, 3)
         .map_err(|e| WorkflowError::GitError(e.to_string()))
 }

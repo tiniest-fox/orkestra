@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Usage: bin/release <version>
+# Bumps the version, commits, tags, and pushes — GitHub Actions does the rest.
+set -euo pipefail
+
+VERSION=${1:?Usage: bin/release <version>  (e.g. 0.2.0 or v0.2.0)}
+
+# Strip leading 'v' for the bump script; keep it for the tag
+BARE_VERSION="${VERSION#v}"
+TAG="v${BARE_VERSION}"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# Ensure working tree is clean before we start
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Error: working tree has uncommitted changes. Commit or stash them first." >&2
+  exit 1
+fi
+
+# Ensure we're on main
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "Error: must be on main branch (currently on '$CURRENT_BRANCH')." >&2
+  exit 1
+fi
+
+# Guard against re-running with an already-existing tag
+if git tag -l "$TAG" | grep -q "$TAG"; then
+  echo "Error: tag $TAG already exists. Delete it first: git tag -d $TAG" >&2
+  exit 1
+fi
+
+# Bump versions in all four files
+bin/bump-version "$BARE_VERSION"
+
+# Commit and tag
+git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml cli/Cargo.toml Cargo.lock
+git commit -m "chore: bump version to $TAG"
+git tag "$TAG"
+
+echo ""
+echo "Created commit and tag $TAG."
+echo "Push to trigger the release build:"
+echo ""
+echo "  git push origin main $TAG"
+echo ""
+read -r -p "Push now? [y/N] " CONFIRM
+if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+  git push origin main "$TAG"
+  echo ""
+  echo "Pushed. GitHub Actions will build the release at:"
+  echo "  https://github.com/$(git remote get-url origin | sed 's/.*github.com[:/]//' | sed 's/\.git$//')/actions"
+fi

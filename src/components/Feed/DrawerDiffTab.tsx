@@ -3,7 +3,7 @@
 //! Registers c / ] / [ / j·k hotkeys when active.
 
 import { GitCompare } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
@@ -41,21 +41,19 @@ export function DrawerDiffTab({
   onAddDraftComment,
   onRemoveDraftComment,
 }: DrawerDiffTabProps) {
-  const { diff: liveDiff, diffLoading } = useDrawerDiff();
+  const { diff: liveDiff, diffLoading, fileContextLines, expandContext } = useDrawerDiff();
   const { css } = useSyntaxCss();
   const isMobile = useIsMobile();
   const [activePath, setActivePath] = useState<string | null>(null);
   const [fileListOpen, setFileListOpen] = useState(false);
   const diffContentRef = useRef<DiffContentHandle>(null);
-  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  const setScrollRef = useCallback((el: HTMLDivElement | null) => {
-    setScrollEl(el);
-  }, []);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // -- Active comment line (local state) --
   const [activeCommentLine, setActiveCommentLine] = useState<{
     filePath: string;
     lineNumber: number;
+    lineType: "add" | "delete" | "context";
   } | null>(null);
   const [draftBody, setDraftBody] = useState("");
 
@@ -71,7 +69,15 @@ export function DrawerDiffTab({
     }
   }, [hasDrafts, liveDiff]);
 
-  const diff = hasDrafts ? diffSnapshotRef.current : liveDiff;
+  const rawDiff = hasDrafts ? diffSnapshotRef.current : liveDiff;
+  // Memoize sorted files so useAutoCollapsePaths doesn't re-run on every render.
+  const diff = useMemo(
+    () =>
+      rawDiff
+        ? { ...rawDiff, files: [...rawDiff.files].sort((a, b) => a.path.localeCompare(b.path)) }
+        : rawDiff,
+    [rawDiff],
+  );
 
   const { collapsedPaths, toggleCollapsed, expandForSearch } = useAutoCollapsePaths(diff?.files);
 
@@ -83,7 +89,7 @@ export function DrawerDiffTab({
     collapsedPaths,
     expandForSearch,
     diffContentRef,
-    scrollEl,
+    scrollEl: scrollRef.current,
     active,
   });
 
@@ -111,9 +117,9 @@ export function DrawerDiffTab({
   function handleLineClick(
     filePath: string,
     lineNumber: number,
-    _lineType: "add" | "delete" | "context",
+    lineType: "add" | "delete" | "context",
   ) {
-    setActiveCommentLine({ filePath, lineNumber });
+    setActiveCommentLine({ filePath, lineNumber, lineType });
     setDraftBody("");
   }
 
@@ -133,18 +139,27 @@ export function DrawerDiffTab({
     setDraftBody("");
   }
 
+  function handleExpandContext(
+    filePath: string,
+    hunkIndex: number,
+    position: "above" | "between" | "below",
+    amount: number,
+  ) {
+    void expandContext(filePath, hunkIndex, position, amount);
+  }
+
   // Keyboard navigation — only meaningful when this tab is active.
   useNavHandler("ArrowDown", () => {
-    if (active) scrollEl?.scrollBy({ top: 120, behavior: "smooth" });
+    if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" });
   });
   useNavHandler("j", () => {
-    if (active) scrollEl?.scrollBy({ top: 120, behavior: "smooth" });
+    if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" });
   });
   useNavHandler("ArrowUp", () => {
-    if (active) scrollEl?.scrollBy({ top: -120, behavior: "smooth" });
+    if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" });
   });
   useNavHandler("k", () => {
-    if (active) scrollEl?.scrollBy({ top: -120, behavior: "smooth" });
+    if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" });
   });
   useNavHandler("c", () => {
     if (active && activePath) handleToggleCollapsed(activePath);
@@ -195,7 +210,7 @@ export function DrawerDiffTab({
                 <DiffFileList files={diff.files} activePath={activePath} onJumpTo={handleJumpTo} />
               </div>
             )}
-            <div ref={setScrollRef} className="flex-1 overflow-y-auto relative bg-surface">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto relative bg-surface">
               {findBarOpen && (
                 <DiffFindBar
                   query={search.query}
@@ -213,7 +228,7 @@ export function DrawerDiffTab({
                 comments={[]}
                 activePath={activePath}
                 collapsedPaths={collapsedPaths}
-                scrollElement={scrollEl}
+                scrollRef={scrollRef}
                 onActivePathChange={setActivePath}
                 onToggleCollapsed={handleToggleCollapsed}
                 onLineClick={isCommentingEnabled ? handleLineClick : undefined}
@@ -226,6 +241,8 @@ export function DrawerDiffTab({
                 onDraftBodyChange={setDraftBody}
                 matches={search.matches}
                 currentMatch={search.currentMatch}
+                onExpandContext={handleExpandContext}
+                fileContextLines={fileContextLines}
               />
             </div>
           </div>

@@ -41,7 +41,7 @@ export function LineCommentsFooter({
         <Button variant="merge" fullWidth onClick={onSubmit} disabled={loading}>
           {loading ? "Submitting…" : `Submit ${draftCount} comment${draftCount !== 1 ? "s" : ""}`}
         </Button>
-        <Button variant="secondary" onClick={onClear} disabled={loading}>
+        <Button variant="secondary" fullWidth onClick={onClear} disabled={loading}>
           Clear all
         </Button>
       </div>

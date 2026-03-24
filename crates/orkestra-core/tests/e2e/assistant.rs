@@ -4,7 +4,6 @@
 //! using real `SQLite` persistence (no mocks).
 
 use orkestra_core::workflow::domain::{LogEntry, Task};
-use orkestra_core::workflow::ports::WorkflowStore;
 
 use crate::helpers::create_assistant_service;
 

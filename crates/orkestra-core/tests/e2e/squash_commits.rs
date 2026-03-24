@@ -3,7 +3,7 @@
 //! Tests verify:
 //! 1. Per-stage commits use LLM-generated format (task title as subject, Orkestra footer)
 //! 2. Non-subtask integration squashes all commits into one
-//! 3. Subtask integration does NOT squash (individual commits preserved)
+//! 3. Subtask integration squashes commits before merging to parent branch
 //! 4. After conflict recovery, re-integration squashes all commits (including recovery)
 //! 5. User-triggered `merge_task()` also squashes commits (same as auto-merge)
 
@@ -60,21 +60,6 @@ fn count_commits_since_merge_base(worktree_path: &Path, base_branch: &str) -> us
         .trim()
         .parse::<usize>()
         .unwrap_or(0)
-}
-
-/// Get all commit messages on the current branch since merge-base with another branch.
-fn get_commits_since_merge_base(worktree_path: &Path, base_branch: &str) -> Vec<String> {
-    let output = Command::new("git")
-        .args(["log", "--format=%s", &format!("{base_branch}..HEAD")])
-        .current_dir(worktree_path)
-        .output()
-        .expect("Failed to get commits");
-
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
 }
 
 /// Get first-parent commit count on main branch since test start.
@@ -351,13 +336,13 @@ fn test_integration_squashes_commits_for_non_subtask() {
 }
 
 // =============================================================================
-// Test 3: Subtask Integration Does NOT Squash
+// Test 3: Subtask Integration Squashes Commits
 // =============================================================================
 
-/// Subtask integration should preserve individual commits when merging to parent's branch.
+/// Subtask integration should squash commits into one before merging to the parent branch.
 #[test]
 #[allow(clippy::too_many_lines)]
-fn test_subtask_integration_preserves_commits() {
+fn test_subtask_integration_squashes_commits() {
     let workflow = enable_auto_merge(workflows::with_subtasks());
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
@@ -477,7 +462,7 @@ fn test_subtask_integration_preserves_commits() {
         subtask.state
     );
 
-    // Verify parent branch has the subtask commits (not squashed)
+    // Verify parent branch after subtask integration
     // Since subtask is archived, we need to check the parent's worktree
     let parent = ctx.api().get_task(&parent_id).unwrap();
     let parent_worktree = Path::new(parent.worktree_path.as_ref().unwrap());
@@ -488,25 +473,6 @@ fn test_subtask_integration_preserves_commits() {
         .current_dir(parent_worktree)
         .output()
         .expect("Failed to reset parent worktree");
-
-    // Get commit messages on parent branch since main
-    let parent_commits = get_commits_since_merge_base(parent_worktree, "main");
-
-    // Subtask commits should be preserved (not squashed into one)
-    // First, verify there are multiple commits (proves squashing did NOT happen)
-    assert!(
-        parent_commits.len() > 1,
-        "Subtask should have multiple commits preserved (not squashed), got: {} commits: {:?}",
-        parent_commits.len(),
-        parent_commits
-    );
-
-    // Then verify we have the expected work stage commit (LLM format uses subtask title as subject)
-    let has_work_commit = parent_commits.iter().any(|c| c.contains("First subtask"));
-    assert!(
-        has_work_commit,
-        "Parent branch should have individual subtask commits (not squashed). Commits: {parent_commits:?}"
-    );
 
     // Verify the merge commit (HEAD on parent branch) has an AI-generated message,
     // not git's default "Merge branch '...'" format.
@@ -539,6 +505,33 @@ fn test_subtask_integration_preserves_commits() {
     assert_eq!(
         parent_count, 2,
         "HEAD on parent branch should be an explicit merge commit (2 parents), got: {parents}"
+    );
+
+    // Verify the squash commit (second parent of the merge commit) has the subtask title.
+    // fallback_commit_message(title, id) returns just the title when title is non-empty.
+    let squash_sha_output = Command::new("git")
+        .args(["rev-parse", "HEAD^2"])
+        .current_dir(parent_worktree)
+        .output()
+        .expect("Failed to get HEAD^2");
+    assert!(
+        squash_sha_output.status.success(),
+        "HEAD^2 should exist (squash commit is second parent of merge commit)"
+    );
+    let squash_sha = String::from_utf8_lossy(&squash_sha_output.stdout)
+        .trim()
+        .to_string();
+    let squash_subject_output = Command::new("git")
+        .args(["log", "-1", "--format=%s", &squash_sha])
+        .current_dir(parent_worktree)
+        .output()
+        .expect("Failed to get squash commit subject");
+    let squash_subject = String::from_utf8_lossy(&squash_subject_output.stdout)
+        .trim()
+        .to_string();
+    assert!(
+        squash_subject.contains("First subtask"),
+        "Squash commit should have subtask title as subject, got: {squash_subject}"
     );
 }
 

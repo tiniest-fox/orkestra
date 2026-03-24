@@ -5361,6 +5361,7 @@ fn test_archive_task_rejects_non_idle_phase() {
 /// This exercises the `address_pr_feedback` API method for cases where a user
 /// wants to return to the work stage to address feedback from a PR review.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_address_pr_feedback_returns_to_work_stage() {
     use orkestra_core::testutil::fixtures::test_default_workflow;
     use orkestra_core::workflow::domain::{IterationTrigger, PrCommentData};

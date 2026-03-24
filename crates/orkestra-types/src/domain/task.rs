@@ -255,6 +255,20 @@ impl Task {
     pub fn can_chat(&self) -> bool {
         self.is_awaiting_review() || matches!(self.state, TaskState::Interrupted { .. })
     }
+
+    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage).
+    ///
+    /// Valid when task is paused for human input: `AwaitingApproval`, `AwaitingQuestionAnswer`,
+    /// `AwaitingRejectionConfirmation`, or `Interrupted`.
+    pub fn can_bypass(&self) -> bool {
+        matches!(
+            self.state,
+            TaskState::AwaitingApproval { .. }
+                | TaskState::AwaitingQuestionAnswer { .. }
+                | TaskState::AwaitingRejectionConfirmation { .. }
+                | TaskState::Interrupted { .. }
+        )
+    }
 }
 
 /// Lightweight task metadata for orchestrator routing decisions.

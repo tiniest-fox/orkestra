@@ -37,6 +37,7 @@ pub fn execute(
             IterationTrigger::Rejection { .. }
                 | IterationTrigger::Integration { .. }
                 | IterationTrigger::PrFeedback { .. }
+                | IterationTrigger::Redirect { .. }
         )
     ) {
         return Ok(true);

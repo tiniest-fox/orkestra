@@ -108,6 +108,13 @@ pub enum IterationTrigger {
     /// "Return to Work", which is injected into the resume prompt so the
     /// agent sees it as a closing instruction.
     ReturnToWork { message: Option<String> },
+    /// Human redirected the task to this stage from another stage.
+    Redirect {
+        /// The stage the task was redirected from.
+        from_stage: String,
+        /// Human-provided context explaining the redirect.
+        message: String,
+    },
 }
 
 /// A single iteration (attempt) within a stage.

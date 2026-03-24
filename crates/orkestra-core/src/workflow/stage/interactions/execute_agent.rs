@@ -386,6 +386,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
         Some(IterationTrigger::ReturnToWork { message }) => ResumeType::ReturnToWork {
             message: message.clone(),
         },
+        Some(IterationTrigger::Redirect { .. }) => {
+            unreachable!("redirect supersedes the session")
+        }
     }
 }
 

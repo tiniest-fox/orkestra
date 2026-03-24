@@ -24,7 +24,7 @@ stages:
   - name: task
     display_name: Task
     icon: list-tree
-    description: Break down the plan into subtasks
+    description: Break down the plan into subtasks and provide technical and implementation guidance
     artifact:
       name: breakdown
       description: Subtask breakdown with dependencies

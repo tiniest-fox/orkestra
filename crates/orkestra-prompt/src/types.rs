@@ -111,6 +111,9 @@ pub struct WorkflowStageEntry {
     pub description: String,
     /// Whether this is the current stage being executed.
     pub is_current: bool,
+    /// Path to the materialized artifact file for this stage, if it has already been produced.
+    /// Only set for stages that precede the current stage and have a materialized artifact.
+    pub artifact_path: Option<String>,
 }
 
 /// Flow-specific overrides for agent configuration.

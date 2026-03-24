@@ -3,6 +3,7 @@
 //! Builds stage entries for the workflow overview section in agent prompts.
 
 use orkestra_types::config::WorkflowConfig;
+use orkestra_types::runtime::resolve_artifact_path;
 
 use crate::types::WorkflowStageEntry;
 
@@ -13,19 +14,43 @@ use crate::types::WorkflowStageEntry;
 /// Build workflow stage entries for prompt rendering.
 ///
 /// Returns a list of all stages in the given flow (or default flow if None),
-/// with their names, descriptions, and a flag indicating the current stage.
+/// with their names, descriptions, a flag indicating the current stage, and
+/// artifact paths for stages that have already produced materialized artifacts.
+///
+/// `artifact_names` — set of artifact names that have been materialized to the worktree.
+/// `worktree_path` — absolute path to the task's worktree; used to compute absolute artifact paths.
 pub fn execute(
     workflow: &WorkflowConfig,
     current_stage: &str,
     flow: Option<&str>,
+    artifact_names: &[String],
+    worktree_path: Option<&str>,
 ) -> Vec<WorkflowStageEntry> {
-    workflow
-        .stages_in_flow(flow)
+    let stages = workflow.stages_in_flow(flow);
+    let current_pos = stages.iter().position(|s| s.name == current_stage);
+
+    stages
         .into_iter()
-        .map(|stage| WorkflowStageEntry {
-            name: stage.name.clone(),
-            description: stage.description.clone().unwrap_or_else(|| stage.display()),
-            is_current: stage.name == current_stage,
+        .enumerate()
+        .map(|(i, stage)| {
+            let is_current = stage.name == current_stage;
+
+            // Show artifact path only for stages that come before the current stage
+            // and whose artifact has been materialized.
+            let artifact_path = if current_pos.is_some_and(|pos| i < pos)
+                && artifact_names.iter().any(|n| n == stage.artifact_name())
+            {
+                Some(resolve_artifact_path(worktree_path, stage.artifact_name()))
+            } else {
+                None
+            };
+
+            WorkflowStageEntry {
+                name: stage.name.clone(),
+                description: stage.description.clone().unwrap_or_else(|| stage.display()),
+                is_current,
+                artifact_path,
+            }
         })
         .collect()
 }
@@ -48,7 +73,7 @@ mod tests {
             StageConfig::new("review", "verdict"),
         ]);
 
-        let entries = execute(&workflow, "work", None);
+        let entries = execute(&workflow, "work", None, &[], None);
         assert_eq!(entries.len(), 3);
 
         assert_eq!(entries[0].name, "plan");
@@ -94,7 +119,7 @@ mod tests {
         ])
         .with_flows(flows);
 
-        let entries = execute(&workflow, "work", Some("quick"));
+        let entries = execute(&workflow, "work", Some("quick"), &[], None);
         assert_eq!(entries.len(), 2);
 
         assert_eq!(entries[0].name, "plan");
@@ -108,7 +133,7 @@ mod tests {
     fn test_nonexistent_flow() {
         let workflow = WorkflowConfig::new(vec![StageConfig::new("plan", "plan")]);
 
-        let entries = execute(&workflow, "plan", Some("nonexistent"));
+        let entries = execute(&workflow, "plan", Some("nonexistent"), &[], None);
         assert!(entries.is_empty());
     }
 
@@ -119,8 +144,65 @@ mod tests {
             StageConfig::new("work", "summary").with_display_name("Work Stage"),
         ]);
 
-        let entries = execute(&workflow, "work", None);
+        let entries = execute(&workflow, "work", None, &[], None);
         assert_eq!(entries[0].description, "Planning");
         assert_eq!(entries[1].description, "Work Stage");
+    }
+
+    #[test]
+    fn test_artifact_path_for_prior_completed_stages() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("plan", "plan").with_description("Create a plan"),
+            StageConfig::new("task", "breakdown").with_description("Break it down"),
+            StageConfig::new("work", "summary").with_description("Implement"),
+            StageConfig::new("review", "verdict").with_description("Review"),
+        ]);
+
+        // "plan" artifact is materialized; "breakdown" is not.
+        let artifact_names = vec!["plan".to_string()];
+        let entries = execute(
+            &workflow,
+            "work",
+            None,
+            &artifact_names,
+            Some("/worktrees/my-task"),
+        );
+
+        // plan: before current, artifact materialized → has path
+        assert!(entries[0].artifact_path.is_some());
+        assert!(entries[0].artifact_path.as_ref().unwrap().contains("plan"));
+
+        // task: before current, artifact NOT materialized → no path
+        assert!(entries[1].artifact_path.is_none());
+
+        // work: is current → no path
+        assert!(entries[2].artifact_path.is_none());
+
+        // review: after current → no path
+        assert!(entries[3].artifact_path.is_none());
+    }
+
+    #[test]
+    fn test_current_and_future_stages_have_no_artifact_path() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("plan", "plan").with_description("Create a plan"),
+            StageConfig::new("work", "summary").with_description("Implement"),
+            StageConfig::new("review", "verdict").with_description("Review"),
+        ]);
+
+        // All artifacts materialized — but current and future should still get None.
+        let artifact_names = vec![
+            "plan".to_string(),
+            "summary".to_string(),
+            "verdict".to_string(),
+        ];
+        let entries = execute(&workflow, "work", None, &artifact_names, None);
+
+        // plan: before current, materialized → path present
+        assert!(entries[0].artifact_path.is_some());
+        // work: is current → no path
+        assert!(entries[1].artifact_path.is_none());
+        // review: after current → no path
+        assert!(entries[2].artifact_path.is_none());
     }
 }

@@ -465,6 +465,8 @@ ork task create -t TITLE -d DESC [-b BASE_BRANCH] [--flow NAME]  # Create a new 
 ork logs TASK_ID --stage STAGE [--type TYPE] [--limit N]         # View agent/script logs
 ork task approve ID                                              # Approve current stage artifact
 ork task reject ID --feedback MSG                                # Reject with feedback (creates new iteration)
+ork task skip ID --message MSG                                   # Skip current stage (requires paused state)
+ork task send-to-stage ID --stage STAGE --message MSG            # Send to any stage (requires paused state)
 ```
 
 Add `--pretty` to any command for human-readable output instead of JSON.

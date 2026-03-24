@@ -255,6 +255,20 @@ impl Task {
     pub fn can_chat(&self) -> bool {
         self.is_awaiting_review() || matches!(self.state, TaskState::Interrupted { .. })
     }
+
+    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage).
+    ///
+    /// Valid when task is paused for human input: `AwaitingApproval`, `AwaitingQuestionAnswer`,
+    /// `AwaitingRejectionConfirmation`, or `Interrupted`.
+    pub fn can_bypass(&self) -> bool {
+        matches!(
+            self.state,
+            TaskState::AwaitingApproval { .. }
+                | TaskState::AwaitingQuestionAnswer { .. }
+                | TaskState::AwaitingRejectionConfirmation { .. }
+                | TaskState::Interrupted { .. }
+        )
+    }
 }
 
 /// Lightweight task metadata for orchestrator routing decisions.
@@ -552,6 +566,46 @@ mod tests {
 
         task.state = TaskState::awaiting_rejection_confirmation("planning");
         assert!(task.is_awaiting_review());
+    }
+
+    #[test]
+    fn test_task_can_bypass() {
+        let mut task = Task::new("task-1", "Task", "desc", "planning", "now");
+
+        // Queued → cannot bypass
+        assert!(!task.can_bypass());
+
+        // AgentWorking → cannot bypass
+        task.state = TaskState::agent_working("planning");
+        assert!(!task.can_bypass());
+
+        // Done → cannot bypass
+        task.state = TaskState::Done;
+        assert!(!task.can_bypass());
+
+        // Failed → cannot bypass
+        task.state = TaskState::failed("error");
+        assert!(!task.can_bypass());
+
+        // Blocked → cannot bypass
+        task.state = TaskState::blocked("waiting");
+        assert!(!task.can_bypass());
+
+        // AwaitingApproval → can bypass
+        task.state = TaskState::awaiting_approval("planning");
+        assert!(task.can_bypass());
+
+        // AwaitingQuestionAnswer → can bypass
+        task.state = TaskState::awaiting_question_answer("planning");
+        assert!(task.can_bypass());
+
+        // AwaitingRejectionConfirmation → can bypass
+        task.state = TaskState::awaiting_rejection_confirmation("planning");
+        assert!(task.can_bypass());
+
+        // Interrupted → can bypass
+        task.state = TaskState::interrupted("planning");
+        assert!(task.can_bypass());
     }
 
     #[test]

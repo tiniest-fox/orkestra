@@ -106,6 +106,8 @@ pub async fn execute(
         "pull_pr_changes" => action::handle_pull_pr_changes(ctx, params).await,
         "retry_pr" => action::handle_retry_pr(ctx, params).await,
         "return_to_work" => action::handle_return_to_work(ctx, params).await,
+        "skip_stage" => action::handle_skip_stage(ctx, params).await,
+        "send_to_stage" => action::handle_send_to_stage(ctx, params).await,
 
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,

@@ -45,6 +45,19 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 - `-f, --feedback`: Reason for rejection (required)
 - Creates new iteration, returns to `Idle` phase
 
+**`ork task skip <ID> --message <MESSAGE>`**
+- Skips the current stage, advancing to the next stage (or marks Done if last stage)
+- `-m, --message`: Reason for skipping (required)
+- Requires task in `AwaitingApproval`, `AwaitingQuestionAnswer`, `AwaitingRejectionConfirmation`, or `Interrupted` phase
+- The message is injected as redirect context into the next agent's prompt
+
+**`ork task send-to-stage <ID> --stage <STAGE> --message <MESSAGE>`**
+- Sends a task to any named stage in the pipeline (forward or backward)
+- `-s, --stage`: Target stage name (required)
+- `-m, --message`: Reason for the redirect (required)
+- Requires task in `AwaitingApproval`, `AwaitingQuestionAnswer`, `AwaitingRejectionConfirmation`, or `Interrupted` phase
+- Sending backward supersedes the existing session; the agent receives the message as redirect context
+
 **`ork task interrupt <ID>`**
 - Interrupts a running agent execution
 - Kills the agent process and transitions to `Interrupted` phase

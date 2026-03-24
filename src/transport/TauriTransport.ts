@@ -44,6 +44,8 @@ const METHOD_MAP: Record<string, string> = {
   merge_task: "workflow_merge_task",
   open_pr: "workflow_open_pr",
   return_to_work: "workflow_return_to_work",
+  skip_stage: "workflow_skip_stage",
+  send_to_stage: "workflow_send_to_stage",
 
   // -- Startup --
   retry_startup: "workflow_retry_startup",

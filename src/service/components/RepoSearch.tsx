@@ -82,7 +82,7 @@ export function RepoSearch({ githubStatus, onClose, onProjectAdded }: RepoSearch
           <>
             <input
               type="text"
-              placeholder="Filter repos..."
+              placeholder="Search repos..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-full mb-3 px-3 py-2 bg-canvas border border-border rounded-panel-sm text-text-primary text-sm focus:outline-none focus:border-accent"

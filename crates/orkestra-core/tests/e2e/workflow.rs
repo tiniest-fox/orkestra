@@ -7869,3 +7869,411 @@ fn test_gate_script_receives_orkestra_env_vars() {
         "Gate script should receive ORKESTRA_TASK_ID"
     );
 }
+
+// =============================================================================
+// Stage Bypass (skip_stage / send_to_stage) E2E Tests
+// =============================================================================
+
+/// Skip a stage and verify the orchestrator picks up the task at the next stage.
+///
+/// After skip, the work agent receives the redirect message in its prompt.
+#[test]
+fn test_skip_stage_advances_through_orchestrator() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test skip stage", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at planning
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("planning"));
+
+    // Skip planning → work
+    let task = ctx
+        .api()
+        .skip_stage(&task_id, "Plan is already done, skip to work")
+        .unwrap();
+    assert_eq!(task.current_stage(), Some("work"));
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued at work after skip, got: {:?}",
+        task.state
+    );
+
+    // Orchestrator picks up and spawns the work agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns worker with redirect trigger
+    ctx.advance(); // processes summary → AwaitingApproval at work
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at work, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("work"));
+
+    // The work agent's prompt must contain the redirect message
+    let prompt = ctx.last_prompt_for(&task_id);
+    assert!(
+        prompt.contains("Plan is already done, skip to work"),
+        "Work agent prompt should contain the redirect message. Got:\n{}",
+        &prompt[..prompt.len().min(500)]
+    );
+}
+
+/// Send a task backward to an earlier stage and verify the orchestrator picks it up.
+///
+/// The planning agent receives the redirect message in its prompt.
+#[test]
+fn test_send_to_stage_backward_through_orchestrator() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = ctx.create_task("Test backward send", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance planning to AwaitingApproval
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    // Approve planning and advance to work
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline + advance → Queued at work
+
+    // Produce work artifact → AwaitingApproval at work
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes summary → AwaitingApproval at work
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at work, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("work"));
+
+    // Send backward to planning
+    let task = ctx
+        .api()
+        .send_to_stage(&task_id, "planning", "Reviewer wants changes")
+        .unwrap();
+    assert_eq!(task.current_stage(), Some("planning"));
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued at planning after backward send, got: {:?}",
+        task.state
+    );
+
+    // Orchestrator picks up and spawns the planning agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Revised plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner with redirect trigger
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("planning"));
+
+    // The planning agent's prompt must contain the redirect message
+    let prompt = ctx.last_prompt_for(&task_id);
+    assert!(
+        prompt.contains("Reviewer wants changes"),
+        "Planning agent prompt should contain the redirect message. Got:\n{}",
+        &prompt[..prompt.len().min(500)]
+    );
+}
+
+/// Skipping the last stage marks the task Done.
+#[test]
+fn test_skip_last_stage_completes_task() {
+    // work is the last stage in this 2-stage workflow
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = ctx.create_task("Test skip last stage", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance planning to AwaitingApproval
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.advance();
+
+    // Approve planning → move to work
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance
+
+    // Produce work artifact → AwaitingApproval at work (last stage)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.advance();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at work, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("work"));
+
+    // Skip work (last stage) → task should be Done
+    let task = ctx.api().skip_stage(&task_id, "Review not needed").unwrap();
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Skipping the last stage should mark the task Done, got: {:?}",
+        task.state
+    );
+}
+
+/// Sending a task to a stage not in its flow returns an error.
+#[test]
+fn test_send_to_stage_respects_flow() {
+    use indexmap::IndexMap;
+    use orkestra_core::workflow::config::{FlowConfig, FlowStageEntry};
+    use orkestra_core::workflow::WorkflowError;
+
+    // "quick" flow: planning → work (no review)
+    let mut flows = IndexMap::new();
+    flows.insert(
+        "quick".to_string(),
+        FlowConfig {
+            description: "Quick flow without review".to_string(),
+            icon: None,
+            stages: vec![
+                FlowStageEntry {
+                    stage_name: "planning".to_string(),
+                    overrides: None,
+                },
+                FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: None,
+                },
+            ],
+            integration: None,
+        },
+    );
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
+    ])
+    .with_flows(flows);
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
+
+    // Create task with "quick" flow (no review stage)
+    let task = ctx
+        .api()
+        .create_task_with_options("Test flow", "Description", None, false, Some("quick"))
+        .unwrap();
+    let task_id = task.id.clone();
+    ctx.advance(); // complete sync setup
+
+    // Advance to AwaitingApproval at planning
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.advance();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning, got: {:?}",
+        task.state
+    );
+
+    // Attempt to send to "review" which is NOT in the "quick" flow
+    let result = ctx.api().send_to_stage(&task_id, "review", "test");
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "send_to_stage to a stage outside the flow should fail with InvalidTransition, got: {result:?}"
+    );
+}
+
+/// Sending a task from Interrupted state routes it through the orchestrator.
+///
+/// The redirect creates a new iteration with `IterationTrigger::Redirect` and the
+/// orchestrator spawns the agent at the target stage with the message in its prompt.
+#[test]
+fn test_send_to_stage_from_interrupted() {
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = ctx.create_task("Test interrupted redirect", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance planning to AwaitingApproval
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan → AwaitingApproval
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance → Queued at work
+
+    // Manually move to AgentWorking at work, then interrupt
+    ctx.api().agent_started(&task_id).unwrap();
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AgentWorking { .. }),
+        "Expected AgentWorking, got: {:?}",
+        task.state
+    );
+
+    ctx.api().interrupt(&task_id).unwrap();
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Interrupted { .. }),
+        "Expected Interrupted, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("work"));
+
+    // Send backward to planning
+    let task = ctx
+        .api()
+        .send_to_stage(&task_id, "planning", "Need to re-plan")
+        .unwrap();
+    assert_eq!(task.current_stage(), Some("planning"));
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued at planning after send_to_stage, got: {:?}",
+        task.state
+    );
+
+    // Verify the new planning iteration has a Redirect trigger
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let planning_redirect_iter = iterations
+        .iter()
+        .rfind(|i| i.stage == "planning")
+        .expect("Should have a planning iteration with Redirect trigger");
+    match &planning_redirect_iter.incoming_context {
+        Some(IterationTrigger::Redirect {
+            from_stage,
+            message,
+        }) => {
+            assert_eq!(from_stage, "work");
+            assert_eq!(message, "Need to re-plan");
+        }
+        other => panic!("Expected Redirect trigger, got {other:?}"),
+    }
+
+    // Orchestrator spawns planning agent with the redirect message
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Revised plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner with Redirect trigger
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning, got: {:?}",
+        task.state
+    );
+
+    // The planning agent's prompt must contain the redirect message
+    let prompt = ctx.last_prompt_for(&task_id);
+    assert!(
+        prompt.contains("Need to re-plan"),
+        "Planning agent prompt should contain the redirect message. Got:\n{}",
+        &prompt[..prompt.len().min(500)]
+    );
+}

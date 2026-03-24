@@ -70,13 +70,13 @@ describe("RepoSearch", () => {
 
   it("shows empty state when no repos match query", async () => {
     mockSearchRepos.mockResolvedValue([]);
-    vi.useFakeTimers();
     render(<RepoSearch githubStatus={githubAvailable} onClose={noop} onProjectAdded={noop} />);
+    // Wait for the initial fetch to resolve (allRepos = [])
+    await waitFor(() => expect(mockSearchRepos).toHaveBeenCalled());
     const input = screen.getByPlaceholderText("Search repos...");
     fireEvent.change(input, { target: { value: "nonexistent" } });
-    // Advance past the 300ms debounce and await promise resolution
-    await vi.runAllTimersAsync();
-    expect(screen.getByText("No repos found.")).toBeInTheDocument();
+    // Query is set + no matching repos → "No matching repos."
+    expect(screen.getByText("No matching repos.")).toBeInTheDocument();
   });
 
   it("calls addProject on repo click and fires onProjectAdded", async () => {
@@ -104,54 +104,20 @@ describe("RepoSearch", () => {
     expect(await screen.findByText("Already exists")).toBeInTheDocument();
   });
 
-  it("discards stale search results when a newer search completes first", async () => {
-    vi.useFakeTimers();
-
-    // Control resolution order manually: first search resolves after second.
-    let resolveFirst!: (repos: api.GithubRepo[]) => void;
-    let resolveSecond!: (repos: api.GithubRepo[]) => void;
-    const firstPromise = new Promise<api.GithubRepo[]>((res) => {
-      resolveFirst = res;
-    });
-    const secondPromise = new Promise<api.GithubRepo[]>((res) => {
-      resolveSecond = res;
-    });
-    mockSearchRepos.mockReturnValueOnce(firstPromise).mockReturnValueOnce(secondPromise);
-
+  it("filters repos locally as the query changes", async () => {
+    mockSearchRepos.mockResolvedValue(sampleRepos);
     render(<RepoSearch githubStatus={githubAvailable} onClose={noop} onProjectAdded={noop} />);
 
-    // Fire initial search (empty query, 0ms debounce)
-    vi.runAllTimers();
+    // Wait for the initial fetch to resolve and display all repos
+    expect(await screen.findByText("owner/my-repo")).toBeInTheDocument();
+    expect(screen.getByText("owner/other-repo")).toBeInTheDocument();
 
-    // Type a query to schedule a second search (300ms debounce)
+    // Type a query — filtering happens client-side immediately
     const input = screen.getByPlaceholderText("Search repos...");
-    fireEvent.change(input, { target: { value: "foo" } });
+    fireEvent.change(input, { target: { value: "my-repo" } });
 
-    // Fire the second search timer; this also aborts the first controller
-    vi.runAllTimers();
-
-    // Resolve the second (newer) search first
-    resolveSecond([
-      {
-        name: "fresh-repo",
-        nameWithOwner: "owner/fresh-repo",
-        url: "https://github.com/owner/fresh-repo",
-      },
-    ]);
-    await vi.runAllTimersAsync();
-
-    // Now resolve the first (stale) search — its controller is aborted, so results are ignored
-    resolveFirst([
-      {
-        name: "stale-repo",
-        nameWithOwner: "owner/stale-repo",
-        url: "https://github.com/owner/stale-repo",
-      },
-    ]);
-    await vi.runAllTimersAsync();
-
-    expect(screen.getByText("owner/fresh-repo")).toBeInTheDocument();
-    expect(screen.queryByText("owner/stale-repo")).not.toBeInTheDocument();
+    expect(screen.getByText("owner/my-repo")).toBeInTheDocument();
+    expect(screen.queryByText("owner/other-repo")).not.toBeInTheDocument();
   });
 
   it("renders search input when githubStatus is null (status still loading)", () => {

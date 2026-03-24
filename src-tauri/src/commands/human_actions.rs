@@ -311,6 +311,45 @@ pub fn workflow_request_update(
     })
 }
 
+/// Skip the current stage, advancing to the next stage with a message.
+///
+/// Moves the task forward without agent review. If this is the last stage, marks the task Done.
+#[tauri::command]
+pub fn workflow_skip_stage(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    message: String,
+) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "skip_stage {task_id}");
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .skip_stage(&task_id, &message)
+            .map_err(Into::into)
+    })
+}
+
+/// Send a task to a specific stage with a message explaining why.
+///
+/// Transitions the task to the target stage regardless of current stage order.
+#[tauri::command]
+pub fn workflow_send_to_stage(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    target_stage: String,
+    message: String,
+) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "send_to_stage {task_id} -> {target_stage}");
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .send_to_stage(&task_id, &target_stage, &message)
+            .map_err(Into::into)
+    })
+}
+
 /// Return to structured work after chatting with the stage agent.
 ///
 /// Clears chat state on the session and creates a new iteration with

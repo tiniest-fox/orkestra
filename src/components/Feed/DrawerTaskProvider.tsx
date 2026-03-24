@@ -8,8 +8,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { HighlightedLine, HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useDiff } from "../../hooks/useDiff";
 import { useTransport } from "../../transport";
+import { applySplice, type ExpandPosition } from "./applySplice";
 
-export type ExpandPosition = "above" | "between" | "below";
+export type { ExpandPosition } from "./applySplice";
 
 // Per-file expansion intents: key is "${hunkIndex}:${position}", value is cumulative lines.
 // Persists across diff resets so expansions survive agent commits.
@@ -99,7 +100,12 @@ export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps
           })
           .sort((a, b) => {
             if (a.hunkIndex !== b.hunkIndex) return a.hunkIndex - b.hunkIndex;
-            const order: Record<ExpandPosition, number> = { above: 0, between: 1, below: 2 };
+            const order: Record<ExpandPosition, number> = {
+              above: 0,
+              between: 1,
+              "between-up": 2,
+              below: 3,
+            };
             return order[a.position] - order[b.position];
           });
 
@@ -187,139 +193,4 @@ export function useDrawerDiff(): DrawerTaskContextValue {
   const ctx = useContext(DrawerTaskContext);
   if (!ctx) throw new Error("useDrawerDiff must be used inside DrawerTaskProvider");
   return ctx;
-}
-
-// ============================================================================
-// Splice logic
-// ============================================================================
-
-interface SpliceResult {
-  diff: HighlightedTaskDiff;
-  /** True if a "between" expansion caused two hunks to merge into one. */
-  didMerge: boolean;
-}
-
-/** Pure function: applies one expansion to a diff and returns the new diff. */
-function applySplice(
-  diff: HighlightedTaskDiff,
-  filePath: string,
-  rawLines: HighlightedLine[],
-  hunkIndex: number,
-  position: ExpandPosition,
-  amount: number,
-): SpliceResult {
-  let didMerge = false;
-
-  const files = diff.files.map((file) => {
-    if (file.path !== filePath) return file;
-
-    const hunks = file.hunks.map((h) => ({ ...h, lines: [...h.lines] }));
-    const hunk = hunks[hunkIndex];
-    if (!hunk) return file;
-
-    // Constant offset between old and new line numbers for this hunk's leading context.
-    const lineOffset = hunk.old_start - hunk.new_start;
-
-    if (position === "above") {
-      const actualAmount = Math.min(amount, hunk.new_start - 1);
-      if (actualAmount === 0) return file;
-
-      const newLines: HighlightedLine[] = [];
-      for (let i = actualAmount; i >= 1; i--) {
-        const newLineNum = hunk.new_start - i;
-        const raw = rawLines[newLineNum - 1];
-        if (!raw) continue;
-        newLines.push({
-          ...raw,
-          line_type: "context",
-          new_line_number: newLineNum,
-          old_line_number: newLineNum + lineOffset,
-        });
-      }
-      hunks[hunkIndex] = {
-        ...hunk,
-        new_start: hunk.new_start - actualAmount,
-        old_start: hunk.old_start - actualAmount,
-        new_count: hunk.new_count + actualAmount,
-        old_count: hunk.old_count + actualAmount,
-        lines: [...newLines, ...hunk.lines],
-      };
-    } else if (position === "below") {
-      const lastLine = [...hunk.lines].reverse().find((l) => l.new_line_number !== null);
-      const lastNewLine = lastLine?.new_line_number ?? hunk.new_start + hunk.new_count - 1;
-      const lastOldLine =
-        [...hunk.lines].reverse().find((l) => l.old_line_number !== null)?.old_line_number ??
-        hunk.old_start + hunk.old_count - 1;
-
-      const actualAmount = Math.min(amount, rawLines.length - lastNewLine);
-      if (actualAmount === 0) return file;
-
-      const newLines: HighlightedLine[] = [];
-      for (let i = 1; i <= actualAmount; i++) {
-        const newLineNum = lastNewLine + i;
-        const raw = rawLines[newLineNum - 1];
-        if (!raw) break;
-        newLines.push({
-          ...raw,
-          line_type: "context",
-          new_line_number: newLineNum,
-          old_line_number: lastOldLine + i,
-        });
-      }
-      hunks[hunkIndex] = {
-        ...hunk,
-        new_count: hunk.new_count + newLines.length,
-        old_count: hunk.old_count + newLines.length,
-        lines: [...hunk.lines, ...newLines],
-      };
-    } else {
-      // "between": expand from the bottom of hunk[hunkIndex] toward hunk[hunkIndex+1].
-      const hunkBelow = hunks[hunkIndex + 1];
-      if (!hunkBelow) return file;
-
-      const lastNewAbove = hunk.new_start + hunk.new_count - 1;
-      const lastOldAbove = hunk.old_start + hunk.old_count - 1;
-      const gapSize = hunkBelow.new_start - lastNewAbove - 1;
-      const actualAmount = Math.min(amount, gapSize);
-      if (actualAmount === 0) return file;
-
-      const newLines: HighlightedLine[] = [];
-      for (let i = 1; i <= actualAmount; i++) {
-        const newLineNum = lastNewAbove + i;
-        const raw = rawLines[newLineNum - 1];
-        if (!raw) break;
-        newLines.push({
-          ...raw,
-          line_type: "context",
-          new_line_number: newLineNum,
-          old_line_number: lastOldAbove + i,
-        });
-      }
-
-      const mergedAbove = {
-        ...hunk,
-        new_count: hunk.new_count + newLines.length,
-        old_count: hunk.old_count + newLines.length,
-        lines: [...hunk.lines, ...newLines],
-      };
-      hunks[hunkIndex] = mergedAbove;
-
-      // If gap is fully closed, merge the two hunks into one.
-      const remainingGap = hunkBelow.new_start - (lastNewAbove + newLines.length) - 1;
-      if (remainingGap === 0) {
-        hunks[hunkIndex] = {
-          ...mergedAbove,
-          new_count: mergedAbove.new_count + hunkBelow.new_count,
-          old_count: mergedAbove.old_count + hunkBelow.old_count,
-          lines: [...mergedAbove.lines, ...hunkBelow.lines],
-        };
-        hunks.splice(hunkIndex + 1, 1);
-        didMerge = true;
-      }
-    }
-
-    return { ...file, hunks };
-  });
-
-  return { diff: { ...diff, files }, didMerge };
 }

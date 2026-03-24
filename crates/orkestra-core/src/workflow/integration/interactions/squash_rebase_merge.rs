@@ -22,7 +22,7 @@ struct IntegrationParams<'a> {
     commit_message_generator: &'a dyn CommitMessageGenerator,
 }
 
-/// Safety-net commit → squash (top-level only) → sync merge → AI message → merge to target.
+/// Safety-net commit → squash → sync merge → AI message → merge to target.
 ///
 /// Pure git work — no API lock needed. Returns an `IntegrationGitResult` that
 /// the caller records via `apply_integration_result` (sync) or `record_result` (background).
@@ -64,28 +64,26 @@ pub(crate) fn execute(
         return IntegrationGitResult::CommitError(error_msg);
     }
 
-    // Squash commits for top-level tasks (subtasks keep individual commits).
-    // The squash commit uses a simple fallback message — the AI-generated message
+    // Squash all commits before merging to keep the target branch history clean.
+    // The squash commit uses the task title as its message — the AI-generated message
     // goes on the merge commit created on the target branch by merge_to_branch.
-    if task.parent_id.is_none() {
-        if let Some(worktree_path) = &task.worktree_path {
-            let squash_message = fallback_commit_message(&task.title, &task.id);
-            match git.squash_commits(Path::new(worktree_path), &task.base_branch, &squash_message) {
-                Ok(squashed) => {
-                    if squashed {
-                        orkestra_debug!("integration", "squashed commits for task {}", task_id);
-                    }
+    if let Some(worktree_path) = &task.worktree_path {
+        let squash_message = fallback_commit_message(&task.title, &task.id);
+        match git.squash_commits(Path::new(worktree_path), &task.base_branch, &squash_message) {
+            Ok(squashed) => {
+                if squashed {
+                    orkestra_debug!("integration", "squashed commits for task {}", task_id);
                 }
-                Err(e) => {
-                    let error_msg = format!("Failed to squash commits: {e}");
-                    orkestra_debug!(
-                        "integration",
-                        "squash failed for {}: {}",
-                        task_id,
-                        error_msg
-                    );
-                    return IntegrationGitResult::CommitError(error_msg);
-                }
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to squash commits: {e}");
+                orkestra_debug!(
+                    "integration",
+                    "squash failed for {}: {}",
+                    task_id,
+                    error_msg
+                );
+                return IntegrationGitResult::CommitError(error_msg);
             }
         }
     }

@@ -7,7 +7,7 @@
 {{#if this.is_current}}
 [{{this.name}}] ← YOU ARE HERE — {{this.description}}
 {{else}}
-[{{this.name}}] — {{this.description}}
+[{{this.name}}] — {{this.description}}{{#if this.artifact_path}} ({{this.artifact_path}}){{/if}}
 {{/if}}
 {{/each}}
 {{/if}}
@@ -25,7 +25,7 @@
 {{#if artifacts}}
 ## Input Artifacts
 
-The following artifacts are available in your worktree. Read them as needed:
+The following artifacts are available in your worktree. You MUST read these artifacts before starting work:
 
 {{#each artifacts}}
 - `{{this.file_path}}`{{#if this.description}} — {{this.description}}{{/if}}

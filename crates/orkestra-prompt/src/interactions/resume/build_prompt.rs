@@ -3,7 +3,7 @@
 //! Builds short resume prompts for session continuation.
 
 use handlebars::Handlebars;
-use orkestra_types::runtime::{absolute_artifact_file_path, artifact_file_path};
+use orkestra_types::runtime::resolve_artifact_path;
 
 use crate::types::{AgentConfigError, ResumeType};
 
@@ -90,10 +90,7 @@ pub fn execute(
         let artifact_values: Vec<serde_json::Value> = artifact_names
             .iter()
             .map(|name| {
-                let file_path = match worktree_path {
-                    Some(wt) => absolute_artifact_file_path(wt, name),
-                    None => artifact_file_path(name),
-                };
+                let file_path = resolve_artifact_path(worktree_path, name);
                 serde_json::json!({
                     "name": name,
                     "file_path": file_path

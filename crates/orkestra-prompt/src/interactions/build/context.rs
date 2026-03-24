@@ -4,7 +4,7 @@
 
 use orkestra_types::config::{StageConfig, WorkflowConfig};
 use orkestra_types::domain::Task;
-use orkestra_types::runtime::{absolute_artifact_file_path, artifact_file_path};
+use orkestra_types::runtime::resolve_artifact_path;
 
 use crate::types::{
     ArtifactContext, IntegrationErrorContext, SiblingTaskContext, StagePromptContext,
@@ -117,10 +117,7 @@ fn build_context_from_stage<'a>(
                 .iter()
                 .find(|s| s.artifact_name() == name)
                 .and_then(|s| s.artifact.description.clone());
-            let file_path = match &task.worktree_path {
-                Some(wt) => absolute_artifact_file_path(wt, name),
-                None => artifact_file_path(name),
-            };
+            let file_path = resolve_artifact_path(task.worktree_path.as_deref(), name);
             ArtifactContext {
                 name: name.clone(),
                 file_path,
@@ -133,7 +130,13 @@ fn build_context_from_stage<'a>(
     // Initial prompts don't include question history since no questions have been asked yet.
     let question_history = Vec::new();
 
-    let workflow_stages = workflow_overview::execute(workflow, &stage.name, task.flow.as_deref());
+    let workflow_stages = workflow_overview::execute(
+        workflow,
+        &stage.name,
+        task.flow.as_deref(),
+        artifact_names,
+        task.worktree_path.as_deref(),
+    );
 
     StagePromptContext {
         stage,

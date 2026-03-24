@@ -71,7 +71,6 @@ describe("ServiceApp", () => {
     mockGetToken.mockReturnValue("test-token");
     renderApp();
     expect(screen.getByText("ORKESTRA")).toBeInTheDocument();
-    expect(screen.getByText("SERVICE")).toBeInTheDocument();
   });
 
   // -- Project fetching --

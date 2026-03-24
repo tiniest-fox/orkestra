@@ -582,6 +582,8 @@ pub fn run() {
             commands::workflow_set_auto_mode,
             commands::workflow_interrupt,
             commands::workflow_resume,
+            commands::workflow_skip_stage,
+            commands::workflow_send_to_stage,
             commands::workflow_get_config,
             commands::workflow_get_startup_data,
             commands::workflow_get_auto_task_templates,

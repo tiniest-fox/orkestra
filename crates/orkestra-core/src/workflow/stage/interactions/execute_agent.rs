@@ -285,6 +285,7 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
         IterationTrigger::RetryFailed { instructions }
         | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
         IterationTrigger::ManualResume { message } => message.as_deref(),
+        IterationTrigger::Redirect { message, .. } => Some(message.as_str()),
         _ => None,
     })
 }

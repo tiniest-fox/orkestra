@@ -153,6 +153,34 @@ impl WorkflowApi {
     pub fn archive_task(&self, task_id: &str) -> WorkflowResult<Task> {
         human::archive::execute(self.store.as_ref(), task_id)
     }
+
+    /// Skip the current stage, advancing to the next stage with a message.
+    pub fn skip_stage(&self, task_id: &str, message: &str) -> WorkflowResult<Task> {
+        human::skip_stage::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
+            task_id,
+            message,
+        )
+    }
+
+    /// Send a task to a specific stage in its pipeline with a message.
+    pub fn send_to_stage(
+        &self,
+        task_id: &str,
+        target_stage: &str,
+        message: &str,
+    ) -> WorkflowResult<Task> {
+        human::send_to_stage::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
+            task_id,
+            target_stage,
+            message,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -1055,6 +1083,162 @@ mod tests {
                 assert_eq!(guidance.as_deref(), Some("Fix all issues"));
             }
             other => panic!("Expected PrFeedback trigger, got {other:?}"),
+        }
+    }
+
+    // ========================================================================
+    // skip_stage and send_to_stage tests
+    // ========================================================================
+
+    /// Create an API with a task in `AwaitingApproval` at the planning stage.
+    fn api_with_task_at_stage(stage: &str) -> (WorkflowApi, Task) {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.state = TaskState::awaiting_approval(stage);
+        api.store.save_task(&task).unwrap();
+
+        // Create an active iteration at the given stage
+        api.iteration_service
+            .create_iteration(&task.id, stage, None)
+            .unwrap();
+
+        (api, task)
+    }
+
+    #[test]
+    fn test_skip_stage_advances_to_next() {
+        let (api, task) = api_with_task_at_stage("planning");
+
+        let result = api.skip_stage(&task.id, "skipping planning").unwrap();
+
+        assert_eq!(result.current_stage(), Some("work"));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+    }
+
+    #[test]
+    fn test_skip_stage_last_stage_marks_done() {
+        let (api, task) = api_with_task_at_stage("review");
+
+        let result = api.skip_stage(&task.id, "skipping review").unwrap();
+
+        assert!(matches!(result.state, TaskState::Done));
+    }
+
+    #[test]
+    fn test_skip_stage_creates_redirect_trigger() {
+        let (api, task) = api_with_task_at_stage("planning");
+
+        let _ = api.skip_stage(&task.id, "skip with context").unwrap();
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let work_iter = iterations.iter().find(|i| i.stage == "work").unwrap();
+        match &work_iter.incoming_context {
+            Some(IterationTrigger::Redirect {
+                from_stage,
+                message,
+            }) => {
+                assert_eq!(from_stage, "planning");
+                assert_eq!(message, "skip with context");
+            }
+            other => panic!("Expected Redirect trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_skip_stage_wrong_state() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.state = TaskState::agent_working("planning");
+        api.store.save_task(&task).unwrap();
+
+        let result = api.skip_stage(&task.id, "skip");
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_skip_stage_from_queued_rejected() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description", None).unwrap();
+        // Task starts in Queued state
+
+        let result = api.skip_stage(&task.id, "skip");
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_send_to_stage_forward() {
+        let (api, task) = api_with_task_at_stage("planning");
+
+        let result = api
+            .send_to_stage(&task.id, "review", "send to review")
+            .unwrap();
+
+        assert_eq!(result.current_stage(), Some("review"));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+    }
+
+    #[test]
+    fn test_send_to_stage_backward() {
+        let (api, task) = api_with_task_at_stage("review");
+
+        let result = api
+            .send_to_stage(&task.id, "planning", "send back to planning")
+            .unwrap();
+
+        assert_eq!(result.current_stage(), Some("planning"));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+    }
+
+    #[test]
+    fn test_send_to_stage_invalid_stage() {
+        let (api, task) = api_with_task_at_stage("planning");
+
+        let result = api.send_to_stage(&task.id, "nonexistent", "go there");
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_send_to_stage_from_interrupted() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.state = TaskState::interrupted("planning");
+        api.store.save_task(&task).unwrap();
+
+        // Create an active iteration at planning
+        api.iteration_service
+            .create_iteration(&task.id, "planning", None)
+            .unwrap();
+
+        let result = api
+            .send_to_stage(&task.id, "work", "redirect from interrupted")
+            .unwrap();
+
+        assert_eq!(result.current_stage(), Some("work"));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let work_iter = iterations.iter().find(|i| i.stage == "work").unwrap();
+        match &work_iter.incoming_context {
+            Some(IterationTrigger::Redirect {
+                from_stage,
+                message,
+            }) => {
+                assert_eq!(from_stage, "planning");
+                assert_eq!(message, "redirect from interrupted");
+            }
+            other => panic!("Expected Redirect trigger, got {other:?}"),
         }
     }
 }

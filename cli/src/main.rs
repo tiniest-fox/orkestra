@@ -175,6 +175,25 @@ enum TaskAction {
         #[arg(long)]
         guidance: Option<String>,
     },
+    /// Skip the current stage, advancing to the next stage
+    Skip {
+        /// Task ID
+        id: String,
+        /// Message explaining why the stage is being skipped
+        #[arg(short, long)]
+        message: String,
+    },
+    /// Send a task to a specific stage
+    SendToStage {
+        /// Task ID
+        id: String,
+        /// Target stage name
+        #[arg(short, long)]
+        stage: String,
+        /// Message explaining why the task is being redirected
+        #[arg(short, long)]
+        message: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -291,6 +310,10 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         }
         TaskAction::AddressFeedback { id, guidance } => {
             handle_address_feedback(&api, &id, guidance.as_deref(), pretty);
+        }
+        TaskAction::Skip { id, message } => handle_skip_stage(&api, &id, &message, pretty),
+        TaskAction::SendToStage { id, stage, message } => {
+            handle_send_to_stage(&api, &id, &stage, &message, pretty);
         }
     }
 }
@@ -480,6 +503,44 @@ fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str, pretty: bool)
             "Stage: {} (new iteration)",
             task.current_stage().unwrap_or("-")
         );
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_skip_stage(api: &WorkflowApi, id: &str, message: &str, pretty: bool) {
+    let task = match api.skip_stage(id, message) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error skipping stage: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Skipped stage for task: {}", task.id);
+        if task.is_done() {
+            println!("Status: Done");
+        } else {
+            println!("New stage: {}", task.current_stage().unwrap_or("-"));
+        }
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_send_to_stage(api: &WorkflowApi, id: &str, stage: &str, message: &str, pretty: bool) {
+    let task = match api.send_to_stage(id, stage, message) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error sending to stage: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Sent task {} to stage: {}", task.id, stage);
+        println!("Current stage: {}", task.current_stage().unwrap_or("-"));
     } else {
         output_json(&task);
     }
@@ -1281,6 +1342,12 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
                 write!(s, "\n    Guidance: {g}").unwrap();
             }
             s
+        }
+        IterationTrigger::Redirect {
+            from_stage,
+            message,
+        } => {
+            format!("redirect from {from_stage}\n    \"{message}\"")
         }
         IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
     }

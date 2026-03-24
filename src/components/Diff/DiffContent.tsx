@@ -9,6 +9,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "rea
 import { Virtualizer, type VirtualizerHandle } from "virtua";
 import type { HighlightedFileDiff } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
+import type { ExpandPosition } from "../Feed/applySplice";
 import { EmptyState } from "../ui/EmptyState";
 import { FileSection } from "./FileSection";
 import type { DraftComment } from "./types";
@@ -57,7 +58,7 @@ interface DiffContentProps {
   onExpandContext?: (
     filePath: string,
     hunkIndex: number,
-    position: "above" | "between" | "below",
+    position: ExpandPosition,
     amount: number,
   ) => void;
   /** Per-file context line counts for collapse threshold. Falls back to 3 for unexpanded files. */

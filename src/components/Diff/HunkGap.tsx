@@ -3,7 +3,7 @@
 interface HunkGapProps {
   gapSize: number | null; // lines in gap; null = below last hunk (unknown size)
   position: "above" | "between" | "below";
-  onExpand: (amount: number) => void;
+  onExpand: (amount: number, direction?: "down" | "up") => void;
 }
 
 export function HunkGap({ gapSize, position, onExpand }: HunkGapProps) {
@@ -54,7 +54,7 @@ export function HunkGap({ gapSize, position, onExpand }: HunkGapProps) {
         <span>↓ 10 more</span>
         <span className="flex-1 border-t border-border" />
       </button>
-      <button type="button" className={btnClass} onClick={() => onExpand(10)}>
+      <button type="button" className={btnClass} onClick={() => onExpand(10, "up")}>
         <span className="flex-1 border-t border-border" />
         <span>↑ 10 more</span>
         <span className="flex-1 border-t border-border" />

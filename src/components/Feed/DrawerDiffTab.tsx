@@ -20,6 +20,7 @@ import { useDiffFindNavigation } from "../Diff/useDiffFindNavigation";
 import { useDiffSearch } from "../Diff/useDiffSearch";
 import { EmptyState } from "../ui/EmptyState";
 import { useNavHandler } from "../ui/HotkeyScope";
+import type { ExpandPosition } from "./applySplice";
 import { useDrawerDiff } from "./DrawerTaskProvider";
 
 interface DrawerDiffTabProps {
@@ -142,7 +143,7 @@ export function DrawerDiffTab({
   function handleExpandContext(
     filePath: string,
     hunkIndex: number,
-    position: "above" | "between" | "below",
+    position: ExpandPosition,
     amount: number,
   ) {
     void expandContext(filePath, hunkIndex, position, amount);

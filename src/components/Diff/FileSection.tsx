@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import type { HighlightedFileDiff, HighlightedLine } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
+import type { ExpandPosition } from "../Feed/applySplice";
 import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
 import { DraftCommentBubble } from "./DraftCommentBubble";
@@ -36,11 +37,7 @@ interface FileSectionProps {
   onDraftBodyChange?: (body: string) => void;
   fileMatches: DiffMatch[];
   currentMatch: DiffMatch | null;
-  onExpandContext?: (
-    hunkIndex: number,
-    position: "above" | "between" | "below",
-    amount: number,
-  ) => void;
+  onExpandContext?: (hunkIndex: number, position: ExpandPosition, amount: number) => void;
   contextLines?: number;
 }
 
@@ -137,7 +134,13 @@ export function FileSection({
                   <HunkGap
                     gapSize={betweenGap}
                     position="between"
-                    onExpand={(amount) => onExpandContext(hunkIndex, "between", amount)}
+                    onExpand={(amount, direction) =>
+                      onExpandContext(
+                        hunkIndex,
+                        direction === "up" ? "between-up" : "between",
+                        amount,
+                      )
+                    }
                   />
                 )}
                 {isLast &&

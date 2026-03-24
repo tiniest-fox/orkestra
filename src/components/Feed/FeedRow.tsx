@@ -4,6 +4,7 @@ import { useMemo, useRef } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
+import { isActivelyProgressing } from "../../utils/taskStatus";
 import { HotkeyScope } from "../ui/HotkeyScope";
 import { useNavItem } from "../ui/NavigationScope";
 import { FeedRowActions } from "./FeedRowActions";
@@ -66,6 +67,16 @@ export function FeedRow({
     .filter(Boolean)
     .join(" ");
 
+  const { derived } = task;
+  const showActionsRow =
+    actionsSlot !== undefined ||
+    derived.is_failed ||
+    derived.has_questions ||
+    derived.needs_review ||
+    derived.is_done ||
+    task.state.type === "integrating" ||
+    (isActivelyProgressing(task) && !derived.is_waiting_on_children);
+
   const sharedEventProps = {
     onMouseEnter,
     onClick,
@@ -92,32 +103,42 @@ export function FeedRow({
           .filter(Boolean)
           .join(" ")}
       >
-        <div className="flex items-center gap-2">
-          <StatusSymbol task={task} waiting={waiting} />
-          <div className="min-w-0 flex-1">
+        <div className="grid grid-cols-[24px_18px_minmax(0,1fr)] gap-x-2 items-start">
+          {isSubtask ? (
+            <>
+              <div />
+              <span className="font-mono text-sm text-text-quaternary mt-0.5 text-center">↳</span>
+            </>
+          ) : (
+            <StatusSymbol task={task} waiting={waiting} />
+          )}
+          <div className={`min-w-0 ${!isSubtask ? "col-span-2" : ""}`}>
             <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
-              {isSubtask && <span className="text-text-quaternary mr-1">↳</span>}
               {task.title || task.description}
             </div>
-            <div className="font-mono text-[10px] text-text-quaternary">{task.id}</div>
+            <div className="font-mono text-[10px] text-text-quaternary mt-0.5">{task.id}</div>
           </div>
         </div>
-        <div className="flex items-center gap-2 pl-8 min-h-[36px] w-full">
-          {actionsSlot ?? (
-            <HotkeyScope active={isFocused ?? false}>
-              <FeedRowActions
-                task={task}
-                onReview={onReview ?? (() => {})}
-                onAnswer={onAnswer ?? (() => {})}
-                onApprove={onApprove ?? (() => {})}
-                onMerge={onMerge ?? (() => {})}
-                onOpenPr={onOpenPr ?? (() => {})}
-                onArchive={onArchive ?? (() => {})}
-                fullWidth
-              />
-            </HotkeyScope>
-          )}
-        </div>
+        {showActionsRow && (
+          <div className="grid grid-cols-[24px_18px_minmax(0,1fr)] gap-x-2 mt-1">
+            <div className="col-start-3">
+              {actionsSlot ?? (
+                <HotkeyScope active={isFocused ?? false}>
+                  <FeedRowActions
+                    task={task}
+                    onReview={onReview ?? (() => {})}
+                    onAnswer={onAnswer ?? (() => {})}
+                    onApprove={onApprove ?? (() => {})}
+                    onMerge={onMerge ?? (() => {})}
+                    onOpenPr={onOpenPr ?? (() => {})}
+                    onArchive={onArchive ?? (() => {})}
+                    fullWidth
+                  />
+                </HotkeyScope>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

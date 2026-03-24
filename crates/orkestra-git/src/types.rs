@@ -120,6 +120,11 @@ pub struct FileDiff {
     pub is_binary: bool,
     /// Raw unified diff content (None for binary files).
     pub diff_content: Option<String>,
+    /// Total number of lines in the new version of the file (None for deleted/binary).
+    ///
+    /// Used by the frontend to determine whether a "more below" expand button
+    /// should be shown — comparing against the last line number in the last hunk.
+    pub total_new_lines: Option<u32>,
 }
 
 /// Complete diff for a task branch against its base.

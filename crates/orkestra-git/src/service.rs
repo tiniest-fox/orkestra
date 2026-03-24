@@ -139,16 +139,22 @@ impl GitService for Git2GitService {
         worktree_path: &Path,
         branch_name: &str,
         base_branch: &str,
+        context_lines: u32,
     ) -> Result<TaskDiff, GitError> {
-        interactions::diff::against_base::execute(worktree_path, branch_name, base_branch)
+        interactions::diff::against_base::execute(
+            worktree_path,
+            branch_name,
+            base_branch,
+            context_lines,
+        )
     }
 
     fn diff_uncommitted(&self, worktree_path: &Path) -> Result<TaskDiff, GitError> {
         interactions::diff::uncommitted::execute(worktree_path)
     }
 
-    fn commit_diff(&self, commit_hash: &str) -> Result<TaskDiff, GitError> {
-        interactions::diff::commit::execute(&self.repo_path, commit_hash)
+    fn commit_diff(&self, commit_hash: &str, context_lines: u32) -> Result<TaskDiff, GitError> {
+        interactions::diff::commit::execute(&self.repo_path, commit_hash, context_lines)
     }
 
     // -- Merge --
@@ -501,7 +507,9 @@ mod tests {
             .unwrap();
         let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-        let diff = git.commit_diff(&commit_hash).expect("Failed to get diff");
+        let diff = git
+            .commit_diff(&commit_hash, 3)
+            .expect("Failed to get diff");
         assert_eq!(diff.files.len(), 1);
         assert_eq!(diff.files[0].path, "new_file.rs");
         assert!(matches!(diff.files[0].change_type, FileChangeType::Added));

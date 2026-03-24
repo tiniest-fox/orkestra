@@ -28,6 +28,7 @@ pub fn execute(worktree_path: &Path, path: &str) -> Option<FileDiff> {
             deletions: 0,
             is_binary: true,
             diff_content: None,
+            total_new_lines: None,
         });
     }
 
@@ -57,5 +58,7 @@ pub fn execute(worktree_path: &Path, path: &str) -> Option<FileDiff> {
         deletions: 0,
         is_binary: false,
         diff_content: Some(diff_content),
+        #[allow(clippy::cast_possible_truncation)]
+        total_new_lines: Some(line_count as u32),
     })
 }

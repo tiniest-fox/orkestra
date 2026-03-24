@@ -49,6 +49,7 @@ pub struct HighlightedFileDiff {
     pub deletions: usize,
     pub is_binary: bool,
     pub hunks: Vec<HighlightedHunk>,
+    pub total_new_lines: Option<u32>,
 }
 
 /// Complete task diff with highlighting.

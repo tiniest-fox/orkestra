@@ -17,7 +17,7 @@ use crate::runner::UtilityRunner;
 /// Trait for generating PR titles and bodies from task context.
 ///
 /// Implementations attempt to produce a GitHub PR title (max 70 chars) and
-/// a structured markdown body with Summary, Decisions, and Verification sections.
+/// a structured markdown body with Summary, Decisions, and Change Walkthrough sections.
 /// The caller handles fallback on failure.
 pub trait PrDescriptionGenerator: Send + Sync {
     /// Attempt to generate a PR title and body from task context.
@@ -125,7 +125,7 @@ pub mod mock {
                 Err("Mock PR description generation failed".into())
             } else {
                 let body = format!(
-                    "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Verification\n\n- Manual testing{}",
+                    "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Change Walkthrough\n\n- Mock walkthrough of changes{}",
                     format_pr_footer(model_names)
                 );
                 Ok((task_title.to_string(), body))
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(title, "Add feature");
         assert!(body.contains("## Summary"));
         assert!(body.contains("## Decisions"));
-        assert!(body.contains("## Verification"));
+        assert!(body.contains("## Change Walkthrough"));
         assert!(body.contains("Co-authored-by: Claude Sonnet 4.5"));
         assert!(body.contains("⚡ Powered by Orkestra"));
     }

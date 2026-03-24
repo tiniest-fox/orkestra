@@ -158,7 +158,7 @@ export function DrawerHeader({
         ]
       : []),
     // Chat — available without a worktree
-    ...(!task.derived.is_done && !task.derived.is_archived && onOpenChat
+    ...(!task.derived.is_archived && onOpenChat
       ? [
           {
             icon: <MessageSquare />,
@@ -187,6 +187,7 @@ export function DrawerHeader({
         onClose={onClose}
         actions={actions}
         escHidden={escHidden}
+        expandable={{ taskId: task.id, description: task.description }}
       />
 
       {/* Pipeline row: session strip + subtask progress + pipeline bar */}

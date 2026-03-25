@@ -104,19 +104,20 @@ When the task is complex enough to decompose (the common case):
 - **Detailed Instructions**: The full implementation brief (see above)
 - **Dependencies**: Which subtasks must complete first (by index)
 
-### Case 2: Skip Breakdown
+### Case 2: Single-Subtask (Inline)
 
-When the task is simple enough to complete directly (single-focus work):
+When the task is simple enough to complete in one focused session:
 
-**`content` field**: Write a focused implementation brief that becomes the worker's sole context. Include:
+**`content` field**: Write a focused implementation brief that becomes the worker's context. Include:
 
 1. **Task Summary** (2-3 sentences) — What the task is, why it matters, key constraints
 2. **Files to create/modify** — With specific changes needed
 3. **Patterns to follow** — With codebase references
 4. **Acceptance criteria** — How to know the task is complete (implementation correctness only — automated checks run separately)
 
-**`subtasks` array**: Empty array.
-**`skip_reason`**: Why breakdown was skipped.
+**`subtasks` array**: A single subtask whose `detailed_instructions` contains the complete implementation brief. The system automatically inlines this on the parent task — no child task is created, and the parent advances directly to the work stage with the subtask's instructions as context.
+
+> Note: outputting exactly 1 subtask triggers inlining. Outputting 2 or more creates child tasks.
 
 ## Verification Strategy
 

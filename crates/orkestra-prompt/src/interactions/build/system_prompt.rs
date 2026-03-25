@@ -61,7 +61,6 @@ struct OutputFormatContext {
     questions_example: Option<String>,
     can_produce_subtasks: bool,
     subtasks_example: Option<String>,
-    skip_example: Option<String>,
     has_approval: bool,
     show_direct_structured_output_hint: bool,
 }
@@ -78,7 +77,7 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
         None
     };
 
-    let (subtasks_example, skip_example) = if ctx.stage.capabilities.produces_subtasks() {
+    let subtasks_example = if ctx.stage.capabilities.produces_subtasks() {
         let examples = vec![
             subtask_example(
                 "First task",
@@ -93,20 +92,12 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
                 &[0],
             ),
         ];
-        (
-            Some(subtasks_output_example(
-                &examples,
-                None,
-                "# Technical Design\\n\\nYour detailed analysis and design content here...",
-            )),
-            Some(subtasks_output_example(
-                &[],
-                Some("Task is simple enough to complete directly"),
-                "# Analysis\\n\\nBrief analysis of why this task doesn't need breakdown...",
-            )),
-        )
+        Some(subtasks_output_example(
+            &examples,
+            "# Technical Design\\n\\nYour detailed analysis and design content here...",
+        ))
     } else {
-        (None, None)
+        None
     };
 
     OutputFormatContext {
@@ -115,7 +106,6 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
         questions_example,
         can_produce_subtasks: ctx.stage.capabilities.produces_subtasks(),
         subtasks_example,
-        skip_example,
         has_approval: ctx.stage.capabilities.has_approval(),
         show_direct_structured_output_hint: ctx.show_direct_structured_output_hint,
     }

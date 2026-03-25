@@ -251,7 +251,6 @@ MockAgentOutput::Subtasks {
             depends_on: vec![0], // Depends on subtask at index 0
         },
     ],
-    skip_reason: None,
     activity_log: None,
 }
 

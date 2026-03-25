@@ -140,10 +140,10 @@ Read these before modifying cross-cutting flows:
 
 | Flow | Doc | Key Files |
 |------|-----|-----------|
-| Workflow pipeline | `docs/flows/workflow-pipeline.md` | `stage.rs`, `agent_actions.rs`, `human_actions.rs` |
+| Workflow pipeline | `docs/flows/workflow-pipeline.md` | `workflow/stage/`, `workflow/agent/`, `workflow/human/`, `workflow/orchestrator/` |
 | Stage execution | `docs/flows/stage-execution.md` | `orchestrator.rs`, `stage_execution.rs`, `agent_execution.rs` |
 | Task integration | `docs/flows/task-integration.md` | `orchestrator.rs`, `integration.rs`, `orkestra-git` |
-| Subtask lifecycle | `docs/flows/subtask-lifecycle.md` | `agent_actions.rs`, `subtask_service.rs` |
+| Subtask lifecycle | `docs/flows/subtask-lifecycle.md` | `workflow/agent/interactions/handle_subtasks.rs`, `workflow/stage/interactions/create_subtasks.rs`, `workflow/stage/interactions/check_parent_completions.rs` |
 
 ## Anti-Patterns
 

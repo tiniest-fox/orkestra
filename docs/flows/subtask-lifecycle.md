@@ -6,25 +6,24 @@ How a parent task gets broken into subtasks, how subtasks execute with dependenc
 
 | File | Role |
 |------|------|
-| `workflow/services/agent_actions.rs` | `handle_subtasks_output()`: stores breakdown JSON + markdown artifact. `advance_completed_parents()`: checks if all subtasks done, advances parent |
-| `workflow/services/human_actions.rs` | `approve()`: detects subtask stage, calls `approve_with_subtask_creation()`. `auto_approve_stage()`: same path for auto-mode |
-| `workflow/services/subtask_service.rs` | `create_subtasks_from_breakdown()`: creates Task records with dependencies, flow, inherited artifacts |
-| `workflow/services/task_setup.rs` | `spawn_subtask_setup()`: transitions subtasks from SettingUp to Idle (no worktree creation) |
-| `workflow/services/orchestrator.rs` | `get_tasks_needing_agents()`: filters subtasks by dependency satisfaction. `check_parent_completions()`: calls `advance_completed_parents()` each tick |
-| `workflow/services/api.rs` | `get_tasks_needing_agents()`: skips tasks whose `depends_on` entries aren't all done/archived |
-| `workflow/execution/output.rs` | `StageOutput::Subtasks`: parsed breakdown output with title, description, depends_on per subtask |
-| `workflow/execution/breakdown.rs` | `subtasks_to_markdown()`: converts subtask list to readable markdown for the artifact |
-| `workflow/config/stage.rs` | `StageCapabilities`: `subtasks: Option<SubtaskCapabilities>` with `flow` and `completion_stage` |
+| `workflow/agent/interactions/handle_subtasks.rs` | Stores breakdown artifact; single subtask → inline on parent; multiple subtasks → artifact + `_structured` JSON. Calls `auto_advance_or_review`. |
+| `workflow/human/interactions/approve.rs` | `approve()`: detects subtask stage with `_structured` data present, calls `create_subtasks`. Single-subtask path has no `_structured` data, so it advances normally. |
+| `workflow/stage/interactions/create_subtasks.rs` | Creates Task records with dependencies, flow assignment, and inherited artifacts (two-pass: create all, then resolve depends_on indices to IDs) |
+| `workflow/task/interactions/setup_awaiting.rs` | Transitions subtasks from SettingUp → Idle; creates worktree + branch from parent's branch when dependencies are satisfied |
+| `workflow/orchestrator/mod.rs` | Tick loop: calls `check_parent_completions` each tick; also drives `tasks_needing_agents` to respect dependency ordering |
+| `workflow/query/interactions/tasks_needing_agents.rs` | Skips tasks whose `depends_on` entries aren't all done/archived |
+| `workflow/stage/interactions/check_parent_completions.rs` | Checks if all subtasks done/archived; advances parent to next stage or marks Failed |
+| `workflow/config/mod.rs` | Re-exports `StageCapabilities`: `subtasks: Option<SubtaskCapabilities>` with `flow` and `completion_stage` (types live in `crates/orkestra-types`) |
 
-All paths relative to `crates/orkestra-core/src/`.
+Paths relative to `crates/orkestra-core/src/` unless otherwise noted. `StageOutput::Subtasks` is parsed in `crates/orkestra-parser/src/types.rs`, re-exported as `workflow::execution::SubtaskOutput` in core.
 
 ## Step Summary
 
-1. **Agent produces subtasks** — A stage with `subtasks` capabilities (typically "breakdown") outputs `StageOutput::Subtasks`. `agent_actions.rs::handle_subtasks_output()` stores two things: a markdown artifact (human-readable) and a `{artifact_name}_structured` artifact (JSON for later Task creation). No Task records are created yet.
+1. **Agent produces subtasks** — A stage with `subtasks` capabilities (typically "breakdown") outputs `StageOutput::Subtasks`. `handle_subtasks.rs` handles two cases: (a) single subtask → inline the instructions as a breakdown artifact on the parent, no `_structured` data stored; (b) multiple subtasks → stores a markdown artifact and a `{artifact_name}_structured` JSON artifact for later Task creation. No Task records are created yet.
 
-2. **Human approves breakdown** — `human_actions.rs::approve()` detects the stage has subtask capabilities and structured data exists, calls `approve_with_subtask_creation()`.
+2. **Human approves breakdown** — `approve.rs` detects whether `_structured` data is present. If present (multiple-subtask path), it calls `create_subtasks` to create child tasks. If absent (single-subtask inlined path), the parent advances normally.
 
-3. **SubtaskService creates Task records** — `subtask_service.rs::create_subtasks_from_breakdown()` parses the structured JSON and creates tasks in two passes:
+3. **create_subtasks creates Task records** — `create_subtasks.rs` parses the structured JSON and creates tasks in two passes:
    - **Pass 1**: Create all tasks with IDs, assign flow from `subtasks.flow` capability, set `base_branch` to parent's branch, inherit auto_mode, copy parent's plan artifact
    - **Pass 2**: Resolve `depends_on` indices to actual task IDs
    - **Save**: Persist each task, create initial iterations. Subtasks start in SettingUp — worktree creation is deferred to `setup_ready_subtasks()` in the orchestrator tick loop
@@ -35,7 +34,7 @@ All paths relative to `crates/orkestra-core/src/`.
 
 6. **Subtasks execute through their flow** — Each subtask runs through its assigned flow's stages (e.g., "quick" flow skips breakdown and compound). Each subtask has its own worktree and branch, created from the parent's branch. When a subtask completes, it integrates (rebase + merge) back to the parent's branch.
 
-7. **Parent advances when all subtasks done** — `orchestrator.rs::check_parent_completions()` calls `api.advance_completed_parents()` each tick. For each `WaitingOnChildren` parent: if all subtasks are done/archived, parent advances to `next_stage` with a new iteration. If any subtask failed, parent is marked Failed.
+7. **Parent advances when all subtasks done** — The orchestrator calls `check_parent_completions::execute()` each tick. For each `WaitingOnChildren` parent: if all subtasks are done/archived, parent advances to `next_stage` with a new iteration. If any subtask failed, parent is marked Failed.
 
 ## State Transitions
 
@@ -60,9 +59,9 @@ The orchestrator's `get_tasks_needing_agents()` checks: for each task with `depe
 - Subtasks with dependencies wait until all dependencies complete
 - Diamond dependencies work correctly (A depends on B and C, both must finish)
 
-## Breakdown Skip
+## Single-Subtask Inlining
 
-If the breakdown agent decides the task is simple enough to not need subtasks, it outputs an empty subtasks list with a `skip_reason`. On approval, `approve_with_subtask_creation()` sees zero tasks created and falls through to `apply_standard_approval()` — the parent advances normally as if it were a regular stage.
+If the breakdown agent produces exactly one subtask, it is inlined on the parent task — no child task is created, and the parent advances directly to the next stage with the subtask's instructions as context. The breakdown artifact is augmented with an `## Implementation Instructions` section containing the subtask's `detailed_instructions`. Any stale `_structured` artifact data from a previous multi-subtask run is cleared to prevent accidental child task creation.
 
 ## Non-Obvious Behaviors
 

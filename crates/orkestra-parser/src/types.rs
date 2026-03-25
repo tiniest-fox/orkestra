@@ -67,10 +67,8 @@ pub enum StageOutput {
     Subtasks {
         /// The artifact content (technical design, analysis, etc.).
         content: String,
-        /// List of subtasks to create.
+        /// List of subtasks to create (at least one).
         subtasks: Vec<SubtaskOutput>,
-        /// Reason for skipping breakdown (required if subtasks is empty).
-        skip_reason: Option<String>,
         /// Optional activity log.
         activity_log: Option<String>,
     },
@@ -202,13 +200,11 @@ impl StageOutput {
                     serde_json::from_value(value["subtasks"].clone())
                         .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
-                let skip_reason = value["skip_reason"].as_str().map(String::from);
                 let activity_log = value["activity_log"].as_str().map(String::from);
 
                 Ok(StageOutput::Subtasks {
                     content,
                     subtasks,
-                    skip_reason,
                     activity_log,
                 })
             }

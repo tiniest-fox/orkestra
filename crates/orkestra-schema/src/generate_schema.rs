@@ -126,9 +126,6 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
             if let Some(s) = s_props.get("subtasks") {
                 properties["subtasks"] = s.clone();
             }
-            if let Some(sr) = s_props.get("skip_reason") {
-                properties["skip_reason"] = sr.clone();
-            }
             if let Some(al) = s_props.get("activity_log") {
                 properties["activity_log"] = al.clone();
             }
@@ -264,10 +261,10 @@ mod tests {
         assert!(!type_enum.iter().any(|v| v == "breakdown"));
         // "subtasks" should be in the enum
         assert!(type_enum.iter().any(|v| v == "subtasks"));
-        // Should have subtasks, skip_reason, and content properties
+        // Should have subtasks and content properties (no skip_reason)
         let props = parsed.get("properties").unwrap();
         assert!(props.get("subtasks").is_some());
-        assert!(props.get("skip_reason").is_some());
+        assert!(props.get("skip_reason").is_none());
         assert!(props.get("content").is_some());
     }
 

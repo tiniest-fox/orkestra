@@ -1,19 +1,32 @@
 //! Task drawer header — title row (via shared DrawerHeader) + pipeline/session strip row.
 
-import { MessageSquare, Play, Square, SquarePen, SquareTerminal, Trash2, Zap } from "lucide-react";
+import {
+  ArrowRightToLine,
+  MessageSquare,
+  Play,
+  SkipForward,
+  Square,
+  SquarePen,
+  SquareTerminal,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import type { RunStatus } from "../../hooks/useRunScript";
 import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
+import { resolveFlowStageNames } from "../../utils/workflowNavigation";
 import { Button } from "../ui/Button";
 import { type DrawerAction, DrawerHeader as SharedDrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { ModalPanel } from "../ui/ModalPanel";
 import { STATUS_HEX } from "../ui/taskStateColors";
 import { PipelineBar } from "./PipelineBar";
+import { SendToStageModal } from "./SendToStageModal";
 import { SessionStrip } from "./SessionStrip";
+import { SkipStageModal } from "./SkipStageModal";
 import { SubtaskProgressBar } from "./SubtaskProgressBar";
 
 interface DrawerHeaderProps {
@@ -82,6 +95,25 @@ export function DrawerHeader({
     () => groupIterationsIntoRuns(task.iterations, config),
     [task.iterations, config],
   );
+
+  // -- Skip / Send-to-Stage modals --
+  const [showSkipStage, setShowSkipStage] = useState(false);
+  const [showSendToStage, setShowSendToStage] = useState(false);
+
+  // Visible only when the task is paused (awaiting review, questions, rejection, or interrupted).
+  const canOverrideStage =
+    task.derived.needs_review ||
+    task.derived.has_questions ||
+    task.derived.is_interrupted ||
+    task.derived.pending_rejection !== null;
+
+  // Flow-aware stages available as send-to targets (exclude the current stage).
+  const otherStages = useMemo(() => {
+    const flowStageNames = resolveFlowStageNames(task.flow, config);
+    return config.stages.filter(
+      (s) => flowStageNames.includes(s.name) && s.name !== task.derived.current_stage,
+    );
+  }, [config, task.flow, task.derived.current_stage]);
 
   const worktreePath = task.worktree_path;
   useNavHandler("T", () => {
@@ -169,6 +201,23 @@ export function DrawerHeader({
           },
         ]
       : []),
+    // Stage override actions — only when the task is paused
+    ...(canOverrideStage
+      ? [
+          {
+            icon: <SkipForward />,
+            label: "Skip stage",
+            shortLabel: "Skip",
+            onClick: () => setShowSkipStage(true),
+          },
+          {
+            icon: <ArrowRightToLine />,
+            label: "Send to stage",
+            shortLabel: "Send to",
+            onClick: () => setShowSendToStage(true),
+          },
+        ]
+      : []),
     // Delete — always available
     {
       icon: <Trash2 />,
@@ -222,8 +271,8 @@ export function DrawerHeader({
       >
         <div className="bg-canvas border border-border rounded-panel shadow-lg p-5 flex flex-col gap-4">
           <div>
-            <p className="text-[14px] font-semibold text-text-primary">Delete task?</p>
-            <p className="mt-1 text-[13px] text-text-tertiary line-clamp-2">
+            <p className="text-forge-body-md font-semibold text-text-primary">Delete task?</p>
+            <p className="mt-1 text-forge-body text-text-tertiary line-clamp-2">
               {task.title || task.description}
             </p>
           </div>
@@ -241,6 +290,23 @@ export function DrawerHeader({
           </div>
         </div>
       </ModalPanel>
+
+      <SkipStageModal
+        isOpen={showSkipStage}
+        onClose={() => setShowSkipStage(false)}
+        taskId={task.id}
+        onSuccess={onClose}
+        transport={transport}
+      />
+
+      <SendToStageModal
+        isOpen={showSendToStage}
+        onClose={() => setShowSendToStage(false)}
+        taskId={task.id}
+        onSuccess={onClose}
+        transport={transport}
+        otherStages={otherStages}
+      />
     </>
   );
 }

@@ -310,9 +310,29 @@ const handleAction = useCallback(async () => {
 
 See `submitLineCommentsForReview` / `submitLineCommentsForDoneTask` in `useTaskDrawerState.ts` for the reference pattern.
 
+## Flow-Aware Stage Filtering
+
+<!-- compound: urgently-welcome-katydid -->
+
+When displaying a list of stages the user can navigate to (e.g., a "send to stage" dropdown), **always filter to the task's current flow** using `resolveFlowStageNames` from `src/utils/workflowNavigation.ts`. Showing all global stages for a task that has a flow assigned will include stages not in the flow — the backend will reject those selections.
+
+```ts
+import { resolveFlowStageNames } from "../utils/workflowNavigation";
+
+// Get only stages valid for this task's flow
+const validStageNames = resolveFlowStageNames(task.flow, config);
+const otherStages = config.stages.filter(
+  s => validStageNames.includes(s.name) && s.name !== task.derived.current_stage
+);
+```
+
+`resolveFlowStageNames` is also used by `optimisticTransitions.ts` and `pipelineSegments.ts` as the single source of truth for flow-aware stage lists.
+
 ## Biome Lint Gotchas
 
 <!-- compound: tightly-prudent-motmot -->
+
+**`noAutofocus` blocks `autoFocus` on form elements**: Biome's `a11y/noAutofocus` rule (part of the recommended ruleset) disallows the `autoFocus` prop on inputs, textareas, and selects. Remove `autoFocus` from form elements inside modals — users can tab to them or click as needed.
 
 **`useRegexLiterals` auto-converts `new RegExp()` to literal form**: Biome's `useRegexLiterals` rule automatically rewrites `new RegExp("pattern")` to `/pattern/` literal syntax. If constructor form is required (e.g., to avoid escape conflicts with another lint rule), use `// biome-ignore lint/nursery/useRegexLiterals: <reason>` on the preceding line. Without the suppression, the automated formatter reverts the constructor form on every gate run, making the fix unstable.
 

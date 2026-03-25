@@ -30,6 +30,7 @@ pub trait CommitMessageGenerator: Send + Sync {
         task_title: &str,
         task_description: &str,
         diff_summary: &str,
+        recent_commits: &[String],
         model_names: &[String],
     ) -> Result<String, String>;
 }
@@ -50,10 +51,18 @@ impl CommitMessageGenerator for ClaudeCommitMessageGenerator {
         task_title: &str,
         task_description: &str,
         diff_summary: &str,
+        recent_commits: &[String],
         model_names: &[String],
     ) -> Result<String, String> {
-        generate_commit_message_sync(task_title, task_description, diff_summary, model_names, 60)
-            .map_err(|e| e.to_string())
+        generate_commit_message_sync(
+            task_title,
+            task_description,
+            diff_summary,
+            recent_commits,
+            model_names,
+            60,
+        )
+        .map_err(|e| e.to_string())
     }
 }
 
@@ -90,6 +99,7 @@ pub mod mock {
             task_title: &str,
             _task_description: &str,
             _diff_summary: &str,
+            _recent_commits: &[String],
             model_names: &[String],
         ) -> Result<String, String> {
             if self.fail {
@@ -119,6 +129,7 @@ pub fn generate_commit_message_sync(
     task_title: &str,
     task_description: &str,
     diff_summary: &str,
+    recent_commits: &[String],
     model_names: &[String],
     timeout_secs: u64,
 ) -> std::io::Result<String> {
@@ -127,6 +138,7 @@ pub fn generate_commit_message_sync(
         "title": task_title,
         "description": task_description,
         "diff_summary": diff_summary,
+        "recent_commits": recent_commits,
     });
 
     let output = runner

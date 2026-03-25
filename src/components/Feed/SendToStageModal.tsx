@@ -1,4 +1,4 @@
-// Modal for redirecting a task to a specific stage.
+// Modal for changing a task's current stage (restart or redirect to another stage).
 import { useState } from "react";
 import type { Transport } from "../../transport";
 import type { StageConfig } from "../../types/workflow";
@@ -11,8 +11,10 @@ interface SendToStageModalProps {
   taskId: string;
   onSuccess: () => void;
   transport: Transport;
-  /** Flow-filtered stages available as send-to targets (excludes the current stage). */
-  otherStages: StageConfig[];
+  /** All flow-valid stages including the current stage. */
+  stages: StageConfig[];
+  /** The current stage name — selecting it triggers a restart instead of redirect. */
+  currentStage: string;
 }
 
 export function SendToStageModal({
@@ -21,9 +23,10 @@ export function SendToStageModal({
   taskId,
   onSuccess,
   transport,
-  otherStages,
+  stages,
+  currentStage,
 }: SendToStageModalProps) {
-  const [targetStage, setTargetStage] = useState(() => otherStages[0]?.name ?? "");
+  const [targetStage, setTargetStage] = useState(() => stages[0]?.name ?? "");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,16 +37,25 @@ export function SendToStageModal({
     onClose();
   }
 
+  const isRestart = targetStage === currentStage;
+
   async function handleSubmit() {
     if (!targetStage || !message.trim() || loading) return;
     setLoading(true);
     setError(null);
     try {
-      await transport.call("send_to_stage", {
-        task_id: taskId,
-        target_stage: targetStage,
-        message: message.trim(),
-      });
+      if (isRestart) {
+        await transport.call("restart_stage", {
+          task_id: taskId,
+          message: message.trim(),
+        });
+      } else {
+        await transport.call("send_to_stage", {
+          task_id: taskId,
+          target_stage: targetStage,
+          message: message.trim(),
+        });
+      }
       onSuccess();
     } catch (err) {
       setError(String(err));
@@ -55,9 +67,9 @@ export function SendToStageModal({
     <ModalPanel isOpen={isOpen} onClose={handleClose} className="inset-0 m-auto h-fit w-80">
       <div className="bg-canvas border border-border rounded-panel shadow-lg p-5 flex flex-col gap-4">
         <div>
-          <p className="text-forge-body-md font-semibold text-text-primary">Send to stage</p>
+          <p className="text-forge-body-md font-semibold text-text-primary">Change stage</p>
           <p className="mt-1 text-forge-body text-text-tertiary">
-            Redirect this task to a specific stage.
+            Restart the current stage or redirect to another.
           </p>
         </div>
         <div className="flex flex-col gap-3">
@@ -74,9 +86,10 @@ export function SendToStageModal({
               onChange={(e) => setTargetStage(e.target.value)}
               className="w-full font-sans text-forge-body text-text-primary bg-canvas border border-border rounded px-3 py-2 focus:outline-none focus:border-accent transition-colors"
             >
-              {otherStages.map((stage) => (
+              {stages.map((stage) => (
                 <option key={stage.name} value={stage.name}>
-                  {stage.display_name ?? stage.name}
+                  {(stage.display_name ?? stage.name) +
+                    (stage.name === currentStage ? " (restart)" : "")}
                 </option>
               ))}
             </select>
@@ -92,7 +105,7 @@ export function SendToStageModal({
               id="send-to-stage-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Why are you sending to this stage?"
+              placeholder="Why are you changing the stage?"
               rows={3}
               className="w-full font-sans text-forge-body text-text-primary bg-canvas border border-border rounded px-3 py-2 resize-none placeholder:text-text-quaternary focus:outline-none focus:border-accent transition-colors"
             />
@@ -109,7 +122,13 @@ export function SendToStageModal({
             onClick={handleSubmit}
             disabled={!targetStage || !message.trim() || loading}
           >
-            {loading ? "Sending…" : "Send to Stage"}
+            {loading
+              ? isRestart
+                ? "Restarting…"
+                : "Changing…"
+              : isRestart
+                ? "Restart Stage"
+                : "Change Stage"}
           </Button>
         </div>
       </div>

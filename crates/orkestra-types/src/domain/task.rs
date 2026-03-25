@@ -256,7 +256,7 @@ impl Task {
         self.is_awaiting_review() || matches!(self.state, TaskState::Interrupted { .. })
     }
 
-    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage).
+    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage/restart).
     ///
     /// Valid when task is paused for human input: `AwaitingApproval`, `AwaitingQuestionAnswer`,
     /// `AwaitingRejectionConfirmation`, or `Interrupted`.

@@ -38,6 +38,7 @@ pub fn execute(
                 | IterationTrigger::Integration { .. }
                 | IterationTrigger::PrFeedback { .. }
                 | IterationTrigger::Redirect { .. }
+                | IterationTrigger::Restart { .. }
         )
     ) {
         return Ok(true);
@@ -136,6 +137,16 @@ mod tests {
             !result,
             "RetryFailed trigger must NOT supersede — resume so agent can continue where it left off"
         );
+    }
+
+    #[test]
+    fn test_supersede_restart_trigger() {
+        let store = InMemoryWorkflowStore::new();
+        let trigger = IterationTrigger::Restart {
+            message: "redo this stage".to_string(),
+        };
+        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
+        assert!(result, "Restart trigger must supersede the session");
     }
 
     #[test]

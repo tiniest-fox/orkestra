@@ -165,6 +165,17 @@ impl WorkflowApi {
         )
     }
 
+    /// Restart the current stage with a fresh agent session.
+    pub fn restart_stage(&self, task_id: &str, message: &str) -> WorkflowResult<Task> {
+        human::restart_stage::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
+            task_id,
+            message,
+        )
+    }
+
     /// Send a task to a specific stage in its pipeline with a message.
     pub fn send_to_stage(
         &self,

@@ -456,6 +456,32 @@ pub(super) async fn handle_skip_stage(
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
 }
 
+/// Handle the `restart_stage` method — restarts the current stage with a fresh agent session.
+///
+/// Expected params: `{ "task_id": "<id>", "message": "<message>" }`
+pub(super) async fn handle_restart_stage(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
+        .to_string();
+
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let task = api
+            .restart_stage(&task_id, &message)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
 /// Handle the `send_to_stage` method — sends a task to a specific stage with a message.
 ///
 /// Expected params: `{ "task_id": "<id>", "target_stage": "<stage>", "message": "<message>" }`

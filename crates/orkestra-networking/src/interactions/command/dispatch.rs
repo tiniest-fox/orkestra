@@ -108,6 +108,7 @@ pub async fn execute(
         "return_to_work" => action::handle_return_to_work(ctx, params).await,
         "skip_stage" => action::handle_skip_stage(ctx, params).await,
         "send_to_stage" => action::handle_send_to_stage(ctx, params).await,
+        "restart_stage" => action::handle_restart_stage(ctx, params).await,
 
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,

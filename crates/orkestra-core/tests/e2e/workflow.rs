@@ -8278,3 +8278,168 @@ fn test_send_to_stage_from_interrupted() {
         &prompt[..prompt.len().min(500)]
     );
 }
+
+// =============================================================================
+// Restart Stage E2E Tests
+// =============================================================================
+
+/// Restart the current stage from `AwaitingApproval` and verify the orchestrator
+/// spawns a fresh agent at the same stage with the restart message in its prompt.
+#[test]
+fn test_restart_stage_creates_fresh_iteration() {
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = ctx.create_task("Test restart stage", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at planning
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("planning"));
+
+    // Restart planning
+    let task = ctx
+        .api()
+        .restart_stage(&task_id, "Need to redo the plan")
+        .unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("planning"),
+        "Task should remain at planning after restart"
+    );
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued at planning after restart, got: {:?}",
+        task.state
+    );
+
+    // Verify the new iteration has a Restart trigger
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let restart_iter = iterations
+        .iter()
+        .rfind(|i| i.stage == "planning")
+        .expect("Should have a planning iteration with Restart trigger");
+    match &restart_iter.incoming_context {
+        Some(IterationTrigger::Restart { message }) => {
+            assert_eq!(message, "Need to redo the plan");
+        }
+        other => panic!("Expected Restart trigger, got {other:?}"),
+    }
+
+    // Orchestrator picks up and spawns a fresh planning agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Revised plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner with Restart trigger
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning after restart, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("planning"));
+
+    // The planning agent's prompt must contain the restart message
+    let prompt = ctx.last_prompt_for(&task_id);
+    assert!(
+        prompt.contains("Need to redo the plan"),
+        "Planning agent prompt should contain the restart message. Got:\n{}",
+        &prompt[..prompt.len().min(500)]
+    );
+}
+
+/// Restart the current stage from Interrupted state and verify the orchestrator
+/// picks up the task at the same stage.
+#[test]
+fn test_restart_stage_from_interrupted() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = ctx.create_task("Test restart from interrupted", "Description", None);
+    let task_id = task.id.clone();
+
+    // Manually move to AgentWorking at planning, then interrupt
+    ctx.api().agent_started(&task_id).unwrap();
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AgentWorking { .. }),
+        "Expected AgentWorking, got: {:?}",
+        task.state
+    );
+
+    ctx.api().interrupt(&task_id).unwrap();
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Interrupted { .. }),
+        "Expected Interrupted, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("planning"));
+
+    // Restart from Interrupted
+    let task = ctx
+        .api()
+        .restart_stage(&task_id, "Agent got stuck")
+        .unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("planning"),
+        "Task should remain at planning after restart"
+    );
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued at planning after restart, got: {:?}",
+        task.state
+    );
+
+    // Orchestrator picks up the restarted task
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "New plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning after restart, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("planning"));
+}

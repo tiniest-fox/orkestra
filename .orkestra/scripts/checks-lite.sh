@@ -227,6 +227,14 @@ fi
 # Categorize changes (no reverse dep expansion)
 # =============================================================================
 
+# All workspace crates — used to invalidate mtime fingerprints for ALL crates
+# (see touch section below for why all crates must be touched, not just changed ones)
+ALL_CRATES=(
+    orkestra-types orkestra-schema orkestra-debug orkestra-process
+    orkestra-parser orkestra-store orkestra-git orkestra-prompt
+    orkestra-utility orkestra-agent orkestra-core
+)
+
 # Helper: check if array contains a value
 array_contains() {
     local needle="$1"; shift
@@ -304,11 +312,18 @@ if $HAS_RUST; then
     # Acquire lock for cargo commands that use the shared target/ directory
     acquire_lock
 
-    # Invalidate mtime fingerprints for changed crates (see checks.sh for explanation)
+    # Invalidate mtime fingerprints for ALL workspace crates, not just changed ones.
+    # Dependency crates (e.g. orkestra-types) may have stale binaries in the shared
+    # target/ directory compiled by another worktree with different type definitions.
+    # Touching only changed crates leaves those stale dependency binaries in place —
+    # cargo sees them as "Fresh" and uses them, causing spurious compile errors.
+    # sccache provides content-based hits so unchanged files compile instantly.
     if [ -L "target" ]; then
-        for crate in "${CHANGED_CRATES[@]}"; do
+        for crate in "${ALL_CRATES[@]}"; do
             touch "crates/$crate/src/lib.rs"
         done
+        touch cli/src/main.rs
+        touch src-tauri/src/main.rs
     fi
 
     # Per-crate clippy (not --workspace)

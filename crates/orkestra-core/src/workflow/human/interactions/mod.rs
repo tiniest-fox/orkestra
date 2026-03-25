@@ -12,6 +12,7 @@ pub mod interrupt;
 pub mod reject;
 pub mod reject_with_comments;
 pub mod request_update;
+pub mod restart_stage;
 pub mod resume;
 pub mod retry;
 pub mod return_to_work;

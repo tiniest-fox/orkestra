@@ -350,6 +350,26 @@ pub fn workflow_send_to_stage(
     })
 }
 
+/// Restart the current stage with a fresh agent session.
+///
+/// Creates a new iteration at the same stage, superseding the existing agent
+/// session so the agent starts fresh with the provided message as context.
+#[tauri::command]
+pub fn workflow_restart_stage(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    message: String,
+) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "restart_stage {task_id}");
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .restart_stage(&task_id, &message)
+            .map_err(Into::into)
+    })
+}
+
 /// Return to structured work after chatting with the stage agent.
 ///
 /// Clears chat state on the session and creates a new iteration with

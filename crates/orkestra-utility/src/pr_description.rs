@@ -38,9 +38,9 @@ pub trait PrDescriptionGenerator: Send + Sync {
 /// Append model attribution footer to a PR body.
 pub fn format_pr_footer(model_names: &[String]) -> String {
     if model_names.is_empty() {
-        return "\n---\n⚡ Powered by Orkestra\n".to_string();
+        return "\n\n---\n\n⚡ Powered by Orkestra\n".to_string();
     }
-    let mut footer = String::from("\n---\n");
+    let mut footer = String::from("\n\n---\n\n");
     for model in model_names {
         let _ = writeln!(footer, "Co-authored-by: {model}");
     }

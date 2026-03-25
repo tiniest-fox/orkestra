@@ -18,8 +18,10 @@ pub struct StagePromptContext<'a> {
 
     /// Task information.
     pub task_id: &'a str,
-    pub title: &'a str,
-    pub description: &'a str,
+
+    /// Path to the materialized task definition file (`.orkestra/.artifacts/task.md`).
+    /// Absolute when `worktree_path` is available, relative otherwise.
+    pub task_file_path: String,
 
     /// Available artifacts from previous stages.
     pub artifacts: Vec<ArtifactContext>,

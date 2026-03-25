@@ -52,13 +52,13 @@ Each subtask's `detailed_instructions` must be a self-contained implementation b
 - **Interfaces with siblings**: What this subtask provides to or expects from other subtasks
 - **Acceptance criteria**: How the worker knows they're done
 
-### Case 2: Skip Breakdown
+### Case 2: Single Subtask (Inline)
 
-Use when the task is small enough for a single worker — creating subtasks would add overhead without value.
+Use when the task is small enough for a single worker — creating multiple subtasks would add overhead without value.
 
-Your **content** field should contain a focused implementation brief (what to build, which files, which patterns to follow, acceptance criteria). This becomes the worker's primary context.
+Your **content** field should contain a focused technical design. Set **subtasks** to an array with exactly one subtask whose `detailed_instructions` contain the full implementation brief (what to build, which files, which patterns to follow, acceptance criteria).
 
-Set **subtasks** to an empty array and provide a **skip_reason** explaining why breakdown was unnecessary.
+The system will automatically inline this single subtask on the parent task — no child task is created.
 
 ## Vertical Decomposition
 

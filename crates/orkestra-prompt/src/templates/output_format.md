@@ -46,7 +46,7 @@ Include your full technical design in `content` alongside the structured `subtas
 ```json
 {{{subtasks_example}}}
 ```
-To skip breakdown: `{{{skip_example}}}`
+For simple tasks that don't need parallel execution, output a single subtask — it will be automatically inlined on the parent task (no child task created).
 {{/if}}
 
 ### Terminal states

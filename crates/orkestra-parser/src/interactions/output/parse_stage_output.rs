@@ -71,13 +71,11 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
             let subtasks: Vec<SubtaskOutput> = serde_json::from_value(value["subtasks"].clone())
                 .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
-            let skip_reason = value["skip_reason"].as_str().map(String::from);
             let activity_log = value["activity_log"].as_str().map(String::from);
 
             Ok(StageOutput::Subtasks {
                 content,
                 subtasks,
-                skip_reason,
                 activity_log,
             })
         }
@@ -139,8 +137,7 @@ mod tests {
                 "reason": { "type": "string" },
                 "decision": { "type": "string" },
                 "questions": { "type": "array" },
-                "subtasks": { "type": "array" },
-                "skip_reason": { "type": "string" }
+                "subtasks": { "type": "array" }
             },
             "required": ["type"]
         })
@@ -223,45 +220,12 @@ mod tests {
 
         match output {
             StageOutput::Subtasks {
-                content,
-                subtasks,
-                skip_reason,
-                ..
+                content, subtasks, ..
             } => {
                 assert_eq!(content, "The technical design content");
                 assert_eq!(subtasks.len(), 2);
                 assert_eq!(subtasks[0].title, "Task 1");
                 assert_eq!(subtasks[1].depends_on, vec![0]);
-                assert!(skip_reason.is_none());
-            }
-            _ => panic!("Expected Subtasks"),
-        }
-    }
-
-    #[test]
-    fn test_parse_subtasks_with_skip_reason() {
-        let schema = test_schema("breakdown", true);
-        let json = r#"{
-            "type": "subtasks",
-            "content": "Task is simple enough to handle directly",
-            "subtasks": [],
-            "skip_reason": "Task is simple enough to complete directly"
-        }"#;
-        let output = execute(json, &schema).unwrap();
-
-        match output {
-            StageOutput::Subtasks {
-                content,
-                subtasks,
-                skip_reason,
-                ..
-            } => {
-                assert!(content.contains("simple enough"));
-                assert!(subtasks.is_empty());
-                assert_eq!(
-                    skip_reason,
-                    Some("Task is simple enough to complete directly".to_string())
-                );
             }
             _ => panic!("Expected Subtasks"),
         }
@@ -344,30 +308,5 @@ mod tests {
 
         assert!(output.is_artifact());
         assert_eq!(output.artifact_content(), Some("The content"));
-    }
-
-    #[test]
-    fn test_parse_unvalidated_subtasks_with_skip() {
-        let json = r#"{
-            "type": "subtasks",
-            "content": "Breakdown skipped",
-            "subtasks": [],
-            "skip_reason": "Simple task"
-        }"#;
-        let output = StageOutput::parse_unvalidated(json).unwrap();
-
-        match output {
-            StageOutput::Subtasks {
-                content,
-                subtasks,
-                skip_reason,
-                ..
-            } => {
-                assert!(content.contains("skipped"));
-                assert!(subtasks.is_empty());
-                assert_eq!(skip_reason, Some("Simple task".to_string()));
-            }
-            _ => panic!("Expected Subtasks"),
-        }
     }
 }

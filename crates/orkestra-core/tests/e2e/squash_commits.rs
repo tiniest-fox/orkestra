@@ -366,7 +366,7 @@ fn test_subtask_integration_squashes_commits() {
     ctx.api().approve(&parent_id).unwrap();
     ctx.advance(); // commit + advance to breakdown
 
-    // Breakdown stage: produce a single subtask - create file change
+    // Breakdown stage: produce 2 subtasks - create file change
     create_file_in_worktree(
         parent_worktree,
         "breakdown.md",
@@ -376,13 +376,20 @@ fn test_subtask_integration_squashes_commits() {
         &parent_id,
         MockAgentOutput::Subtasks {
             content: "Technical design".to_string(),
-            subtasks: vec![SubtaskOutput {
-                title: "First subtask".to_string(),
-                description: "Implement the first part".to_string(),
-                detailed_instructions: "Implementation brief for first part".to_string(),
-                depends_on: vec![],
-            }],
-            skip_reason: None,
+            subtasks: vec![
+                SubtaskOutput {
+                    title: "First subtask".to_string(),
+                    description: "Implement the first part".to_string(),
+                    detailed_instructions: "Implementation brief for first part".to_string(),
+                    depends_on: vec![],
+                },
+                SubtaskOutput {
+                    title: "Second subtask".to_string(),
+                    description: "Implement the second part".to_string(),
+                    detailed_instructions: "Implementation brief for second part".to_string(),
+                    depends_on: vec![0],
+                },
+            ],
             activity_log: None,
         },
     );
@@ -399,9 +406,9 @@ fn test_subtask_integration_squashes_commits() {
         parent.state
     );
 
-    // Get the subtask
+    // Get the first subtask (no deps, will run first)
     let subtasks = ctx.api().list_subtasks(&parent_id).unwrap();
-    assert_eq!(subtasks.len(), 1, "Should have 1 subtask");
+    assert_eq!(subtasks.len(), 2, "Should have 2 subtasks");
     let subtask_id = &subtasks[0].id;
 
     // Advance to set up subtask worktree

@@ -778,7 +778,6 @@ pub enum MockAgentOutput {
     Subtasks {
         content: String,
         subtasks: Vec<orkestra_core::workflow::execution::SubtaskOutput>,
-        skip_reason: Option<String>,
         activity_log: Option<String>,
     },
     /// Agent failed.
@@ -811,12 +810,10 @@ impl From<MockAgentOutput> for StageOutput {
             MockAgentOutput::Subtasks {
                 content,
                 subtasks,
-                skip_reason,
                 activity_log,
             } => StageOutput::Subtasks {
                 content,
                 subtasks,
-                skip_reason,
                 activity_log,
             },
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },

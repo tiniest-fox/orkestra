@@ -264,20 +264,13 @@ fn output_to_json(output: &StageOutput) -> serde_json::Value {
             "content": content
         }),
         StageOutput::Subtasks {
-            content,
-            subtasks,
-            skip_reason,
-            ..
+            content, subtasks, ..
         } => {
-            let mut json = serde_json::json!({
+            serde_json::json!({
                 "type": "subtasks",
                 "content": content,
                 "subtasks": subtasks
-            });
-            if let Some(reason) = skip_reason {
-                json["skip_reason"] = serde_json::json!(reason);
-            }
-            json
+            })
         }
         StageOutput::Failed { error } => serde_json::json!({
             "type": "failed",

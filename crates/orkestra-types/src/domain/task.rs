@@ -259,7 +259,7 @@ impl Task {
     /// Check if the task is in a state that allows stage bypass (skip/send-to-stage/restart).
     ///
     /// Valid when task is paused for human input: `AwaitingApproval`, `AwaitingQuestionAnswer`,
-    /// `AwaitingRejectionConfirmation`, or `Interrupted`.
+    /// `AwaitingRejectionConfirmation`, `Interrupted`, `Failed`, or `Blocked`.
     pub fn can_bypass(&self) -> bool {
         matches!(
             self.state,
@@ -267,6 +267,8 @@ impl Task {
                 | TaskState::AwaitingQuestionAnswer { .. }
                 | TaskState::AwaitingRejectionConfirmation { .. }
                 | TaskState::Interrupted { .. }
+                | TaskState::Failed { .. }
+                | TaskState::Blocked { .. }
         )
     }
 }
@@ -583,13 +585,25 @@ mod tests {
         task.state = TaskState::Done;
         assert!(!task.can_bypass());
 
-        // Failed → cannot bypass
+        // Failed → can bypass
         task.state = TaskState::failed("error");
-        assert!(!task.can_bypass());
+        assert!(task.can_bypass());
+        assert_eq!(task.current_stage(), None);
 
-        // Blocked → cannot bypass
+        // Failed with stage → can bypass, has current_stage
+        task.state = TaskState::failed_at("planning", "error");
+        assert!(task.can_bypass());
+        assert_eq!(task.current_stage(), Some("planning"));
+
+        // Blocked → can bypass
         task.state = TaskState::blocked("waiting");
-        assert!(!task.can_bypass());
+        assert!(task.can_bypass());
+        assert_eq!(task.current_stage(), None);
+
+        // Blocked with stage → can bypass, has current_stage
+        task.state = TaskState::blocked_at("work", "waiting");
+        assert!(task.can_bypass());
+        assert_eq!(task.current_stage(), Some("work"));
 
         // AwaitingApproval → can bypass
         task.state = TaskState::awaiting_approval("planning");

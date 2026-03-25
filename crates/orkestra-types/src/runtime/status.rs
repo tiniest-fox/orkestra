@@ -75,12 +75,16 @@ pub enum TaskState {
 
     /// Task failed and cannot continue.
     Failed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stage: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
 
     /// Task is blocked on external dependency.
     Blocked {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stage: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
@@ -177,12 +181,28 @@ impl TaskState {
 
     pub fn failed(error: impl Into<String>) -> Self {
         Self::Failed {
+            stage: None,
+            error: Some(error.into()),
+        }
+    }
+
+    pub fn failed_at(stage: impl Into<String>, error: impl Into<String>) -> Self {
+        Self::Failed {
+            stage: Some(stage.into()),
             error: Some(error.into()),
         }
     }
 
     pub fn blocked(reason: impl Into<String>) -> Self {
         Self::Blocked {
+            stage: None,
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn blocked_at(stage: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Blocked {
+            stage: Some(stage.into()),
             reason: Some(reason.into()),
         }
     }
@@ -209,12 +229,18 @@ impl TaskState {
             | Self::AwaitingQuestionAnswer { stage }
             | Self::AwaitingRejectionConfirmation { stage }
             | Self::Interrupted { stage }
-            | Self::WaitingOnChildren { stage } => Some(stage),
+            | Self::WaitingOnChildren { stage }
+            | Self::Failed {
+                stage: Some(stage), ..
+            }
+            | Self::Blocked {
+                stage: Some(stage), ..
+            } => Some(stage),
             Self::Integrating
             | Self::Done
             | Self::Archived
-            | Self::Failed { .. }
-            | Self::Blocked { .. } => None,
+            | Self::Failed { stage: None, .. }
+            | Self::Blocked { stage: None, .. } => None,
         }
     }
 
@@ -315,20 +341,18 @@ impl fmt::Display for TaskState {
             Self::WaitingOnChildren { stage } => write!(f, "waiting_on_children ({stage})"),
             Self::Done => write!(f, "done"),
             Self::Archived => write!(f, "archived"),
-            Self::Failed { error } => {
-                if let Some(err) = error {
-                    write!(f, "failed: {err}")
-                } else {
-                    write!(f, "failed")
-                }
-            }
-            Self::Blocked { reason } => {
-                if let Some(r) = reason {
-                    write!(f, "blocked: {r}")
-                } else {
-                    write!(f, "blocked")
-                }
-            }
+            Self::Failed { stage, error } => match (stage, error) {
+                (Some(s), Some(e)) => write!(f, "failed ({s}): {e}"),
+                (Some(s), None) => write!(f, "failed ({s})"),
+                (None, Some(e)) => write!(f, "failed: {e}"),
+                (None, None) => write!(f, "failed"),
+            },
+            Self::Blocked { stage, reason } => match (stage, reason) {
+                (Some(s), Some(r)) => write!(f, "blocked ({s}): {r}"),
+                (Some(s), None) => write!(f, "blocked ({s})"),
+                (None, Some(r)) => write!(f, "blocked: {r}"),
+                (None, None) => write!(f, "blocked"),
+            },
         }
     }
 }
@@ -359,6 +383,18 @@ mod tests {
 
         assert!(!TaskState::Done.can_transition());
         assert!(!TaskState::Archived.can_transition());
+
+        // failed() with no stage → stage() returns None
+        assert_eq!(TaskState::failed("error").stage(), None);
+        // failed_at() with stage → stage() returns Some
+        assert_eq!(TaskState::failed_at("work", "error").stage(), Some("work"));
+        // blocked() with no stage → stage() returns None
+        assert_eq!(TaskState::blocked("reason").stage(), None);
+        // blocked_at() with stage → stage() returns Some
+        assert_eq!(
+            TaskState::blocked_at("planning", "reason").stage(),
+            Some("planning")
+        );
     }
 
     #[test]
@@ -407,6 +443,7 @@ mod tests {
         let json = serde_json::to_string(&state).unwrap();
         assert!(json.contains("\"type\":\"failed\""));
         assert!(json.contains("\"error\":\"Something went wrong\""));
+        assert!(!json.contains("\"stage\""));
 
         let parsed: TaskState = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, state);
@@ -414,12 +451,57 @@ mod tests {
 
     #[test]
     fn test_failed_no_error_serialization() {
-        let state = TaskState::Failed { error: None };
+        let state = TaskState::Failed {
+            stage: None,
+            error: None,
+        };
         let json = serde_json::to_string(&state).unwrap();
         assert!(!json.contains("error"));
+        assert!(!json.contains("stage"));
 
         let parsed: TaskState = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, state);
+    }
+
+    #[test]
+    fn test_failed_at_serialization() {
+        let state = TaskState::failed_at("work", "Something went wrong");
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"type\":\"failed\""));
+        assert!(json.contains("\"stage\":\"work\""));
+        assert!(json.contains("\"error\":\"Something went wrong\""));
+
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
+        assert_eq!(parsed.stage(), Some("work"));
+    }
+
+    #[test]
+    fn test_blocked_at_serialization() {
+        let state = TaskState::blocked_at("planning", "Waiting on external service");
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"type\":\"blocked\""));
+        assert!(json.contains("\"stage\":\"planning\""));
+        assert!(json.contains("\"reason\":\"Waiting on external service\""));
+
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
+        assert_eq!(parsed.stage(), Some("planning"));
+    }
+
+    #[test]
+    fn test_failed_backward_compat() {
+        // JSON without stage field (old format) must deserialize correctly
+        let json = r#"{"type":"failed","error":"msg"}"#;
+        let parsed: TaskState = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            parsed,
+            TaskState::Failed {
+                stage: None,
+                error: Some("msg".to_string())
+            }
+        );
+        assert_eq!(parsed.stage(), None);
     }
 
     #[test]

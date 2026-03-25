@@ -17,10 +17,8 @@
 ## Your Current Task
 
 **Task ID**: {{task_id}}
-**Title**: {{title}}
 
-### Description
-{{description}}
+Your task definition is at `{{task_file_path}}`. Read it before starting work.
 
 {{#if artifacts}}
 ## Input Artifacts

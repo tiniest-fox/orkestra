@@ -249,6 +249,24 @@ For `InMemoryWorkflowStore` (used in tests), hold the mutex for the entire check
 
 This pattern is a HIGH-severity finding reviewers always catch. Apply it whenever you add a `get_or_create` operation to the store layer.
 
+<!-- compound: blatantly-enlivening-swift -->
+**`is_some_and()` + `unwrap()` is an anti-pattern** — it traverses the `Option` twice and introduces a panic site. Use `if let Some(x) = opt.filter(|x| condition)` instead:
+
+```rust
+// Bad — two traversals, unwrap panic risk
+if file.diff_content.is_some_and(|d| !d.is_empty()) {
+    let content = file.diff_content.unwrap();
+    ...
+}
+
+// Good — single traversal, no unwrap
+if let Some(content) = file.diff_content.as_ref().filter(|d| !d.is_empty()) {
+    ...
+}
+```
+
+The `filter` on `Option` combines the `Some` check with the condition check, and `if let` eliminates the `unwrap()` entirely. This is a MEDIUM-severity finding reviewers always catch.
+
 <!-- compound: approvingly-eminent-gopher -->
 ## Rust Conventions
 
@@ -316,6 +334,19 @@ Before outputting a completion summary, explicitly verify each file or change th
 3. Only conclude "complete" if all items are verified
 
 **Anti-pattern to avoid:** Finding that the primary file is already changed, then concluding the task is complete without checking every other file the breakdown mentions. This is the most common cause of repeated rejection cycles — the reviewer catches the missed file every time.
+
+<!-- compound: outwardly-expectant-spitz -->
+## Trace All Downstream Requirements When Enabling a New State
+
+When a task says "enable operation X from state Y (it's just a gating change)", trace the full execution path of X — not just the gate. Even when the gate change is one line, the operation itself may read fields from the task object (e.g., `task.current_stage()`, `task.branch_name()`) that are `Option<T>` and return `None` for the new state.
+
+Pattern to verify before submitting:
+1. Find the gate (e.g., `can_bypass()`)
+2. Find every operation that goes through this gate (e.g., `skip_stage`, `send_to_stage`, `restart_stage`)
+3. For each operation, trace what it reads from the task object
+4. Verify those fields are populated for every state you're adding to the gate
+
+If an operation calls `task.current_stage()` and you're adding `Failed`/`Blocked` to the gate, check whether those variants carry a `stage` field. If not, the gate passes but the operation immediately fails. This class of bug produces buttons that appear to work but always error on click — subtle and easy to miss without e2e tests covering the new state.
 
 ## If You Have Feedback to Address
 

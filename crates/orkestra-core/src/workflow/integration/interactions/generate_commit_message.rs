@@ -16,7 +16,8 @@ pub(crate) fn execute(
     commit_gen: &dyn CommitMessageGenerator,
 ) -> String {
     let diff_summary = super::build_diff_summary::execute(git, task);
-    generate_with_fallback(task, workflow, commit_gen, &diff_summary)
+    let recent_commits = fetch_recent_commits(git, task);
+    generate_with_fallback(task, workflow, commit_gen, &diff_summary, &recent_commits)
 }
 
 /// Generate a squash commit message for integration using all committed changes.
@@ -32,7 +33,8 @@ pub(crate) fn execute_for_squash(
     commit_gen: &dyn CommitMessageGenerator,
 ) -> String {
     let diff_summary = super::build_diff_summary::execute_for_committed(git, task);
-    generate_with_fallback(task, workflow, commit_gen, &diff_summary)
+    let recent_commits = fetch_recent_commits(git, task);
+    generate_with_fallback(task, workflow, commit_gen, &diff_summary, &recent_commits)
 }
 
 /// Generate a commit message for a task without git diff information.
@@ -47,7 +49,7 @@ pub(crate) fn execute_without_diff(
     workflow: &WorkflowConfig,
     commit_gen: &dyn CommitMessageGenerator,
 ) -> String {
-    generate_with_fallback(task, workflow, commit_gen, "No git diff available")
+    generate_with_fallback(task, workflow, commit_gen, "No git diff available", &[])
 }
 
 // -- Helpers --
@@ -58,6 +60,7 @@ fn generate_with_fallback(
     workflow: &WorkflowConfig,
     commit_gen: &dyn CommitMessageGenerator,
     diff_summary: &str,
+    recent_commits: &[String],
 ) -> String {
     let model_names = collect_model_names(workflow, task.flow.as_deref());
 
@@ -65,6 +68,7 @@ fn generate_with_fallback(
         &task.title,
         &task.description,
         diff_summary,
+        recent_commits,
         &model_names,
     ) {
         Ok(message) => message,
@@ -75,6 +79,20 @@ fn generate_with_fallback(
                 task.id
             );
             fallback_commit_message(&task.title, &task.id)
+        }
+    }
+}
+
+/// Fetch recent commit messages from the task's worktree branch.
+fn fetch_recent_commits(git: &dyn GitService, task: &Task) -> Vec<String> {
+    let Some(worktree_path) = &task.worktree_path else {
+        return vec![];
+    };
+    match git.commit_log_at(std::path::Path::new(worktree_path), 5) {
+        Ok(commits) => commits.into_iter().map(|c| c.message).collect(),
+        Err(e) => {
+            crate::orkestra_debug!("commit", "Failed to fetch recent commits: {e}");
+            vec![]
         }
     }
 }

@@ -105,7 +105,7 @@ pub fn execute(
                     error: error.clone(),
                 },
             )?;
-            task.state = TaskState::failed(&error);
+            task.state = TaskState::failed_at(&current_stage, &error);
             task.updated_at = now;
         }
         StageOutput::Blocked { reason } => {
@@ -116,7 +116,7 @@ pub fn execute(
                     reason: reason.clone(),
                 },
             )?;
-            task.state = TaskState::blocked(&reason);
+            task.state = TaskState::blocked_at(&current_stage, &reason);
             task.updated_at = now;
         }
     }

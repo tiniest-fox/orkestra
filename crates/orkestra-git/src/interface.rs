@@ -111,6 +111,12 @@ pub trait GitService: Send + Sync {
     /// to fetch file change counts separately.
     fn commit_log(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
 
+    /// Get the N most recent commits from a specific worktree/path.
+    ///
+    /// Like `commit_log` but operates on the branch checked out at `path`
+    /// instead of the main repository HEAD.
+    fn commit_log_at(&self, path: &Path, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
+
     /// Get file change counts for a batch of commit hashes.
     ///
     /// Returns a map from commit hash to the number of files changed.

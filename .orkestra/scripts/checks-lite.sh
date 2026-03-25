@@ -228,7 +228,8 @@ fi
 # =============================================================================
 
 # All workspace crates — used to invalidate mtime fingerprints for ALL crates
-# (see touch section below for why all crates must be touched, not just changed ones)
+# (dependency crates may have stale binaries from other worktrees; touching only
+# changed crates leaves those stale binaries in place, causing spurious compile errors)
 ALL_CRATES=(
     orkestra-types orkestra-schema orkestra-debug orkestra-process
     orkestra-parser orkestra-store orkestra-git orkestra-prompt

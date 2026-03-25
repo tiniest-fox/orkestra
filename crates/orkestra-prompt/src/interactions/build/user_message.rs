@@ -22,8 +22,7 @@ pub fn execute(templates: &Handlebars<'static>, ctx: &StagePromptContext<'_>) ->
     let template_ctx = UserMessageContext {
         stage_name: &ctx.stage.name,
         task_id: ctx.task_id,
-        title: ctx.title,
-        description: ctx.description,
+        task_file_path: &ctx.task_file_path,
         artifacts: &ctx.artifacts,
         question_history: &ctx.question_history,
         feedback: ctx.feedback,
@@ -47,8 +46,7 @@ pub fn execute(templates: &Handlebars<'static>, ctx: &StagePromptContext<'_>) ->
 struct UserMessageContext<'a> {
     stage_name: &'a str,
     task_id: &'a str,
-    title: &'a str,
-    description: &'a str,
+    task_file_path: &'a str,
     artifacts: &'a [ArtifactContext],
     question_history: &'a [QuestionAnswerContext<'a>],
     feedback: Option<&'a str>,
@@ -118,9 +116,11 @@ mod tests {
         let user_message = execute(&templates, &ctx);
 
         assert!(user_message.contains("task-1"));
-        assert!(user_message.contains("Implement feature"));
-        assert!(user_message.contains("Add new feature"));
-        // Artifacts now show file paths instead of content
+        // Title and description are virtualized — only the task file path is referenced
+        assert!(!user_message.contains("Implement feature"));
+        assert!(!user_message.contains("Add new feature"));
+        assert!(user_message.contains(".orkestra/.artifacts/task.md"));
+        // Stage artifacts show file paths
         assert!(user_message.contains(".orkestra/.artifacts/plan.md"));
         assert!(user_message.contains("Input Artifacts"));
     }

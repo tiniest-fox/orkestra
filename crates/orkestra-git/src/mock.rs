@@ -292,6 +292,10 @@ impl GitService for MockGitService {
         Ok(vec![])
     }
 
+    fn commit_log_at(&self, _path: &Path, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
     fn batch_file_counts(&self, _hashes: &[String]) -> Result<HashMap<String, usize>, GitError> {
         Ok(HashMap::new())
     }

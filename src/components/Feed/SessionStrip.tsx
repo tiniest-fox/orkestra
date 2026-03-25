@@ -1,5 +1,6 @@
 //! Session strip — compact interactive chips showing the task's stage run history.
 
+import { useEffect, useRef } from "react";
 import type { WorkflowOutcome } from "../../types/workflow";
 import { abbreviateStage } from "../../utils/stageAbbreviation";
 import type { StageRun } from "../../utils/stageRuns";
@@ -51,6 +52,16 @@ export function SessionStrip({
   isWaitingSelected,
   onWaitingSelect,
 }: SessionStripProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to the rightmost chip (most recent) on mount and when chips change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs.length and waitingStage are scroll triggers, not values read by the effect
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    }
+  }, [runs.length, waitingStage]);
+
   if (runs.length === 0 && !waitingStage) return null;
 
   const isViewingPast = selectedRunIdx !== null;
@@ -59,7 +70,10 @@ export function SessionStrip({
   const runsArePast = !!waitingStage;
 
   return (
-    <div className="min-w-0 overflow-hidden flex items-center gap-[3px] flex-shrink">
+    <div
+      ref={scrollRef}
+      className="min-w-0 overflow-x-auto no-scrollbar flex items-center gap-[3px] flex-shrink"
+    >
       {runs.map((run, realIdx) => {
         const isCurrent = run.isCurrentRun && !runsArePast;
         const isSelected = runsArePast
@@ -82,7 +96,7 @@ export function SessionStrip({
 
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: realIdx is the run number, not array index
-          <span key={realIdx} className="flex items-center gap-[3px]">
+          <span key={realIdx} className="flex items-center gap-[3px] flex-shrink-0">
             {realIdx > 0 && (
               <span className="text-text-quaternary font-mono text-[9px] mx-[1px]">·</span>
             )}
@@ -102,7 +116,7 @@ export function SessionStrip({
         );
       })}
       {waitingStage && (
-        <span className="flex items-center gap-[3px]">
+        <span className="flex items-center gap-[3px] flex-shrink-0">
           {runs.length > 0 && (
             <span className="text-text-quaternary font-mono text-[9px] mx-[1px]">·</span>
           )}

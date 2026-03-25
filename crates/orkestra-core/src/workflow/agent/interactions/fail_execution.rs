@@ -44,7 +44,7 @@ pub fn execute(
             error: error.to_string(),
         },
     )?;
-    task.state = TaskState::failed(error);
+    task.state = TaskState::failed_at(&current_stage, error);
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     store.save_task(&task)?;

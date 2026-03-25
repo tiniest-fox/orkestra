@@ -246,7 +246,7 @@ impl AgentTestEnv {
                 t.current_stage()
             );
 
-            if let TaskState::Failed { error } = &t.state {
+            if let TaskState::Failed { error, .. } = &t.state {
                 let msg = error
                     .clone()
                     .unwrap_or_else(|| "unknown failure".to_string());
@@ -437,7 +437,7 @@ impl AgentTestEnv {
                 t.current_stage()
             );
 
-            if let TaskState::Blocked { reason } = &t.state {
+            if let TaskState::Blocked { reason, .. } = &t.state {
                 let msg = reason
                     .clone()
                     .unwrap_or_else(|| "unknown block reason".to_string());
@@ -445,7 +445,7 @@ impl AgentTestEnv {
                 return msg;
             }
 
-            if let TaskState::Failed { error } = &t.state {
+            if let TaskState::Failed { error, .. } = &t.state {
                 self.dump_debug_log();
                 panic!("Task failed unexpectedly — expected blocked. Error: {error:?}");
             }

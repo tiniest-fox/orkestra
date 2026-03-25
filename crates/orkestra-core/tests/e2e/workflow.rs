@@ -8443,3 +8443,249 @@ fn test_restart_stage_from_interrupted() {
     );
     assert_eq!(task.current_stage(), Some("planning"));
 }
+
+// =============================================================================
+// Bypass Operations from Failed/Blocked States
+// =============================================================================
+
+/// Skip stage from a Failed task advances to the next stage.
+#[test]
+fn test_skip_stage_from_failed() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test skip from failed", "A task that will fail", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Could not proceed".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes failure
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be Failed, got: {:?}",
+        task.state
+    );
+
+    let task = ctx
+        .api()
+        .skip_stage(&task_id, "Skipping failed stage")
+        .unwrap();
+
+    assert!(
+        matches!(task.state, TaskState::Queued { ref stage } if stage == "breakdown"),
+        "Task should be Queued at breakdown, got: {:?}",
+        task.state
+    );
+}
+
+/// Skip stage from a Blocked task advances to the next stage.
+#[test]
+fn test_skip_stage_from_blocked() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test skip from blocked", "A task that will block", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Blocked {
+            reason: "Waiting on external dependency".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes blocked output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Blocked { .. }),
+        "Task should be Blocked, got: {:?}",
+        task.state
+    );
+
+    let task = ctx
+        .api()
+        .skip_stage(&task_id, "Skipping blocked stage")
+        .unwrap();
+
+    assert!(
+        matches!(task.state, TaskState::Queued { ref stage } if stage == "breakdown"),
+        "Task should be Queued at breakdown, got: {:?}",
+        task.state
+    );
+}
+
+/// Send to stage from a Failed task transitions to the target stage.
+#[test]
+fn test_send_to_stage_from_failed() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task(
+        "Test send_to_stage from failed",
+        "A task that will fail",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Planning failed".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes failure
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be Failed, got: {:?}",
+        task.state
+    );
+
+    let task = ctx
+        .api()
+        .send_to_stage(&task_id, "work", "Jumping to work")
+        .unwrap();
+
+    assert!(
+        matches!(task.state, TaskState::Queued { ref stage } if stage == "work"),
+        "Task should be Queued at work, got: {:?}",
+        task.state
+    );
+}
+
+/// Send to stage from a Blocked task transitions to the target stage.
+#[test]
+fn test_send_to_stage_from_blocked() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task(
+        "Test send_to_stage from blocked",
+        "A task that will block",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Blocked {
+            reason: "Blocked on CI".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes blocked output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Blocked { .. }),
+        "Task should be Blocked, got: {:?}",
+        task.state
+    );
+
+    let task = ctx
+        .api()
+        .send_to_stage(&task_id, "work", "Jumping to work")
+        .unwrap();
+
+    assert!(
+        matches!(task.state, TaskState::Queued { ref stage } if stage == "work"),
+        "Task should be Queued at work, got: {:?}",
+        task.state
+    );
+}
+
+/// Restart stage from a Failed task re-queues at the same stage.
+#[test]
+fn test_restart_stage_from_failed() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test restart from failed", "A task that will fail", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Agent crashed".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes failure
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be Failed, got: {:?}",
+        task.state
+    );
+
+    let task = ctx
+        .api()
+        .restart_stage(&task_id, "Retrying planning")
+        .unwrap();
+
+    assert!(
+        matches!(task.state, TaskState::Queued { ref stage } if stage == "planning"),
+        "Task should be Queued at planning, got: {:?}",
+        task.state
+    );
+}
+
+/// Restart stage from a Blocked task re-queues at the same stage.
+#[test]
+fn test_restart_stage_from_blocked() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test restart from blocked", "A task that will block", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Blocked {
+            reason: "External service down".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes blocked output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Blocked { .. }),
+        "Task should be Blocked, got: {:?}",
+        task.state
+    );
+
+    let task = ctx
+        .api()
+        .restart_stage(&task_id, "Service is back up")
+        .unwrap();
+
+    assert!(
+        matches!(task.state, TaskState::Queued { ref stage } if stage == "planning"),
+        "Task should be Queued at planning, got: {:?}",
+        task.state
+    );
+}

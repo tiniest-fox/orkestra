@@ -326,6 +326,7 @@ reverse_deps_of() {
 HAS_FRONTEND=false
 HAS_TAURI=false
 HAS_CLI=false
+HAS_ORK_SERVICE=false
 HAS_RUST_CONFIG=false
 CHANGED_CRATES=()
 
@@ -334,12 +335,14 @@ if $FORCE_ALL; then
     HAS_FRONTEND=true
     HAS_TAURI=true
     HAS_CLI=true
+    HAS_ORK_SERVICE=true
     CHANGED_CRATES=("${ALL_CRATES[@]}")
 else
     $FORCE_FRONTEND && HAS_FRONTEND=true
     if $FORCE_RUST; then
         HAS_TAURI=true
         HAS_CLI=true
+        HAS_ORK_SERVICE=true
         CHANGED_CRATES=("${ALL_CRATES[@]}")
     fi
 
@@ -355,6 +358,9 @@ else
                     ;;
                 cli/*)
                     HAS_CLI=true
+                    ;;
+                service/*)
+                    HAS_ORK_SERVICE=true
                     ;;
                 crates/*/Cargo.toml|crates/*/build.rs|crates/*/*/*)
                     # Compilation-relevant crate files: manifests, build scripts,
@@ -379,6 +385,7 @@ fi
 if $HAS_RUST_CONFIG; then
     HAS_TAURI=true
     HAS_CLI=true
+    HAS_ORK_SERVICE=true
     CHANGED_CRATES=("${ALL_CRATES[@]}")
 fi
 

@@ -249,6 +249,24 @@ For `InMemoryWorkflowStore` (used in tests), hold the mutex for the entire check
 
 This pattern is a HIGH-severity finding reviewers always catch. Apply it whenever you add a `get_or_create` operation to the store layer.
 
+<!-- compound: blatantly-enlivening-swift -->
+**`is_some_and()` + `unwrap()` is an anti-pattern** — it traverses the `Option` twice and introduces a panic site. Use `if let Some(x) = opt.filter(|x| condition)` instead:
+
+```rust
+// Bad — two traversals, unwrap panic risk
+if file.diff_content.is_some_and(|d| !d.is_empty()) {
+    let content = file.diff_content.unwrap();
+    ...
+}
+
+// Good — single traversal, no unwrap
+if let Some(content) = file.diff_content.as_ref().filter(|d| !d.is_empty()) {
+    ...
+}
+```
+
+The `filter` on `Option` combines the `Some` check with the condition check, and `if let` eliminates the `unwrap()` entirely. This is a MEDIUM-severity finding reviewers always catch.
+
 <!-- compound: approvingly-eminent-gopher -->
 ## Rust Conventions
 

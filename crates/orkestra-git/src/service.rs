@@ -120,6 +120,10 @@ impl GitService for Git2GitService {
         interactions::commit::log::execute(&self.repo_path, limit)
     }
 
+    fn commit_log_at(&self, path: &Path, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        interactions::commit::log::execute(path, limit)
+    }
+
     fn batch_file_counts(&self, hashes: &[String]) -> Result<HashMap<String, usize>, GitError> {
         interactions::commit::batch_file_counts::execute(&self.repo_path, hashes)
     }

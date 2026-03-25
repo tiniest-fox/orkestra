@@ -256,7 +256,7 @@ mod tests {
 
         assert_eq!(ctx.stage.name, "planning");
         assert_eq!(ctx.task_id, "task-1");
-        assert_eq!(ctx.title, "Implement login");
+        assert_eq!(ctx.task_file_path, ".orkestra/.artifacts/task.md");
         assert!(ctx.artifacts.is_empty());
         assert!(ctx.feedback.is_none());
     }
@@ -778,7 +778,7 @@ mod tests {
         assert!(!user_message.contains("worker agent"));
         assert!(user_message.contains("Task ID"));
         assert!(user_message.contains("task-1"));
-        assert!(user_message.contains("Implement login"));
+        assert!(user_message.contains(".orkestra/.artifacts/task.md"));
     }
 
     #[test]
@@ -802,9 +802,11 @@ mod tests {
         let user_message = build_user_message(&ctx);
 
         assert!(user_message.contains("task-1"));
-        assert!(user_message.contains("Implement feature"));
-        assert!(user_message.contains("Add new feature"));
-        // Artifacts now show file paths instead of content
+        // Title and description are virtualized — only the task file path is referenced
+        assert!(!user_message.contains("Implement feature"));
+        assert!(!user_message.contains("Add new feature"));
+        assert!(user_message.contains(".orkestra/.artifacts/task.md"));
+        // Stage artifacts show file paths
         assert!(user_message.contains(".orkestra/.artifacts/plan.md"));
         assert!(user_message.contains("Input Artifacts"));
     }

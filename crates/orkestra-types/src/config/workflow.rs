@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use super::stage::{GateConfig, StageCapabilities, StageConfig, ToolRestriction};
-use crate::runtime::ACTIVITY_LOG_ARTIFACT_NAME;
+use crate::runtime::{ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME};
 
 /// Complete workflow configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -548,9 +548,9 @@ impl WorkflowConfig {
                 ));
                 continue;
             }
-            if name == ACTIVITY_LOG_ARTIFACT_NAME {
+            if name == ACTIVITY_LOG_ARTIFACT_NAME || name == TASK_ARTIFACT_NAME {
                 errors.push(format!(
-                    "Stage \"{}\" uses reserved artifact name \"{name}\". This name is used internally for the activity log.",
+                    "Stage \"{}\" uses reserved artifact name \"{name}\". This name is used internally.",
                     stage.name
                 ));
                 continue;
@@ -1523,6 +1523,14 @@ integration:
     #[test]
     fn test_reserved_artifact_name_rejected() {
         let config = WorkflowConfig::new(vec![StageConfig::new("work", "activity_log")]);
+        let errors = config.validate();
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("reserved artifact name"));
+    }
+
+    #[test]
+    fn test_reserved_task_artifact_name_rejected() {
+        let config = WorkflowConfig::new(vec![StageConfig::new("work", "task")]);
         let errors = config.validate();
         assert!(!errors.is_empty());
         assert!(errors[0].contains("reserved artifact name"));

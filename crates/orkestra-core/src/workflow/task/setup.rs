@@ -152,7 +152,8 @@ fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Res
             }
             Err(error) => {
                 crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
-                task.state = TaskState::failed(&error);
+                let stage = task.current_stage().unwrap_or("unknown").to_string();
+                task.state = TaskState::failed_at(stage, &error);
                 // Worktree info is already saved - retry will skip creation
                 if let Err(e) = store.save_task(&task) {
                     crate::orkestra_debug!(

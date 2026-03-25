@@ -1255,11 +1255,11 @@ fn format_state(state: &TaskState) -> String {
         TaskState::WaitingOnChildren { stage } => format!("WaitingOnChildren({stage})"),
         TaskState::Done => "Done".to_string(),
         TaskState::Archived => "Archived".to_string(),
-        TaskState::Failed { error } => {
+        TaskState::Failed { error, .. } => {
             let msg = error.as_deref().unwrap_or("unknown");
             format!("Failed: {}", msg.chars().take(20).collect::<String>())
         }
-        TaskState::Blocked { reason } => {
+        TaskState::Blocked { reason, .. } => {
             let msg = reason.as_deref().unwrap_or("unknown");
             format!("Blocked: {}", msg.chars().take(20).collect::<String>())
         }

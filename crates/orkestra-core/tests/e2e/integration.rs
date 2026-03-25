@@ -257,7 +257,7 @@ fn pr_creation_failed_transitions_to_failed() {
         .pr_creation_failed(&task_id, "Failed to create pull request: auth expired")
         .unwrap();
 
-    let TaskState::Failed { error } = &task.state else {
+    let TaskState::Failed { error, .. } = &task.state else {
         panic!("Task should be in Failed state, got: {:?}", task.state)
     };
     assert!(error.is_some(), "Failed state should have error message");
@@ -513,7 +513,7 @@ fn create_pr_sync_handles_failure() {
     let task = create_pr_sync(ctx.api_arc(), &task_id).unwrap();
 
     // Verify task transitioned to Failed
-    let TaskState::Failed { error } = &task.state else {
+    let TaskState::Failed { error, .. } = &task.state else {
         panic!("Task should be in Failed state, got: {:?}", task.state)
     };
     assert!(error.is_some(), "Failed state should have error message");

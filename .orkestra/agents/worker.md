@@ -317,6 +317,19 @@ Before outputting a completion summary, explicitly verify each file or change th
 
 **Anti-pattern to avoid:** Finding that the primary file is already changed, then concluding the task is complete without checking every other file the breakdown mentions. This is the most common cause of repeated rejection cycles — the reviewer catches the missed file every time.
 
+<!-- compound: outwardly-expectant-spitz -->
+## Trace All Downstream Requirements When Enabling a New State
+
+When a task says "enable operation X from state Y (it's just a gating change)", trace the full execution path of X — not just the gate. Even when the gate change is one line, the operation itself may read fields from the task object (e.g., `task.current_stage()`, `task.branch_name()`) that are `Option<T>` and return `None` for the new state.
+
+Pattern to verify before submitting:
+1. Find the gate (e.g., `can_bypass()`)
+2. Find every operation that goes through this gate (e.g., `skip_stage`, `send_to_stage`, `restart_stage`)
+3. For each operation, trace what it reads from the task object
+4. Verify those fields are populated for every state you're adding to the gate
+
+If an operation calls `task.current_stage()` and you're adding `Failed`/`Blocked` to the gate, check whether those variants carry a `stage` field. If not, the gate passes but the operation immediately fails. This class of bug produces buttons that appear to work but always error on click — subtle and easy to miss without e2e tests covering the new state.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:

@@ -302,3 +302,12 @@ mark.search-match-current {
   outline: 1px solid rgb(var(--forge-status-warning));
   color: inherit;
 }
+
+/* Hide scrollbar while preserving scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

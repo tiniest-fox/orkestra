@@ -4,7 +4,7 @@
 
 use orkestra_types::config::{StageConfig, WorkflowConfig};
 use orkestra_types::domain::Task;
-use orkestra_types::runtime::resolve_artifact_path;
+use orkestra_types::runtime::{resolve_artifact_path, TASK_ARTIFACT_NAME};
 
 use crate::types::{
     ArtifactContext, IntegrationErrorContext, SiblingTaskContext, StagePromptContext,
@@ -141,8 +141,7 @@ fn build_context_from_stage<'a>(
     StagePromptContext {
         stage,
         task_id: &task.id,
-        title: &task.title,
-        description: &task.description,
+        task_file_path: resolve_artifact_path(task.worktree_path.as_deref(), TASK_ARTIFACT_NAME),
         artifacts,
         question_history,
         feedback,

@@ -100,12 +100,15 @@ export function DrawerHeader({
   const [showSkipStage, setShowSkipStage] = useState(false);
   const [showSendToStage, setShowSendToStage] = useState(false);
 
-  // Visible only when the task is paused (awaiting review, questions, rejection, or interrupted).
+  // Visible when the task is paused or terminal-but-recoverable (awaiting review, questions,
+  // rejection, interrupted, failed, or blocked).
   const canOverrideStage =
     task.derived.needs_review ||
     task.derived.has_questions ||
     task.derived.is_interrupted ||
-    task.derived.pending_rejection !== null;
+    task.derived.pending_rejection !== null ||
+    task.derived.is_failed ||
+    task.derived.is_blocked;
 
   // All flow-valid stages (including the current stage) for the Change Stage modal.
   const flowStages = useMemo(() => {

@@ -81,7 +81,9 @@ useEffect(() => {
 - Callback ref + state ensures effects re-attach observers when the element reference changes
 - Combine with `MutationObserver` + `requestAnimationFrame` for reliable DOM-change reactions
 
-**Common use case:** Auto-scroll hooks that need to scroll after DOM content changes. `MutationObserver` detects content additions, `requestAnimationFrame` ensures scroll happens after browser layout completes.
+**Common use case:** Hooks that attach `MutationObserver` or `ResizeObserver` to a DOM element. `MutationObserver` detects content additions, `requestAnimationFrame` ensures scroll happens after browser layout completes.
+
+**Not applicable:** Imperative one-shot commands (e.g., `container.scrollLeft = container.scrollWidth`) triggered by data changes like `items.length`. Those use plain `useRef` — the element identity doesn't change, so there's nothing to re-attach. Only use this pattern when the *observer* must re-attach on element identity changes.
 
 **Example:** See `useAutoScroll.ts` for the canonical implementation
 

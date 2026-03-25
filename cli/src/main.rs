@@ -194,6 +194,14 @@ enum TaskAction {
         #[arg(short, long)]
         message: String,
     },
+    /// Restart the current stage with a fresh agent
+    Restart {
+        /// Task ID
+        id: String,
+        /// Message explaining why the stage is being restarted
+        #[arg(short, long)]
+        message: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -315,6 +323,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::SendToStage { id, stage, message } => {
             handle_send_to_stage(&api, &id, &stage, &message, pretty);
         }
+        TaskAction::Restart { id, message } => handle_restart_stage(&api, &id, &message, pretty),
     }
 }
 
@@ -540,6 +549,23 @@ fn handle_send_to_stage(api: &WorkflowApi, id: &str, stage: &str, message: &str,
 
     if pretty {
         println!("Sent task {} to stage: {}", task.id, stage);
+        println!("Current stage: {}", task.current_stage().unwrap_or("-"));
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_restart_stage(api: &WorkflowApi, id: &str, message: &str, pretty: bool) {
+    let task = match api.restart_stage(id, message) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error restarting stage: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Restarted stage for task: {}", task.id);
         println!("Current stage: {}", task.current_stage().unwrap_or("-"));
     } else {
         output_json(&task);
@@ -1350,6 +1376,7 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
             format!("redirect from {from_stage}\n    \"{message}\"")
         }
         IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
+        IterationTrigger::Restart { message } => format!("restart stage\n    \"{message}\""),
     }
 }
 

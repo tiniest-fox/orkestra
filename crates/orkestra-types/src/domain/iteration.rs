@@ -115,6 +115,11 @@ pub enum IterationTrigger {
         /// Human-provided context explaining the redirect.
         message: String,
     },
+    /// Human restarted the current stage for a fresh attempt.
+    Restart {
+        /// Human-provided context explaining the restart.
+        message: String,
+    },
 }
 
 /// A single iteration (attempt) within a stage.

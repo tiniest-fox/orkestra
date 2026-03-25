@@ -1,7 +1,7 @@
 //! Task drawer header — title row (via shared DrawerHeader) + pipeline/session strip row.
 
 import {
-  ArrowRightToLine,
+  ArrowLeftRight,
   MessageSquare,
   Play,
   SkipForward,
@@ -107,13 +107,11 @@ export function DrawerHeader({
     task.derived.is_interrupted ||
     task.derived.pending_rejection !== null;
 
-  // Flow-aware stages available as send-to targets (exclude the current stage).
-  const otherStages = useMemo(() => {
+  // All flow-valid stages (including the current stage) for the Change Stage modal.
+  const flowStages = useMemo(() => {
     const flowStageNames = resolveFlowStageNames(task.flow, config);
-    return config.stages.filter(
-      (s) => flowStageNames.includes(s.name) && s.name !== task.derived.current_stage,
-    );
-  }, [config, task.flow, task.derived.current_stage]);
+    return config.stages.filter((s) => flowStageNames.includes(s.name));
+  }, [config, task.flow]);
 
   const worktreePath = task.worktree_path;
   useNavHandler("T", () => {
@@ -211,9 +209,9 @@ export function DrawerHeader({
             onClick: () => setShowSkipStage(true),
           },
           {
-            icon: <ArrowRightToLine />,
-            label: "Send to stage",
-            shortLabel: "Send to",
+            icon: <ArrowLeftRight />,
+            label: "Change stage",
+            shortLabel: "Change",
             onClick: () => setShowSendToStage(true),
           },
         ]
@@ -305,7 +303,8 @@ export function DrawerHeader({
         taskId={task.id}
         onSuccess={onClose}
         transport={transport}
-        otherStages={otherStages}
+        stages={flowStages}
+        currentStage={task.derived.current_stage ?? ""}
       />
     </>
   );

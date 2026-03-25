@@ -3070,10 +3070,10 @@ fn test_system_prompt_split() {
         "System prompt should reference the artifact name 'plan'"
     );
 
-    // ASSERT: User message should contain task context only
+    // ASSERT: User message should reference the task file (title/description are virtualized)
     let user_message = &call.prompt;
     assert!(
-        user_message.contains("Test task") || user_message.contains("Test description"),
+        user_message.contains(".orkestra/.artifacts/task.md"),
         "User message should contain task context"
     );
     assert!(
@@ -3143,9 +3143,9 @@ fn test_opencode_provider_fallback() {
         "User message should contain artifact name (from system prompt)"
     );
 
-    // Should contain task context
+    // Should reference the task file (title/description are virtualized)
     assert!(
-        user_message.contains("OpenCode test") || user_message.contains("Test fallback behavior"),
+        user_message.contains(".orkestra/.artifacts/task.md"),
         "User message should contain task context"
     );
 

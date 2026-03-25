@@ -15,6 +15,9 @@ const ARTIFACTS_DIR: &str = ".orkestra/.artifacts";
 /// The artifact name used for the materialized activity log file.
 pub const ACTIVITY_LOG_ARTIFACT_NAME: &str = "activity_log";
 
+/// The artifact name used for the materialized task definition file.
+pub const TASK_ARTIFACT_NAME: &str = "task";
+
 /// Returns the relative directory path for materialized artifact files.
 ///
 /// This is the canonical definition of the artifacts directory path.

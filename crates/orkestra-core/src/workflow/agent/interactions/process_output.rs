@@ -85,10 +85,7 @@ pub fn execute(
             )?;
         }
         StageOutput::Subtasks {
-            content,
-            subtasks,
-            skip_reason,
-            ..
+            content, subtasks, ..
         } => {
             super::handle_subtasks::execute(
                 workflow,
@@ -96,7 +93,6 @@ pub fn execute(
                 &mut task,
                 &content,
                 &subtasks,
-                skip_reason.as_deref(),
                 &current_stage,
                 &now,
             )?;

@@ -23,6 +23,8 @@ mod integration;
 mod interactive;
 #[path = "e2e/multi_project.rs"]
 mod multi_project;
+#[path = "e2e/play.rs"]
+mod play;
 #[path = "e2e/squash_commits.rs"]
 mod squash_commits;
 #[path = "e2e/stage_chat.rs"]

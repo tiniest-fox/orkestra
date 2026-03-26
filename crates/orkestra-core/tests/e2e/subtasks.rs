@@ -50,7 +50,6 @@ fn setup_parent_with_subtasks(
         MockAgentOutput::Subtasks {
             content: "Technical design".into(),
             subtasks: subtask_outputs,
-            skip_reason: None,
             activity_log: None,
         },
     );
@@ -191,7 +190,6 @@ fn test_breakdown_approval_creates_subtasks() {
                     depends_on: vec![0],
                 },
             ],
-            skip_reason: None,
             activity_log: None,
         },
     );
@@ -589,11 +587,11 @@ fn test_diamond_dependency_orchestration() {
 }
 
 // =============================================================================
-// Breakdown Skip (No Subtasks)
+// Breakdown Single Subtask (Inline)
 // =============================================================================
 
 #[test]
-fn test_breakdown_skip_advances_normally() {
+fn test_breakdown_single_subtask_inlines_on_parent() {
     let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
@@ -613,34 +611,52 @@ fn test_breakdown_skip_advances_normally() {
     env.api().approve(&parent.id).unwrap();
     env.advance(); // commit pipeline: Finishing → Finished → advance to breakdown
 
-    // Breakdown: skip (empty subtasks with reason)
+    // Breakdown: single subtask (inlines on parent, no child task created)
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
             content: "Technical design content".into(),
-            subtasks: vec![],
-            skip_reason: Some("Task is simple enough to complete directly".into()),
+            subtasks: vec![SubtaskOutput {
+                title: "Implement feature".into(),
+                description: "Complete the whole feature".into(),
+                detailed_instructions: "Full implementation brief for the feature".into(),
+                depends_on: vec![],
+            }],
             activity_log: None,
         },
     );
     env.advance(); // spawns breakdown agent (completion ready)
-    env.advance(); // processes skip output
+    env.advance(); // processes single-subtask output
 
-    // Approve the skipped breakdown
+    // Approve the inlined breakdown
     env.api().approve(&parent.id).unwrap();
     env.advance(); // commit pipeline: Finishing → Finished → advance to work
     let parent = env.api().get_task(&parent.id).unwrap();
 
-    // Should advance normally to work stage (no subtasks created)
+    // Should advance normally to work stage (single subtask inlined, no child created)
     assert_eq!(
         parent.current_stage(),
         Some("work"),
-        "Should advance to work stage when breakdown is skipped"
+        "Should advance to work stage when breakdown is inlined"
     );
 
-    // No subtasks should exist
+    // No child subtasks should exist
     let subtasks = env.api().list_subtasks(&parent.id).unwrap();
-    assert!(subtasks.is_empty(), "No subtasks should be created on skip");
+    assert!(
+        subtasks.is_empty(),
+        "No child tasks should be created when single subtask is inlined"
+    );
+
+    // Breakdown artifact should contain inlined instructions
+    let breakdown = parent.artifact("breakdown").unwrap();
+    assert!(
+        breakdown.contains("## Implementation Instructions"),
+        "Breakdown artifact should contain inlined implementation instructions"
+    );
+    assert!(
+        breakdown.contains("Full implementation brief"),
+        "Breakdown artifact should contain the subtask's detailed instructions"
+    );
 }
 
 // =============================================================================
@@ -654,19 +670,27 @@ fn test_subtask_failure_parent_stays_waiting() {
 
     let (parent_id, id_map) = setup_parent_with_subtasks(
         &env,
-        vec![SubtaskOutput {
-            title: "Only task".into(),
-            description: "Will fail".into(),
-            detailed_instructions: "Implementation brief for failing task".into(),
-            depends_on: vec![],
-        }],
+        vec![
+            SubtaskOutput {
+                title: "First task".into(),
+                description: "Will fail".into(),
+                detailed_instructions: "Implementation brief for failing task".into(),
+                depends_on: vec![],
+            },
+            SubtaskOutput {
+                title: "Second task".into(),
+                description: "Depends on first".into(),
+                detailed_instructions: "Implementation brief for second task".into(),
+                depends_on: vec![0],
+            },
+        ],
         None,
     );
 
     let subtask_id = id_map[0].1.clone();
 
-    // Set up subtask (no deps)
-    env.advance(); // setup_awaiting_tasks: sets up subtask
+    // Set up first subtask (no deps; second has dep on first so not eligible yet)
+    env.advance(); // setup_awaiting_tasks: sets up first subtask
 
     // Fail the subtask
     env.set_output(
@@ -773,17 +797,25 @@ fn test_subtask_integration_merges_to_parent_branch() {
 
     let (parent_id, id_map) = setup_parent_with_subtasks(
         &env,
-        vec![SubtaskOutput {
-            title: "Worker".into(),
-            description: "Makes file changes".into(),
-            detailed_instructions: "Implementation brief for worker".into(),
-            depends_on: vec![],
-        }],
+        vec![
+            SubtaskOutput {
+                title: "Worker".into(),
+                description: "Makes file changes".into(),
+                detailed_instructions: "Implementation brief for worker".into(),
+                depends_on: vec![],
+            },
+            SubtaskOutput {
+                title: "Follow-up".into(),
+                description: "Depends on worker".into(),
+                detailed_instructions: "Implementation brief for follow-up".into(),
+                depends_on: vec![0],
+            },
+        ],
         None,
     );
 
     let subtask_id = id_map[0].1.clone();
-    env.advance(); // setup_awaiting_tasks: sets up subtask (no deps)
+    env.advance(); // setup_awaiting_tasks: sets up first subtask (no deps)
 
     // Write a file in the subtask's worktree (simulating agent making changes)
     let subtask = env.api().get_task(&subtask_id).unwrap();
@@ -1131,11 +1163,11 @@ fn test_archived_subtasks_included_in_views_and_progress() {
 // Stale structured artifact after re-run
 // =============================================================================
 
-/// When breakdown is rejected and re-run with empty subtasks, the stale
-/// `_structured` artifact from the first run must be cleared. Otherwise
+/// When breakdown is rejected and re-run with a single subtask (inline), the stale
+/// `_structured` artifact from the first multi-subtask run must be cleared. Otherwise
 /// approval incorrectly creates subtasks from the stale data.
 #[test]
-fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
+fn rerun_breakdown_with_single_subtask_clears_stale_structured_artifact() {
     let wf = workflows::with_subtasks();
     let env = TestEnv::with_git(&wf, &["planner", "breakdown", "worker", "reviewer"]);
 
@@ -1155,18 +1187,25 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
     env.api().approve(&parent.id).unwrap();
     env.advance(); // commit pipeline: Finishing → Finished → advance to breakdown
 
-    // Breakdown #1: produces subtasks → AwaitingReview
+    // Breakdown #1: produces 2 subtasks → creates _structured data → AwaitingReview
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
             content: "Technical design".into(),
-            subtasks: vec![SubtaskOutput {
-                title: "Subtask A".into(),
-                description: "Do A".into(),
-                detailed_instructions: "Implement A".into(),
-                depends_on: vec![],
-            }],
-            skip_reason: None,
+            subtasks: vec![
+                SubtaskOutput {
+                    title: "Subtask A".into(),
+                    description: "Do A".into(),
+                    detailed_instructions: "Implement A".into(),
+                    depends_on: vec![],
+                },
+                SubtaskOutput {
+                    title: "Subtask B".into(),
+                    description: "Do B".into(),
+                    detailed_instructions: "Implement B".into(),
+                    depends_on: vec![0],
+                },
+            ],
             activity_log: None,
         },
     );
@@ -1182,16 +1221,20 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
 
     // Reject breakdown → stays in breakdown stage, new iteration
     env.api()
-        .reject(&parent.id, "Don't break this down, just do it directly")
+        .reject(&parent.id, "Too many pieces, just do it as one task")
         .unwrap();
 
-    // Breakdown #2: empty subtasks with skip reason
+    // Breakdown #2: single subtask (inlined) → clears stale _structured data → AwaitingReview
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
             content: "Will implement directly".into(),
-            subtasks: vec![],
-            skip_reason: Some("Task is simple enough to implement directly".into()),
+            subtasks: vec![SubtaskOutput {
+                title: "Implement feature".into(),
+                description: "Do the whole thing".into(),
+                detailed_instructions: "Complete implementation brief".into(),
+                depends_on: vec![],
+            }],
             activity_log: None,
         },
     );
@@ -1205,7 +1248,7 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
         task.state
     );
 
-    // Approve → should NOT create subtasks, should advance to work stage
+    // Approve → should NOT create subtasks (single subtask is inlined), should advance to work
     env.api().approve(&parent.id).unwrap();
     env.advance(); // commit pipeline: Finishing → Finished → advance to work
 
@@ -1214,7 +1257,7 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
 
     assert!(
         subtasks.is_empty(),
-        "No subtasks should exist after approving empty breakdown, got {} subtask(s)",
+        "No subtasks should exist after approving inlined breakdown, got {} subtask(s)",
         subtasks.len()
     );
     assert_eq!(
@@ -1227,6 +1270,107 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
         "Task should be Queued (ready for work agent), got: {:?}",
         task.state
     );
+}
+
+// =============================================================================
+// Single vs Multiple Subtask Boundary
+// =============================================================================
+
+/// Verifies the exact boundary: 1 subtask = inline (no children), 2 subtasks = children.
+///
+/// Part A: 1 subtask → parent advances to work stage, no child tasks.
+/// Part B: 2 subtasks → children created, parent enters `WaitingOnChildren`.
+#[test]
+fn test_single_vs_multiple_subtask_boundary() {
+    // --- Part A: single subtask → inline ---
+    {
+        let wf = workflows::with_subtasks();
+        let env = TestEnv::with_git(&wf, &["planner", "breakdown", "worker", "reviewer"]);
+
+        let parent = env.create_task("Simple task", "Do one thing", None);
+
+        // Planning
+        env.set_output(
+            &parent.id,
+            MockAgentOutput::Artifact {
+                name: "plan".into(),
+                content: "Simple plan".into(),
+                activity_log: None,
+            },
+        );
+        env.advance(); // spawns planner (completion ready)
+        env.advance(); // processes plan output
+        env.api().approve(&parent.id).unwrap();
+        env.advance(); // commit pipeline → advance to breakdown
+
+        // Breakdown: exactly 1 subtask
+        env.set_output(
+            &parent.id,
+            MockAgentOutput::Subtasks {
+                content: "Inline design".into(),
+                subtasks: vec![SubtaskOutput {
+                    title: "The only subtask".into(),
+                    description: "Single focused task".into(),
+                    detailed_instructions: "Inline implementation brief".into(),
+                    depends_on: vec![],
+                }],
+                activity_log: None,
+            },
+        );
+        env.advance(); // spawns breakdown agent
+        env.advance(); // processes output
+        env.api().approve(&parent.id).unwrap();
+        env.advance(); // commit pipeline → advance
+
+        let parent = env.api().get_task(&parent.id).unwrap();
+        assert_eq!(
+            parent.current_stage(),
+            Some("work"),
+            "Part A: single subtask should inline — parent advances to work"
+        );
+        let subtasks = env.api().list_subtasks(&parent.id).unwrap();
+        assert!(
+            subtasks.is_empty(),
+            "Part A: no child tasks should be created for single subtask"
+        );
+    }
+
+    // --- Part B: two subtasks → children created ---
+    {
+        let wf = workflows::with_subtasks();
+        let env = TestEnv::with_git(&wf, &["planner", "breakdown", "worker", "reviewer"]);
+
+        let (parent_id, id_map) = setup_parent_with_subtasks(
+            &env,
+            vec![
+                SubtaskOutput {
+                    title: "First subtask".into(),
+                    description: "Do the first thing".into(),
+                    detailed_instructions: "Implement the first part".into(),
+                    depends_on: vec![],
+                },
+                SubtaskOutput {
+                    title: "Second subtask".into(),
+                    description: "Do the second thing".into(),
+                    detailed_instructions: "Implement the second part".into(),
+                    depends_on: vec![0],
+                },
+            ],
+            None,
+        );
+
+        let parent = env.api().get_task(&parent_id).unwrap();
+        assert!(
+            matches!(parent.state, TaskState::WaitingOnChildren { .. }),
+            "Part B: two subtasks should create children — parent in WaitingOnChildren, got: {:?}",
+            parent.state
+        );
+        assert_eq!(
+            id_map.len(),
+            2,
+            "Part B: exactly 2 child tasks should be created"
+        );
+    }
 }
 
 // =============================================================================

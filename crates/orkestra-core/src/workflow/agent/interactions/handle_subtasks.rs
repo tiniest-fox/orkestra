@@ -1,6 +1,5 @@
 //! Handle subtasks output: store artifact + structured data, auto-advance or review.
 
-use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::SubtaskOutput;
@@ -9,41 +8,44 @@ use crate::workflow::ports::WorkflowResult;
 use crate::workflow::runtime::Artifact;
 use crate::workflow::stage::interactions as stage;
 
-#[allow(clippy::too_many_arguments)]
 pub fn execute(
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task: &mut Task,
     content: &str,
     subtasks: &[SubtaskOutput],
-    skip_reason: Option<&str>,
     stage_name: &str,
     now: &str,
 ) -> WorkflowResult<()> {
     let artifact_name =
         stage::finalize_advancement::artifact_name_for_stage(workflow, stage_name, "breakdown");
 
-    // Build artifact content with subtask summary appended if present
-    let mut artifact_content = content.to_string();
-    if !subtasks.is_empty() {
-        artifact_content.push_str("\n\n");
-        artifact_content.push_str(&format_subtasks_as_markdown(subtasks));
-    }
+    if subtasks.len() == 1 {
+        // Single subtask: inline on parent. Combine design + instructions as artifact.
+        let artifact_content = format_inline_artifact(content, &subtasks[0].detailed_instructions);
 
-    // Store the artifact with appended subtask details
-    task.artifacts.set(Artifact::new(
-        &artifact_name,
-        &artifact_content,
-        stage_name,
-        now,
-    ));
-
-    // Store or clear structured subtask data for later Task creation on approval
-    if subtasks.is_empty() {
-        // Clear any stale structured data from a previous run
+        task.artifacts.set(Artifact::new(
+            &artifact_name,
+            &artifact_content,
+            stage_name,
+            now,
+        ));
+        // Clear any stale _structured data from a previous iteration
         task.artifacts
             .remove(&format!("{artifact_name}_structured"));
     } else {
+        // Multiple subtasks: store human-readable artifact + structured data
+        let mut artifact_content = content.to_string();
+        artifact_content.push_str("\n\n");
+        artifact_content.push_str(&format_subtasks_as_markdown(subtasks));
+
+        task.artifacts.set(Artifact::new(
+            &artifact_name,
+            &artifact_content,
+            stage_name,
+            now,
+        ));
+
         let json = serde_json::to_string(subtasks).expect("SubtaskOutput is always serializable");
         task.artifacts.set(Artifact::new(
             format!("{artifact_name}_structured"),
@@ -53,16 +55,18 @@ pub fn execute(
         ));
     }
 
-    if subtasks.is_empty() {
-        if let Some(reason) = skip_reason {
-            orkestra_debug!("agent_actions", "Skipping subtask breakdown: {}", reason);
-        }
-    }
-
     stage::auto_advance_or_review::execute(iteration_service, workflow, task, stage_name, now)
 }
 
 // -- Helpers --
+
+/// Build the artifact content for a single inlined subtask.
+fn format_inline_artifact(content: &str, detailed_instructions: &str) -> String {
+    let mut artifact = content.to_string();
+    artifact.push_str("\n\n---\n\n## Implementation Instructions\n\n");
+    artifact.push_str(detailed_instructions);
+    artifact
+}
 
 /// Format subtasks as a human-readable markdown artifact.
 fn format_subtasks_as_markdown(subtasks: &[SubtaskOutput]) -> String {
@@ -101,6 +105,26 @@ fn format_subtasks_as_markdown(subtasks: &[SubtaskOutput]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_format_single_subtask_inline() {
+        let result = format_inline_artifact(
+            "# Technical Design\n\nOverview here.",
+            "Implement the following steps...",
+        );
+
+        assert!(result.contains("# Technical Design"));
+        assert!(result.contains("---"));
+        assert!(result.contains("## Implementation Instructions"));
+        assert!(result.contains("Implement the following steps..."));
+
+        // Content before separator, instructions after
+        let sep_pos = result.find("---").unwrap();
+        let instructions_pos = result.find("Implement the following").unwrap();
+        let design_pos = result.find("# Technical Design").unwrap();
+        assert!(design_pos < sep_pos);
+        assert!(sep_pos < instructions_pos);
+    }
 
     #[test]
     fn test_format_subtasks_as_markdown() {

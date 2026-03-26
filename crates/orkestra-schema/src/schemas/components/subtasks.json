@@ -7,7 +7,7 @@
     },
     "subtasks": {
       "type": "array",
-      "description": "List of subtasks to create (empty array with skip_reason to skip breakdown)",
+      "description": "List of subtasks to create",
       "items": {
         "type": "object",
         "properties": {
@@ -31,11 +31,7 @@
         },
         "required": ["title", "description", "detailed_instructions"]
       },
-      "minItems": 0
-    },
-    "skip_reason": {
-      "type": "string",
-      "description": "Required justification when subtasks array is empty (skipping breakdown)"
+      "minItems": 1
     },
     "activity_log": {
       "type": "string",

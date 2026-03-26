@@ -22,6 +22,8 @@ use orkestra_core::{
         TaskView, WorkflowApi,
     },
 };
+
+mod play;
 use orkestra_networking::generate_pairing_code;
 
 #[derive(Clone, clap::ValueEnum)]
@@ -76,6 +78,26 @@ enum Commands {
     },
     /// Generate a pairing code for daemon access
     Pair,
+    /// Run a task through all workflow stages non-interactively
+    Play {
+        /// Task description
+        description: String,
+        /// Task title (defaults to description if omitted)
+        #[arg(short, long)]
+        title: Option<String>,
+        /// Base branch for the task worktree
+        #[arg(short, long)]
+        base_branch: Option<String>,
+        /// Assign task to a named flow
+        #[arg(long)]
+        flow: Option<String>,
+        /// Skip merge to base branch after completion
+        #[arg(long)]
+        no_integrate: bool,
+        /// Merge branch directly to base branch instead of opening a pull request
+        #[arg(long)]
+        no_pr: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -244,10 +266,31 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Play {
+            description,
+            title,
+            base_branch,
+            flow,
+            no_integrate,
+            no_pr,
+        } => {
+            if let Err(e) = play::execute(
+                description,
+                title,
+                base_branch,
+                flow,
+                no_integrate,
+                no_pr,
+                cli.pretty,
+            ) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
-fn output_json<T: serde::Serialize>(value: &T) {
+pub(crate) fn output_json<T: serde::Serialize>(value: &T) {
     let json = serde_json::to_string(value).expect("JSON serialization failed");
     println!("{json}");
 }
@@ -1234,7 +1277,7 @@ fn matches_status_filter(task: &Task, filter: &StatusFilter) -> bool {
     }
 }
 
-fn format_state(state: &TaskState) -> String {
+pub(crate) fn format_state(state: &TaskState) -> String {
     match state {
         TaskState::AwaitingSetup { stage } => format!("AwaitingSetup({stage})"),
         TaskState::SettingUp { stage } => format!("SettingUp({stage})"),

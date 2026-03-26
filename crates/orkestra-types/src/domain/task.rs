@@ -10,6 +10,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::runtime::{ArtifactStore, TaskState};
 
+/// How a task was created — determines initial state after setup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskCreationMode {
+    /// Standard pipeline — task enters Queued after setup.
+    Normal,
+    /// Auto mode — task runs through stages without pausing for approval.
+    AutoMode,
+    /// Interactive mode — task enters Interactive state after setup.
+    Interactive,
+}
+
 /// A task in the workflow system.
 ///
 /// Represents a unit of work that progresses through workflow stages.
@@ -78,6 +89,10 @@ pub struct Task {
     #[serde(default)]
     pub auto_mode: bool,
 
+    /// Whether this task was created in interactive mode (creation-time property).
+    #[serde(default, rename = "interactive")]
+    pub created_interactive: bool,
+
     /// Named flow for this task (e.g., "`quick_fix`"). None = default (full pipeline).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flow: Option<String>,
@@ -119,6 +134,7 @@ impl Task {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
+            created_interactive: false,
             flow: None,
             created_at: created.clone(),
             updated_at: created,
@@ -256,19 +272,22 @@ impl Task {
         self.is_awaiting_review() || matches!(self.state, TaskState::Interrupted { .. })
     }
 
-    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage/restart).
+    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage/restart/enter-interactive).
     ///
-    /// Valid when task is paused for human input: `AwaitingApproval`, `AwaitingQuestionAnswer`,
-    /// `AwaitingRejectionConfirmation`, `Interrupted`, `Failed`, or `Blocked`.
+    /// Valid when task is idle (queued but not yet running), paused for human input, or in
+    /// interactive mode: `Queued`, `AwaitingApproval`, `AwaitingQuestionAnswer`,
+    /// `AwaitingRejectionConfirmation`, `Interrupted`, `Failed`, `Blocked`, or `Interactive`.
     pub fn can_bypass(&self) -> bool {
         matches!(
             self.state,
-            TaskState::AwaitingApproval { .. }
+            TaskState::Queued { .. }
+                | TaskState::AwaitingApproval { .. }
                 | TaskState::AwaitingQuestionAnswer { .. }
                 | TaskState::AwaitingRejectionConfirmation { .. }
                 | TaskState::Interrupted { .. }
                 | TaskState::Failed { .. }
                 | TaskState::Blocked { .. }
+                | TaskState::Interactive { .. }
         )
     }
 }
@@ -294,6 +313,7 @@ pub struct TaskHeader {
     pub base_commit: String,
     pub pr_url: Option<String>,
     pub auto_mode: bool,
+    pub created_interactive: bool,
     pub flow: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -343,6 +363,7 @@ impl From<&Task> for TaskHeader {
             base_commit: task.base_commit.clone(),
             pr_url: task.pr_url.clone(),
             auto_mode: task.auto_mode,
+            created_interactive: task.created_interactive,
             flow: task.flow.clone(),
             created_at: task.created_at.clone(),
             updated_at: task.updated_at.clone(),
@@ -574,8 +595,8 @@ mod tests {
     fn test_task_can_bypass() {
         let mut task = Task::new("task-1", "Task", "desc", "planning", "now");
 
-        // Queued → cannot bypass
-        assert!(!task.can_bypass());
+        // Queued → can bypass (task is idle, not yet running)
+        assert!(task.can_bypass());
 
         // AgentWorking → cannot bypass
         task.state = TaskState::agent_working("planning");
@@ -671,6 +692,7 @@ mod tests {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
+            created_interactive: false,
             flow: None,
             created_at: String::new(),
             updated_at: String::new(),
@@ -709,6 +731,7 @@ mod tests {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
+            created_interactive: false,
             flow: None,
             created_at: String::new(),
             updated_at: String::new(),

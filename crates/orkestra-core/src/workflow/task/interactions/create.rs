@@ -2,7 +2,7 @@
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::Task;
+use crate::workflow::domain::{Task, TaskCreationMode};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
@@ -16,7 +16,7 @@ pub fn execute(
     title: &str,
     description: &str,
     base_branch: Option<&str>,
-    auto_mode: bool,
+    mode: TaskCreationMode,
     flow: Option<&str>,
 ) -> WorkflowResult<Task> {
     // Validate flow exists if specified
@@ -48,7 +48,8 @@ pub fn execute(
     let now = chrono::Utc::now().to_rfc3339();
     let mut task = Task::new(&id, title, description, &first_stage.name, &now);
     task.base_branch = resolved_base_branch;
-    task.auto_mode = auto_mode;
+    task.auto_mode = matches!(mode, TaskCreationMode::AutoMode);
+    task.created_interactive = matches!(mode, TaskCreationMode::Interactive);
     task.flow = flow.map(String::from);
 
     // Start in AwaitingSetup - orchestrator will pick this up and trigger setup

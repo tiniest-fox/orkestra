@@ -46,6 +46,8 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     subtask_progress: null,
     is_chatting: false,
     chat_agent_active: false,
+    is_interactive: false,
+    can_bypass: false,
     ...overrides,
   };
 }

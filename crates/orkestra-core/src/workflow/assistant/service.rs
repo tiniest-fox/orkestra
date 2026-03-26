@@ -20,6 +20,18 @@ use crate::workflow::execution::{AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use orkestra_agent::interactions::spawner::cli_path::prepare_path_env;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessGuard};
+use orkestra_types::domain::SessionType;
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/// Disallowed tools for the read-only assistant: restricts file modification.
+const ASSISTANT_DISALLOWED_TOOLS: &str =
+    "EnterPlanMode,ExitPlanMode,Edit,Write,NotebookEdit,AskUserQuestion";
+
+/// Disallowed tools for the interactive session: only platform invariants.
+const INTERACTIVE_DISALLOWED_TOOLS: &str = "EnterPlanMode,ExitPlanMode";
 
 // ============================================================================
 // AssistantService
@@ -101,7 +113,9 @@ impl AssistantService {
         if let Some(pid) = session.agent_pid {
             if is_process_running(pid) {
                 orkestra_debug!("assistant", "Killing previous agent (pid={})", pid);
-                let _ = kill_process_tree(pid);
+                if let Err(e) = kill_process_tree(pid) {
+                    orkestra_debug!("assistant", "Failed to kill agent (pid={}): {}", pid, e);
+                }
             }
         }
 
@@ -112,6 +126,7 @@ impl AssistantService {
             message,
             &self.project_root.clone(),
             &system_prompt,
+            ASSISTANT_DISALLOWED_TOOLS,
         );
 
         self.handle_spawn_result(&mut session, spawn_result, &now)?;
@@ -133,7 +148,9 @@ impl AssistantService {
         if let Some(pid) = session.agent_pid {
             if is_process_running(pid) {
                 orkestra_debug!("assistant", "Stopping agent (pid={})", pid);
-                let _ = kill_process_tree(pid);
+                if let Err(e) = kill_process_tree(pid) {
+                    orkestra_debug!("assistant", "Failed to stop agent (pid={}): {}", pid, e);
+                }
             }
         }
 
@@ -156,6 +173,49 @@ impl AssistantService {
         task_id: &str,
         message: &str,
     ) -> WorkflowResult<AssistantSession> {
+        self.send_task_scoped_message(
+            task_id,
+            message,
+            SessionType::Assistant,
+            Self::build_task_system_prompt,
+            ASSISTANT_DISALLOWED_TOOLS,
+        )
+    }
+
+    /// Send a message to the interactive session for `task_id`.
+    ///
+    /// The interactive session runs with full file-editing capabilities (no tool restrictions
+    /// beyond the platform invariants). The session type is `SessionType::Interactive`.
+    /// Creates a new interactive session if none exists for this task.
+    ///
+    /// Returns the session even if spawn fails — spawn failures are written as
+    /// `LogEntry::Error` to the session's logs so the UI can display them.
+    pub fn send_interactive_task_message(
+        &self,
+        task_id: &str,
+        message: &str,
+    ) -> WorkflowResult<AssistantSession> {
+        self.send_task_scoped_message(
+            task_id,
+            message,
+            SessionType::Interactive,
+            Self::build_interactive_system_prompt,
+            INTERACTIVE_DISALLOWED_TOOLS,
+        )
+    }
+
+    /// Shared logic for task-scoped message sending (assistant and interactive).
+    ///
+    /// Handles the full lifecycle: empty check, task load, session get-or-create,
+    /// worktree validation, kill previous agent, store user message, spawn agent.
+    fn send_task_scoped_message(
+        &self,
+        task_id: &str,
+        message: &str,
+        session_type: SessionType,
+        build_prompt: fn(&Task) -> String,
+        disallowed_tools: &str,
+    ) -> WorkflowResult<AssistantSession> {
         let now = chrono::Utc::now().to_rfc3339();
 
         if message.trim().is_empty() {
@@ -174,12 +234,17 @@ impl AssistantService {
         let new_session_id = uuid::Uuid::new_v4().to_string();
         let claude_session_id = uuid::Uuid::new_v4().to_string();
         let mut new_session = AssistantSession::new(&new_session_id, &now).with_task(task_id);
+        if session_type == SessionType::Interactive {
+            new_session = new_session.with_interactive_type();
+        }
         new_session.claude_session_id = Some(claude_session_id);
 
         // Atomically get the existing session or create a new one
-        let mut session = self
-            .store
-            .get_or_create_assistant_session_for_task(task_id, &new_session)?;
+        let mut session = self.store.get_or_create_assistant_session_for_task(
+            task_id,
+            &session_type,
+            &new_session,
+        )?;
 
         // Validate worktree exists
         let worktree_path = task.worktree_path.as_deref().and_then(|p| {
@@ -208,6 +273,16 @@ impl AssistantService {
             return Ok(session);
         };
 
+        // Kill any running agent before spawning a new one
+        if let Some(pid) = session.agent_pid {
+            if is_process_running(pid) {
+                orkestra_debug!("assistant", "Killing previous agent (pid={})", pid);
+                if let Err(e) = kill_process_tree(pid) {
+                    orkestra_debug!("assistant", "Failed to kill agent (pid={}): {}", pid, e);
+                }
+            }
+        }
+
         // Store the user message as a log entry
         self.store.append_assistant_log_entry(
             &session.id,
@@ -217,17 +292,15 @@ impl AssistantService {
             },
         )?;
 
-        // Kill any running agent before spawning a new one
-        if let Some(pid) = session.agent_pid {
-            if is_process_running(pid) {
-                orkestra_debug!("assistant", "Killing previous task agent (pid={})", pid);
-                let _ = kill_process_tree(pid);
-            }
-        }
-
-        // Spawn the task agent
-        let system_prompt = Self::build_task_system_prompt(&task);
-        let spawn_result = self.spawn_agent_in(&session, message, &worktree, &system_prompt);
+        // Spawn the agent
+        let system_prompt = build_prompt(&task);
+        let spawn_result = self.spawn_agent_in(
+            &session,
+            message,
+            &worktree,
+            &system_prompt,
+            disallowed_tools,
+        );
 
         self.handle_spawn_result(&mut session, spawn_result, &now)?;
 
@@ -255,8 +328,8 @@ impl AssistantService {
 
     /// Spawn the Claude Code agent process and return (pid, stdout, stderr).
     ///
-    /// Used by both `send_message` (project-level) and `send_task_message` (task-scoped).
-    /// The caller provides the working directory and system prompt appropriate for the context.
+    /// Used by `send_message` (project-level) and `send_task_scoped_message` (task-scoped).
+    /// The caller provides the working directory, system prompt, and disallowed tools string.
     #[allow(clippy::unused_self)]
     fn spawn_agent_in(
         &self,
@@ -264,16 +337,18 @@ impl AssistantService {
         message: &str,
         working_dir: &Path,
         system_prompt: &str,
+        disallowed_tools: &str,
     ) -> std::io::Result<(u32, std::process::ChildStdout, std::process::ChildStderr)> {
         let path_env = prepare_path_env();
         let is_resume = session.spawn_count > 0;
 
-        let mut child = spawn_claude_assistant_process(
+        let mut child = spawn_claude_process(
             working_dir,
             &path_env,
             session.claude_session_id.as_deref(),
             is_resume,
             system_prompt,
+            disallowed_tools,
         )?;
 
         let pid = child.id();
@@ -350,6 +425,14 @@ impl AssistantService {
             .replace("{task_description}", &task.description)
             .replace("{current_stage}", &task.state.to_string())
             .replace("{artifacts}", &artifacts_text)
+    }
+
+    /// Build the interactive-mode system prompt with task context interpolated.
+    fn build_interactive_system_prompt(task: &Task) -> String {
+        crate::prompts::INTERACTIVE_SYSTEM_PROMPT
+            .replace("{task_id}", &task.id)
+            .replace("{task_title}", &task.title)
+            .replace("{task_description}", &task.description)
     }
 
     /// Load the assistant system prompt template.
@@ -520,13 +603,18 @@ fn generate_and_set_title(
 // Claude assistant process spawning
 // ============================================================================
 
-/// Spawns a Claude process for the assistant (free-form chat, no JSON schema).
-fn spawn_claude_assistant_process(
+/// Spawns a Claude process for assistant or interactive sessions.
+///
+/// The caller passes `disallowed_tools` to control capability restrictions:
+/// - Assistant (read-only): use `ASSISTANT_DISALLOWED_TOOLS`
+/// - Interactive (edit-capable): use `INTERACTIVE_DISALLOWED_TOOLS`
+fn spawn_claude_process(
     working_dir: &std::path::Path,
     path_env: &str,
     session_id: Option<&str>,
     is_resume: bool,
     system_prompt: &str,
+    disallowed_tools: &str,
 ) -> std::io::Result<std::process::Child> {
     use std::process::{Command, Stdio};
 
@@ -546,13 +634,7 @@ fn spawn_claude_assistant_process(
     cmd.args(["--print", "--verbose"]);
     cmd.args(["--output-format", "stream-json"]);
     cmd.args(["--dangerously-skip-permissions"]);
-
-    // Restrict to read-only tools — the assistant investigates and creates
-    // Orkestra tasks but never modifies files directly
-    cmd.args([
-        "--disallowedTools",
-        "EnterPlanMode,ExitPlanMode,Edit,Write,NotebookEdit,AskUserQuestion",
-    ]);
+    cmd.args(["--disallowedTools", disallowed_tools]);
 
     if !is_resume {
         cmd.args(["--system-prompt", system_prompt]);
@@ -927,14 +1009,18 @@ mod tests {
 
         // First call — should create and return session-a
         let s1 = store
-            .get_or_create_assistant_session_for_task(task_id, &new_session)
+            .get_or_create_assistant_session_for_task(
+                task_id,
+                &SessionType::Assistant,
+                &new_session,
+            )
             .unwrap();
         assert_eq!(s1.id, "session-a");
 
         // Second call with a different candidate — should return the existing session-a
         let another = AssistantSession::new("session-b", &now).with_task(task_id);
         let s2 = store
-            .get_or_create_assistant_session_for_task(task_id, &another)
+            .get_or_create_assistant_session_for_task(task_id, &SessionType::Assistant, &another)
             .unwrap();
         assert_eq!(
             s2.id, "session-a",

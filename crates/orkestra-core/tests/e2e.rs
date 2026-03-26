@@ -19,6 +19,8 @@ mod cleanup;
 mod git_sync;
 #[path = "e2e/integration.rs"]
 mod integration;
+#[path = "e2e/interactive.rs"]
+mod interactive;
 #[path = "e2e/multi_project.rs"]
 mod multi_project;
 #[path = "e2e/play.rs"]

@@ -13,7 +13,9 @@ use orkestra_core::workflow::config::{
 use orkestra_core::workflow::domain::{LogEntry, Task};
 use orkestra_core::workflow::ports::WorkflowStore;
 use orkestra_core::workflow::runtime::{Outcome, TaskState};
-use orkestra_core::workflow::{Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi};
+use orkestra_core::workflow::{
+    Git2GitService, GitService, SqliteWorkflowStore, TaskCreationMode, WorkflowApi,
+};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -244,7 +246,13 @@ fn test_task_create_with_flow() {
 
     // Create task with valid flow
     let task = api
-        .create_task_with_options("Test task", "Description", None, false, Some("quick"))
+        .create_task_with_options(
+            "Test task",
+            "Description",
+            None,
+            TaskCreationMode::Normal,
+            Some("quick"),
+        )
         .expect("create task with flow");
 
     // Verify task has flow set and starts at flow's first stage
@@ -253,8 +261,13 @@ fn test_task_create_with_flow() {
     assert!(matches!(task.state, TaskState::AwaitingSetup { .. }));
 
     // Test invalid flow name
-    let result =
-        api.create_task_with_options("Test task", "Description", None, false, Some("nonexistent"));
+    let result = api.create_task_with_options(
+        "Test task",
+        "Description",
+        None,
+        TaskCreationMode::Normal,
+        Some("nonexistent"),
+    );
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("Unknown flow"));

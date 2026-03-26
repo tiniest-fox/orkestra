@@ -79,6 +79,11 @@ const METHOD_MAP: Record<string, string> = {
   git_pull: "workflow_git_pull",
   git_fetch: "workflow_git_fetch",
 
+  // -- Interactive mode --
+  interactive_enter: "interactive_enter",
+  interactive_send_message: "interactive_send_message",
+  interactive_exit: "interactive_exit",
+
   // -- Same-name commands (no prefix needed) --
   stage_chat_send: "stage_chat_send",
   stage_chat_stop: "stage_chat_stop",

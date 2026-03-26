@@ -3,12 +3,12 @@
 use orkestra_types::domain::{Task, TaskHeader};
 use orkestra_types::runtime::TaskState;
 
-/// Convert a full task row (18 columns) to a `Task`.
+/// Convert a full task row (19 columns) to a `Task`.
 ///
 /// Column order: id, title, description, state, artifacts,
 /// `parent_id`, `depends_on`, `branch_name`, `worktree_path`, `auto_mode`,
 /// `created_at`, `updated_at`, `completed_at`, `base_branch`, flow, `short_id`,
-/// `base_commit`, `pr_url`
+/// `base_commit`, `pr_url`, interactive
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let state_json: String = row.get(3)?;
     let artifacts_json: String = row.get(4)?;
@@ -16,6 +16,7 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let auto_mode: bool = row.get::<_, i32>(9).unwrap_or(0) != 0;
     let flow: Option<String> = row.get(14).unwrap_or(None);
     let pr_url: Option<String> = row.get(17).unwrap_or(None);
+    let created_interactive: bool = row.get::<_, i32>(18).unwrap_or(0) != 0;
 
     Ok(Task {
         id: row.get(0)?,
@@ -32,6 +33,7 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         base_commit: row.get(16)?,
         pr_url,
         auto_mode,
+        created_interactive,
         flow,
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
@@ -39,18 +41,19 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     })
 }
 
-/// Convert a header row (17 columns, no artifacts) to a `TaskHeader`.
+/// Convert a header row (18 columns, no artifacts) to a `TaskHeader`.
 ///
 /// Column order: id, title, description, state,
 /// `parent_id`, `depends_on`, `branch_name`, `worktree_path`,
 /// `auto_mode`, `created_at`, `updated_at`, `completed_at`,
-/// `base_branch`, flow, `short_id`, `base_commit`, `pr_url`
+/// `base_branch`, flow, `short_id`, `base_commit`, `pr_url`, interactive
 pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
     let state_json: String = row.get(3)?;
     let depends_json: String = row.get(5)?;
     let auto_mode: bool = row.get::<_, i32>(8).unwrap_or(0) != 0;
     let flow: Option<String> = row.get(13).unwrap_or(None);
     let pr_url: Option<String> = row.get(16).unwrap_or(None);
+    let created_interactive: bool = row.get::<_, i32>(17).unwrap_or(0) != 0;
 
     Ok(TaskHeader {
         id: row.get(0)?,
@@ -66,6 +69,7 @@ pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
         base_commit: row.get(15)?,
         pr_url,
         auto_mode,
+        created_interactive,
         flow,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,

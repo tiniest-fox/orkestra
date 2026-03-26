@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use orkestra_types::domain::{
-    AssistantSession, GateResult, Iteration, LogEntry, StageSession, Task, TaskHeader,
+    AssistantSession, GateResult, Iteration, LogEntry, SessionType, StageSession, Task, TaskHeader,
 };
 use rusqlite::Connection;
 
@@ -237,18 +237,25 @@ impl WorkflowStore for SqliteWorkflowStore {
     fn get_assistant_session_for_task(
         &self,
         task_id: &str,
+        session_type: &SessionType,
     ) -> WorkflowResult<Option<AssistantSession>> {
         let conn = self.lock_conn()?;
-        interactions::assistant::get_session_for_task::execute(&conn, task_id)
+        interactions::assistant::get_session_for_task::execute(&conn, task_id, session_type)
     }
 
     fn get_or_create_assistant_session_for_task(
         &self,
         task_id: &str,
+        session_type: &SessionType,
         new_session: &AssistantSession,
     ) -> WorkflowResult<AssistantSession> {
         let conn = self.lock_conn()?;
-        interactions::assistant::get_or_create_for_task::execute(&conn, task_id, new_session)
+        interactions::assistant::get_or_create_for_task::execute(
+            &conn,
+            task_id,
+            session_type,
+            new_session,
+        )
     }
 
     fn list_project_assistant_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {

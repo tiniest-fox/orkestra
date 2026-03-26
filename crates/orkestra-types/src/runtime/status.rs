@@ -62,6 +62,10 @@ pub enum TaskState {
     /// Agent was interrupted by the user. Awaiting resume.
     Interrupted { stage: String },
 
+    // -- Interactive --
+    /// User is directing work turn-by-turn in the task's worktree.
+    Interactive { stage: String },
+
     // -- Parent --
     /// Waiting for child tasks to complete before advancing.
     WaitingOnChildren { stage: String },
@@ -173,6 +177,12 @@ impl TaskState {
         }
     }
 
+    pub fn interactive(stage: impl Into<String>) -> Self {
+        Self::Interactive {
+            stage: stage.into(),
+        }
+    }
+
     pub fn waiting_on_children(stage: impl Into<String>) -> Self {
         Self::WaitingOnChildren {
             stage: stage.into(),
@@ -229,6 +239,7 @@ impl TaskState {
             | Self::AwaitingQuestionAnswer { stage }
             | Self::AwaitingRejectionConfirmation { stage }
             | Self::Interrupted { stage }
+            | Self::Interactive { stage }
             | Self::WaitingOnChildren { stage }
             | Self::Failed {
                 stage: Some(stage), ..
@@ -311,6 +322,11 @@ impl TaskState {
     pub fn can_transition(&self) -> bool {
         !self.is_terminal()
     }
+
+    /// Check if the task is in interactive mode.
+    pub fn is_interactive(&self) -> bool {
+        matches!(self, Self::Interactive { .. })
+    }
 }
 
 // ============================================================================
@@ -338,6 +354,7 @@ impl fmt::Display for TaskState {
                 write!(f, "awaiting_rejection_confirmation ({stage})")
             }
             Self::Interrupted { stage } => write!(f, "interrupted ({stage})"),
+            Self::Interactive { stage } => write!(f, "interactive ({stage})"),
             Self::WaitingOnChildren { stage } => write!(f, "waiting_on_children ({stage})"),
             Self::Done => write!(f, "done"),
             Self::Archived => write!(f, "archived"),

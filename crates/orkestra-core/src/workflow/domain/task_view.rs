@@ -53,6 +53,10 @@ pub struct DerivedTaskState {
     pub is_chatting: bool,
     /// Whether a chat agent is currently responding (`chat_active` + agent running).
     pub chat_agent_active: bool,
+    /// Whether the task is in interactive (user-directed) mode.
+    pub is_interactive: bool,
+    /// Whether the task can be bypassed (skip/send-to-stage/restart/enter-interactive).
+    pub can_bypass: bool,
 }
 
 /// A pending rejection from a reviewer agent awaiting human confirmation.
@@ -155,6 +159,8 @@ impl DerivedTaskState {
             subtask_progress,
             is_chatting,
             chat_agent_active,
+            is_interactive: task.state.is_interactive(),
+            can_bypass: task.can_bypass(),
         }
     }
 }
@@ -286,6 +292,7 @@ fn compute_phase_icon(task: &Task) -> Option<String> {
         | TaskState::AwaitingQuestionAnswer { .. }
         | TaskState::AwaitingRejectionConfirmation { .. }
         | TaskState::Interrupted { .. }
+        | TaskState::Interactive { .. }
         | TaskState::WaitingOnChildren { .. }
         | TaskState::Done
         | TaskState::Archived

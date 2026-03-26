@@ -179,6 +179,7 @@ export type TaskState =
   | { type: "awaiting_rejection_confirmation"; stage: string }
   | { type: "interrupted"; stage: string }
   | { type: "waiting_on_children"; stage: string }
+  | { type: "interactive"; stage: string }
   | { type: "done" }
   | { type: "archived" }
   | { type: "failed"; error?: string }
@@ -304,6 +305,7 @@ export type IterationTrigger =
   | { type: "retry_failed"; instructions?: string }
   | { type: "retry_blocked"; instructions?: string }
   | { type: "manual_resume"; message?: string }
+  | { type: "return_from_interactive" }
   | {
       type: "pr_feedback";
       comments: PrCommentData[];
@@ -495,6 +497,10 @@ export interface DerivedTaskState {
   subtask_progress: SubtaskProgress | null;
   is_chatting: boolean;
   chat_agent_active: boolean;
+  /** Whether the task is in interactive (user-directed) mode. */
+  is_interactive: boolean;
+  /** Whether the task can be bypassed (skip/send-to-stage/restart/enter-interactive). */
+  can_bypass: boolean;
 }
 
 /**
@@ -782,6 +788,8 @@ export interface AssistantSession {
   spawn_count: number;
   /** Session state (spawning, active, completed, abandoned). */
   session_state: string;
+  /** Session type: "assistant" for read-only chat, "interactive" for edit-capable sessions. */
+  session_type: "assistant" | "interactive";
   /** Task ID for task-scoped sessions. Undefined for project-level sessions. */
   task_id?: string;
   /** When the session was created. */

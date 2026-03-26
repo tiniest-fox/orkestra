@@ -12,3 +12,9 @@ pub const ASSISTANT_SYSTEM_PROMPT: &str = include_str!("templates/assistant/syst
 /// Placeholders: `{task_id}`, `{task_title}`, `{task_description}`, `{current_stage}`, `{artifacts}`.
 pub const TASK_ASSISTANT_SYSTEM_PROMPT: &str =
     include_str!("templates/assistant/task_system_prompt.md");
+
+/// System prompt template for the interactive (vibe-mode) session.
+///
+/// Placeholders: `{task_id}`, `{task_title}`, `{task_description}`.
+pub const INTERACTIVE_SYSTEM_PROMPT: &str =
+    include_str!("templates/assistant/interactive_system_prompt.md");

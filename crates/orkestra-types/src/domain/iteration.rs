@@ -120,6 +120,10 @@ pub enum IterationTrigger {
         /// Human-provided context explaining the restart.
         message: String,
     },
+    /// Task exited interactive mode and is returning to structured work.
+    /// Old DB records with `interactive` type deserialize as this variant.
+    #[serde(alias = "interactive")]
+    ReturnFromInteractive,
 }
 
 /// A single iteration (attempt) within a stage.

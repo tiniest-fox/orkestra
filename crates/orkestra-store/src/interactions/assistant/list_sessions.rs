@@ -9,7 +9,7 @@ pub fn execute(conn: &Connection) -> WorkflowResult<Vec<AssistantSession>> {
     let mut stmt = conn
         .prepare(
             "SELECT id, claude_session_id, title, agent_pid, spawn_count,
-                    session_state, created_at, updated_at, task_id
+                    session_state, created_at, updated_at, task_id, session_type
              FROM assistant_sessions ORDER BY created_at DESC",
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;

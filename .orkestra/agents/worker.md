@@ -335,7 +335,19 @@ Before outputting a completion summary, explicitly verify each file or change th
 
 **Anti-pattern to avoid:** Finding that the primary file is already changed, then concluding the task is complete without checking every other file the breakdown mentions. This is the most common cause of repeated rejection cycles — the reviewer catches the missed file every time.
 
-<!-- compound: outwardly-expectant-spitz -->
+<!-- compound: gallantly-open-sparrowhawk -->
+## Keep Frontend TypeScript Unions in Sync with Rust Enum Variants
+
+When you add new variants to Rust enums that are serialized and sent to the frontend (`TaskState`, `IterationTrigger`, `Phase`, etc.), you **must** also add the corresponding TypeScript discriminated union members in `src/types/workflow.ts`. Serde serializes Rust enum variants as `{ "type": "variant_name", ... }` — if the TypeScript union doesn't include the new member, the frontend silently treats the state as `unknown` or breaks type narrowing.
+
+Checklist before submitting any Rust enum variant addition:
+1. Search `src/types/workflow.ts` for the TypeScript type that mirrors the Rust enum
+2. Add the new member using the same `{ type: "variant_name"; field: type }` pattern as existing members
+3. Verify any `switch` statements or type guards in the frontend still handle all cases
+
+This is a MEDIUM-severity finding reviewers always catch. Missing frontend type updates don't cause compile errors — they only surface at runtime or in type-checking.
+
+<!-- compound: gallantly-open-sparrowhawk -->
 ## Trace All Downstream Requirements When Enabling a New State
 
 When a task says "enable operation X from state Y (it's just a gating change)", trace the full execution path of X — not just the gate. Even when the gate change is one line, the operation itself may read fields from the task object (e.g., `task.current_stage()`, `task.branch_name()`) that are `Option<T>` and return `None` for the new state.

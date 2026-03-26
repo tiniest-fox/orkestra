@@ -138,11 +138,17 @@ fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Res
         Ok(Some(mut task)) => match result {
             Ok(()) => {
                 let stage = task.current_stage().unwrap_or("unknown").to_string();
-                task.state = TaskState::queued(stage);
+                // Interactive tasks skip the pipeline queue and enter interactive mode directly.
+                task.state = if task.created_interactive {
+                    TaskState::interactive(&stage)
+                } else {
+                    TaskState::queued(stage)
+                };
                 crate::orkestra_debug!(
                     "task",
-                    "{} setup complete: state=Queued, worktree={:?}, branch={:?}",
+                    "{} setup complete: state={}, worktree={:?}, branch={:?}",
                     task_id,
+                    task.state,
                     task.worktree_path,
                     task.branch_name
                 );

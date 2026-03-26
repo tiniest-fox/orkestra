@@ -18,8 +18,8 @@ use orkestra_core::{
         domain::{IterationTrigger, LogEntry, PrCheckData},
         load_workflow_for_project,
         runtime::Outcome,
-        Git2GitService, GitService, Iteration, SqliteWorkflowStore, StageSession, Task, TaskState,
-        TaskView, WorkflowApi,
+        Git2GitService, GitService, Iteration, SqliteWorkflowStore, StageSession, Task,
+        TaskCreationMode, TaskState, TaskView, WorkflowApi,
     },
 };
 use orkestra_networking::generate_pairing_code;
@@ -453,7 +453,13 @@ fn handle_create_task(
     flow: Option<&str>,
     pretty: bool,
 ) {
-    let task = match api.create_task_with_options(title, description, base_branch, false, flow) {
+    let task = match api.create_task_with_options(
+        title,
+        description,
+        base_branch,
+        TaskCreationMode::Normal,
+        flow,
+    ) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error creating task: {e}");
@@ -1252,6 +1258,7 @@ fn format_state(state: &TaskState) -> String {
             format!("AwaitingRejection({stage})")
         }
         TaskState::Interrupted { stage } => format!("Interrupted({stage})"),
+        TaskState::Interactive { stage } => format!("Interactive({stage})"),
         TaskState::WaitingOnChildren { stage } => format!("WaitingOnChildren({stage})"),
         TaskState::Done => "Done".to_string(),
         TaskState::Archived => "Archived".to_string(),
@@ -1377,6 +1384,7 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
         }
         IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
         IterationTrigger::Restart { message } => format!("restart stage\n    \"{message}\""),
+        IterationTrigger::ReturnFromInteractive => "interactive session completed".to_string(),
     }
 }
 

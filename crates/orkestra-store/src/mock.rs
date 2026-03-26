@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use orkestra_types::domain::{
-    AssistantSession, GateResult, Iteration, LogEntry, SessionState, StageSession, Task,
+    AssistantSession, GateResult, Iteration, LogEntry, SessionState, SessionType, StageSession,
+    Task,
 };
 
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -428,6 +429,7 @@ impl WorkflowStore for InMemoryWorkflowStore {
     fn get_assistant_session_for_task(
         &self,
         task_id: &str,
+        session_type: &SessionType,
     ) -> WorkflowResult<Option<AssistantSession>> {
         let sessions = self
             .assistant_sessions
@@ -435,13 +437,14 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .map_err(|_| WorkflowError::Lock)?;
         Ok(sessions
             .iter()
-            .find(|s| s.task_id.as_deref() == Some(task_id))
+            .find(|s| s.task_id.as_deref() == Some(task_id) && &s.session_type == session_type)
             .cloned())
     }
 
     fn get_or_create_assistant_session_for_task(
         &self,
         task_id: &str,
+        session_type: &SessionType,
         new_session: &AssistantSession,
     ) -> WorkflowResult<AssistantSession> {
         // Hold the lock for the entire check-and-insert to make this atomic.
@@ -451,7 +454,7 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .map_err(|_| WorkflowError::Lock)?;
         if let Some(existing) = sessions
             .iter()
-            .find(|s| s.task_id.as_deref() == Some(task_id))
+            .find(|s| s.task_id.as_deref() == Some(task_id) && &s.session_type == session_type)
         {
             return Ok(existing.clone());
         }

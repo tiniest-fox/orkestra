@@ -395,6 +395,11 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
         Some(IterationTrigger::Restart { .. }) => {
             unreachable!("restart supersedes the session")
         }
+        Some(IterationTrigger::ReturnFromInteractive) => {
+            unreachable!(
+                "ReturnFromInteractive triggers always supersede the session; is_resume cannot be true here"
+            )
+        }
     }
 }
 

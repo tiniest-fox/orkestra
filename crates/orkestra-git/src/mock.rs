@@ -34,6 +34,7 @@ pub struct MockGitService {
     pull_branch_in_calls: Mutex<Vec<PathBuf>>,
     pull_branch_in_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
     has_pending_changes: Mutex<bool>,
+    commit_pending_changes_calls: Mutex<Vec<(PathBuf, String)>>,
 }
 
 impl MockGitService {
@@ -61,6 +62,7 @@ impl MockGitService {
             pull_branch_in_calls: Mutex::new(Vec::new()),
             pull_branch_in_results: Mutex::new(std::collections::VecDeque::new()),
             has_pending_changes: Mutex::new(false),
+            commit_pending_changes_calls: Mutex::new(Vec::new()),
         }
     }
 
@@ -171,6 +173,11 @@ impl MockGitService {
     pub fn get_pull_branch_in_calls(&self) -> Vec<PathBuf> {
         self.pull_branch_in_calls.lock().unwrap().clone()
     }
+
+    /// Get the list of `commit_pending_changes` calls for verification.
+    pub fn get_commit_pending_changes_calls(&self) -> Vec<(PathBuf, String)> {
+        self.commit_pending_changes_calls.lock().unwrap().clone()
+    }
 }
 
 impl Default for MockGitService {
@@ -280,11 +287,11 @@ impl GitService for MockGitService {
         Ok(*self.has_pending_changes.lock().unwrap())
     }
 
-    fn commit_pending_changes(
-        &self,
-        _worktree_path: &Path,
-        _message: &str,
-    ) -> Result<(), GitError> {
+    fn commit_pending_changes(&self, worktree_path: &Path, message: &str) -> Result<(), GitError> {
+        self.commit_pending_changes_calls
+            .lock()
+            .unwrap()
+            .push((worktree_path.to_path_buf(), message.to_string()));
         Ok(())
     }
 

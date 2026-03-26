@@ -1,7 +1,7 @@
 //! Task CRUD commands.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{Task, TaskView};
+use orkestra_core::workflow::{Task, TaskCreationMode, TaskView};
 use tauri::{State, Window};
 
 /// Get all tasks from the workflow (rich view with iterations, sessions, derived state).
@@ -20,6 +20,7 @@ pub fn workflow_get_tasks(
 /// If git service is configured, creates a worktree and branch.
 /// `base_branch` specifies which branch to create from (defaults to current).
 /// `auto_mode` enables autonomous execution through all stages.
+/// `interactive` starts the task in interactive mode (user-directed agent session).
 /// `flow` selects an alternate workflow flow (e.g., `"quick_fix"`). Omit for default full pipeline.
 #[tauri::command]
 pub fn workflow_create_task(
@@ -29,19 +30,36 @@ pub fn workflow_create_task(
     description: String,
     base_branch: Option<String>,
     auto_mode: Option<bool>,
+    interactive: Option<bool>,
     flow: Option<String>,
 ) -> Result<Task, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .create_task_with_options(
-                &title,
-                &description,
-                base_branch.as_deref(),
-                auto_mode.unwrap_or(false),
-                flow.as_deref(),
-            )
-            .map_err(Into::into)
+        if interactive.unwrap_or(false) {
+            state
+                .api()?
+                .create_interactive_task(
+                    &title,
+                    &description,
+                    base_branch.as_deref(),
+                    flow.as_deref(),
+                )
+                .map_err(Into::into)
+        } else {
+            state
+                .api()?
+                .create_task_with_options(
+                    &title,
+                    &description,
+                    base_branch.as_deref(),
+                    if auto_mode.unwrap_or(false) {
+                        TaskCreationMode::AutoMode
+                    } else {
+                        TaskCreationMode::Normal
+                    },
+                    flow.as_deref(),
+                )
+                .map_err(Into::into)
+        }
     })
 }
 

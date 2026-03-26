@@ -1,6 +1,6 @@
 //! Atomically get-or-create the assistant session for a task.
 
-use orkestra_types::domain::AssistantSession;
+use orkestra_types::domain::{AssistantSession, SessionType};
 use rusqlite::{params, Connection};
 
 use crate::interface::{WorkflowError, WorkflowResult};
@@ -10,16 +10,18 @@ use crate::types::session_state_to_str;
 pub fn execute(
     conn: &Connection,
     task_id: &str,
+    session_type: &SessionType,
     new_session: &AssistantSession,
 ) -> WorkflowResult<AssistantSession> {
     let state_str = session_state_to_str(new_session.session_state);
+    let session_type_str = session_type.to_string();
 
-    // INSERT OR IGNORE: if a session for this task already exists, this is a no-op.
+    // INSERT OR IGNORE: if a session for this (task_id, session_type) already exists, this is a no-op.
     conn.execute(
         "INSERT OR IGNORE INTO assistant_sessions (
             id, claude_session_id, title, agent_pid, spawn_count,
-            session_state, created_at, updated_at, task_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            session_state, created_at, updated_at, task_id, session_type
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             new_session.id,
             new_session.claude_session_id,
@@ -30,11 +32,12 @@ pub fn execute(
             new_session.created_at,
             new_session.updated_at,
             new_session.task_id,
+            session_type_str,
         ],
     )
     .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
     // Query the row that now exists — guaranteed to be there after the INSERT OR IGNORE.
-    super::get_session_for_task::execute(conn, task_id)?
+    super::get_session_for_task::execute(conn, task_id, session_type)?
         .ok_or_else(|| WorkflowError::Storage("Failed to get-or-create session".into()))
 }

@@ -1,7 +1,7 @@
 //! Task CRUD operations.
 
 use crate::workflow::api::WorkflowApi;
-use crate::workflow::domain::Task;
+use crate::workflow::domain::{Task, TaskCreationMode};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 
 use super::interactions as task_interactions;
@@ -14,16 +14,22 @@ impl WorkflowApi {
         description: &str,
         base_branch: Option<&str>,
     ) -> WorkflowResult<Task> {
-        self.create_task_with_options(title, description, base_branch, false, None)
+        self.create_task_with_options(
+            title,
+            description,
+            base_branch,
+            TaskCreationMode::Normal,
+            None,
+        )
     }
 
-    /// Create a new task with options (`auto_mode`, flow).
+    /// Create a new task with options (`mode`, flow).
     pub fn create_task_with_options(
         &self,
         title: &str,
         description: &str,
         base_branch: Option<&str>,
-        auto_mode: bool,
+        mode: TaskCreationMode,
         flow: Option<&str>,
     ) -> WorkflowResult<Task> {
         task_interactions::create::execute(
@@ -34,7 +40,31 @@ impl WorkflowApi {
             title,
             description,
             base_branch,
-            auto_mode,
+            mode,
+            flow,
+        )
+    }
+
+    /// Create a new task in interactive mode.
+    ///
+    /// The task is created with `created_interactive: true` flag. After worktree setup completes,
+    /// the task transitions to `Interactive` state instead of `Queued`.
+    pub fn create_interactive_task(
+        &self,
+        title: &str,
+        description: &str,
+        base_branch: Option<&str>,
+        flow: Option<&str>,
+    ) -> WorkflowResult<Task> {
+        task_interactions::create::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            self.git_service.as_deref(),
+            &self.iteration_service,
+            title,
+            description,
+            base_branch,
+            TaskCreationMode::Interactive,
             flow,
         )
     }

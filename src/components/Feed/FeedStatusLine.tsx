@@ -17,7 +17,8 @@ interface FeedStatusLineProps {
     | "ship"
     | "git-history"
     | "new-task"
-    | "assistant";
+    | "assistant"
+    | "interactive";
   onToggleHistory?: () => void;
 }
 
@@ -212,6 +213,11 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
                 <span>close</span>
               </span>
             ) : drawerMode === "ship" ? (
+              <span className="flex items-center gap-1.5">
+                <Kbd>esc</Kbd>
+                <span>close</span>
+              </span>
+            ) : drawerMode === "interactive" ? (
               <span className="flex items-center gap-1.5">
                 <Kbd>esc</Kbd>
                 <span>close</span>

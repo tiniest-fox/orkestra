@@ -23,6 +23,7 @@ use orkestra_core::workflow::{
     config::{StageConfig, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
     runtime::{Outcome, TaskState},
+    TaskCreationMode,
 };
 
 use crate::helpers::{enable_auto_merge, MockAgentOutput, TestEnv};
@@ -925,7 +926,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             "Test flow override",
             "Test description",
             None,
-            false,
+            TaskCreationMode::Normal,
             Some("quick"),
         )
         .unwrap();
@@ -4661,7 +4662,13 @@ fn test_disallowed_tools_flow_override() {
     // Create task with "hotfix" flow
     let task = ctx
         .api()
-        .create_task_with_options("Hotfix task", "Fix it", None, false, Some("hotfix"))
+        .create_task_with_options(
+            "Hotfix task",
+            "Fix it",
+            None,
+            TaskCreationMode::Normal,
+            Some("hotfix"),
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -7374,7 +7381,7 @@ fn test_flow_gate_override_disables_gate() {
             "Flow no-gate test",
             "Test flow disables gate",
             None,
-            false,
+            TaskCreationMode::Normal,
             Some("no-gate"),
         )
         .unwrap();
@@ -8140,7 +8147,13 @@ fn test_send_to_stage_respects_flow() {
     // Create task with "quick" flow (no review stage)
     let task = ctx
         .api()
-        .create_task_with_options("Test flow", "Description", None, false, Some("quick"))
+        .create_task_with_options(
+            "Test flow",
+            "Description",
+            None,
+            TaskCreationMode::Normal,
+            Some("quick"),
+        )
         .unwrap();
     let task_id = task.id.clone();
     ctx.advance(); // complete sync setup

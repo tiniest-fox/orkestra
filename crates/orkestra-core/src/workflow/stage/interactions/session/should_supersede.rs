@@ -13,6 +13,8 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 /// - `Integration`: merge conflict recovery returned the task here.
 /// - `PrFeedback`: PR comments, failing checks, or guidance submitted for a Done task
 ///   — the old session context is stale (task was Done/integrated), so start fresh.
+/// - `ReturnFromInteractive`: task exited interactive mode and is returning to structured work
+///   — the interactive session is separate; structured work starts fresh.
 /// - Untriggered re-entry: no trigger AND the active iteration has not been
 ///   linked to a session yet, meaning this is a clean re-entry (not a
 ///   crash-recovery or `ManualResume`).
@@ -39,6 +41,7 @@ pub fn execute(
                 | IterationTrigger::PrFeedback { .. }
                 | IterationTrigger::Redirect { .. }
                 | IterationTrigger::Restart { .. }
+                | IterationTrigger::ReturnFromInteractive
         )
     ) {
         return Ok(true);

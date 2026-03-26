@@ -11,7 +11,7 @@ pub fn execute(conn: &Connection) -> WorkflowResult<Vec<Task>> {
             "SELECT id, title, description, state, artifacts,
                     parent_id, depends_on, branch_name, worktree_path,
                     auto_mode, created_at, updated_at, completed_at,
-                    base_branch, flow, short_id, base_commit, pr_url
+                    base_branch, flow, short_id, base_commit, pr_url, interactive
              FROM workflow_tasks ORDER BY created_at",
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;

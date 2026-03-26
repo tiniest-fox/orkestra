@@ -192,6 +192,41 @@ impl WorkflowApi {
             message,
         )
     }
+
+    /// Enter interactive mode for a task.
+    ///
+    /// Transitions the task from a bypass-able state to `Interactive`, pausing
+    /// the normal pipeline so the user can direct work turn-by-turn.
+    pub fn enter_interactive_mode(&self, task_id: &str) -> WorkflowResult<Task> {
+        human::enter_interactive::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
+            task_id,
+        )
+    }
+
+    /// Exit interactive mode for a task.
+    ///
+    /// Kills any running interactive agent, commits pending changes, marks the
+    /// interactive session complete, creates a new iteration with
+    /// `ReturnFromInteractive` trigger, then transitions the task:
+    /// - `target_stage: Some(s)` → queued at that stage
+    /// - `target_stage: None` → marked as Done with `completed_at` set
+    pub fn exit_interactive_mode(
+        &self,
+        task_id: &str,
+        target_stage: Option<&str>,
+    ) -> WorkflowResult<Task> {
+        human::exit_interactive::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
+            self.git_service.as_deref(),
+            task_id,
+            target_stage,
+        )
+    }
 }
 
 #[cfg(test)]

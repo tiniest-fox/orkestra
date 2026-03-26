@@ -4,7 +4,7 @@
 //! to work with `SQLite`, in-memory stores for testing, or other backends.
 
 use orkestra_types::domain::{
-    AssistantSession, GateResult, Iteration, LogEntry, StageSession, Task, TaskHeader,
+    AssistantSession, GateResult, Iteration, LogEntry, SessionType, StageSession, Task, TaskHeader,
 };
 
 // ============================================================================
@@ -206,32 +206,34 @@ pub trait WorkflowStore: Send + Sync {
     /// Delete an assistant session by ID.
     fn delete_assistant_session(&self, id: &str) -> WorkflowResult<()>;
 
-    /// Get the assistant session for a specific task (one session per task).
+    /// Get the assistant session for a specific task and session type.
     ///
     /// Default implementation scans `list_assistant_sessions()`. The `SQLite` store
     /// overrides this with a direct indexed query.
     fn get_assistant_session_for_task(
         &self,
         task_id: &str,
+        session_type: &SessionType,
     ) -> WorkflowResult<Option<AssistantSession>> {
         let sessions = self.list_assistant_sessions()?;
         Ok(sessions
             .into_iter()
-            .find(|s| s.task_id.as_deref() == Some(task_id)))
+            .find(|s| s.task_id.as_deref() == Some(task_id) && &s.session_type == session_type))
     }
 
-    /// Get or atomically create the assistant session for a task.
+    /// Get or atomically create the assistant session for a task and session type.
     ///
-    /// Returns the existing session if one already exists for this `task_id`, otherwise
-    /// saves `new_session` and returns it. Default implementation uses a read-then-write
+    /// Returns the existing session if one already exists for this `(task_id, session_type)` pair,
+    /// otherwise saves `new_session` and returns it. Default implementation uses a read-then-write
     /// sequence (not atomic). The `SQLite` store overrides with `INSERT OR IGNORE` for
     /// true atomicity.
     fn get_or_create_assistant_session_for_task(
         &self,
         task_id: &str,
+        session_type: &SessionType,
         new_session: &AssistantSession,
     ) -> WorkflowResult<AssistantSession> {
-        if let Some(existing) = self.get_assistant_session_for_task(task_id)? {
+        if let Some(existing) = self.get_assistant_session_for_task(task_id, session_type)? {
             return Ok(existing);
         }
         self.save_assistant_session(new_session)?;

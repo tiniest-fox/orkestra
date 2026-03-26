@@ -3,10 +3,45 @@
 //! An `AssistantSession` tracks a Claude Code session for the assistant chat panel.
 //! Sessions can be project-level (`task_id` = None) or task-scoped (`task_id` = Some).
 
+use std::fmt;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 
 /// Reuse `SessionState` from `stage_session`.
 pub use super::stage_session::SessionState;
+
+/// Distinguishes assistant (read-only chat) from interactive (edit-capable) sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionType {
+    /// Read-only assistant chat session.
+    #[default]
+    Assistant,
+    /// Interactive session where the user directs file editing work.
+    Interactive,
+}
+
+impl fmt::Display for SessionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Assistant => write!(f, "assistant"),
+            Self::Interactive => write!(f, "interactive"),
+        }
+    }
+}
+
+impl FromStr for SessionType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "assistant" => Ok(Self::Assistant),
+            "interactive" => Ok(Self::Interactive),
+            other => Err(format!("Unknown session type: {other}")),
+        }
+    }
+}
 
 /// An assistant session for project-level or task-scoped chat.
 ///
@@ -50,6 +85,10 @@ pub struct AssistantSession {
     /// Task this session is scoped to, or `None` for project-level sessions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
+
+    /// Whether this is an assistant (read-only) or interactive (edit-capable) session.
+    #[serde(default)]
+    pub session_type: SessionType,
 }
 
 impl AssistantSession {
@@ -70,7 +109,15 @@ impl AssistantSession {
             created_at: created.clone(),
             updated_at: created,
             task_id: None,
+            session_type: SessionType::Assistant,
         }
+    }
+
+    /// Mark this session as interactive type.
+    #[must_use]
+    pub fn with_interactive_type(mut self) -> Self {
+        self.session_type = SessionType::Interactive;
+        self
     }
 
     /// Scope this session to a specific task.

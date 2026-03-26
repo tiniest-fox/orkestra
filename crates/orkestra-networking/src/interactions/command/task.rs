@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use orkestra_core::workflow::TaskCreationMode;
 use serde_json::Value;
 
 use crate::types::ErrorPayload;
@@ -83,7 +84,11 @@ pub(super) async fn handle_create_task(
                 &title,
                 &description,
                 base_branch.as_deref(),
-                auto_mode,
+                if auto_mode {
+                    TaskCreationMode::AutoMode
+                } else {
+                    TaskCreationMode::Normal
+                },
                 flow.as_deref(),
             )
             .map_err(ErrorPayload::from)?;

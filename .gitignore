@@ -65,3 +65,6 @@ plans/
 
 # Locks
 .orkestra/target.lock.d
+
+# Local ops notes
+LOCAL.md

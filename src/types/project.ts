@@ -43,13 +43,3 @@ export interface ProjectInfo {
   /** Whether a run script exists for launching the project. */
   has_run_script: boolean;
 }
-
-/**
- * Response from opening a project.
- */
-export interface OpenProjectResponse {
-  /** Window label for the opened project. */
-  window_label: string;
-  /** Project root path. */
-  project_root: string;
-}

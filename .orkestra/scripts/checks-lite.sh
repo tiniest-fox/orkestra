@@ -248,7 +248,7 @@ CHANGED_CRATES=()
 
 while IFS= read -r file; do
     case "$file" in
-        src/*|package.json|pnpm-lock.yaml|biome.json|tsconfig*.json|vite.config.ts|vitest.config.ts|tailwind.config.js|postcss.config.js|index.html)
+        src/*|package.json|pnpm-lock.yaml|biome.json|tsconfig*.json|vite.config.ts|vitest.config.ts|tailwind.config.js|postcss.config.js|index.html|knip.json)
             HAS_FRONTEND=true
             ;;
         crates/*/Cargo.toml|crates/*/build.rs|crates/*/*/*)

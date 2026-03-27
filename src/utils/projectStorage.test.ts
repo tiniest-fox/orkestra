@@ -10,7 +10,6 @@ import {
   getCurrentProjectId,
   getProjectIdFromUrl,
   loadActiveProject,
-  loadCurrentProject,
   loadProjects,
   migrateFromLegacy,
   saveProjects,
@@ -87,29 +86,6 @@ describe("getCurrentProjectId / setCurrentProjectId", () => {
     setCurrentProjectId(null);
     expect(getCurrentProjectId()).toBeNull();
     expect(localStorage.getItem(STORAGE_CURRENT_PROJECT_ID)).toBeNull();
-  });
-});
-
-describe("loadCurrentProject", () => {
-  beforeEach(() => localStorage.clear());
-  afterEach(() => localStorage.clear());
-
-  it("returns null when no current project ID is set", () => {
-    saveProjects([makeProject()]);
-    expect(loadCurrentProject()).toBeNull();
-  });
-
-  it("returns null when the current ID does not match any project", () => {
-    saveProjects([makeProject()]);
-    setCurrentProjectId("non-existent-id");
-    expect(loadCurrentProject()).toBeNull();
-  });
-
-  it("returns the matching project", () => {
-    const p = makeProject();
-    saveProjects([p]);
-    setCurrentProjectId(p.id);
-    expect(loadCurrentProject()).toEqual(p);
   });
 });
 

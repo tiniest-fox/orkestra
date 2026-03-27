@@ -17,7 +17,6 @@ use orkestra_core::workflow::{
     execution::SubtaskOutput,
     merge_task_sync,
     runtime::TaskState,
-    TaskCreationMode,
 };
 
 use crate::helpers::{disable_auto_merge, enable_auto_merge, workflows, MockAgentOutput, TestEnv};

@@ -382,7 +382,7 @@ mod tests {
         let (prompt, schema) = load_task_definition("generate_pr_description").unwrap();
         assert!(prompt.contains("{{title}}"));
         assert!(prompt.contains("{{description}}"));
-        assert!(prompt.contains("{{plan}}"));
+        assert!(prompt.contains("{{#each artifacts}}"));
         assert!(prompt.contains("{{diff_summary}}"));
         assert!(prompt.contains("{{base_branch}}"));
         assert!(schema.contains("\"title\""));

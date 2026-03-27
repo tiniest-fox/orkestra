@@ -8,6 +8,7 @@ import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { useTasks } from "../../providers/TasksProvider";
 import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
+import { confirmAction } from "../../utils/confirmAction";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { EmptyState } from "../ui/EmptyState";
 import { ModalPanel } from "../ui/ModalPanel";
@@ -332,8 +333,8 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
               onOpenPr={(taskId) => {
                 transport.call("open_pr", { task_id: taskId }).catch(console.error);
               }}
-              onArchive={(taskId) => {
-                if (!window.confirm("Archive this task?")) return;
+              onArchive={async (taskId) => {
+                if (!(await confirmAction("Archive this task?"))) return;
                 applyOptimistic(taskId, { type: "archive" });
                 transport.call("archive", { task_id: taskId }).catch(console.error);
               }}

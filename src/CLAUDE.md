@@ -436,6 +436,25 @@ Use `<Link to="...">` from `react-router-dom` for all internal SPA navigation wi
 
 `<a href="/">` for an internal route forces a full page reload (bypassing React Router's history), which breaks SPA behavior. "Keeping a component decoupled from react-router-dom" is not a valid reason to use `<a>` when the component renders inside a BrowserRouter — import `Link` instead.
 
+## Tauri-Specific Data Access
+
+<!-- compound: factually-persuasive-kinkajou -->
+
+**`ProjectsProvider.currentProject` is always null in Tauri mode.** `ProjectsProvider` populates `currentProject` from localStorage, which is only written during the PWA pairing flow. TauriTransport bypasses that flow entirely — so any code that reads `currentProject` will always see null when running as the desktop app.
+
+When you need project info in Tauri mode (e.g., the project root path, folder name), call the backend directly:
+
+```ts
+import { useTransport } from "../transport/TransportProvider";
+
+const transport = useTransport();
+transport.call("get_project_info").then((info) => {
+  const folderName = info.project_root.split("/").pop() || info.project_root;
+});
+```
+
+This applies to any code gated on `IS_TAURI` that needs project context. The `get_project_info` command is always available in Tauri mode regardless of pairing state.
+
 ## Types
 
 - Use `import type` for type-only imports.

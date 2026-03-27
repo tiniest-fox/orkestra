@@ -6,7 +6,8 @@
 // After the first successful connection, the provider tree stays mounted
 // during reconnects — a ReconnectingBanner overlay shows instead.
 
-import { useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useState } from "react";
 import { ConnectionPage } from "./components/ConnectionPage/ConnectionPage";
 import { FeedLoadingSkeleton } from "./components/Feed/FeedLoadingSkeleton";
 import { Orkestra } from "./components/Orkestra";
@@ -21,6 +22,9 @@ import {
   WorkflowConfigProvider,
 } from "./providers";
 import { TransportProvider, useConnectionState, useHasConnected, useTransport } from "./transport";
+import type { ProjectInfo } from "./types/project";
+
+const IS_TAURI = Boolean(import.meta.env.TAURI_ENV_PLATFORM);
 
 // ============================================================================
 // Root
@@ -63,23 +67,35 @@ function AppContent() {
   const hasConnected = useHasConnected();
   const { currentProject, addingProject, cancelAddProject, removeProject } = useProjects();
 
+  const [tauriProjectName, setTauriProjectName] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!IS_TAURI) return;
+    transport
+      .call<ProjectInfo>("get_project_info")
+      .then((info) => {
+        const name = info.project_root.split("/").pop() || info.project_root;
+        setTauriProjectName(name);
+      })
+      .catch(() => {});
+  }, [transport]);
+
   // All hooks must run unconditionally before any early returns.
   useEffect(() => {
-    if (!currentProject) {
-      document.title = "Orkestra";
-      return;
+    let title: string;
+    const projectName = IS_TAURI ? tauriProjectName : currentProject?.projectName;
+    if (!projectName) {
+      title = "Orkestra";
+    } else {
+      title = `Orkestra · ${projectName}`;
     }
-    if (currentProject.projectName) {
-      document.title = `Orkestra | ${currentProject.projectName}`;
-      return;
+    document.title = title;
+    if (IS_TAURI) {
+      getCurrentWindow()
+        .setTitle(title)
+        .catch(() => {});
     }
-    try {
-      const host = new URL(currentProject.url).host;
-      document.title = `Orkestra | ${host}`;
-    } catch {
-      document.title = "Orkestra";
-    }
-  }, [currentProject]);
+  }, [currentProject, tauriProjectName]);
 
   // PWA path: gate access behind pairing and WebSocket connection.
   if (transport.requiresAuthentication) {
@@ -127,7 +143,7 @@ function AppContent() {
         <PrStatusProvider>
           <GitHistoryProvider>
             <ReconnectingBanner />
-            <Orkestra />
+            <Orkestra serviceProjectName={IS_TAURI ? tauriProjectName : undefined} />
           </GitHistoryProvider>
         </PrStatusProvider>
       </TasksProvider>

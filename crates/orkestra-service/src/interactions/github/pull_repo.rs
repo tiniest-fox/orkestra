@@ -2,12 +2,12 @@
 
 use std::path::Path;
 
-/// Attempt a fast-forward pull of the default remote branch.
+/// Attempt a rebase pull of the default remote branch.
 ///
-/// Uses `git pull --ff-only` so local commits or uncommitted changes never
-/// cause data loss — the pull is simply skipped and a warning is logged.
-/// Returns `true` if the pull succeeded, `false` if it was skipped
-/// (non-fast-forward, dirty tree, network error, etc.).
+/// Uses `git pull --rebase` so local commits (e.g. Orkestra task commits) are
+/// replayed on top of the fetched upstream. If the rebase fails due to
+/// conflicts or a dirty tree, the pull is skipped and a warning is logged.
+/// Returns `true` if the pull succeeded, `false` if it was skipped.
 pub fn execute(repo_dir: &Path) -> bool {
     let safe_dir = format!("safe.directory={}", repo_dir.display());
 
@@ -23,7 +23,7 @@ pub fn execute(repo_dir: &Path) -> bool {
         .output();
 
     let result = std::process::Command::new("git")
-        .args(["-c", &safe_dir, "pull", "--ff-only"])
+        .args(["-c", &safe_dir, "pull", "--rebase"])
         .current_dir(repo_dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -37,7 +37,7 @@ pub fn execute(repo_dir: &Path) -> bool {
             tracing::warn!(
                 path = %repo_dir.display(),
                 reason = %stderr.trim(),
-                "git pull --ff-only skipped"
+                "git pull --rebase skipped"
             );
             false
         }
@@ -45,7 +45,7 @@ pub fn execute(repo_dir: &Path) -> bool {
             tracing::warn!(
                 path = %repo_dir.display(),
                 error = %e,
-                "git pull --ff-only failed to run"
+                "git pull --rebase failed to run"
             );
             false
         }

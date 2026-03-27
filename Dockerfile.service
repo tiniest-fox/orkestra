@@ -81,7 +81,7 @@ ENV RUSTC_WRAPPER=""
 
 # -- Cook dependencies (cached layer) --
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release -p ork-service -p orkd --recipe-path recipe.json
+RUN cargo chef cook --release -p ork-service -p orkd -p orkestra-cli --recipe-path recipe.json
 
 # -- Install frontend dependencies --
 COPY package.json pnpm-lock.yaml* ./
@@ -91,6 +91,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN cargo build --release -p ork-service
 RUN cargo build --release -p orkd
+RUN cargo build --release -p orkestra-cli
 
 # ============================================================================
 # Stage 3: Runtime
@@ -135,6 +136,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # ork-service and orkd must be in the same directory so the supervisor finds orkd.
 COPY --from=builder /app/target/release/ork-service /usr/local/bin/ork-service
 COPY --from=builder /app/target/release/orkd /usr/local/bin/orkd
+COPY --from=builder /app/target/release/ork /usr/local/bin/ork
 
 # Base Dockerfile — used to build the default dev container image on the host
 # when a project has no .devcontainer config.

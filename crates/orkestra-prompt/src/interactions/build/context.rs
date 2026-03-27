@@ -112,11 +112,7 @@ fn build_context_from_stage<'a>(
     let artifacts: Vec<ArtifactContext> = artifact_names
         .iter()
         .map(|name| {
-            let description = workflow
-                .stages
-                .iter()
-                .find(|s| s.artifact_name() == name)
-                .and_then(|s| s.artifact.description.clone());
+            let description = workflow.artifact_description(name).map(str::to_owned);
             let file_path = resolve_artifact_path(task.worktree_path.as_deref(), name);
             ArtifactContext {
                 name: name.clone(),

@@ -2,6 +2,7 @@
 
 pub mod begin_pr_creation;
 pub mod build_diff_summary;
+pub mod collect_pr_artifacts;
 pub mod commit_and_push_pr_changes;
 pub mod commit_worktree;
 pub mod create_pull_request;

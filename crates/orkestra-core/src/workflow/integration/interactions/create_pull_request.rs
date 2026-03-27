@@ -1,6 +1,6 @@
 //! PR creation pipeline: commit, push, describe, create PR.
 
-use crate::pr_description::PrDescriptionGenerator;
+use crate::pr_description::{PrArtifact, PrDescriptionGenerator};
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, PrService};
 
@@ -35,6 +35,7 @@ pub(crate) fn execute(
     pr_desc_gen: &dyn PrDescriptionGenerator,
     task: &Task,
     model_names: &[String],
+    artifacts: &[PrArtifact],
 ) -> Result<String, PrPipelineError> {
     let branch = task.branch_name.clone().unwrap_or_default();
     let base_branch = &task.base_branch;
@@ -48,16 +49,15 @@ pub(crate) fn execute(
         .map_err(|e| PrPipelineError::PushFailed(e.to_string()))?;
 
     // 3. Generate PR description (with fallback on failure)
-    let diff_summary = super::build_diff_summary::execute(git, task);
-
-    // Get plan artifact if available for richer PR body
-    let plan_artifact = task.artifacts.get("plan").map(|a| a.content.as_str());
+    // Use committed diff — uncommitted changes were already committed in step 1.
+    // Artifacts were assembled by collect_pr_artifacts::execute() before the background thread.
+    let diff_summary = super::build_diff_summary::execute_for_committed(git, task);
 
     let (pr_title, pr_body) = pr_desc_gen
         .generate_pr_description(
             &task.title,
             &task.description,
-            plan_artifact,
+            artifacts,
             &diff_summary,
             base_branch,
             model_names,

@@ -28,7 +28,7 @@ use crate::orkestra_debug;
 use crate::workflow::agent::interactions as agent_interactions;
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{Task, TaskHeader, TickSnapshot};
+use crate::workflow::domain::{TaskHeader, TickSnapshot};
 use crate::workflow::integration::interactions as integration_interactions;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
@@ -603,47 +603,6 @@ impl OrchestratorLoop {
             }
         }
 
-        Ok(())
-    }
-
-    // -- PR Creation --
-
-    /// Spawn a background PR creation thread for a task that is already marked Integrating.
-    pub fn spawn_pr_creation(&self, task: &Task) -> WorkflowResult<()> {
-        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-        let task = task.clone();
-        let pr_description_generator = Arc::clone(&api.pr_description_generator);
-        let pr_service = api
-            .pr_service
-            .clone()
-            .ok_or_else(|| WorkflowError::GitError("No PR service configured".into()))?;
-
-        let model_names =
-            crate::commit_message::collect_model_names(&api.workflow, task.flow.as_deref());
-        drop(api);
-
-        let git = self
-            .git_service
-            .clone()
-            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
-        let api_clone = Arc::clone(&self.api);
-
-        let run = move || {
-            crate::workflow::integration::pr_creation::run_pr_creation(
-                git,
-                pr_service,
-                pr_description_generator,
-                api_clone,
-                task,
-                model_names,
-            );
-        };
-
-        if self.sync_background {
-            run();
-        } else {
-            std::thread::spawn(run);
-        }
         Ok(())
     }
 

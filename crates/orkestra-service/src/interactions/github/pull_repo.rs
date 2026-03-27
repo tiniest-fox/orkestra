@@ -6,10 +6,22 @@ use std::path::Path;
 ///
 /// Uses `git pull --ff-only` so local commits or uncommitted changes never
 /// cause data loss — the pull is simply skipped and a warning is logged.
-/// Returns `Ok(true)` if the pull succeeded, `Ok(false)` if it was skipped
+/// Returns `true` if the pull succeeded, `false` if it was skipped
 /// (non-fast-forward, dirty tree, network error, etc.).
 pub fn execute(repo_dir: &Path) -> bool {
     let safe_dir = format!("safe.directory={}", repo_dir.display());
+
+    // Prune stale worktree entries before pulling. Orkestra's task worktrees
+    // reference paths inside containers (/workspace/...) which don't exist on
+    // the host, causing git to reject the pull with "Invalid path" errors.
+    let _ = std::process::Command::new("git")
+        .args(["-c", &safe_dir, "worktree", "prune"])
+        .current_dir(repo_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+
     let result = std::process::Command::new("git")
         .args(["-c", &safe_dir, "pull", "--ff-only"])
         .current_dir(repo_dir)

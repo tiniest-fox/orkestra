@@ -7,7 +7,7 @@ use orkestra_core::{
     ensure_orkestra_project, find_project_root,
     workflow::{
         adapters::GhPrService, load_workflow_for_project, Git2GitService, GitService,
-        OrchestratorLoop, SqliteWorkflowStore, WorkflowApi, WorkflowStore,
+        OrchestratorLoop, SqliteWorkflowStore, TaskCreationMode, WorkflowApi, WorkflowStore,
     },
 };
 
@@ -69,7 +69,7 @@ pub fn execute(
             &title_str,
             description,
             base_branch.as_deref(),
-            true,
+            TaskCreationMode::AutoMode,
             flow.as_deref(),
         )
         .map_err(|e| format!("Failed to create task: {e}"))?;

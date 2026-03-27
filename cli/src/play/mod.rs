@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use orkestra_core::workflow::{OrchestratorLoop, WorkflowApi};
 
+/// Maximum consecutive gate failures allowed per stage before the run loop
+/// aborts — prevents infinite retries when a gate check keeps failing.
 const MAX_GATE_FAILURES_PER_STAGE: u32 = 3;
 
 struct PlayContext {

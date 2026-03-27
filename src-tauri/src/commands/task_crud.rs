@@ -23,7 +23,6 @@ pub fn workflow_get_tasks(
 /// `interactive` starts the task in interactive mode (user-directed agent session).
 /// `flow` selects an alternate workflow flow (e.g., `"quick_fix"`). Omit for default full pipeline.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn workflow_create_task(
     registry: State<ProjectRegistry>,
     window: Window,

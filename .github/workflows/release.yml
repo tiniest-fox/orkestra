@@ -48,7 +48,7 @@ jobs:
       - name: Build ork CLI (universal)
         run: |
           cargo build --release -p orkestra-cli --target aarch64-apple-darwin
-          cargo build --release -p orkestra-cli --target x86_64-apple-darwin --features vendored-openssl
+          cargo build --release -p orkestra-cli --target x86_64-apple-darwin
           lipo -create \
             target/aarch64-apple-darwin/release/ork \
             target/x86_64-apple-darwin/release/ork \

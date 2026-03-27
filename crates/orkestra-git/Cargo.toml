@@ -10,10 +10,10 @@ description = "Git operations for Orkestra"
 workspace = true
 
 [features]
-default = []
+default = ["vendored-openssl"]
 # Enables MockGitService for integration tests
 testutil = []
-# Compiles OpenSSL from source — required for cross-compilation (e.g. macOS CI universal binary)
+# Compiles OpenSSL from source — avoids system OpenSSL dependency for cross-compilation
 vendored-openssl = ["git2/vendored-openssl"]
 
 [dependencies]

@@ -81,7 +81,7 @@ ENV RUSTC_WRAPPER=""
 
 # -- Cook dependencies (cached layer) --
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release -p ork-service -p orkd --recipe-path recipe.json
+RUN cargo chef cook --release -p ork-service -p orkd -p orkestra-cli --recipe-path recipe.json
 
 # -- Install frontend dependencies --
 COPY package.json pnpm-lock.yaml* ./
@@ -91,7 +91,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN cargo build --release -p ork-service
 RUN cargo build --release -p orkd
-RUN cargo build --release -p ork
+RUN cargo build --release -p orkestra-cli
 
 # ============================================================================
 # Stage 3: Runtime

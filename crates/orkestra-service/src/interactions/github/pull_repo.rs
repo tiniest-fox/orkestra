@@ -9,8 +9,9 @@ use std::path::Path;
 /// Returns `Ok(true)` if the pull succeeded, `Ok(false)` if it was skipped
 /// (non-fast-forward, dirty tree, network error, etc.).
 pub fn execute(repo_dir: &Path) -> bool {
+    let safe_dir = format!("safe.directory={}", repo_dir.display());
     let result = std::process::Command::new("git")
-        .args(["pull", "--ff-only"])
+        .args(["-c", &safe_dir, "pull", "--ff-only"])
         .current_dir(repo_dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())

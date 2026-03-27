@@ -13,7 +13,7 @@ use orkestra_core::workflow::{
         WorkflowConfig,
     },
     create_pr_sync,
-    domain::{IterationTrigger, Question},
+    domain::{IterationTrigger, Question, TaskCreationMode},
     execution::SubtaskOutput,
     merge_task_sync,
     runtime::TaskState,
@@ -37,7 +37,13 @@ fn test_play_happy_path() {
 
     let task = ctx
         .api()
-        .create_task_with_options("Implement feature", "Build it", None, true, None)
+        .create_task_with_options(
+            "Implement feature",
+            "Build it",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -104,7 +110,7 @@ fn test_play_with_subtasks() {
             "Build feature",
             "Complex task needing breakdown",
             None,
-            true,
+            TaskCreationMode::AutoMode,
             None,
         )
         .unwrap();
@@ -240,7 +246,13 @@ fn test_play_questions_auto_answered() {
 
     let task = ctx
         .api()
-        .create_task_with_options("Plan task", "Needs planning", None, true, None)
+        .create_task_with_options(
+            "Plan task",
+            "Needs planning",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -299,7 +311,13 @@ fn test_play_agent_blocked() {
 
     let task = ctx
         .api()
-        .create_task_with_options("Blocked task", "Will block", None, true, None)
+        .create_task_with_options(
+            "Blocked task",
+            "Will block",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -337,7 +355,13 @@ fn test_play_agent_failed() {
 
     let task = ctx
         .api()
-        .create_task_with_options("Failed task", "Will fail", None, true, None)
+        .create_task_with_options(
+            "Failed task",
+            "Will fail",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -396,7 +420,7 @@ fn test_play_gate_failure_requeues_agent() {
             "Gate test",
             "Test gate retry with auto_mode",
             None,
-            true,
+            TaskCreationMode::AutoMode,
             None,
         )
         .unwrap();
@@ -493,7 +517,13 @@ fn test_play_integration_after_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options("Integration test", "Test post-loop merge", None, true, None)
+        .create_task_with_options(
+            "Integration test",
+            "Test post-loop merge",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -542,7 +572,13 @@ fn test_play_pr_creation_after_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options("PR test", "Test PR creation path", None, true, None)
+        .create_task_with_options(
+            "PR test",
+            "Test PR creation path",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -618,7 +654,7 @@ fn test_play_with_flow() {
             "Quick task",
             "No planning needed",
             None,
-            true,
+            TaskCreationMode::AutoMode,
             Some("quick"),
         )
         .unwrap();
@@ -666,7 +702,13 @@ fn test_play_auto_merge_completes_to_archived() {
 
     let task = ctx
         .api()
-        .create_task_with_options("Auto merge task", "Test auto_merge path", None, true, None)
+        .create_task_with_options(
+            "Auto merge task",
+            "Test auto_merge path",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
         .unwrap();
     let task_id = task.id.clone();
 
@@ -718,7 +760,7 @@ fn test_play_no_integrate_stays_done() {
             "No-integrate task",
             "Test no-integrate path",
             None,
-            true,
+            TaskCreationMode::AutoMode,
             None,
         )
         .unwrap();

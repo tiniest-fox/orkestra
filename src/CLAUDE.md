@@ -330,6 +330,24 @@ const otherStages = config.stages.filter(
 
 `resolveFlowStageNames` is also used by `optimisticTransitions.ts` and `pipelineSegments.ts` as the single source of truth for flow-aware stage lists.
 
+## Tauri Dialog Gotcha: `window.confirm()` is Non-Blocking
+
+<!-- compound: lewdly-known-dormouse -->
+
+`window.confirm()` returns `true` immediately in Tauri's webview (WKWebView on macOS, WebView2 on Windows) while showing the dialog asynchronously. **Never use `window.confirm()` for destructive action confirmations in this app.**
+
+Use `confirmAction` from `src/utils/confirmAction.ts` instead — it uses `@tauri-apps/plugin-dialog` in Tauri (returns a proper `Promise<boolean>`) and falls back to `window.confirm()` in browser/PWA contexts:
+
+```ts
+import { confirmAction } from "../utils/confirmAction";
+
+const confirmed = await confirmAction("Archive this task?");
+if (!confirmed) return;
+await transport.call("archive_task", { taskId: task.id });
+```
+
+This applies to any destructive confirmation (archive, delete, reset). The `@tauri-apps/plugin-dialog` package is already installed.
+
 ## Biome Lint Gotchas
 
 <!-- compound: tightly-prudent-motmot -->

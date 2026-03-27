@@ -6,7 +6,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::pr_description::PrDescriptionGenerator;
+use crate::pr_description::{PrArtifact, PrDescriptionGenerator};
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult};
@@ -24,6 +24,7 @@ enum PrPreparation {
         pr_service: Arc<dyn PrService>,
         pr_description_generator: Arc<dyn PrDescriptionGenerator>,
         model_names: Vec<String>,
+        artifacts: Vec<PrArtifact>,
     },
 }
 
@@ -43,6 +44,7 @@ pub fn spawn_pr_creation(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> Workflo
         pr_service,
         pr_description_generator,
         model_names,
+        artifacts,
     } = prepare_pr_creation(&api, task_id)?;
 
     let result_task = (*task).clone();
@@ -56,6 +58,7 @@ pub fn spawn_pr_creation(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> Workflo
             api_for_thread,
             *task,
             model_names,
+            artifacts,
         );
     });
 
@@ -74,6 +77,7 @@ pub fn create_pr_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowRe
         pr_service,
         pr_description_generator,
         model_names,
+        artifacts,
     } = prepare_pr_creation(&api, task_id)?;
 
     run_pr_creation(
@@ -83,6 +87,7 @@ pub fn create_pr_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowRe
         Arc::clone(&api),
         *task,
         model_names,
+        artifacts,
     );
 
     // Re-read the task from the store to return the correct final state
@@ -101,6 +106,7 @@ pub(crate) fn run_pr_creation(
     api: Arc<Mutex<WorkflowApi>>,
     task: Task,
     model_names: Vec<String>,
+    artifacts: Vec<PrArtifact>,
 ) {
     let task_id = task.id.clone();
 
@@ -110,6 +116,7 @@ pub(crate) fn run_pr_creation(
         pr_description_generator.as_ref(),
         &task,
         &model_names,
+        &artifacts,
     ) {
         Ok(pr_url) => {
             if let Ok(api) = api.lock() {
@@ -147,11 +154,15 @@ fn prepare_pr_creation(api: &Mutex<WorkflowApi>, task_id: &str) -> WorkflowResul
     let model_names =
         crate::commit_message::collect_model_names(&api.workflow, task.flow.as_deref());
 
+    // Collect artifacts with descriptions while holding the lock (workflow is available here).
+    let artifacts = super::interactions::collect_pr_artifacts::execute(&api.workflow, &task);
+
     Ok(PrPreparation::NeedsPrWork {
         task: Box::new(task),
         git,
         pr_service,
         pr_description_generator,
         model_names,
+        artifacts,
     })
 }

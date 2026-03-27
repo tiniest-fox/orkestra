@@ -13,7 +13,7 @@ use orkestra_core::workflow::{
         WorkflowConfig,
     },
     create_pr_sync,
-    domain::{IterationTrigger, Question},
+    domain::{IterationTrigger, Question, TaskCreationMode},
     execution::SubtaskOutput,
     merge_task_sync,
     runtime::TaskState,

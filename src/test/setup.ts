@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, vi } from "vitest";
+import { mockSetTitle } from "./mocks/tauri-window";
 import { mockTransport, resetTransportMocks } from "./mocks/transport";
 
 // Mock the transport provider so useTransport() returns mockTransport in all tests.
@@ -21,6 +22,7 @@ vi.mock("../transport/TransportProvider", async (importOriginal) => {
 // Reset transport mocks before each test.
 beforeEach(() => {
   resetTransportMocks();
+  mockSetTitle.mockClear();
 });
 
 // Keep @tauri-apps/api/core mock — needed for TauriTransport which calls invoke() internally.
@@ -32,4 +34,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
   emit: vi.fn(),
+}));
+
+// Mock @tauri-apps/api/window — needed for App.tsx native title updates.
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ setTitle: mockSetTitle }),
 }));

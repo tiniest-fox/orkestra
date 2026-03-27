@@ -5,6 +5,7 @@ import { parseOptionIndex } from "../../../lib/optionKey";
 import { useTasks } from "../../../providers/TasksProvider";
 import { useTransport } from "../../../transport";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
+import { confirmAction } from "../../../utils/confirmAction";
 import type { DraftComment, PrTabFooterState } from "./drawerTabs";
 
 // ============================================================================
@@ -459,8 +460,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
 
   const handleOpenPr = useCallback(() => callAndClose("open_pr"), [callAndClose]);
 
-  const handleArchive = useCallback(() => {
-    if (!window.confirm("Archive this task?")) return Promise.resolve();
+  const handleArchive = useCallback(async () => {
+    if (!(await confirmAction("Archive this task?"))) return;
     applyOptimistic(task.id, { type: "archive" });
     return callAndClose("archive");
   }, [callAndClose, applyOptimistic, task.id]);

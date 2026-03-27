@@ -11,6 +11,25 @@ use serde_json::json;
 use crate::runner::UtilityRunner;
 
 // =============================================================================
+// Types
+// =============================================================================
+
+/// A workflow artifact with its name, optional stage description, and content.
+///
+/// Passed to [`PrDescriptionGenerator`] so the PR description has full context
+/// about what each stage produced. Assembled by `collect_pr_artifacts::execute()`
+/// in orkestra-core, which is the single source of truth for this collection.
+#[derive(Debug, Clone)]
+pub struct PrArtifact {
+    /// Artifact name (e.g. "plan", "summary", "activity_log").
+    pub name: String,
+    /// Human-readable description from the stage config, if set.
+    pub description: Option<String>,
+    /// The artifact content (markdown).
+    pub content: String,
+}
+
+// =============================================================================
 // PrDescriptionGenerator Trait
 // =============================================================================
 
@@ -24,11 +43,14 @@ pub trait PrDescriptionGenerator: Send + Sync {
     ///
     /// Returns `Ok((title, body))` on success, `Err(reason)` on failure.
     /// The body includes the model attribution footer.
+    ///
+    /// `artifacts` contains all workflow stage artifacts (including activity log),
+    /// assembled by `collect_pr_artifacts::execute()` in workflow stage order.
     fn generate_pr_description(
         &self,
         task_title: &str,
         task_description: &str,
-        plan_artifact: Option<&str>,
+        artifacts: &[PrArtifact],
         diff_summary: &str,
         base_branch: &str,
         model_names: &[String],
@@ -63,7 +85,7 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         &self,
         task_title: &str,
         task_description: &str,
-        plan_artifact: Option<&str>,
+        artifacts: &[PrArtifact],
         diff_summary: &str,
         base_branch: &str,
         model_names: &[String],
@@ -71,7 +93,7 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         let (title, body) = generate_pr_description_sync(
             task_title,
             task_description,
-            plan_artifact,
+            artifacts,
             diff_summary,
             base_branch,
             60,
@@ -116,7 +138,7 @@ pub mod mock {
             &self,
             task_title: &str,
             _task_description: &str,
-            _plan_artifact: Option<&str>,
+            _artifacts: &[super::PrArtifact],
             _diff_summary: &str,
             _base_branch: &str,
             model_names: &[String],
@@ -147,16 +169,26 @@ pub mod mock {
 pub fn generate_pr_description_sync(
     task_title: &str,
     task_description: &str,
-    plan_artifact: Option<&str>,
+    artifacts: &[PrArtifact],
     diff_summary: &str,
     base_branch: &str,
     timeout_secs: u64,
 ) -> std::io::Result<(String, String)> {
     let runner = UtilityRunner::new().with_timeout(timeout_secs);
+    let artifact_list: Vec<_> = artifacts
+        .iter()
+        .map(|a| {
+            json!({
+                "name": a.name,
+                "description": a.description,
+                "content": a.content,
+            })
+        })
+        .collect();
     let context = json!({
         "title": task_title,
         "description": task_description,
-        "plan": plan_artifact.unwrap_or(""),
+        "artifacts": artifact_list,
         "diff_summary": diff_summary,
         "base_branch": base_branch,
     });
@@ -190,7 +222,18 @@ mod tests {
         let result = generator.generate_pr_description(
             "Add feature",
             "Add new feature",
-            None,
+            &[
+                PrArtifact {
+                    name: "plan".into(),
+                    description: Some("The plan".into()),
+                    content: "Do the thing".into(),
+                },
+                PrArtifact {
+                    name: "summary".into(),
+                    description: None,
+                    content: "Did the thing".into(),
+                },
+            ],
             "file.rs",
             "main",
             &["Claude Sonnet 4.5".to_string()],
@@ -211,7 +254,7 @@ mod tests {
         let result = generator.generate_pr_description(
             "Add feature",
             "Add new feature",
-            None,
+            &[] as &[PrArtifact],
             "file.rs",
             "main",
             &[],

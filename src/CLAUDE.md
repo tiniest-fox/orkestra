@@ -224,7 +224,7 @@ Forge is the project's design language — it is not an alternate or scoped visu
 
 **Button `className` overrides and CSS specificity**: The `Button` component concatenates classes with a plain string join (not `twMerge`). When you pass a `className` prop to override variant styles (e.g. hover colors), CSS specificity is determined by Tailwind's CSS generation order — not the order of classes in the HTML attribute. If your override and the variant's class have equal specificity, the result is unpredictable. Options when you need reliable overrides: (1) add `onAccent` prop if the button sits on an accent-colored background (it switches the hotkey badge and other internal styles), (2) create a dedicated variant in `Button.tsx` rather than overriding via `className`, or (3) wait for a `twMerge` migration.
 
-- Use the existing design system in `components/ui/` — `Panel`, `Button`, `Badge`, `IconButton`, `TabbedPanel`, `ModalPanel`, etc.
+- Use the existing design system in `components/ui/` — `Panel`, `Button`, `IconButton`, `ModalPanel`, `Drawer`, `Dropdown`, etc.
 - The `Panel` component uses compound subcomponents: `Panel.Header`, `Panel.Body`, `Panel.Footer`, etc.
 - For modal/overlay UI (dialogs, palettes, popovers anchored to the viewport), use `ModalPanel`. It renders via `createPortal` to `document.body` with backdrop, animations, and escape-to-close built in. Don't introduce competing portal or overlay patterns.
 - Icons come from `lucide-react`. Animations use `framer-motion`.
@@ -329,6 +329,24 @@ const otherStages = config.stages.filter(
 ```
 
 `resolveFlowStageNames` is also used by `optimisticTransitions.ts` and `pipelineSegments.ts` as the single source of truth for flow-aware stage lists.
+
+## Tauri Dialog Gotcha: `window.confirm()` is Non-Blocking
+
+<!-- compound: lewdly-known-dormouse -->
+
+`window.confirm()` returns `true` immediately in Tauri's webview (WKWebView on macOS, WebView2 on Windows) while showing the dialog asynchronously. **Never use `window.confirm()` for destructive action confirmations in this app.**
+
+Use `confirmAction` from `src/utils/confirmAction.ts` instead — it uses `@tauri-apps/plugin-dialog` in Tauri (returns a proper `Promise<boolean>`) and falls back to `window.confirm()` in browser/PWA contexts:
+
+```ts
+import { confirmAction } from "../utils/confirmAction";
+
+const confirmed = await confirmAction("Archive this task?");
+if (!confirmed) return;
+await transport.call("archive_task", { taskId: task.id });
+```
+
+This applies to any destructive confirmation (archive, delete, reset). The `@tauri-apps/plugin-dialog` package is already installed.
 
 ## Biome Lint Gotchas
 
@@ -435,6 +453,25 @@ Using `isActivelyProgressing` alone in contexts that previously handled `integra
 Use `<Link to="...">` from `react-router-dom` for all internal SPA navigation within components that render inside a `BrowserRouter`. Use `<a href="...">` only for external URLs or components that are intentionally outside the router context (e.g., pure utility UI rendered in a non-SPA context).
 
 `<a href="/">` for an internal route forces a full page reload (bypassing React Router's history), which breaks SPA behavior. "Keeping a component decoupled from react-router-dom" is not a valid reason to use `<a>` when the component renders inside a BrowserRouter — import `Link` instead.
+
+## Tauri-Specific Data Access
+
+<!-- compound: factually-persuasive-kinkajou -->
+
+**`ProjectsProvider.currentProject` is always null in Tauri mode.** `ProjectsProvider` populates `currentProject` from localStorage, which is only written during the PWA pairing flow. TauriTransport bypasses that flow entirely — so any code that reads `currentProject` will always see null when running as the desktop app.
+
+When you need project info in Tauri mode (e.g., the project root path, folder name), call the backend directly:
+
+```ts
+import { useTransport } from "../transport/TransportProvider";
+
+const transport = useTransport();
+transport.call("get_project_info").then((info) => {
+  const folderName = info.project_root.split("/").pop() || info.project_root;
+});
+```
+
+This applies to any code gated on `IS_TAURI` that needs project context. The `get_project_info` command is always available in Tauri mode regardless of pairing state.
 
 ## Types
 

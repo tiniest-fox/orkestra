@@ -232,6 +232,18 @@ impl WorkflowConfig {
         self.stages.iter().find(|s| s.name == name)
     }
 
+    /// Get the description of the artifact produced by the stage with the given artifact name.
+    ///
+    /// Returns `None` if no stage produces an artifact with that name, or the stage has no
+    /// description configured. This is the canonical lookup for artifact descriptions — use
+    /// this instead of searching `stages` directly.
+    pub fn artifact_description(&self, artifact_name: &str) -> Option<&str> {
+        self.stages
+            .iter()
+            .find(|s| s.artifact_name() == artifact_name)
+            .and_then(|s| s.artifact.description.as_deref())
+    }
+
     /// Get the index of a stage by name.
     pub fn stage_index(&self, name: &str) -> Option<usize> {
         self.stages.iter().position(|s| s.name == name)
@@ -992,6 +1004,40 @@ mod tests {
 
         let missing = workflow.stage("nonexistent");
         assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_artifact_description_returns_none_for_unknown_artifact() {
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")]);
+        assert!(workflow.artifact_description("unknown").is_none());
+    }
+
+    #[test]
+    fn test_artifact_description_returns_none_when_no_description_set() {
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")]);
+        assert!(workflow.artifact_description("plan").is_none());
+    }
+
+    #[test]
+    fn test_artifact_description_returns_description_when_present() {
+        let mut stage = StageConfig::new("planning", "plan");
+        stage.artifact.description = Some("The implementation plan".into());
+        let workflow = WorkflowConfig::new(vec![stage]);
+        assert_eq!(
+            workflow.artifact_description("plan"),
+            Some("The implementation plan")
+        );
+    }
+
+    #[test]
+    fn test_artifact_description_matches_by_artifact_name_not_stage_name() {
+        let mut stage = StageConfig::new("planning", "plan");
+        stage.artifact.description = Some("The plan".into());
+        let workflow = WorkflowConfig::new(vec![stage]);
+        // "planning" is the stage name — should not match
+        assert!(workflow.artifact_description("planning").is_none());
+        // "plan" is the artifact name — should match
+        assert_eq!(workflow.artifact_description("plan"), Some("The plan"));
     }
 
     #[test]

@@ -350,7 +350,7 @@ else
     if [ "$CHANGED_FILES" != "(all)" ]; then
         while IFS= read -r file; do
             case "$file" in
-                src/*|package.json|pnpm-lock.yaml|biome.json|tsconfig*.json|vite.config.ts|vitest.config.ts|tailwind.config.js|postcss.config.js|index.html)
+                src/*|package.json|pnpm-lock.yaml|biome.json|tsconfig*.json|vite.config.ts|vitest.config.ts|tailwind.config.js|postcss.config.js|index.html|knip.json)
                     HAS_FRONTEND=true
                     ;;
                 src-tauri/*)
@@ -455,6 +455,8 @@ if $HAS_FRONTEND; then
 
     run_check "Frontend lint+format fix (biome)" "pnpm check:fix"
     run_check "Frontend lint+format verify (biome)" "pnpm check --error-on-warnings"
+    run_check "Frontend unused code fix (knip)" "pnpm knip --fix"
+    run_check "Frontend unused code (knip)" "pnpm knip"
     run_check "Frontend type check" "pnpm exec tsc --noEmit"
     run_check "Frontend tests" "pnpm test:run"
 fi

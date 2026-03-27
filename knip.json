@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/main.tsx", "src/service/main.tsx"],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": ["src/**/*.test.{ts,tsx}", "src/test/**"],
+  "ignoreDependencies": ["vite-plugin-pwa", "@testing-library/*"],
+  "ignoreExportsUsedInFile": true,
+  "vitest": false
+}

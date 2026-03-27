@@ -6,8 +6,8 @@ use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
     ensure_orkestra_project, find_project_root,
     workflow::{
-        adapters::GhPrService, load_workflow_for_project, Git2GitService, GitService,
-        OrchestratorLoop, SqliteWorkflowStore, TaskCreationMode, WorkflowApi, WorkflowStore,
+        adapters::GhPrService, domain::TaskCreationMode, load_workflow_for_project, Git2GitService,
+        GitService, OrchestratorLoop, SqliteWorkflowStore, WorkflowApi, WorkflowStore,
     },
 };
 

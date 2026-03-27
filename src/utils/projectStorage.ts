@@ -67,16 +67,6 @@ export function setCurrentProjectId(id: string | null): void {
 }
 
 /**
- * Convenience: load projects and current ID, then return the matching entry.
- */
-export function loadCurrentProject(): ProjectConfig | null {
-  const id = getCurrentProjectId();
-  if (!id) return null;
-  const projects = loadProjects();
-  return projects.find((p) => p.id === id) ?? null;
-}
-
-/**
  * Resolve the active project using URL-first priority.
  *
  * Checks `?project=<id>` URL param first, then falls back to the localStorage

@@ -797,23 +797,3 @@ export interface AssistantSession {
   /** When the session was last updated. */
   updated_at: string;
 }
-
-// =============================================================================
-// Auto-Task Templates
-// =============================================================================
-
-/**
- * A predefined task template loaded from .orkestra/tasks/*.md.
- */
-export interface AutoTaskTemplate {
-  /** Display label for the button. */
-  title: string;
-  /** Whether the task starts in auto mode. */
-  auto_run: boolean;
-  /** Flow name to assign (must match a flow in workflow.yaml). */
-  flow?: string;
-  /** Task description (markdown body after frontmatter). */
-  description: string;
-  /** Source filename (e.g., "code-cleanup.md"). */
-  filename: string;
-}

@@ -13,6 +13,8 @@ workspace = true
 default = []
 # Enables MockGitService for integration tests
 testutil = []
+# Compiles OpenSSL from source — required for cross-compilation (e.g. macOS CI universal binary)
+vendored-openssl = ["git2/vendored-openssl"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

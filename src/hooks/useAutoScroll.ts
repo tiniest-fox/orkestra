@@ -35,6 +35,10 @@ export function useAutoScroll<T extends HTMLElement>(
     setContainer(node);
     scrollDeferredRef.current = false;
     lastScrollTopRef.current = node?.scrollTop ?? 0;
+    // Re-enable auto-scroll when a new container mounts (e.g., tab switch)
+    if (node) {
+      isAutoScrollEnabledRef.current = true;
+    }
   }, []);
 
   // Direction-based scroll detection:
@@ -75,15 +79,16 @@ export function useAutoScroll<T extends HTMLElement>(
     }
   }, [isActive, container]);
 
-  // Auto-scroll using MutationObserver - fires after DOM mutations
-  // Combined with RAF to ensure scroll happens after layout completes
-  // Defers scrolling when content animations are in progress
+  // Auto-scroll using MutationObserver and ResizeObserver - fires after DOM mutations
+  // and container size changes (e.g., flex sibling grows, shrinking this container).
+  // Combined with RAF to ensure scroll happens after layout completes.
+  // Defers scrolling when content animations are in progress.
   useEffect(() => {
     if (!container) return;
 
     let rafId: number | null = null;
 
-    const observer = new MutationObserver(() => {
+    const scheduleScroll = () => {
       // Cancel any pending RAF to avoid queuing multiple scrolls
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
@@ -96,9 +101,15 @@ export function useAutoScroll<T extends HTMLElement>(
         // Animation complete, scroll immediately
         rafId = requestAnimationFrame(performScrollToBottom);
       }
-    });
+    };
 
-    observer.observe(container, { childList: true, subtree: true });
+    const mutationObserver = new MutationObserver(scheduleScroll);
+    mutationObserver.observe(container, { childList: true, subtree: true });
+
+    // Observe container resize — fires when flex layout shrinks this container
+    // (e.g., textarea sibling grows, reducing this container's height)
+    const resizeObserver = new ResizeObserver(scheduleScroll);
+    resizeObserver.observe(container);
 
     // Initial scroll: also check if settled
     if (isContentSettled) {
@@ -108,7 +119,8 @@ export function useAutoScroll<T extends HTMLElement>(
     }
 
     return () => {
-      observer.disconnect();
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }

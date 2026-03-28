@@ -35,7 +35,7 @@ export function LogsChatInput({
       onStop={onInterrupt}
       placeholder="Message the agent…"
       error={chatError}
-      className="px-4 pt-0 pb-4"
+      className="shrink-0 px-4 pt-0 pb-4"
     />
   );
 }

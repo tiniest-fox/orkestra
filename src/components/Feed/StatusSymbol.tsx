@@ -68,6 +68,13 @@ function resolveColors(task: WorkflowTaskView): {
       extraClass,
     };
   }
+  if (derived.is_chatting || derived.chat_agent_active) {
+    return {
+      colors: { bg: "bg-status-cyan-bg", icon: "text-status-cyan" },
+      symbol: "⋯",
+      extraClass,
+    };
+  }
   if (derived.has_questions) {
     return {
       colors: { bg: "bg-status-info-bg", icon: "text-status-info" },

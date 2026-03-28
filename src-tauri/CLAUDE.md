@@ -65,6 +65,17 @@ When serving multiple Vite bundles (e.g., main PWA + service manager), each bund
 
 When adding a new embedded bundle: (1) check what filename Vite outputs in `vite.config.ts`, (2) pass that exact string to `serve_embedded_file`.
 
+<!-- compound: exactly-above-mako -->
+## Frontend Build-Time Values
+
+**`src-tauri/build.rs` cannot inject env vars into the frontend build.** Tauri's `beforeBuildCommand` (which runs `pnpm build`) executes before `build.rs` runs — by the time `build.rs` sets an env var, the Vite build is already done.
+
+To inject a build-time value into the frontend (e.g., git commit hash, version):
+- Resolve it in `vite.config.ts` using the `define` option (statically replaces `import.meta.env.VITE_*` at build time)
+- Example: `execSync('git rev-parse --short HEAD')` inside `vite.config.ts`, then `define: { 'import.meta.env.VITE_COMMIT_HASH': JSON.stringify(hash) }`
+
+This covers all build paths (service, Tauri, local dev) in one place.
+
 ## Key Files
 
 | File | Role |

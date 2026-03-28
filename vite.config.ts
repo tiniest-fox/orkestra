@@ -160,7 +160,7 @@ function serviceMockPlugin(): Plugin {
 
 const commitHash = (() => {
   try {
-    return execSync('git rev-parse --short HEAD').toString().trim();
+    return execSync('git rev-parse --short HEAD', { cwd: import.meta.dirname }).toString().trim();
   } catch {
     return 'dev';
   }

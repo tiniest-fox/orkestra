@@ -159,6 +159,7 @@ function serviceMockPlugin(): Plugin {
 }
 
 const commitHash = (() => {
+  if (process.env.VITE_COMMIT_HASH) return process.env.VITE_COMMIT_HASH;
   try {
     return execSync('git rev-parse --short HEAD', { cwd: import.meta.dirname }).toString().trim();
   } catch {

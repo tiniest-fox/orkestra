@@ -47,6 +47,10 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build frontend
+        # Tauri proc macro (generate_context!) requires dist/ to exist at compile time
+        run: pnpm build
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 

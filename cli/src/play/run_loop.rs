@@ -34,8 +34,7 @@ pub fn execute(ctx: &mut super::PlayContext) -> Result<(), String> {
             .get_task(&ctx.task_id)
             .map_err(|e| format!("Failed to get task: {e}"))?;
         match &task.state {
-            TaskState::Done => break,
-            TaskState::Archived => break,
+            TaskState::Done | TaskState::Archived => break,
             TaskState::Failed { stage, error } => {
                 let stage = stage.as_deref().unwrap_or("unknown");
                 let error = error.as_deref().unwrap_or("unknown error");

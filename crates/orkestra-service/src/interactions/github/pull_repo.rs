@@ -11,17 +11,6 @@ use std::path::Path;
 pub fn execute(repo_dir: &Path) -> bool {
     let safe_dir = format!("safe.directory={}", repo_dir.display());
 
-    // Prune stale worktree entries before pulling. Orkestra's task worktrees
-    // reference paths inside containers (/workspace/...) which don't exist on
-    // the host, causing git to reject the pull with "Invalid path" errors.
-    let _ = std::process::Command::new("git")
-        .args(["-c", &safe_dir, "worktree", "prune"])
-        .current_dir(repo_dir)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output();
-
     let result = std::process::Command::new("git")
         .args(["-c", &safe_dir, "pull", "--rebase"])
         .current_dir(repo_dir)

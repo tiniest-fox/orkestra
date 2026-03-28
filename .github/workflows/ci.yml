@@ -32,6 +32,21 @@ jobs:
             librsvg2-dev \
             libxdo-dev
 
+      - name: Set up pnpm
+        # Required by ork-service build.rs which runs pnpm build --mode service
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 

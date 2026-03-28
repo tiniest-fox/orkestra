@@ -463,6 +463,7 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
           onOpenTask={setActiveTaskId}
           onRejectModeChange={setRejectMode}
           onOpenChat={() => openTaskAssistant(activeTask.id)}
+          onInteractive={() => openInteractive(activeTask.id)}
         />
       )}
     </div>

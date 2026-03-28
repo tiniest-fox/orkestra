@@ -96,6 +96,11 @@ export function FeedHeader({
             </div>
           )}
         </div>
+        {isMobile && (
+          <span className="font-mono text-forge-mono-sm text-text-quaternary">
+            {(import.meta.env.VITE_COMMIT_HASH as string) ?? "dev"}
+          </span>
+        )}
         {!isMobile && (
           <div className="flex items-center gap-2">
             <HotkeyScope active={hotkeyActive}>

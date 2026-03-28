@@ -146,144 +146,148 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             </span>
           </>
         )}
-        <span className="text-text-quaternary shrink-0">{commitHash}</span>
       </div>
-      {!isMobile &&
-        (drawerMode === "new-task" ? (
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="flex items-center gap-1.5">
-              <Kbd>tab</Kbd>
-              <span>next field</span>
-            </span>
-            <span className="text-text-quaternary">·</span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>cmd+enter</Kbd>
-              <span>create</span>
-            </span>
-            <span className="text-text-quaternary">·</span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>esc</Kbd>
-              <span>cancel</span>
-            </span>
-          </div>
-        ) : drawerMode === "assistant" ? (
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="flex items-center gap-1.5">
-              <Kbd>⌘⏎</Kbd>
-              <span>send</span>
-            </span>
-            <span className="text-text-quaternary">·</span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>esc</Kbd>
-              <span>close</span>
-            </span>
-          </div>
-        ) : drawerMode === "git-history" ? (
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="flex items-center gap-1.5">
-              <Kbd>j/k</Kbd>
-              <span>navigate</span>
-            </span>
-            <span className="text-text-quaternary">·</span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>esc</Kbd>
-              <span>close</span>
-            </span>
-          </div>
-        ) : drawerOpen ? (
-          <div className="flex items-center gap-3 shrink-0">
-            {drawerMode === "review-reject" ? (
-              <>
+      {!isMobile && (
+        <div className="flex items-center gap-3 shrink-0">
+          {drawerMode === "new-task" ? (
+            <>
+              <span className="flex items-center gap-1.5">
+                <Kbd>tab</Kbd>
+                <span>next field</span>
+              </span>
+              <span className="text-text-quaternary">·</span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>cmd+enter</Kbd>
+                <span>create</span>
+              </span>
+              <span className="text-text-quaternary">·</span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>esc</Kbd>
+                <span>cancel</span>
+              </span>
+            </>
+          ) : drawerMode === "assistant" ? (
+            <>
+              <span className="flex items-center gap-1.5">
+                <Kbd>⌘⏎</Kbd>
+                <span>send</span>
+              </span>
+              <span className="text-text-quaternary">·</span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>esc</Kbd>
+                <span>close</span>
+              </span>
+            </>
+          ) : drawerMode === "git-history" ? (
+            <>
+              <span className="flex items-center gap-1.5">
+                <Kbd>j/k</Kbd>
+                <span>navigate</span>
+              </span>
+              <span className="text-text-quaternary">·</span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>esc</Kbd>
+                <span>close</span>
+              </span>
+            </>
+          ) : drawerOpen ? (
+            <>
+              {drawerMode === "review-reject" ? (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <Kbd>enter</Kbd>
+                    <span>send</span>
+                  </span>
+                  <span className="text-text-quaternary">·</span>
+                  <span className="flex items-center gap-1.5">
+                    <Kbd>esc</Kbd>
+                    <span>cancel</span>
+                  </span>
+                </>
+              ) : drawerMode === "answer" ? (
                 <span className="flex items-center gap-1.5">
-                  <Kbd>enter</Kbd>
-                  <span>send</span>
+                  <Kbd>S</Kbd>
+                  <span>submit</span>
                 </span>
-                <span className="text-text-quaternary">·</span>
+              ) : drawerMode === "focus" ? (
                 <span className="flex items-center gap-1.5">
                   <Kbd>esc</Kbd>
-                  <span>cancel</span>
+                  <span>close</span>
                 </span>
-              </>
-            ) : drawerMode === "answer" ? (
-              <span className="flex items-center gap-1.5">
-                <Kbd>S</Kbd>
-                <span>submit</span>
-              </span>
-            ) : drawerMode === "focus" ? (
-              <span className="flex items-center gap-1.5">
-                <Kbd>esc</Kbd>
-                <span>close</span>
-              </span>
-            ) : drawerMode === "ship" ? (
-              <span className="flex items-center gap-1.5">
-                <Kbd>esc</Kbd>
-                <span>close</span>
-              </span>
-            ) : drawerMode === "interactive" ? (
-              <span className="flex items-center gap-1.5">
-                <Kbd>esc</Kbd>
-                <span>close</span>
-              </span>
-            ) : (
-              <>
+              ) : drawerMode === "ship" ? (
                 <span className="flex items-center gap-1.5">
-                  <Kbd>A</Kbd>
-                  <span>approve</span>
+                  <Kbd>esc</Kbd>
+                  <span>close</span>
                 </span>
-                <span className="text-text-quaternary">·</span>
+              ) : drawerMode === "interactive" ? (
                 <span className="flex items-center gap-1.5">
-                  <Kbd>R</Kbd>
-                  <span>reject</span>
+                  <Kbd>esc</Kbd>
+                  <span>close</span>
                 </span>
-                <span className="text-text-quaternary">·</span>
-                <span className="flex items-center gap-1.5">
-                  <Kbd>L</Kbd>
-                  <span>logs</span>
-                </span>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 shrink-0">
-            {hasSyncActions && (
-              <>
-                {canPush && (
+              ) : (
+                <>
                   <span className="flex items-center gap-1.5">
-                    <Kbd>P</Kbd>
-                    <span>push</span>
+                    <Kbd>A</Kbd>
+                    <span>approve</span>
                   </span>
-                )}
-                {canPull && (
+                  <span className="text-text-quaternary">·</span>
                   <span className="flex items-center gap-1.5">
-                    <Kbd>F</Kbd>
-                    <span>pull</span>
+                    <Kbd>R</Kbd>
+                    <span>reject</span>
                   </span>
-                )}
-                <span className="text-text-quaternary">·</span>
-              </>
-            )}
-            <span className="flex items-center gap-1.5">
-              <Kbd>G</Kbd>
-              <span>fetch</span>
-            </span>
-            <span className="text-text-quaternary">·</span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>H</Kbd>
-              <span>history</span>
-            </span>
-            <span className="text-text-quaternary">·</span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>enter</Kbd>
-              <span>focus</span>
-            </span>
-            <span className="text-text-quaternary">·</span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>↑↓</Kbd>
-              <Kbd>j/k</Kbd>
-              <span>navigate</span>
-            </span>
-          </div>
-        ))}
+                  <span className="text-text-quaternary">·</span>
+                  <span className="flex items-center gap-1.5">
+                    <Kbd>L</Kbd>
+                    <span>logs</span>
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {hasSyncActions && (
+                <>
+                  {canPush && (
+                    <span className="flex items-center gap-1.5">
+                      <Kbd>P</Kbd>
+                      <span>push</span>
+                    </span>
+                  )}
+                  {canPull && (
+                    <span className="flex items-center gap-1.5">
+                      <Kbd>F</Kbd>
+                      <span>pull</span>
+                    </span>
+                  )}
+                  <span className="text-text-quaternary">·</span>
+                </>
+              )}
+              <span className="flex items-center gap-1.5">
+                <Kbd>G</Kbd>
+                <span>fetch</span>
+              </span>
+              <span className="text-text-quaternary">·</span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>H</Kbd>
+                <span>history</span>
+              </span>
+              <span className="text-text-quaternary">·</span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>enter</Kbd>
+                <span>focus</span>
+              </span>
+              <span className="text-text-quaternary">·</span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>↑↓</Kbd>
+                <Kbd>j/k</Kbd>
+                <span>navigate</span>
+              </span>
+            </>
+          )}
+          <span className="text-text-quaternary">·</span>
+          <span className="text-text-quaternary shrink-0">{commitHash}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -44,15 +44,33 @@ async function triggerMutationAndFlush(container: HTMLDivElement): Promise<void>
   await Promise.resolve();
 }
 
+let resizeCallback: ResizeObserverCallback | null = null;
+
 describe("useAutoScroll", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockUseContentSettled.mockReturnValue(true);
+    resizeCallback = null;
+    // jsdom does not implement ResizeObserver — stub it with a class that captures
+    // the callback so tests can fire it. Arrow functions cannot be used as constructors,
+    // and vi.fn() in Vitest's SSR transform has the same issue.
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: ResizeObserverCallback) {
+          resizeCallback = cb;
+        }
+        observe() {}
+        disconnect() {}
+        unobserve() {}
+      },
+    );
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe("initial baseline", () => {
@@ -387,6 +405,104 @@ describe("useAutoScroll", () => {
       });
 
       expect(container.scrollTop).toBe(1000);
+    });
+  });
+
+  describe("resize-triggered scrolling", () => {
+    it("scrolls to bottom when ResizeObserver fires and auto-scroll is enabled", async () => {
+      const container = createMockContainer({
+        scrollTop: 0,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
+      const { result } = renderHook(() => useAutoScroll<HTMLDivElement>(true));
+
+      act(() => {
+        result.current.containerRef(container);
+      });
+
+      // Run initial RAF
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Reset scrollTop to simulate textarea growth shrinking the container
+      container.scrollTop = 0;
+
+      // Fire ResizeObserver callback
+      act(() => {
+        resizeCallback?.([] as unknown as ResizeObserverEntry[], {} as ResizeObserver);
+      });
+
+      // Run RAF scheduled by the resize callback
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(container.scrollTop).toBe(1000);
+    });
+  });
+
+  describe("container remount", () => {
+    it("re-enables auto-scroll when a new container mounts after unmount", async () => {
+      const container1 = createMockContainer({
+        scrollTop: 100,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
+      const { result } = renderHook(() => useAutoScroll<HTMLDivElement>(true));
+
+      // Mount first container
+      act(() => {
+        result.current.containerRef(container1);
+      });
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Scroll up to disable auto-scroll
+      container1.scrollTop = 50;
+      act(() => {
+        result.current.handleScroll();
+      });
+
+      // Verify auto-scroll is disabled
+      await triggerMutationAndFlush(container1);
+      act(() => {
+        vi.runAllTimers();
+      });
+      expect(container1.scrollTop).toBe(50);
+
+      // Unmount (tab switch)
+      act(() => {
+        result.current.containerRef(null);
+      });
+
+      // Mount new container (tab switch back)
+      const container2 = createMockContainer({
+        scrollTop: 0,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
+      act(() => {
+        result.current.containerRef(container2);
+      });
+
+      // Run RAF for initial scroll on new container
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Auto-scroll should be re-enabled — new container should scroll to bottom
+      expect(container2.scrollTop).toBe(1000);
+
+      // Also verify mutations on the new container trigger scroll
+      container2.scrollTop = 0;
+      await triggerMutationAndFlush(container2);
+      act(() => {
+        vi.runAllTimers();
+      });
+      expect(container2.scrollTop).toBe(1000);
     });
   });
 

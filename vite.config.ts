@@ -1,5 +1,5 @@
 import { resolve } from "path";
-import { execFile } from "node:child_process";
+import { execFile, execSync } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -158,11 +158,22 @@ function serviceMockPlugin(): Plugin {
   };
 }
 
+const commitHash = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim();
+  } catch {
+    return 'dev';
+  }
+})();
+
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode, command }) => {
   if (mode === "service") {
     return {
       plugins: [react(), ...(command === "serve" ? [serviceMockPlugin()] : [])],
+      define: {
+        'import.meta.env.VITE_COMMIT_HASH': JSON.stringify(commitHash),
+      },
       base: "/",
       server: {
         port: 5174,
@@ -242,6 +253,9 @@ export default defineConfig(async ({ mode, command }) => {
 
   return {
     plugins,
+    define: {
+      'import.meta.env.VITE_COMMIT_HASH': JSON.stringify(commitHash),
+    },
     base: "/",
     envPrefix: ["VITE_", "TAURI_ENV_"],
     clearScreen: false,

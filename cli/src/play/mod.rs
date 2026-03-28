@@ -17,15 +17,15 @@ struct PlayContext {
 }
 
 pub fn execute(
-    description: String,
+    description: &str,
     title: Option<String>,
-    base_branch: Option<String>,
-    flow: Option<String>,
+    base_branch: Option<&str>,
+    flow: Option<&str>,
     no_integrate: bool,
     no_pr: bool,
     pretty: bool,
 ) -> Result<(), String> {
-    let mut ctx = setup::execute(&description, title, base_branch, flow, no_integrate)?;
+    let mut ctx = setup::execute(description, title, base_branch, flow, no_integrate)?;
     run_loop::execute(&mut ctx)?;
     finish::execute(&ctx.api, &ctx.task_id, no_integrate, no_pr, pretty)
 }

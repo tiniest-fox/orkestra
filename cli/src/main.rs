@@ -275,10 +275,10 @@ fn main() {
             no_pr,
         } => {
             if let Err(e) = play::execute(
-                description,
+                &description,
                 title,
-                base_branch,
-                flow,
+                base_branch.as_deref(),
+                flow.as_deref(),
                 no_integrate,
                 no_pr,
                 cli.pretty,

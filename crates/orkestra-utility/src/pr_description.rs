@@ -21,7 +21,7 @@ use crate::runner::UtilityRunner;
 /// in orkestra-core, which is the single source of truth for this collection.
 #[derive(Debug, Clone)]
 pub struct PrArtifact {
-    /// Artifact name (e.g. "plan", "summary", "activity_log").
+    /// Artifact name (e.g. "plan", "summary", "`activity_log`").
     pub name: String,
     /// Human-readable description from the stage config, if set.
     pub description: Option<String>,

@@ -98,7 +98,9 @@ pub async fn start_containers_and_spawn(
     // Best-effort pull — skipped silently if there are local changes, the
     // remote is unreachable, or history has diverged.
     let pull_path = path.clone();
-    tokio::task::spawn_blocking(move || github::pull_repo::execute(&pull_path)).await.ok();
+    tokio::task::spawn_blocking(move || github::pull_repo::execute(&pull_path))
+        .await
+        .ok();
 
     if let Err(e) = container_and_spawn(&conn, &supervisor, project, path, run_setup).await {
         tracing::error!("Container setup failed for {project_id}: {e}");

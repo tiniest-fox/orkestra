@@ -14,8 +14,8 @@ use orkestra_core::{
 pub fn execute(
     description: &str,
     title: Option<String>,
-    base_branch: Option<String>,
-    flow: Option<String>,
+    base_branch: Option<&str>,
+    flow: Option<&str>,
     no_integrate: bool,
 ) -> Result<super::PlayContext, String> {
     let project_root =
@@ -68,9 +68,9 @@ pub fn execute(
         .create_task_with_options(
             &title_str,
             description,
-            base_branch.as_deref(),
+            base_branch,
             TaskCreationMode::AutoMode,
-            flow.as_deref(),
+            flow,
         )
         .map_err(|e| format!("Failed to create task: {e}"))?;
     let task_id = task.id.clone();

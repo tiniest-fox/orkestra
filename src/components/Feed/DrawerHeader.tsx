@@ -138,22 +138,23 @@ export function DrawerHeader({
 
   // Build actions array for the shared header.
   const actions: DrawerAction[] = [
-    // Auto mode, run, terminal, editor — only when worktree exists
+    // Auto mode — available without a worktree
+    ...(!task.derived.is_done && !task.derived.is_archived && onToggleAutoMode
+      ? [
+          {
+            icon: <Zap fill={effectiveAutoMode ? "currentColor" : "none"} />,
+            label: `${effectiveAutoMode ? "Disable" : "Enable"} auto mode`,
+            shortLabel: "Auto",
+            hotkeyLabel: "⇧A",
+            onClick: onToggleAutoMode,
+            active: effectiveAutoMode,
+            activeClassName: "text-purple-500",
+          },
+        ]
+      : []),
+    // Run, terminal, editor — only when worktree exists
     ...(worktreePath
       ? [
-          ...(!task.derived.is_done && !task.derived.is_archived && onToggleAutoMode
-            ? [
-                {
-                  icon: <Zap fill={effectiveAutoMode ? "currentColor" : "none"} />,
-                  label: `${effectiveAutoMode ? "Disable" : "Enable"} auto mode`,
-                  shortLabel: "Auto",
-                  hotkeyLabel: "⇧A",
-                  onClick: onToggleAutoMode,
-                  active: effectiveAutoMode,
-                  activeClassName: "text-purple-500",
-                },
-              ]
-            : []),
           ...(showRunButton && runStatus
             ? [
                 {

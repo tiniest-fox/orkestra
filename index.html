@@ -106,6 +106,22 @@
         flex-shrink: 0;
       }
 
+      /* Mobile — matches useIsMobile() 768px breakpoint */
+      @media (max-width: 767px) {
+        .skeleton-kbd {
+          display: none;
+        }
+
+        .skeleton-footer-safe {
+          padding-bottom: env(safe-area-inset-bottom);
+          flex-shrink: 0;
+        }
+
+        .skeleton-footer {
+          height: 49px;
+        }
+      }
+
       /* Dark mode — Forge dark tokens */
       @media (prefers-color-scheme: dark) {
         body {
@@ -163,7 +179,9 @@
           <div class="skeleton-spinner"></div>
           <p class="skeleton-status">Loading Orkestra…</p>
         </div>
-        <div class="skeleton-footer"></div>
+        <div class="skeleton-footer-safe">
+          <div class="skeleton-footer"></div>
+        </div>
       </div>
     </div>
     <script>window.__htmlLoadTime = performance.now();</script>

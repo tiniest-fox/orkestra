@@ -16,6 +16,7 @@ import {
 } from "react";
 import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
+import { useStalenessTimer } from "../hooks/useStalenessTimer";
 import { startupData } from "../startup";
 
 import { useConnectionState, useTransport } from "../transport";
@@ -88,6 +89,7 @@ interface TasksContextValue {
   archivedTasks: WorkflowTaskView[];
   loading: boolean;
   error: unknown;
+  isStale: boolean; // true when cached data is older than 5s
   createTask: (
     title: string,
     description: string,
@@ -131,6 +133,8 @@ export function TasksProvider({ children }: TasksProviderProps) {
   );
   const [loading, setLoading] = useState(!cachedTasks);
   const [error, setError] = useState<unknown>(null);
+  const [lastFetchedAt, setLastFetchedAt] = useState<number>(Date.now());
+  const isStale = useStalenessTimer(lastFetchedAt);
 
   // Track task IDs with pending deletes so polling doesn't re-add them
   const deletingIdsRef = useRef<Set<string>>(new Set());
@@ -179,6 +183,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
         setTasks(result);
         tasksCacheEntry = { projectUrl, data: result };
       }
+      setLastFetchedAt(Date.now());
       setError(null);
     } catch (err) {
       if (!isDisconnectError(err)) {
@@ -301,6 +306,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
     archivedTasks,
     loading,
     error,
+    isStale,
     createTask,
     createSubtask,
     deleteTask,

@@ -1,15 +1,29 @@
 // Subtle reconnecting indicator shown when WebSocket is disconnected but UI stays mounted.
 
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { useConnectionState } from "../transport";
+
+const BANNER_GRACE_PERIOD_MS = 2_000;
 
 export function ReconnectingBanner() {
   const connectionState = useConnectionState();
-  const isDisconnected = connectionState !== "connected";
+  const [showBanner, setShowBanner] = useState(false);
+
+  useEffect(() => {
+    if (connectionState === "connected") {
+      setShowBanner(false);
+      return;
+    }
+
+    // Grace period: only show banner after 2s of continuous disconnection.
+    const timer = setTimeout(() => setShowBanner(true), BANNER_GRACE_PERIOD_MS);
+    return () => clearTimeout(timer);
+  }, [connectionState]);
 
   return (
     <AnimatePresence>
-      {isDisconnected && (
+      {showBanner && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { stalenessClass } from "../../hooks/useStalenessTimer";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
@@ -243,6 +244,7 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
     pushLoading,
     pullLoading,
     fetchLoading,
+    isStale,
 
     pushToOrigin,
     pullFromOrigin,
@@ -436,7 +438,10 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
         {/* Desktop: side-by-side */}
         {!isMobile && (
           <div className="flex flex-1 overflow-hidden">
-            <div ref={listRef} className="w-60 shrink-0 overflow-y-auto border-r border-border">
+            <div
+              ref={listRef}
+              className={`w-60 shrink-0 overflow-y-auto border-r border-border ${stalenessClass(isStale)}`}
+            >
               {commits.map((commit) => (
                 <CommitRow
                   key={commit.hash}
@@ -467,7 +472,7 @@ function GitHistoryDrawerContent({ onClose }: GitHistoryDrawerProps) {
 
         {/* Mobile: full-width commit list */}
         {isMobile && (
-          <div ref={listRef} className="flex-1 overflow-y-auto">
+          <div ref={listRef} className={`flex-1 overflow-y-auto ${stalenessClass(isStale)}`}>
             {commits.map((commit) => (
               <CommitRow
                 key={commit.hash}

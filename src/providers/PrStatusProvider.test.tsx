@@ -62,6 +62,7 @@ function createMockTasksValue(tasks: WorkflowTaskView[]) {
     archivedTasks: [],
     loading: false,
     error: null,
+    isStale: false,
     createTask: vi.fn(),
     createSubtask: vi.fn(),
     deleteTask: vi.fn(),

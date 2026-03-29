@@ -126,6 +126,19 @@ When adding a utility that transforms content before rendering (e.g., stripping 
 Before submitting: grep the modified file for the raw field/variable name and confirm every rendering site applies the transformation.
 
 <!-- compound: absolutely-jesting-partridge -->
+<!-- compound: turgidly-heralded-eelpout -->
+### Extract Shared Logic to Hooks Before Implementing in Multiple Providers
+
+When the breakdown asks you to add the same state/logic to multiple providers or components (e.g., a staleness timer, a polling flag, a cache invalidation trigger), **extract to a shared hook first** — don't implement inline in each consumer. Duplicate `useState`/`useEffect` blocks across multiple files violate Single Source of Truth and are a guaranteed HIGH-severity rejection.
+
+Pattern:
+1. Create `src/hooks/useSharedConcept.ts` with the canonical logic
+2. Import and use `const result = useSharedConcept(input)` in each consumer
+3. Export any pure utility functions from the same hook file (not a separate file)
+4. **If the hook exports a pure utility function** (e.g., a CSS class helper), add a `useSharedConcept.test.ts` unit test alongside it — `src/CLAUDE.md` requires unit tests for pure utility modules.
+
+Reference: `src/hooks/useStalenessTimer.ts` exports both `useStalenessTimer` (hook) and `stalenessClass` (pure utility).
+
 ### Frontend State Scope Rules
 
 When adding conditional UI elements, associated state must follow the same conditional scope:

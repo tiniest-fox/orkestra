@@ -17,6 +17,7 @@ import {
 import { prefetchCommitDiff } from "../hooks/useCommitDiff";
 import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
+import { useStalenessTimer } from "../hooks/useStalenessTimer";
 import { useConnectionState, useTransport } from "../transport";
 import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
 import { extractErrorMessage } from "../utils/errors";
@@ -50,6 +51,7 @@ interface GitHistoryContextValue extends SyncControls {
   branches: string[];
   loading: boolean;
   error: unknown;
+  isStale: boolean; // true when cached data is older than 5s
   syncStatus: SyncStatus | null;
   operationError: OperationError | null;
   pushLoading: boolean;
@@ -89,6 +91,8 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const [branches, setBranches] = useState<string[]>(() => cached?.branches ?? []);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<unknown>(null);
+  const [lastFetchedAt, setLastFetchedAt] = useState<number>(Date.now());
+  const isStale = useStalenessTimer(lastFetchedAt);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(() => cached?.syncStatus ?? null);
   const [pushLoading, setPushLoading] = useState(false);
   const [pullLoading, setPullLoading] = useState(false);
@@ -114,6 +118,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
         branches: branchResult.branches,
         syncStatus: syncResult,
       };
+      setLastFetchedAt(Date.now());
       setError(null);
     } catch (err) {
       if (!isDisconnectError(err)) {
@@ -234,6 +239,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     branches,
     loading,
     error,
+    isStale,
     syncStatus,
     operationError,
     pushLoading,

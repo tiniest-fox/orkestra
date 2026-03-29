@@ -287,73 +287,95 @@ describe("WebSocketTransport", () => {
   // -- Reconnection with exponential backoff --
 
   describe("reconnection — exponential backoff", () => {
-    it("schedules reconnect after 1s on disconnect", () => {
+    it("first reconnect attempt is instant (0ms delay)", () => {
       const t = makeConnectedTransport();
       latestSocket().simulateClose();
 
       expect(t.connectionState).toBe("disconnected");
       expect(MockWebSocket.instances).toHaveLength(1);
 
-      vi.advanceTimersByTime(1_000);
+      // 0ms timer — flush with advanceTimersByTime(0)
+      vi.advanceTimersByTime(0);
       expect(MockWebSocket.instances).toHaveLength(2);
     });
 
-    it("doubles the backoff delay on repeated disconnects", () => {
+    it("uses exponential backoff after first instant attempt fails", () => {
       makeConnectedTransport();
 
-      // First disconnect → schedules reconnect after 1s, delay doubles to 2s.
+      // First disconnect → instant reconnect (0ms).
       latestSocket().simulateClose();
-      vi.advanceTimersByTime(1_000);
-      // A new socket is created for the reconnect attempt but we do NOT call
-      // simulateOpen() — opening would reset _reconnectDelay back to 1s, which
-      // is NOT what this test is verifying. The socket is still in connecting state.
-
-      // Second disconnect (reconnect attempt fails) → schedules reconnect after 2s.
-      latestSocket().simulateClose();
+      vi.advanceTimersByTime(0);
       expect(MockWebSocket.instances).toHaveLength(2);
 
-      vi.advanceTimersByTime(1_999);
+      // Second disconnect (instant attempt failed) → schedules reconnect after 1s.
+      latestSocket().simulateClose();
+
+      vi.advanceTimersByTime(999);
       expect(MockWebSocket.instances).toHaveLength(2); // Not yet
 
       vi.advanceTimersByTime(1);
       expect(MockWebSocket.instances).toHaveLength(3); // Reconnected
     });
 
+    it("doubles the backoff delay on repeated failed reconnects", () => {
+      makeConnectedTransport();
+
+      // First disconnect → instant (0ms).
+      latestSocket().simulateClose();
+      vi.advanceTimersByTime(0);
+
+      // Second disconnect (first backoff attempt, 1s) → delay doubles to 2s.
+      latestSocket().simulateClose();
+      vi.advanceTimersByTime(1_000);
+      // A new socket is created but we do NOT call simulateOpen() — opening
+      // would reset the delay, which is NOT what this test is verifying.
+
+      // Third disconnect → should use 2s.
+      latestSocket().simulateClose();
+      expect(MockWebSocket.instances).toHaveLength(3);
+
+      vi.advanceTimersByTime(1_999);
+      expect(MockWebSocket.instances).toHaveLength(3); // Not yet
+
+      vi.advanceTimersByTime(1);
+      expect(MockWebSocket.instances).toHaveLength(4); // Reconnected
+    });
+
     it("caps reconnect delay at 30s", () => {
       makeConnectedTransport();
 
-      // Simulate many disconnects to push delay past 30s
+      // Exhaust the instant-reconnect flag, then drive the backoff past 30s
+      // without opening (so the flag is never reset).
+      latestSocket().simulateClose(); // instant (0ms)
+      vi.advanceTimersByTime(0);
+
       for (let i = 0; i < 10; i++) {
         latestSocket().simulateClose();
         vi.advanceTimersByTime(60_000); // advance more than max
-        latestSocket().simulateOpen();
       }
 
-      // After a successful reconnect, delay resets to 1s
-      latestSocket().simulateClose();
       const instancesBefore = MockWebSocket.instances.length;
+      latestSocket().simulateClose();
 
-      vi.advanceTimersByTime(1_000);
+      // Capped at 30s — advancing 30s should trigger the next reconnect.
+      vi.advanceTimersByTime(30_000);
       expect(MockWebSocket.instances.length).toBe(instancesBefore + 1);
     });
 
-    it("resets delay to 1s after a successful connection", () => {
+    it("resets instant reconnect flag after successful connection", () => {
       makeConnectedTransport();
 
-      // Disconnect, reconnect after 1s (delay doubles to 2s)
+      // First disconnect → instant reconnect.
       latestSocket().simulateClose();
-      vi.advanceTimersByTime(1_000);
-      latestSocket().simulateOpen(); // Successful connection → resets delay to 1s
+      vi.advanceTimersByTime(0);
+      latestSocket().simulateOpen(); // Successful connection → flag resets.
 
-      // Disconnect again — should reconnect after 1s, not 2s
+      // Second disconnect — instant again because flag was reset.
       latestSocket().simulateClose();
       const countBefore = MockWebSocket.instances.length;
 
-      vi.advanceTimersByTime(999);
-      expect(MockWebSocket.instances.length).toBe(countBefore); // Not yet
-
-      vi.advanceTimersByTime(1);
-      expect(MockWebSocket.instances.length).toBe(countBefore + 1); // Reconnected
+      vi.advanceTimersByTime(0);
+      expect(MockWebSocket.instances.length).toBe(countBefore + 1);
     });
 
     it("transitions through disconnected → connecting → connected on reconnect", () => {
@@ -365,7 +387,8 @@ describe("WebSocketTransport", () => {
       latestSocket().simulateClose();
       expect(states).toContain("disconnected");
 
-      vi.advanceTimersByTime(1_000);
+      // First reconnect is instant — advancing 0ms triggers it.
+      vi.advanceTimersByTime(0);
       expect(states).toContain("connecting");
 
       latestSocket().simulateOpen();

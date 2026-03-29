@@ -28,6 +28,9 @@ function renderRow(project: api.Project, overrides?: Partial<ProjectRowProps>) {
     onRebuild: vi.fn(),
     onRemove: vi.fn(),
     onOpen: vi.fn(),
+    onGitFetch: vi.fn(),
+    onGitPull: vi.fn(),
+    onGitPush: vi.fn(),
     isFocused: false,
     onMouseEnter: vi.fn(),
     ...overrides,
@@ -61,6 +64,29 @@ function errorProject(): api.Project {
     name: "broken-repo",
     status: "error" as api.ProjectStatus,
     error_message: "Something went wrong",
+  };
+}
+
+function projectWithGitStatus(): api.Project {
+  return {
+    id: "proj-4",
+    name: "git-repo",
+    status: "running" as api.ProjectStatus,
+    git_status: {
+      branch: "main",
+      sync_status: { ahead: 2, behind: 3 },
+    },
+  };
+}
+
+function projectWithGitStatusNoSync(): api.Project {
+  return {
+    id: "proj-5",
+    name: "git-repo-no-sync",
+    status: "running" as api.ProjectStatus,
+    git_status: {
+      branch: "feature-branch",
+    },
   };
 }
 
@@ -231,5 +257,83 @@ describe("ProjectRow", () => {
     renderRow(runningProject(), { onOpen });
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("calls onGitFetch when Fetch clicked from overflow menu", async () => {
+    const onGitFetch = vi.fn();
+    renderRow(projectWithGitStatus(), { onGitFetch });
+    openMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Fetch" }));
+    await waitFor(() => expect(onGitFetch).toHaveBeenCalledOnce());
+  });
+
+  it("calls onGitPull when Pull clicked from overflow menu", async () => {
+    const onGitPull = vi.fn();
+    renderRow(projectWithGitStatus(), { onGitPull });
+    openMenu();
+    fireEvent.click(screen.getByRole("button", { name: /^Pull/ }));
+    await waitFor(() => expect(onGitPull).toHaveBeenCalledOnce());
+  });
+
+  it("calls onGitPush when Push clicked from overflow menu", async () => {
+    const onGitPush = vi.fn();
+    renderRow(projectWithGitStatus(), { onGitPush });
+    openMenu();
+    fireEvent.click(screen.getByRole("button", { name: /^Push/ }));
+    await waitFor(() => expect(onGitPush).toHaveBeenCalledOnce());
+  });
+
+  // -- Git status rendering --
+
+  it("shows branch name when project has git_status", () => {
+    renderRow(projectWithGitStatusNoSync());
+    expect(screen.getByText("feature-branch")).toBeInTheDocument();
+  });
+
+  it("shows ahead indicator when git sync_status.ahead > 0", () => {
+    renderRow(projectWithGitStatus());
+    expect(screen.getByText("↑2")).toBeInTheDocument();
+  });
+
+  it("shows behind indicator when git sync_status.behind > 0", () => {
+    renderRow(projectWithGitStatus());
+    expect(screen.getByText("↓3")).toBeInTheDocument();
+  });
+
+  it("does not show git info when project has no git_status", () => {
+    renderRow(runningProject());
+    expect(screen.queryByText("main")).not.toBeInTheDocument();
+    expect(screen.queryByText(/↑/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/↓/)).not.toBeInTheDocument();
+  });
+
+  // -- Git action items in overflow menu --
+
+  it("shows Fetch, Pull, Push in overflow menu when project has git_status", () => {
+    renderRow(projectWithGitStatus());
+    openMenu();
+    expect(screen.getByRole("button", { name: "Fetch" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Pull/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Push/ })).toBeInTheDocument();
+  });
+
+  it("shows Pull with behind suffix when git sync_status.behind > 0", () => {
+    renderRow(projectWithGitStatus());
+    openMenu();
+    expect(screen.getByRole("button", { name: "Pull ↓3" })).toBeInTheDocument();
+  });
+
+  it("shows Push with ahead suffix when git sync_status.ahead > 0", () => {
+    renderRow(projectWithGitStatus());
+    openMenu();
+    expect(screen.getByRole("button", { name: "Push ↑2" })).toBeInTheDocument();
+  });
+
+  it("does not show git items in overflow menu when project has no git_status", () => {
+    renderRow(runningProject());
+    openMenu();
+    expect(screen.queryByRole("button", { name: "Fetch" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pull/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Push/ })).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
 import { resolve } from "path";
+import { readFileSync, existsSync } from "node:fs";
 import { execFile, execSync } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { defineConfig, type Plugin } from "vite";
@@ -158,10 +159,43 @@ function serviceMockPlugin(): Plugin {
   };
 }
 
+function resolveHashFromGitFiles(dir: string): string {
+  const headPath = resolve(dir, '.git/HEAD');
+  const content = readFileSync(headPath, 'utf8').trim();
+  if (/^[0-9a-f]{40}$/.test(content)) {
+    return content.slice(0, 7);
+  }
+  if (content.startsWith('ref: ')) {
+    const refPath = content.slice(5).trim();
+    const refFile = resolve(dir, '.git', refPath);
+    if (existsSync(refFile)) {
+      return readFileSync(refFile, 'utf8').trim().slice(0, 7);
+    }
+    const packedRefsPath = resolve(dir, '.git/packed-refs');
+    if (existsSync(packedRefsPath)) {
+      const packedRefs = readFileSync(packedRefsPath, 'utf8');
+      for (const line of packedRefs.split('\n')) {
+        if (line.startsWith('#') || line.startsWith('^')) continue;
+        const parts = line.split(' ');
+        if (parts.length >= 2 && parts[1] === refPath) {
+          return parts[0].slice(0, 7);
+        }
+      }
+    }
+  }
+  throw new Error('Cannot resolve commit hash from .git/HEAD');
+}
+
 const commitHash = (() => {
-  if (process.env.VITE_COMMIT_HASH) return process.env.VITE_COMMIT_HASH;
+  const envHash = process.env.VITE_COMMIT_HASH;
+  if (envHash && envHash !== 'dev') return envHash;
   try {
     return execSync('git rev-parse --short HEAD', { cwd: import.meta.dirname }).toString().trim();
+  } catch {
+    // fall through
+  }
+  try {
+    return resolveHashFromGitFiles(import.meta.dirname);
   } catch {
     return 'dev';
   }

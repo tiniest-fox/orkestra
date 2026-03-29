@@ -59,6 +59,9 @@ export function ProjectList({
                 onRebuild={actions.onRebuild}
                 onRemove={actions.onRemove}
                 onOpen={actions.onOpen}
+                onGitFetch={actions.onGitFetch}
+                onGitPull={actions.onGitPull}
+                onGitPush={actions.onGitPush}
                 isFocused={focusedId === project.id}
                 onMouseEnter={() => onFocusRow(project.id)}
               />

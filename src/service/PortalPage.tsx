@@ -15,6 +15,9 @@ import {
   fetchProjects,
   generatePairingCode,
   getToken,
+  gitFetch,
+  gitPull,
+  gitPush,
   rebuildProject,
   removeProject,
   startProject,
@@ -187,6 +190,9 @@ export function PortalPage() {
           await runAction(id, "removing", () => removeProject(id));
         },
         onOpen: () => navigate(`/project/${id}`),
+        onGitFetch: () => runAction(id, project.status, () => gitFetch(id)),
+        onGitPull: () => runAction(id, project.status, () => gitPull(id)),
+        onGitPush: () => runAction(id, project.status, () => gitPush(id)),
       });
     }
     return map;

@@ -120,6 +120,32 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
 
   const { sections, subtaskRows } = useMemo(() => groupTasksForFeed(tasks), [tasks]);
 
+  // Derive whether any task has an active assistant agent
+  const anyAssistantActive = useMemo(
+    () => tasks.some((t) => t.derived.chat_agent_active || t.derived.is_chatting),
+    [tasks],
+  );
+
+  // Track unread assistant responses
+  const [hasUnreadAssistant, setHasUnreadAssistant] = useState(false);
+  const assistantDrawerOpen = assistantOpen || taskAssistantId !== null;
+  const prevAssistantActiveRef = useRef(false);
+
+  useEffect(() => {
+    // Detect active → inactive transition while drawer is closed
+    if (prevAssistantActiveRef.current && !anyAssistantActive && !assistantDrawerOpen) {
+      setHasUnreadAssistant(true);
+    }
+    prevAssistantActiveRef.current = anyAssistantActive;
+  }, [anyAssistantActive, assistantDrawerOpen]);
+
+  // Clear unread when drawer opens
+  useEffect(() => {
+    if (assistantDrawerOpen) {
+      setHasUnreadAssistant(false);
+    }
+  }, [assistantDrawerOpen]);
+
   // All task IDs for keyboard navigation. Navigation is suppressed while the user
   // is typing in the command bar input, so the unfiltered list is correct here.
   const allOrderedIds = useMemo(() => {
@@ -374,6 +400,8 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
         <MobileTabBar
           gitActive={gitHistoryOpen}
           assistantActive={assistantOpen || taskAssistantId !== null}
+          assistantAgentActive={anyAssistantActive}
+          hasUnreadAssistant={hasUnreadAssistant}
           onGitOpen={() => {
             setGitHistoryOpen((o) => !o);
             setActiveTaskId(null);

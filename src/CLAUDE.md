@@ -218,6 +218,19 @@ Forge is the project's design language — it is not an alternate or scoped visu
 
 **Animation coupling:** Keyframe names (`pipe-active-pulse`, `forge-pulse-opacity`) are coupled by string between `index.css` and TSX files with no compile-time check. Be careful when renaming them.
 
+<!-- compound: regularly-befriended-nuthatch -->
+**Custom keyframes use Tailwind arbitrary value syntax — not inline styles.** Even though `forge-pulse-opacity` and `pipe-active-pulse` are defined in `index.css` (not `tailwind.config.js`), you can still reference them via Tailwind's bracket syntax. Never use an inline `style` prop for animations when this syntax works:
+
+```tsx
+// Correct — Tailwind arbitrary value syntax works for CSS-defined keyframes
+className="animate-[forge-pulse-opacity_2s_ease-in-out_infinite]"
+
+// Wrong — inline style violates the "Tailwind classes only" convention
+style={{ animation: "forge-pulse-opacity 2s ease-in-out infinite" }}
+```
+
+See `ProjectRow.tsx` and `MobileTabBar.tsx` for canonical usage.
+
 ## UI Components
 
 <!-- compound: freely-exquisite-chicken -->

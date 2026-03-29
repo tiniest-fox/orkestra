@@ -32,7 +32,8 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
  * Transport implementation backed by a WebSocket connection to the daemon.
  *
  * Implements JSON-RPC for request/response and an event channel for server-push
- * notifications. Reconnects with exponential backoff (1s → 2s → ... → 30s cap).
+ * notifications. The first reconnect after a successful connection is instant (0ms);
+ * subsequent attempts use exponential backoff (1s → 2s → ... → 30s cap).
  *
  * The optional `createWebSocket` constructor parameter makes the transport testable
  * without real WebSocket connections.
@@ -49,6 +50,9 @@ export class WebSocketTransport implements Transport {
   private _ws: WebSocket | null = null;
   private _reconnectDelay = RECONNECT_BASE_DELAY_MS;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // Set to true after a successful connection so the first disconnect triggers an instant reconnect.
+  // Consumed (set to false) when used, and restored on the next successful open.
+  private _isFirstReconnect = false;
 
   constructor(
     private readonly _url: string,
@@ -147,6 +151,7 @@ export class WebSocketTransport implements Transport {
         return;
       }
       this._reconnectDelay = RECONNECT_BASE_DELAY_MS;
+      this._isFirstReconnect = true; // Reset so next disconnect triggers instant reconnect.
       this._setConnectionState("connected");
     };
 
@@ -210,16 +215,23 @@ export class WebSocketTransport implements Transport {
 
     this._setConnectionState("disconnected");
 
-    // Schedule reconnect with exponential backoff.
     if (this._reconnectTimer !== null) {
       clearTimeout(this._reconnectTimer);
     }
+
+    // First reconnect after a successful connection is instant.
+    // Subsequent attempts use exponential backoff.
+    const delay = this._isFirstReconnect ? 0 : this._reconnectDelay;
+    if (this._isFirstReconnect) {
+      this._isFirstReconnect = false;
+    } else {
+      this._reconnectDelay = Math.min(this._reconnectDelay * 2, RECONNECT_MAX_DELAY_MS);
+    }
+
     this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null;
       this._connect();
-    }, this._reconnectDelay);
-
-    this._reconnectDelay = Math.min(this._reconnectDelay * 2, RECONNECT_MAX_DELAY_MS);
+    }, delay);
   }
 
   private _setConnectionState(state: ConnectionState): void {

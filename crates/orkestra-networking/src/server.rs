@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -26,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
+use tokio::time::{interval_at, Instant};
 use tower_http::cors::CorsLayer;
 
 use crate::interactions::auth::{generate_pairing_code, pair_device, verify_token};
@@ -290,6 +292,11 @@ async fn handle_connection(mut socket: WebSocket, state: ServerState) {
         }
     }
 
+    let mut ping_interval = interval_at(
+        Instant::now() + Duration::from_secs(30),
+        Duration::from_secs(30),
+    );
+
     loop {
         tokio::select! {
             // Incoming client message
@@ -334,6 +341,13 @@ async fn handle_connection(mut socket: WebSocket, state: ServerState) {
                         }
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+
+            // Keepalive ping
+            _ = ping_interval.tick() => {
+                if socket.send(Message::Ping(vec![].into())).await.is_err() {
+                    break;
                 }
             }
         }

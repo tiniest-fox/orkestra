@@ -4,6 +4,7 @@ import { Inbox } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawerHistory } from "../../hooks/useDrawerHistory";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { stalenessClass } from "../../hooks/useStalenessTimer";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { useTasks } from "../../providers/TasksProvider";
 import { useTransport } from "../../transport";
@@ -71,7 +72,7 @@ interface FeedViewProps {
 
 export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
   const transport = useTransport();
-  const { applyOptimistic } = useTasks();
+  const { applyOptimistic, isStale } = useTasks();
   const isMobile = useIsMobile();
   const feedBodyRef = useRef<HTMLDivElement>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -313,35 +314,37 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
       />
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto flex flex-col">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
-          {filteredSections.map((section) => (
-            <FeedSection
-              key={section.name}
-              section={section}
-              surfacedSubtasks={subtaskRows}
-              config={config}
-              focusedId={focusedId}
-              onFocusRow={setFocusedId}
-              onReview={setActiveTaskId}
-              onAnswer={setActiveTaskId}
-              onApprove={(taskId) => {
-                applyOptimistic(taskId, { type: "approve" });
-                transport.call("approve", { task_id: taskId }).catch(console.error);
-              }}
-              onMerge={(taskId) => {
-                transport.call("merge_task", { task_id: taskId }).catch(console.error);
-              }}
-              onOpenPr={(taskId) => {
-                transport.call("open_pr", { task_id: taskId }).catch(console.error);
-              }}
-              onArchive={async (taskId) => {
-                if (!(await confirmAction("Archive this task?"))) return;
-                applyOptimistic(taskId, { type: "archive" });
-                transport.call("archive", { task_id: taskId }).catch(console.error);
-              }}
-              onInteractive={openInteractive}
-              onRowClick={onStripRowClick}
-            />
-          ))}
+          <div className={stalenessClass(isStale)}>
+            {filteredSections.map((section) => (
+              <FeedSection
+                key={section.name}
+                section={section}
+                surfacedSubtasks={subtaskRows}
+                config={config}
+                focusedId={focusedId}
+                onFocusRow={setFocusedId}
+                onReview={setActiveTaskId}
+                onAnswer={setActiveTaskId}
+                onApprove={(taskId) => {
+                  applyOptimistic(taskId, { type: "approve" });
+                  transport.call("approve", { task_id: taskId }).catch(console.error);
+                }}
+                onMerge={(taskId) => {
+                  transport.call("merge_task", { task_id: taskId }).catch(console.error);
+                }}
+                onOpenPr={(taskId) => {
+                  transport.call("open_pr", { task_id: taskId }).catch(console.error);
+                }}
+                onArchive={async (taskId) => {
+                  if (!(await confirmAction("Archive this task?"))) return;
+                  applyOptimistic(taskId, { type: "archive" });
+                  transport.call("archive", { task_id: taskId }).catch(console.error);
+                }}
+                onInteractive={openInteractive}
+                onRowClick={onStripRowClick}
+              />
+            ))}
+          </div>
           {hasNoTasks && !filterText && (
             <EmptyState
               className="flex-1"

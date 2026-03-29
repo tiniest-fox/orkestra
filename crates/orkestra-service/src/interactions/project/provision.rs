@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
+use orkestra_git::{Git2GitService, GitService};
+
 use crate::daemon_supervisor::DaemonSupervisor;
 use crate::interactions::{devcontainer, github, project};
 use crate::types::{Project, ProjectStatus, ServiceError};
@@ -98,9 +100,14 @@ pub async fn start_containers_and_spawn(
     // Best-effort pull — skipped silently if there are local changes, the
     // remote is unreachable, or history has diverged.
     let pull_path = path.clone();
-    tokio::task::spawn_blocking(move || github::pull_repo::execute(&pull_path))
-        .await
-        .ok();
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Ok(git) = Git2GitService::new(&pull_path) {
+            if let Err(e) = git.pull_branch() {
+                tracing::warn!(path = %pull_path.display(), error = %e, "git pull --rebase skipped");
+            }
+        }
+    })
+    .await;
 
     if let Err(e) = container_and_spawn(&conn, &supervisor, project, path, run_setup).await {
         tracing::error!("Container setup failed for {project_id}: {e}");

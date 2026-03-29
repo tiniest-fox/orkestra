@@ -21,6 +21,8 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 
+use orkestra_git::{Git2GitService, GitService};
+
 use crate::daemon_supervisor::DaemonSupervisor;
 use crate::interactions::{daemon_token, github, port, project};
 use crate::types::{ProjectStatus, ServiceConfig, ServiceError};
@@ -86,6 +88,9 @@ pub async fn start(
         .route("/api/projects/{id}/stop", post(stop_project_handler))
         .route("/api/projects/{id}/rebuild", post(rebuild_project_handler))
         .route("/api/projects/{id}/logs", get(project_logs_handler))
+        .route("/api/projects/{id}/git/fetch", post(git_fetch_handler))
+        .route("/api/projects/{id}/git/pull", post(git_pull_handler))
+        .route("/api/projects/{id}/git/push", post(git_push_handler))
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -251,6 +256,18 @@ async fn generate_pairing_code_handler(State(state): State<OrkServiceState>) -> 
 
 // -- Projects --
 
+#[derive(Debug, Serialize, Clone)]
+struct GitSyncStatusResponse {
+    ahead: u32,
+    behind: u32,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct GitStatusResponse {
+    branch: String,
+    sync_status: Option<GitSyncStatusResponse>,
+}
+
 /// Project response shape for `/api/projects` endpoints.
 #[derive(Debug, Serialize)]
 struct ProjectResponse {
@@ -265,6 +282,7 @@ struct ProjectResponse {
     error_message: Option<String>,
     /// Whether the project repo has a `.devcontainer/devcontainer.json`.
     has_devcontainer: bool,
+    git_status: Option<GitStatusResponse>,
 }
 
 impl ProjectResponse {
@@ -274,6 +292,7 @@ impl ProjectResponse {
         token_error: Option<String>,
         ws_base: &str,
         has_devcontainer: bool,
+        git_status: Option<GitStatusResponse>,
     ) -> Self {
         Self {
             id: proj.id.clone(),
@@ -285,6 +304,7 @@ impl ProjectResponse {
             status: proj.status,
             error_message: proj.error_message.clone(),
             has_devcontainer,
+            git_status,
         }
     }
 }
@@ -333,9 +353,47 @@ async fn list_projects_handler(
         .unwrap_or_else(|_| vec![false; projects.len()])
     };
 
+    let git_statuses: Vec<Option<GitStatusResponse>> = {
+        let paths: Vec<String> = projects.iter().map(|p| p.path.clone()).collect();
+        tokio::task::spawn_blocking(move || {
+            paths
+                .iter()
+                .map(|path| {
+                    let repo_path = std::path::Path::new(path);
+                    let Ok(git) = Git2GitService::new(repo_path) else {
+                        return None;
+                    };
+                    let branch = match git.current_branch() {
+                        Ok(b) if b == "HEAD" => "HEAD (detached)".to_string(),
+                        Ok(b) => b,
+                        Err(_) => return None,
+                    };
+                    let sync_status =
+                        git.sync_status()
+                            .ok()
+                            .flatten()
+                            .map(|s| GitSyncStatusResponse {
+                                ahead: s.ahead,
+                                behind: s.behind,
+                            });
+                    Some(GitStatusResponse {
+                        branch,
+                        sync_status,
+                    })
+                })
+                .collect()
+        })
+        .await
+        .unwrap_or_else(|_| vec![None::<GitStatusResponse>; projects.len()])
+    };
+
     let mut responses: Vec<ProjectResponse> = Vec::with_capacity(projects.len());
 
-    for (proj, has_devcontainer) in projects.iter().zip(has_devcontainer_flags) {
+    for ((proj, has_devcontainer), git_status) in projects
+        .iter()
+        .zip(has_devcontainer_flags)
+        .zip(git_statuses)
+    {
         let (token, token_error) = if proj.status == ProjectStatus::Running {
             let lock = state.pairing_lock_for(&proj.id);
             match daemon_token::get_or_create::execute(&state.conn, &device.id, proj, lock).await {
@@ -355,6 +413,7 @@ async fn list_projects_handler(
             token_error,
             &ws_base,
             has_devcontainer,
+            git_status,
         ));
     }
 
@@ -457,7 +516,7 @@ async fn add_project_handler(
 
     // Repository is still being cloned — devcontainer.json cannot exist yet.
     Json(ProjectResponse::from_project(
-        &proj, None, None, &ws_base, false,
+        &proj, None, None, &ws_base, false, None,
     ))
     .into_response()
 }
@@ -683,6 +742,103 @@ async fn project_logs_handler(
         Err(r) => return r,
     };
     Json(ProjectLogsResponse { lines: log_lines }).into_response()
+}
+
+// -- Git Actions --
+
+/// Look up a project by ID, returning a 404 response if not found.
+async fn fetch_project(
+    state: &OrkServiceState,
+    id: &str,
+) -> Result<crate::types::Project, Response<Body>> {
+    let conn = Arc::clone(&state.conn);
+    let id = id.to_string();
+    match tokio::task::spawn_blocking(move || project::get::execute(&conn, &id)).await {
+        Ok(Ok(p)) => Ok(p),
+        Ok(Err(ServiceError::ProjectNotFound(_))) => Err(StatusCode::NOT_FOUND.into_response()),
+        Ok(Err(e)) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response()),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response()),
+    }
+}
+
+/// `POST /api/projects/{id}/git/fetch` — fetch from origin.
+async fn git_fetch_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    let proj = match fetch_project(&state, &id).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    match run_blocking(move || {
+        let git = Git2GitService::new(std::path::Path::new(&proj.path))
+            .map_err(|e| ServiceError::Other(e.to_string()))?;
+        git.fetch_origin()
+            .map_err(|e| ServiceError::Other(e.to_string()))
+    })
+    .await
+    {
+        Ok(()) => Json(serde_json::json!({})).into_response(),
+        Err(r) => r,
+    }
+}
+
+/// `POST /api/projects/{id}/git/pull` — pull (rebase) the current branch.
+async fn git_pull_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    let proj = match fetch_project(&state, &id).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    match run_blocking(move || {
+        let git = Git2GitService::new(std::path::Path::new(&proj.path))
+            .map_err(|e| ServiceError::Other(e.to_string()))?;
+        git.pull_branch()
+            .map_err(|e| ServiceError::Other(e.to_string()))
+    })
+    .await
+    {
+        Ok(()) => Json(serde_json::json!({})).into_response(),
+        Err(r) => r,
+    }
+}
+
+/// `POST /api/projects/{id}/git/push` — push the current branch to origin.
+async fn git_push_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    let proj = match fetch_project(&state, &id).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    match run_blocking(move || {
+        let git = Git2GitService::new(std::path::Path::new(&proj.path))
+            .map_err(|e| ServiceError::Other(e.to_string()))?;
+        let branch = git
+            .current_branch()
+            .map_err(|e| ServiceError::Other(e.to_string()))?;
+        git.push_branch(&branch)
+            .map_err(|e| ServiceError::Other(e.to_string()))
+    })
+    .await
+    {
+        Ok(()) => Json(serde_json::json!({})).into_response(),
+        Err(r) => r,
+    }
 }
 
 // -- GitHub --

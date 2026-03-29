@@ -29,6 +29,16 @@ export type ProjectStatus =
   | "rebuilding"
   | "removing";
 
+export interface GitSyncStatus {
+  ahead: number;
+  behind: number;
+}
+
+export interface GitStatusInfo {
+  branch: string;
+  sync_status?: GitSyncStatus;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -37,6 +47,7 @@ export interface Project {
   ws_url?: string;
   token?: string;
   token_error?: string;
+  git_status?: GitStatusInfo;
 }
 
 export interface GithubStatus {
@@ -164,4 +175,19 @@ export async function fetchProjectLogs(projectId: string, lines = 50): Promise<s
   await requireOk(res);
   const data: { lines: string[] } = await res.json();
   return data.lines;
+}
+
+export async function gitFetch(id: string): Promise<void> {
+  const res = await apiFetch(`/api/projects/${id}/git/fetch`, { method: "POST" });
+  await requireOk(res);
+}
+
+export async function gitPull(id: string): Promise<void> {
+  const res = await apiFetch(`/api/projects/${id}/git/pull`, { method: "POST" });
+  await requireOk(res);
+}
+
+export async function gitPush(id: string): Promise<void> {
+  const res = await apiFetch(`/api/projects/${id}/git/push`, { method: "POST" });
+  await requireOk(res);
 }

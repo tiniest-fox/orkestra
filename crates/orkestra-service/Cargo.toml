@@ -24,6 +24,7 @@ tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors"] }
 reqwest = { version = "0.12", features = ["json"] }
 base64 = "0.22"
+orkestra-git = { path = "../orkestra-git" }
 orkestra-networking = { path = "../orkestra-networking" }
 orkestra-core = { path = "../orkestra-core" }
 

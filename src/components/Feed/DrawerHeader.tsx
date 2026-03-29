@@ -3,6 +3,7 @@
 import {
   ArrowLeftRight,
   MessageSquare,
+  MousePointerClick,
   Play,
   SkipForward,
   Square,
@@ -52,6 +53,7 @@ interface DrawerHeaderProps {
   onRunStart?: () => Promise<void>;
   onRunStop?: () => Promise<void>;
   onOpenChat?: () => void;
+  onInteractive?: () => void;
 }
 
 /** Compute the accent color for a drawer from the task's current state. */
@@ -86,6 +88,7 @@ export function DrawerHeader({
   onRunStart,
   onRunStop,
   onOpenChat,
+  onInteractive,
 }: DrawerHeaderProps) {
   const transport = useTransport();
   const effectiveAutoMode = autoModeOverride ?? task.auto_mode;
@@ -135,22 +138,23 @@ export function DrawerHeader({
 
   // Build actions array for the shared header.
   const actions: DrawerAction[] = [
-    // Auto mode, run, terminal, editor — only when worktree exists
+    // Auto mode — available without a worktree
+    ...(!task.derived.is_done && !task.derived.is_archived && onToggleAutoMode
+      ? [
+          {
+            icon: <Zap fill={effectiveAutoMode ? "currentColor" : "none"} />,
+            label: `${effectiveAutoMode ? "Disable" : "Enable"} auto mode`,
+            shortLabel: "Auto",
+            hotkeyLabel: "⇧A",
+            onClick: onToggleAutoMode,
+            active: effectiveAutoMode,
+            activeClassName: "text-purple-500",
+          },
+        ]
+      : []),
+    // Run, terminal, editor — only when worktree exists
     ...(worktreePath
       ? [
-          ...(!task.derived.is_done && !task.derived.is_archived && onToggleAutoMode
-            ? [
-                {
-                  icon: <Zap fill={effectiveAutoMode ? "currentColor" : "none"} />,
-                  label: `${effectiveAutoMode ? "Disable" : "Enable"} auto mode`,
-                  shortLabel: "Auto",
-                  hotkeyLabel: "⇧A",
-                  onClick: onToggleAutoMode,
-                  active: effectiveAutoMode,
-                  activeClassName: "text-purple-500",
-                },
-              ]
-            : []),
           ...(showRunButton && runStatus
             ? [
                 {
@@ -199,6 +203,17 @@ export function DrawerHeader({
             shortLabel: "Chat",
             hotkeyLabel: "⇧C",
             onClick: onOpenChat,
+          },
+        ]
+      : []),
+    // Interactive mode — available when task is paused and can be bypassed
+    ...(task.derived.can_bypass && !task.derived.is_interactive && onInteractive
+      ? [
+          {
+            icon: <MousePointerClick />,
+            label: "Enter interactive mode",
+            shortLabel: "Interactive",
+            onClick: onInteractive,
           },
         ]
       : []),

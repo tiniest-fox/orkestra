@@ -89,6 +89,12 @@ RUN cargo chef cook --release -p ork-service -p orkd -p orkestra-cli --recipe-pa
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile
 
+# Accept commit hash at build time so the frontend can embed it.
+# Pass via: docker build --build-arg COMMIT_HASH=$(git rev-parse --short HEAD)
+# Placed after dependency layers so changing the hash doesn't bust the cargo/pnpm caches.
+ARG COMMIT_HASH=dev
+ENV VITE_COMMIT_HASH=${COMMIT_HASH}
+
 # -- Build ork-service + orkd --
 COPY . .
 RUN cargo build --release -p ork-service

@@ -105,7 +105,9 @@ export function FeedRow({
           .filter(Boolean)
           .join(" ")}
       >
-        <div className="grid grid-cols-[24px_18px_minmax(0,1fr)] gap-x-2 items-start">
+        <div
+          className={`grid gap-x-2 items-start ${isSubtask ? "grid-cols-[24px_18px_minmax(0,1fr)]" : "grid-cols-[24px_minmax(0,1fr)]"}`}
+        >
           {isSubtask ? (
             <>
               <div />
@@ -114,7 +116,7 @@ export function FeedRow({
           ) : (
             <StatusSymbol task={task} waiting={waiting} />
           )}
-          <div className={`min-w-0 ${!isSubtask ? "col-span-2" : ""}`}>
+          <div className="min-w-0">
             <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
               {task.title || task.description}
             </div>
@@ -122,8 +124,10 @@ export function FeedRow({
           </div>
         </div>
         {showActionsRow && (
-          <div className="grid grid-cols-[24px_18px_minmax(0,1fr)] gap-x-2 mt-1">
-            <div className="col-start-3">
+          <div
+            className={`grid gap-x-2 mt-1 ${isSubtask ? "grid-cols-[24px_18px_minmax(0,1fr)]" : "grid-cols-[24px_minmax(0,1fr)]"}`}
+          >
+            <div className={`overflow-hidden ${isSubtask ? "col-start-3" : "col-start-2"}`}>
               {actionsSlot ?? (
                 <HotkeyScope active={isFocused ?? false}>
                   <FeedRowActions

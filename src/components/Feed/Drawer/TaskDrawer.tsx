@@ -41,6 +41,7 @@ interface TaskDrawerBodyProps {
   onOpenTask: (id: string) => void;
   onRejectModeChange?: (active: boolean) => void;
   onOpenChat?: () => void;
+  onInteractive?: () => void;
 }
 
 function TaskDrawerBody({
@@ -50,6 +51,7 @@ function TaskDrawerBody({
   onOpenTask,
   onRejectModeChange,
   onOpenChat,
+  onInteractive,
 }: TaskDrawerBodyProps) {
   const transport = useTransport();
   const config = useWorkflowConfig();
@@ -169,6 +171,7 @@ function TaskDrawerBody({
         onRunStart={runScript.start}
         onRunStop={runScript.stop}
         onOpenChat={onOpenChat}
+        onInteractive={onInteractive}
       />
 
       {selectedRun ? (
@@ -225,6 +228,7 @@ export interface TaskDrawerProps {
   onOpenTask: (id: string) => void;
   onRejectModeChange?: (active: boolean) => void;
   onOpenChat?: () => void;
+  onInteractive?: () => void;
 }
 
 export function TaskDrawer({
@@ -234,6 +238,7 @@ export function TaskDrawer({
   onOpenTask,
   onRejectModeChange,
   onOpenChat,
+  onInteractive,
 }: TaskDrawerProps) {
   const [rejectModeActive, setRejectModeActive] = useState(false);
   const isMobile = useIsMobile();
@@ -256,6 +261,7 @@ export function TaskDrawer({
                 onOpenTask={onOpenTask}
                 onRejectModeChange={handleRejectModeChange}
                 onOpenChat={onOpenChat}
+                onInteractive={onInteractive}
               />
             </HotkeyScope>
           </DrawerTaskProvider>

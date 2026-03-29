@@ -76,26 +76,28 @@ export function FeedHeader({
               </span>
             </>
           ) : (
-            <>
-              {transport.requiresAuthentication && currentProject && <ProjectSwitcher />}
-              {!isMobile &&
-                transport.requiresAuthentication &&
-                currentProject &&
-                metrics.length > 0 && <span className="text-text-quaternary select-none">·</span>}
-            </>
+            <>{transport.requiresAuthentication && currentProject && <ProjectSwitcher />}</>
           )}
           {!isMobile && metrics.length > 0 && (
-            <div className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">
-              {metrics.map((m, i) => (
-                <span key={m.label} className="flex items-center gap-1">
-                  {i > 0 && <span className="text-text-quaternary mx-0.5">·</span>}
-                  <span className={`font-semibold ${m.colorClass}`}>{m.value}</span>
-                  <span>{m.label}</span>
-                </span>
-              ))}
-            </div>
+            <>
+              <span className="text-text-quaternary select-none">·</span>
+              <div className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">
+                {metrics.map((m, i) => (
+                  <span key={m.label} className="flex items-center gap-1">
+                    {i > 0 && <span className="text-text-quaternary mx-0.5">·</span>}
+                    <span className={`font-semibold ${m.colorClass}`}>{m.value}</span>
+                    <span>{m.label}</span>
+                  </span>
+                ))}
+              </div>
+            </>
           )}
         </div>
+        {isMobile && (
+          <span className="font-mono text-forge-mono-sm text-text-quaternary">
+            {(import.meta.env.VITE_COMMIT_HASH as string) ?? "dev"}
+          </span>
+        )}
         {!isMobile && (
           <div className="flex items-center gap-2">
             <HotkeyScope active={hotkeyActive}>

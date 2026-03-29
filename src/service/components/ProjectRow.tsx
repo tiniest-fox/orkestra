@@ -25,6 +25,9 @@ export interface ProjectRowActions {
   onRebuild: () => void;
   onRemove: () => void;
   onOpen: () => void;
+  onGitFetch: () => void;
+  onGitPull: () => void;
+  onGitPush: () => void;
 }
 
 export interface ProjectRowProps extends ProjectRowActions {
@@ -80,6 +83,9 @@ export function ProjectRow({
   onRebuild,
   onRemove,
   onOpen,
+  onGitFetch,
+  onGitPull,
+  onGitPush,
   isFocused,
   onMouseEnter,
 }: ProjectRowProps) {
@@ -137,6 +143,32 @@ export function ProjectRow({
           <div className="font-mono text-forge-mono-label text-text-quaternary">
             {statusLabel(effectiveStatus)}
           </div>
+          {project.git_status && (
+            <div className="flex items-center gap-1.5 font-mono text-forge-mono-label text-text-quaternary">
+              <span
+                className="text-accent truncate max-w-[120px]"
+                title={project.git_status.branch}
+              >
+                {project.git_status.branch}
+              </span>
+              {project.git_status.sync_status && project.git_status.sync_status.ahead > 0 && (
+                <span
+                  className="text-text-tertiary"
+                  title={`${project.git_status.sync_status.ahead} ahead`}
+                >
+                  ↑{project.git_status.sync_status.ahead}
+                </span>
+              )}
+              {project.git_status.sync_status && project.git_status.sync_status.behind > 0 && (
+                <span
+                  className="text-text-tertiary"
+                  title={`${project.git_status.sync_status.behind} behind`}
+                >
+                  ↓{project.git_status.sync_status.behind}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Col 3: Inline actions */}
@@ -206,6 +238,40 @@ export function ProjectRow({
             </button>
           )}
         >
+          {project.git_status && (
+            <>
+              <Dropdown.Item
+                onClick={() => {
+                  setMenuOpen(false);
+                  onGitFetch();
+                }}
+              >
+                Fetch
+              </Dropdown.Item>
+              <Dropdown.Item
+                onClick={() => {
+                  setMenuOpen(false);
+                  onGitPull();
+                }}
+              >
+                Pull
+                {project.git_status.sync_status && project.git_status.sync_status.behind > 0
+                  ? ` ↓${project.git_status.sync_status.behind}`
+                  : ""}
+              </Dropdown.Item>
+              <Dropdown.Item
+                onClick={() => {
+                  setMenuOpen(false);
+                  onGitPush();
+                }}
+              >
+                Push
+                {project.git_status.sync_status && project.git_status.sync_status.ahead > 0
+                  ? ` ↑${project.git_status.sync_status.ahead}`
+                  : ""}
+              </Dropdown.Item>
+            </>
+          )}
           {canRebuild && (
             <Dropdown.Item
               onClick={() => {

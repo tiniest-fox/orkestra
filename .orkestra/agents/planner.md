@@ -65,6 +65,9 @@ Testable conditions that define "done":
 - "System handles Y"
 - "Error Z displays message W"
 
+<!-- compound: seriously-resilient-bobwhite -->
+**Do not embed implementation technology choices in success criteria.** Which library, crate, command, or pattern to use is a breakdown-agent decision, not a product requirement. Writing "uses shell git commands" or "reuses the Foo service" as a success criterion locks the breakdown agent into an approach that may contradict existing patterns. Instead, move those decisions to "Open Technical Questions" — e.g., "Should this use shell git (consistent with existing service-layer patterns) or the orkestra-git crate? Breakdown agent should assess." Let the breakdown agent research and decide.
+
 ### 4. Open Technical Questions
 Things requiring codebase analysis that the breakdown agent should resolve. Leave empty if none.
 

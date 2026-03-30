@@ -119,6 +119,7 @@ pub async fn execute(
         "address_pr_conflicts" => run_sync(ctx, params, action::address_pr_conflicts).await,
         "request_update" => run_sync(ctx, params, action::request_update).await,
         "push_pr_changes" => run_sync(ctx, params, action::push_pr_changes).await,
+        "force_push_pr_changes" => run_sync(ctx, params, action::force_push_pr_changes).await,
         "pull_pr_changes" => run_sync(ctx, params, action::pull_pr_changes).await,
         "retry_pr" => run_sync(ctx, params, action::retry_pr).await,
         "return_to_work" => run_sync(ctx, params, action::return_to_work).await,
@@ -181,6 +182,7 @@ pub async fn execute(
         "git_push" => run_sync(ctx, params, git::git_push).await,
         "git_pull" => run_sync(ctx, params, git::git_pull).await,
         "git_fetch" => run_sync(ctx, params, git::git_fetch).await,
+        "task_sync_status" => run_sync(ctx, params, git::task_sync_status).await,
 
         // -- Device management --
         "list_devices" => handle_list_devices(Arc::clone(&ctx.conn)).await,

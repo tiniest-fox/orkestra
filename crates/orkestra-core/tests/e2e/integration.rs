@@ -1016,3 +1016,133 @@ fn pull_pr_changes_rejects_non_done_task() {
         "pull_pr_changes should return InvalidTransition for non-Done task"
     );
 }
+
+// =============================================================================
+// force_push_pr_changes() Tests
+// =============================================================================
+
+/// `force_push_pr_changes` pushes the task's branch to origin using --force-with-lease.
+#[test]
+fn force_push_pr_changes_pushes_to_origin() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Read the task to get the generated branch name
+    let task_with_branch = ctx.api().get_task(&task_id).unwrap();
+    let expected_branch = task_with_branch.branch_name.unwrap();
+
+    // Give the task a PR URL (simulating a previous open_pr call)
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Capture force_push calls before
+    let pre_calls = ctx.mock_git_service().get_force_push_calls();
+
+    // Force-push PR changes
+    let task = ctx.api().force_push_pr_changes(&task_id).unwrap();
+
+    // Task should still be Done with the same PR URL
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done"
+    );
+    assert_eq!(
+        task.pr_url,
+        Some("https://github.com/test/repo/pull/42".to_string()),
+        "PR URL should be unchanged"
+    );
+
+    // Verify force_push_branch was called exactly once with the task's branch
+    let post_calls = ctx.mock_git_service().get_force_push_calls();
+    let new_calls: Vec<_> = post_calls.iter().skip(pre_calls.len()).collect();
+    assert_eq!(
+        new_calls.len(),
+        1,
+        "force_push_branch should have been called exactly once"
+    );
+    assert_eq!(
+        new_calls[0], &expected_branch,
+        "force_push_branch should use the task's branch"
+    );
+}
+
+/// `force_push_pr_changes` fails if the task has no open PR.
+#[test]
+fn force_push_pr_changes_rejects_task_without_pr() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Task is Done but has no PR
+    let result = ctx.api().force_push_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "force_push_pr_changes should return InvalidTransition when task has no PR"
+    );
+}
+
+/// `force_push_pr_changes` fails if the task is not Done.
+#[test]
+fn force_push_pr_changes_rejects_non_done_task() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Task is still in Active (planning) state
+    let result = ctx.api().force_push_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "force_push_pr_changes should return InvalidTransition for non-Done task"
+    );
+}
+
+/// `force_push_pr_changes` propagates git errors.
+#[test]
+fn force_push_pr_changes_propagates_git_error() {
+    use super::helpers::workflows;
+    use orkestra_core::workflow::ports::GitError;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task a PR URL
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Configure mock to fail on force push
+    ctx.mock_git_service()
+        .set_force_push_error(GitError::Other("remote rejected: non-fast-forward".into()));
+
+    // force_push_pr_changes should propagate the error
+    let result = ctx.api().force_push_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::GitError(_))),
+        "force_push_pr_changes should return GitError when force push fails, got: {result:?}"
+    );
+}

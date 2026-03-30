@@ -67,6 +67,8 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "git_push",
     "git_pull",
     "git_fetch",
+    "task_sync_status",
+    "force_push_pr_changes",
 ];
 
 /// Commands that only exist in Tauri (desktop-only).

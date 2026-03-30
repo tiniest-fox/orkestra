@@ -312,6 +312,20 @@ When implementing or extending the `transport.call()` / WebSocket dispatch layer
 
 **New timeout/transport error strings must go in `DISCONNECT_MESSAGES`** — Any error message that a timeout or dead-socket condition produces (e.g., `"Request timed out"`) must be registered in `DISCONNECT_MESSAGES` in `transportErrors.ts`. This ensures `isDisconnectError()` returns `true` for these errors, so action-handler `.catch()` guards correctly suppress spurious toast notifications during the exact reconnection scenario you're fixing.
 
+<!-- compound: tidily-brave-robin -->
+## Command Handler Thin-Delegate Rule
+
+Command handlers in `crates/orkestra-networking/src/interactions/command/` are **thin delegates only**. Each handler must call exactly one `api.method()` and return — nothing else.
+
+Business logic (field validation, git operations, error mapping) belongs in an interaction under `crates/orkestra-core/src/workflow/`, exposed through `WorkflowApi`.
+
+**Patterns that cause HIGH rejections:**
+- Guard clauses that validate task state inside the handler (e.g., checking `is_done`, `open_pr`, `branch_name` directly)
+- Extracting task fields from a database query inside the handler before calling git
+- Any logic beyond: deserialize params → call `api.one_method()` → serialize result
+
+To add a new command: create an interaction in `orkestra-core`, add a `WorkflowApi` method that delegates to it, then write a one-liner handler in `interactions/command/`. Follow the existing siblings in `git.rs` as the template.
+
 <!-- compound: doubly-endearing-turaco -->
 **Always use canonical command names** — When calling backend commands from the frontend, always use `transport.call("canonical-name", ...)` where the name matches the key in `METHOD_MAP` (e.g. `"archive"`, `"approve"`). Never use the raw Tauri command string (e.g. `"workflow_archive"`) — it bypasses the transport abstraction and breaks WebSocket clients. The `METHOD_MAP` in `TauriTransport.ts` is the single source of truth for command names.
 

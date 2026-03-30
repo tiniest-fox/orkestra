@@ -35,6 +35,8 @@ pub struct MockGitService {
     pull_branch_in_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
     has_pending_changes: Mutex<bool>,
     commit_pending_changes_calls: Mutex<Vec<(PathBuf, String)>>,
+    force_push_calls: Mutex<Vec<String>>,
+    force_push_error: Mutex<Option<GitError>>,
 }
 
 impl MockGitService {
@@ -63,6 +65,8 @@ impl MockGitService {
             pull_branch_in_results: Mutex::new(std::collections::VecDeque::new()),
             has_pending_changes: Mutex::new(false),
             commit_pending_changes_calls: Mutex::new(Vec::new()),
+            force_push_calls: Mutex::new(Vec::new()),
+            force_push_error: Mutex::new(None),
         }
     }
 
@@ -177,6 +181,16 @@ impl MockGitService {
     /// Get the list of `commit_pending_changes` calls for verification.
     pub fn get_commit_pending_changes_calls(&self) -> Vec<(PathBuf, String)> {
         self.commit_pending_changes_calls.lock().unwrap().clone()
+    }
+
+    /// Configure an error to return from the next `force_push_branch` call.
+    pub fn set_force_push_error(&self, err: GitError) {
+        *self.force_push_error.lock().unwrap() = Some(err);
+    }
+
+    /// Get the list of `force_push_branch` calls for verification.
+    pub fn get_force_push_calls(&self) -> Vec<String> {
+        self.force_push_calls.lock().unwrap().clone()
     }
 }
 
@@ -454,6 +468,21 @@ impl GitService for MockGitService {
     fn fetch_origin(&self) -> Result<(), GitError> {
         Ok(())
     }
+
+    fn force_push_branch(&self, branch: &str) -> Result<(), GitError> {
+        self.force_push_calls
+            .lock()
+            .unwrap()
+            .push(branch.to_string());
+        if let Some(err) = self.force_push_error.lock().unwrap().take() {
+            return Err(err);
+        }
+        Ok(())
+    }
+
+    fn sync_status_for_branch(&self, _branch: &str) -> Result<Option<SyncStatus>, GitError> {
+        Ok(self.sync_status.lock().unwrap().clone())
+    }
 }
 
 // ============================================================================
@@ -560,10 +589,12 @@ mod tests {
         mock.set_sync_status(Some(SyncStatus {
             ahead: 2,
             behind: 3,
+            diverged: true,
         }));
         let status = mock.sync_status().unwrap().unwrap();
         assert_eq!(status.ahead, 2);
         assert_eq!(status.behind, 3);
+        assert!(status.diverged);
 
         mock.set_sync_status(None);
         assert!(mock.sync_status().unwrap().is_none());

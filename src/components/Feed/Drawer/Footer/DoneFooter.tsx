@@ -24,9 +24,6 @@ interface DoneFooterProps {
   onArchive: () => void;
   onFixConflicts: () => void;
   onAddressFeedback: () => void;
-  onPushPr: () => void;
-  onPullPr: () => void;
-  pushPullError: string | null;
 }
 
 export function DoneFooter({
@@ -46,9 +43,6 @@ export function DoneFooter({
   onArchive,
   onFixConflicts,
   onAddressFeedback,
-  onPushPr,
-  onPullPr,
-  pushPullError,
 }: DoneFooterProps) {
   if (updateMode) {
     return (
@@ -114,20 +108,9 @@ export function DoneFooter({
             {loading ? "Fixing…" : "Fix Conflicts"}
           </Button>
           {viewPrButton}
-          <Button variant="secondary" onClick={onPushPr} disabled={loading}>
-            Push
-          </Button>
-          <Button variant="secondary" onClick={onPullPr} disabled={loading}>
-            Pull
-          </Button>
           <Button variant="secondary" onClick={onEnterUpdateMode} disabled={loading}>
             Request Changes
           </Button>
-          {pushPullError && (
-            <span className="ml-auto text-status-error font-sans text-forge-mono-label truncate">
-              {pushPullError}
-            </span>
-          )}
         </FooterBar>
       );
     }
@@ -167,24 +150,9 @@ export function DoneFooter({
         <Button hotkey="x" variant="secondary" onClick={onArchive} disabled={loading}>
           Archive
         </Button>
-        {activeTab === "pr" && (
-          <>
-            <Button variant="secondary" onClick={onPushPr} disabled={loading}>
-              Push
-            </Button>
-            <Button variant="secondary" onClick={onPullPr} disabled={loading}>
-              Pull
-            </Button>
-          </>
-        )}
         <Button variant="secondary" onClick={onEnterUpdateMode} disabled={loading}>
           Request Changes
         </Button>
-        {pushPullError && (
-          <span className="ml-auto text-status-error font-sans text-forge-mono-label truncate">
-            {pushPullError}
-          </span>
-        )}
       </FooterBar>
     );
   }

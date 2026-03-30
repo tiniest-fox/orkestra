@@ -157,6 +157,7 @@ export function DrawerTabContent({
         taskId={task.id}
         prUrl={task.pr_url}
         baseBranch={task.base_branch}
+        branchName={task.branch_name ?? ""}
         onPrStateChange={state.setPrTabState}
       />
     );

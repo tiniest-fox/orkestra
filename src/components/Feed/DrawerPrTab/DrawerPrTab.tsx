@@ -8,6 +8,7 @@ import type { PrTabFooterState } from "../Drawer/drawerTabs";
 import { groupCommentsByReview } from "../groupCommentsByReview";
 import { ConflictPanel } from "./ConflictPanel";
 import { PrChecksSection } from "./PrChecksSection";
+import { PrGitSection } from "./PrGitSection";
 import { PrReviewsSection } from "./PrReviewsSection";
 import { PrStatusBar } from "./PrStatusBar";
 
@@ -19,10 +20,17 @@ interface DrawerPrTabProps {
   taskId: string;
   prUrl: string;
   baseBranch: string;
+  branchName: string;
   onPrStateChange: (state: PrTabFooterState) => void;
 }
 
-export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: DrawerPrTabProps) {
+export function DrawerPrTab({
+  taskId,
+  prUrl,
+  baseBranch,
+  branchName,
+  onPrStateChange,
+}: DrawerPrTabProps) {
   const { getPrStatus, isLoading, setActivePoll } = usePrStatus();
 
   // Activate 2s polling while this tab is mounted.
@@ -166,6 +174,9 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
     <div className="flex-1 overflow-y-auto">
       {/* PR state bar */}
       <PrStatusBar status={status} prNumber={prNumber} prUrl={prUrl} conflicts={conflicts} />
+
+      {/* Git sync section — shows branch sync status and action buttons */}
+      <PrGitSection taskId={taskId} branchName={branchName} />
 
       {/* Conflict panel — shown when conflicts exist, suppresses comments */}
       {conflicts && <ConflictPanel baseBranch={baseBranch} />}

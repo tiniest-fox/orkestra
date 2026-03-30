@@ -6,6 +6,7 @@ import { useTasks } from "../../../providers/TasksProvider";
 import { useTransport } from "../../../transport";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
 import { confirmAction } from "../../../utils/confirmAction";
+import { extractErrorMessage } from "../../../utils/errors";
 import type { DraftComment, PrTabFooterState } from "./drawerTabs";
 
 // ============================================================================
@@ -56,9 +57,6 @@ export interface TaskDrawerState {
   prTabState: PrTabFooterState;
   setPrTabState: (state: PrTabFooterState) => void;
 
-  // -- Push/pull error --
-  pushPullError: string | null;
-
   // -- Draft line comments --
   draftComments: DraftComment[];
   lineCommentGuidance: string;
@@ -98,8 +96,6 @@ export interface TaskDrawerState {
   handleArchive: () => Promise<void>;
   handleFixConflicts: () => Promise<void>;
   handleAddressFeedback: () => Promise<void>;
-  handlePushPr: () => Promise<void>;
-  handlePullPr: () => Promise<void>;
   handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>;
   handleToggleAutoMode: () => Promise<void>;
   optimisticAutoMode: boolean | null;
@@ -236,14 +232,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setPrTabState({ type: "loading" });
   }, [task.id]);
 
-  // -- Push/pull error --
-  const [pushPullError, setPushPullError] = useState<string | null>(null);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
-  useEffect(() => {
-    setPushPullError(null);
-  }, [task.id]);
-
   // -- Draft line comments --
   const [draftComments, setDraftComments] = useState<DraftComment[]>([]);
   const [lineCommentGuidance, setLineCommentGuidance] = useState("");
@@ -296,7 +284,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       clearDraftComments();
       onClose();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = extractErrorMessage(err);
       setLineCommentError(message);
       setLoading(false);
     }
@@ -321,7 +309,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       clearDraftComments();
       onClose();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = extractErrorMessage(err);
       setLineCommentError(message);
       setLoading(false);
     }
@@ -361,7 +349,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       await transport.call("stage_chat_send", { task_id: task.id, message: chatMessage.trim() });
       setChatMessage("");
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = extractErrorMessage(err);
       setChatError(message);
     } finally {
       setChatSending(false);
@@ -384,7 +372,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       await transport.call("return_to_work", { task_id: task.id, message: pendingMessage });
       setChatMessage("");
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = extractErrorMessage(err);
       setChatError(message);
     } finally {
       setLoading(false);
@@ -473,34 +461,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       }),
     [callAndClose, task.base_branch],
   );
-
-  const handlePushPr = useCallback(async () => {
-    if (loading) return;
-    setPushPullError(null);
-    setLoading(true);
-    try {
-      await transport.call("push_pr_changes", { task_id: task.id });
-      onClose();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setPushPullError(message);
-      setLoading(false);
-    }
-  }, [transport, task.id, loading, onClose]);
-
-  const handlePullPr = useCallback(async () => {
-    if (loading) return;
-    setPushPullError(null);
-    setLoading(true);
-    try {
-      await transport.call("pull_pr_changes", { task_id: task.id });
-      onClose();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setPushPullError(message);
-      setLoading(false);
-    }
-  }, [transport, task.id, loading, onClose]);
 
   const handleAddressFeedback = useCallback(async () => {
     if (loading || prTabState.type !== "feedback_selected") return;
@@ -632,7 +592,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     resuming,
     prTabState,
     setPrTabState,
-    pushPullError,
     draftComments,
     lineCommentGuidance,
     setLineCommentGuidance,
@@ -660,8 +619,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleArchive,
     handleFixConflicts,
     handleAddressFeedback,
-    handlePushPr,
-    handlePullPr,
     handleSubmitAnswers,
     handleToggleAutoMode,
     optimisticAutoMode,

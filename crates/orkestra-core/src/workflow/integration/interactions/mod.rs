@@ -7,6 +7,7 @@ pub mod commit_and_push_pr_changes;
 pub mod commit_worktree;
 pub mod create_pull_request;
 pub mod find_next_candidate;
+pub mod force_push_pr_changes;
 pub mod generate_commit_message;
 pub mod integration_failed;
 pub mod integration_succeeded;

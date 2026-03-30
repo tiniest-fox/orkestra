@@ -210,7 +210,7 @@ impl GitService for Git2GitService {
     }
 
     fn sync_status(&self) -> Result<Option<SyncStatus>, GitError> {
-        interactions::remote::sync_status::execute(&self.repo_path)
+        interactions::remote::sync_status::execute(&self.repo_path, None)
     }
 
     fn pull_branch(&self) -> Result<(), GitError> {
@@ -223,6 +223,14 @@ impl GitService for Git2GitService {
 
     fn fetch_origin(&self) -> Result<(), GitError> {
         interactions::remote::fetch::execute(&self.repo_path)
+    }
+
+    fn force_push_branch(&self, branch: &str) -> Result<(), GitError> {
+        interactions::remote::force_push::execute(&self.repo_path, branch)
+    }
+
+    fn sync_status_for_branch(&self, branch: &str) -> Result<Option<SyncStatus>, GitError> {
+        interactions::remote::sync_status::execute(&self.repo_path, Some(branch))
     }
 }
 

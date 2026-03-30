@@ -750,6 +750,8 @@ export interface SyncStatus {
   ahead: number;
   /** Commits behind origin (need to pull). */
   behind: number;
+  /** Whether local and remote have diverged (both have commits the other lacks). */
+  diverged: boolean;
 }
 
 /**

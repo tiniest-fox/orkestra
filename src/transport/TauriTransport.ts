@@ -78,6 +78,8 @@ const METHOD_MAP: Record<string, string> = {
   git_push: "workflow_git_push",
   git_pull: "workflow_git_pull",
   git_fetch: "workflow_git_fetch",
+  task_sync_status: "workflow_task_sync_status",
+  force_push_pr_changes: "workflow_force_push_pr_changes",
 
   // -- Interactive mode --
   interactive_enter: "interactive_enter",

@@ -5,15 +5,22 @@ use std::process::Command;
 
 use crate::types::{GitError, SyncStatus};
 
-/// Get ahead/behind counts relative to origin for the current branch.
+/// Get ahead/behind counts relative to origin for a branch.
+///
+/// When `branch` is `Some(name)`, uses that branch directly.
+/// When `None`, detects the current branch from HEAD.
 ///
 /// Returns None if in detached HEAD state or branch doesn't exist on origin.
-pub fn execute(repo_path: &Path) -> Result<Option<SyncStatus>, GitError> {
-    let branch = crate::interactions::branch::current::execute(repo_path)?;
-
-    if branch == "HEAD" {
-        return Ok(None);
-    }
+pub fn execute(repo_path: &Path, branch: Option<&str>) -> Result<Option<SyncStatus>, GitError> {
+    let branch = if let Some(b) = branch {
+        b.to_string()
+    } else {
+        let detected = crate::interactions::branch::current::execute(repo_path)?;
+        if detected == "HEAD" {
+            return Ok(None);
+        }
+        detected
+    };
 
     // Check if origin/{branch} exists
     let verify_output = Command::new("git")
@@ -62,5 +69,11 @@ pub fn execute(repo_path: &Path) -> Result<Option<SyncStatus>, GitError> {
         .parse()
         .map_err(|_| GitError::Other(format!("Failed to parse ahead count from: {}", parts[1])))?;
 
-    Ok(Some(SyncStatus { ahead, behind }))
+    let diverged = ahead > 0 && behind > 0;
+
+    Ok(Some(SyncStatus {
+        ahead,
+        behind,
+        diverged,
+    }))
 }

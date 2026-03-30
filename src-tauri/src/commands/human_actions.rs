@@ -212,6 +212,22 @@ pub fn workflow_pull_pr_changes(
     })
 }
 
+/// Force-push changes to the existing PR for a Done task using --force-with-lease.
+///
+/// Does NOT auto-commit pending changes. Requires the task to be Done with an open PR.
+#[tauri::command]
+pub fn workflow_force_push_pr_changes(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Value, TauriError> {
+    orkestra_debug!("tauri", "force_push_pr_changes {task_id}");
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id });
+        action::force_push_pr_changes(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
 /// Archive a Done task (marks it as complete after PR merge).
 ///
 /// Validates the task is Done and Idle, then transitions to Archived.

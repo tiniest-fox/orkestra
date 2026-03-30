@@ -89,10 +89,28 @@ export function FeedRowActions({
   if (derived.is_done && !task.pr_url) {
     return (
       <div className={containerCls}>
-        <Button hotkey="m" variant="merge-outline" size="sm" onClick={onMerge} className={btnCls}>
+        <Button
+          hotkey="m"
+          variant="merge-outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onMerge();
+          }}
+          className={btnCls}
+        >
           Merge
         </Button>
-        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onOpenPr} className={btnCls}>
+        <Button
+          hotkey="p"
+          variant="merge-outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenPr();
+          }}
+          className={btnCls}
+        >
           Open PR
         </Button>
       </div>
@@ -136,7 +154,16 @@ export function FeedRowActions({
 
     return (
       <div className={containerCls}>
-        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onReview} className={btnCls}>
+        <Button
+          hotkey="p"
+          variant="merge-outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReview();
+          }}
+          className={btnCls}
+        >
           PR
         </Button>
         <Button

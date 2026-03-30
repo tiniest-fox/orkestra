@@ -555,6 +555,101 @@ fn test_exit_interactive_without_changes_skips_commit() {
 }
 
 // =============================================================================
+// enter_interactive_mode from Done state
+// =============================================================================
+
+#[test]
+fn test_enter_interactive_mode_from_done() {
+    let ctx = TestEnv::with_git(&interactive_test_workflow(), &["worker"]);
+
+    let task = ctx.create_task("Done task", "Will enter interactive from Done", None);
+    let task_id = task.id.clone();
+
+    // Run the agent to reach AwaitingApproval, then approve to reach Done
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance → Done
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should be Done before test, got: {:?}",
+        task.state
+    );
+
+    // Enter interactive mode from Done
+    let task = ctx
+        .api()
+        .enter_interactive_mode(&task_id)
+        .expect("Should enter interactive mode from Done state");
+
+    assert!(
+        matches!(task.state, TaskState::Interactive { ref stage } if stage == "work"),
+        "Task should be Interactive(work) after entering from Done, got: {:?}",
+        task.state
+    );
+}
+
+#[test]
+fn test_enter_exit_interactive_from_done_returns_to_done() {
+    let ctx = TestEnv::with_git(&interactive_test_workflow(), &["worker"]);
+
+    let task = ctx.create_task("Done task", "Will round-trip through interactive", None);
+    let task_id = task.id.clone();
+
+    // Advance to Done
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance → Done
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should be Done before test, got: {:?}",
+        task.state
+    );
+
+    // Enter interactive from Done
+    ctx.api()
+        .enter_interactive_mode(&task_id)
+        .expect("Should enter interactive mode from Done state");
+
+    // Exit with target_stage: None → return to Done
+    let task = ctx
+        .api()
+        .exit_interactive_mode(&task_id, None)
+        .expect("Should exit interactive mode");
+
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should be Done after exiting interactive with None target, got: {:?}",
+        task.state
+    );
+    assert!(
+        task.completed_at.is_some(),
+        "Task should have completed_at set when returning to Done"
+    );
+}
+
+// =============================================================================
 // Flow-restricted task stage validation
 // =============================================================================
 

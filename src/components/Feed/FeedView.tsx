@@ -492,6 +492,14 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
             setAssistantOpen(false);
             setTaskAssistantId(null);
           }}
+          onBack={
+            taskAssistantId
+              ? () => {
+                  setActiveTaskId(taskAssistantId);
+                  setTaskAssistantId(null);
+                }
+              : undefined
+          }
           taskId={taskAssistantId ?? undefined}
         />
       )}

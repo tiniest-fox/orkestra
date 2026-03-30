@@ -102,6 +102,12 @@ impl From<WorkflowError> for TauriError {
     }
 }
 
+impl From<orkestra_networking::ErrorPayload> for TauriError {
+    fn from(e: orkestra_networking::ErrorPayload) -> Self {
+        TauriError::new(e.code, e.message)
+    }
+}
+
 impl std::fmt::Display for TauriError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}] {}", self.code, self.message)

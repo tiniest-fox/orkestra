@@ -12,6 +12,7 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_store::StoreExt;
 
+#[allow(unused_imports)]
 pub use orkestra_types::config::ProjectInfo;
 
 /// Response from opening a project.
@@ -324,18 +325,13 @@ pub async fn open_project(
 pub fn get_project_info(
     registry: State<ProjectRegistry>,
     window: tauri::Window,
-) -> Result<ProjectInfo, TauriError> {
+) -> Result<serde_json::Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        let has_run_script = state
-            .project_root()
-            .join(crate::run_process::RUN_SCRIPT_RELATIVE_PATH)
-            .exists();
-        Ok(ProjectInfo {
-            project_root: state.project_root().display().to_string(),
-            has_git: state.has_git_service(),
-            has_gh_cli: state.has_gh_cli(),
-            has_run_script,
-        })
+        orkestra_networking::query::get_project_info(
+            state.command_context(),
+            &serde_json::Value::Null,
+        )
+        .map_err(Into::into)
     })
 }
 

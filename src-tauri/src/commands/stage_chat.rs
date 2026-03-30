@@ -4,6 +4,8 @@
 //! while it is awaiting approval or interrupted, without affecting task state.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
+use orkestra_networking::stage_chat;
+use serde_json::Value;
 use tauri::{State, Window};
 
 /// Send a chat message to the stage agent for a task.
@@ -16,12 +18,10 @@ pub fn stage_chat_send(
     window: Window,
     task_id: String,
     message: String,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .send_chat_message(&task_id, &message)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        stage_chat::stage_chat_send(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -34,8 +34,9 @@ pub fn stage_chat_stop(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.kill_chat_agent(&task_id).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        stage_chat::stage_chat_stop(state.command_context(), &params).map_err(Into::into)
     })
 }

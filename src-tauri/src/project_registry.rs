@@ -21,6 +21,7 @@ use orkestra_core::workflow::{
     AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, TaskView, WorkflowApi,
     WorkflowConfig, WorkflowStore,
 };
+use orkestra_networking::CommandContext;
 use serde::{Deserialize, Serialize};
 
 use orkestra_core::orkestra_debug;
@@ -51,6 +52,8 @@ pub struct ProjectState {
     startup_tasks: Arc<Mutex<Option<Vec<TaskView>>>>,
     /// Registry of active run script processes for this project.
     run_processes: RunProcessRegistry,
+    /// Shared command context for delegating to orkestra-networking handlers.
+    command_ctx: Arc<CommandContext>,
 }
 
 impl ProjectState {
@@ -135,10 +138,21 @@ impl ProjectState {
 
         let stop_flag = Arc::new(AtomicBool::new(false));
 
+        let api_arc = Arc::new(Mutex::new(api));
+        let store_for_ctx: Arc<dyn WorkflowStore> =
+            Arc::new(SqliteWorkflowStore::new(conn.shared()));
+        let command_ctx = Arc::new(CommandContext::new(
+            Arc::clone(&api_arc),
+            conn.shared(),
+            project_root.clone(),
+            Arc::clone(&provider_registry),
+            store_for_ctx,
+        ));
+
         Ok(Self {
             config: workflow,
             auto_task_templates,
-            api: Arc::new(Mutex::new(api)),
+            api: api_arc,
             project_root,
             db_conn: conn,
             has_git,
@@ -147,6 +161,7 @@ impl ProjectState {
             stop_flag,
             startup_tasks: Arc::new(Mutex::new(None)),
             run_processes: RunProcessRegistry::new(run_pids),
+            command_ctx,
         })
     }
 
@@ -207,6 +222,11 @@ impl ProjectState {
     /// Get the run process registry for this project.
     pub fn run_processes(&self) -> &RunProcessRegistry {
         &self.run_processes
+    }
+
+    /// Get the shared command context for delegating to orkestra-networking handlers.
+    pub fn command_context(&self) -> &CommandContext {
+        &self.command_ctx
     }
 
     /// Flush the WAL to the main database file.

@@ -11,7 +11,13 @@ import { FeedView } from "./Feed";
 import { FeedLoadingSkeleton } from "./Feed/FeedLoadingSkeleton";
 import { ErrorState } from "./ui";
 
-export function Orkestra({ serviceProjectName }: { serviceProjectName?: string }) {
+export function Orkestra({
+  serviceProjectName,
+  showHomeLink,
+}: {
+  serviceProjectName?: string;
+  showHomeLink?: boolean;
+}) {
   useNotificationPermission();
   const configState = useWorkflowConfigState();
   const { config, error: configError } = configState;
@@ -44,7 +50,12 @@ export function Orkestra({ serviceProjectName }: { serviceProjectName?: string }
 
   return (
     <div className="w-full h-full overflow-clip bg-canvas">
-      <FeedView config={config} tasks={tasks} serviceProjectName={serviceProjectName} />
+      <FeedView
+        config={config}
+        tasks={tasks}
+        serviceProjectName={serviceProjectName}
+        showHomeLink={showHomeLink}
+      />
     </div>
   );
 }

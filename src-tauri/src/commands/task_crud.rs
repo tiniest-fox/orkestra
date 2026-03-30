@@ -1,7 +1,8 @@
 //! Task CRUD commands.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{Task, TaskCreationMode, TaskView};
+use orkestra_networking::task;
+use serde_json::Value;
 use tauri::{State, Window};
 
 /// Get all tasks from the workflow (rich view with iterations, sessions, derived state).
@@ -9,9 +10,9 @@ use tauri::{State, Window};
 pub fn workflow_get_tasks(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<Vec<TaskView>, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.list_task_views().map_err(Into::into)
+        task::list_tasks(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }
 
@@ -33,34 +34,17 @@ pub fn workflow_create_task(
     auto_mode: Option<bool>,
     interactive: Option<bool>,
     flow: Option<String>,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        if interactive.unwrap_or(false) {
-            state
-                .api()?
-                .create_interactive_task(
-                    &title,
-                    &description,
-                    base_branch.as_deref(),
-                    flow.as_deref(),
-                )
-                .map_err(Into::into)
-        } else {
-            state
-                .api()?
-                .create_task_with_options(
-                    &title,
-                    &description,
-                    base_branch.as_deref(),
-                    if auto_mode.unwrap_or(false) {
-                        TaskCreationMode::AutoMode
-                    } else {
-                        TaskCreationMode::Normal
-                    },
-                    flow.as_deref(),
-                )
-                .map_err(Into::into)
-        }
+        let params = serde_json::json!({
+            "title": title,
+            "description": description,
+            "base_branch": base_branch,
+            "auto_mode": auto_mode,
+            "interactive": interactive,
+            "flow": flow,
+        });
+        task::create_task(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -72,12 +56,14 @@ pub fn workflow_create_subtask(
     parent_id: String,
     title: String,
     description: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .create_subtask(&parent_id, &title, &description)
-            .map_err(Into::into)
+        let params = serde_json::json!({
+            "parent_id": parent_id,
+            "title": title,
+            "description": description,
+        });
+        task::create_subtask(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -87,9 +73,10 @@ pub fn workflow_get_task(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.get_task(&task_id).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        task::get_task(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -103,12 +90,10 @@ pub fn workflow_delete_task(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .delete_task_with_cleanup(&task_id)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        task::delete_task(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -118,12 +103,10 @@ pub fn workflow_list_subtasks(
     registry: State<ProjectRegistry>,
     window: Window,
     parent_id: String,
-) -> Result<Vec<TaskView>, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .list_subtask_views(&parent_id)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "parent_id": parent_id });
+        task::list_subtasks(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -134,8 +117,8 @@ pub fn workflow_list_subtasks(
 pub fn workflow_get_archived_tasks(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<Vec<TaskView>, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.list_archived_task_views().map_err(Into::into)
+        task::get_archived_tasks(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }

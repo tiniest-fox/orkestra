@@ -70,9 +70,10 @@ interface FeedViewProps {
   config: WorkflowConfig;
   tasks: WorkflowTaskView[];
   serviceProjectName?: string;
+  showHomeLink?: boolean;
 }
 
-export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
+export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: FeedViewProps) {
   const transport = useTransport();
   const { applyOptimistic, isStale } = useTasks();
   const { showError } = useToast();
@@ -332,6 +333,7 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
         hotkeyActive={!drawerOpen}
         assistantActive={assistantOpen}
         serviceProjectName={serviceProjectName}
+        showHomeLink={showHomeLink}
       />
       <CommandBar
         tasks={tasks}

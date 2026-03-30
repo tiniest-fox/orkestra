@@ -5,7 +5,9 @@ pub mod assistant;
 pub mod diff;
 pub mod dispatch;
 pub mod git;
+pub mod interactive;
 pub mod query;
+pub mod registry;
 pub mod stage_chat;
 pub mod task;
 

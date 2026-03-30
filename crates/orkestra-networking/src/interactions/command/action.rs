@@ -12,319 +12,207 @@ use crate::types::{ErrorPayload, Event};
 
 use super::dispatch::CommandContext;
 
-/// Handle the `approve` method — approves the current stage artifact.
+/// Approves the current stage artifact.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_approve(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api.approve(&task_id).map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn approve(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.approve(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `reject` method — rejects the current stage artifact with feedback.
+/// Rejects the current stage artifact with feedback.
 ///
 /// Expected params: `{ "task_id": "<id>", "feedback": "<feedback>" }`
-pub(super) async fn handle_reject(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn reject(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let feedback = params
         .get("feedback")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: feedback"))?
         .to_string();
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .reject(&task_id, &feedback)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .reject(&task_id, &feedback)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `answer_questions` method — answers pending questions from the agent.
+/// Answers pending questions from the agent.
 ///
 /// Expected params: `{ "task_id": "<id>", "answers": [...] }`
-pub(super) async fn handle_answer_questions(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let answers: Vec<QuestionAnswer> = extract_param(&params, "answers")?;
+pub fn answer_questions(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let answers: Vec<QuestionAnswer> = extract_param(params, "answers")?;
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .answer_questions(&task_id, answers)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .answer_questions(&task_id, answers)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `retry` method — retries a failed or blocked task.
+/// Retries a failed or blocked task.
 ///
 /// Expected params: `{ "task_id": "<id>", "instructions": "<instructions>" }` (instructions optional)
-pub(super) async fn handle_retry(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn retry(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let instructions = params
         .get("instructions")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .retry(&task_id, instructions.as_deref())
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .retry(&task_id, instructions.as_deref())
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `set_auto_mode` method — enables or disables auto mode on a task.
+/// Enables or disables auto mode on a task.
 ///
 /// Expected params: `{ "task_id": "<id>", "auto_mode": true|false }`
-pub(super) async fn handle_set_auto_mode(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let auto_mode: bool = extract_param(&params, "auto_mode")?;
+pub fn set_auto_mode(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let auto_mode: bool = extract_param(params, "auto_mode")?;
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .set_auto_mode(&task_id, auto_mode)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .set_auto_mode(&task_id, auto_mode)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `interrupt` method — interrupts a running agent execution.
+/// Interrupts a running agent execution.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_interrupt(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api.interrupt(&task_id).map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn interrupt(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.interrupt(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `resume` method — resumes an interrupted task.
+/// Resumes an interrupted task.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }` (message optional)
-pub(super) async fn handle_resume(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn resume(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api.resume(&task_id, message).map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.resume(&task_id, message).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `archive` method — archives a Done task.
+/// Archives a Done task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_archive(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api.archive_task(&task_id).map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn archive(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.archive_task(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `reject_with_comments` method — rejects with line-level PR comments.
+/// Rejects with line-level PR comments.
 ///
 /// Expected params: `{ "task_id": "<id>", "comments": [...], "guidance": "<guidance>" }`
-pub(super) async fn handle_reject_with_comments(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let comments: Vec<PrCommentData> = extract_param(&params, "comments")?;
+pub fn reject_with_comments(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let comments: Vec<PrCommentData> = extract_param(params, "comments")?;
     let guidance = params
         .get("guidance")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .reject_with_comments(&task_id, comments, guidance)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .reject_with_comments(&task_id, comments, guidance)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `address_pr_feedback` method — routes task back to work with PR feedback.
+/// Routes task back to work with PR feedback.
 ///
 /// Expected params: `{ "task_id": "<id>", "comments": [...], "checks": [...], "guidance": "<guidance>" }`
-pub(super) async fn handle_address_pr_feedback(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let comments: Vec<PrCommentData> = extract_param(&params, "comments")?;
-    let checks: Vec<PrCheckData> = extract_param(&params, "checks")?;
+pub fn address_pr_feedback(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let comments: Vec<PrCommentData> = extract_param(params, "comments")?;
+    let checks: Vec<PrCheckData> = extract_param(params, "checks")?;
     let guidance = params
         .get("guidance")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .address_pr_feedback(&task_id, comments, checks, guidance)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .address_pr_feedback(&task_id, comments, checks, guidance)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `address_pr_conflicts` method — routes task back to work to resolve conflicts.
+/// Routes task back to work to resolve conflicts.
 ///
 /// Expected params: `{ "task_id": "<id>", "base_branch": "<branch>" }`
-pub(super) async fn handle_address_pr_conflicts(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn address_pr_conflicts(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let base_branch = params
         .get("base_branch")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: base_branch"))?
         .to_string();
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .address_pr_conflicts(&task_id, &base_branch)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .address_pr_conflicts(&task_id, &base_branch)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `request_update` method — routes a Done task back to the recovery stage.
+/// Routes a Done task back to the recovery stage.
 ///
 /// Expected params: `{ "task_id": "<id>", "feedback": "<feedback>" }`
-pub(super) async fn handle_request_update(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn request_update(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let feedback = params
         .get("feedback")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: feedback"))?
         .to_string();
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .request_update(&task_id, &feedback)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .request_update(&task_id, &feedback)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `push_pr_changes` method — commits and pushes pending changes to an open PR.
+/// Commits and pushes pending changes to an open PR.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_push_pr_changes(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .commit_and_push_pr_changes(&task_id)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn push_pr_changes(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .commit_and_push_pr_changes(&task_id)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `pull_pr_changes` method — pulls remote changes into the local worktree.
+/// Pulls remote changes into the local worktree.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_pull_pr_changes(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api.pull_pr_changes(&task_id).map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn pull_pr_changes(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.pull_pr_changes(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
 /// Handle the `merge_task` method — merges a Done task's branch into its base branch.
@@ -385,111 +273,76 @@ pub(super) async fn handle_open_pr(
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
 }
 
-/// Handle the `return_to_work` method — resumes an interrupted task with an optional message.
+/// Resumes an interrupted task with an optional message.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }` (message optional)
-pub(super) async fn handle_return_to_work(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn return_to_work(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .return_to_work(&task_id, message)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .return_to_work(&task_id, message)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `retry_pr` method — recovers a PR creation from Failed back to Done+Idle.
+/// Recovers a PR creation from Failed back to Done+Idle.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_retry_pr(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .retry_pr_creation(&task_id)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn retry_pr(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .retry_pr_creation(&task_id)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `skip_stage` method — skips the current stage, advancing to the next with a message.
+/// Skips the current stage, advancing to the next with a message.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }`
-pub(super) async fn handle_skip_stage(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn skip_stage(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
         .to_string();
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .skip_stage(&task_id, &message)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .skip_stage(&task_id, &message)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `restart_stage` method — restarts the current stage with a fresh agent session.
+/// Restarts the current stage with a fresh agent session.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }`
-pub(super) async fn handle_restart_stage(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn restart_stage(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
         .to_string();
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .restart_stage(&task_id, &message)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .restart_stage(&task_id, &message)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Handle the `send_to_stage` method — sends a task to a specific stage with a message.
+/// Sends a task to a specific stage with a message.
 ///
 /// Expected params: `{ "task_id": "<id>", "target_stage": "<stage>", "message": "<message>" }`
-pub(super) async fn handle_send_to_stage(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn send_to_stage(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let target_stage = params
         .get("target_stage")
         .and_then(|v| v.as_str())
@@ -501,16 +354,11 @@ pub(super) async fn handle_send_to_stage(
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
         .to_string();
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let task = api
-            .send_to_stage(&task_id, &target_stage, &message)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .send_to_stage(&task_id, &target_stage, &message)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
 // -- Helpers --

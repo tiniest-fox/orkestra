@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
+import { useToast } from "../../providers/ToastProvider";
 import { useTransport } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
 import { parseAssistantQuestions, stripQuestionBlocks } from "../../utils/assistantQuestions";
@@ -13,6 +14,7 @@ import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
 import { relativeTime } from "../../utils/relativeTime";
 import { toolSummary } from "../../utils/toolSummary";
+import { isDisconnectError } from "../../utils/transportErrors";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Drawer } from "../ui/Drawer/Drawer";
@@ -171,6 +173,7 @@ interface AssistantDrawerProps {
 
 export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
   const transport = useTransport();
+  const { showError } = useToast();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -348,7 +351,9 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
   // -- Stop agent --
   const handleStop = useCallback(async () => {
     if (!activeSessionId) return;
-    await transport.call("assistant_stop", { session_id: activeSessionId }).catch(console.error);
+    await transport.call("assistant_stop", { session_id: activeSessionId }).catch((err) => {
+      if (!isDisconnectError(err)) showError(String(err));
+    });
     if (taskId) {
       const taskSession = await fetchTaskSession();
       if (taskSession) setSessions([taskSession]);
@@ -359,7 +364,7 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
       );
       setSessions(updatedSessions);
     }
-  }, [transport, activeSessionId, taskId, fetchTaskSession]);
+  }, [transport, activeSessionId, taskId, fetchTaskSession, showError]);
 
   // -- New session --
   const handleNewSession = useCallback(() => {

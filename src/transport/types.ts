@@ -28,4 +28,6 @@ export interface Transport {
   readonly requiresAuthentication: boolean;
   /** Stop reconnecting and close the connection. Optional — not all transports need explicit cleanup. */
   close?(): void;
+  /** Probe connection health. Optional — only WebSocketTransport implements this. */
+  probeConnection?(): void;
 }

@@ -396,6 +396,116 @@ describe("WebSocketTransport", () => {
     });
   });
 
+  // -- Request timeouts --
+
+  describe("call() — request timeouts", () => {
+    it("rejects with timeout error after 10s when no response arrives", async () => {
+      const t = makeConnectedTransport();
+
+      const promise = t.call<string>("slow_call");
+      // Create assertion before advancing timers so the rejection is handled immediately.
+      const assertion = expect(promise).rejects.toThrow("Request timed out");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+    });
+
+    it("does not reject when response arrives before deadline", async () => {
+      const t = makeConnectedTransport();
+      const ws = latestSocket();
+
+      const promise = t.call<string>("fast_call");
+      const sent = JSON.parse(ws.sentMessages[0]) as { id: string };
+      ws.simulateMessage({ id: sent.id, result: "ok" });
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).resolves.toBe("ok");
+    });
+
+    it("transitions to disconnected state when timeout fires", async () => {
+      const t = makeConnectedTransport();
+
+      t.call<string>("slow_call").catch(() => {});
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(t.connectionState).toBe("disconnected");
+    });
+
+    it("multiple pending calls: all timeout cleanly without errors", async () => {
+      const t = makeConnectedTransport();
+
+      const p1 = t.call<string>("call_one");
+      const p2 = t.call<string>("call_two");
+
+      // Capture rejections before advancing timers to prevent unhandled rejection warnings.
+      // The first timeout triggers _handleDisconnect, which rejects any remaining pending requests.
+      const r1 = p1.catch((e: unknown) => e) as Promise<Error>;
+      const r2 = p2.catch((e: unknown) => e) as Promise<Error>;
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect((await r1).message).toBe("Request timed out");
+      expect((await r2).message).toMatch(/timed out|disconnected/);
+    });
+  });
+
+  // -- probeConnection --
+
+  describe("probeConnection()", () => {
+    it("sends a ping RPC when connected", () => {
+      const t = makeConnectedTransport();
+      const ws = latestSocket();
+
+      t.probeConnection();
+
+      expect(ws.sentMessages).toHaveLength(1);
+      const sent = JSON.parse(ws.sentMessages[0]) as { method: string; params: unknown };
+      expect(sent.method).toBe("ping");
+      expect(sent.params).toEqual({});
+    });
+
+    it("does nothing when not connected", () => {
+      const t = new WebSocketTransport("ws://localhost:3847/ws", "", createFactory());
+      // State is 'connecting', socket not open yet
+      t.probeConnection();
+
+      const ws = latestSocket();
+      expect(ws.sentMessages).toHaveLength(0);
+    });
+
+    it("force-disconnects after 2s with no response", async () => {
+      const t = makeConnectedTransport();
+
+      t.probeConnection();
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(t.connectionState).toBe("disconnected");
+    });
+
+    it("stays connected when response arrives within 2s", async () => {
+      const t = makeConnectedTransport();
+      const ws = latestSocket();
+
+      t.probeConnection();
+      const sent = JSON.parse(ws.sentMessages[0]) as { id: string };
+      ws.simulateMessage({ id: sent.id, result: "pong" });
+
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(t.connectionState).toBe("connected");
+    });
+
+    it("deduplicates concurrent probes — only one ping sent", () => {
+      const t = makeConnectedTransport();
+      const ws = latestSocket();
+
+      t.probeConnection();
+      t.probeConnection();
+
+      expect(ws.sentMessages).toHaveLength(1);
+    });
+  });
+
   // -- Connection state change notifications --
 
   describe("onConnectionStateChange()", () => {

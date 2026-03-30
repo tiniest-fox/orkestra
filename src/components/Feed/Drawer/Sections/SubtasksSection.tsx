@@ -2,13 +2,14 @@
 
 import { GitBranch } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
-import { useWorkflowConfig } from "../../../../providers";
+import { useToast, useWorkflowConfig } from "../../../../providers";
 import { useTransport } from "../../../../transport";
 import type { WorkflowTaskView } from "../../../../types/workflow";
 import type {
   FeedSection as FeedSectionData,
   FeedSectionName,
 } from "../../../../utils/feedGrouping";
+import { isDisconnectError } from "../../../../utils/transportErrors";
 import { EmptyState } from "../../../ui/EmptyState";
 import { NavigationScope } from "../../../ui/NavigationScope";
 import { FeedSection } from "../../FeedSection";
@@ -87,6 +88,7 @@ interface SubtasksSectionProps {
 export function SubtasksSection({ task, allTasks, active, onOpenTask }: SubtasksSectionProps) {
   const transport = useTransport();
   const config = useWorkflowConfig();
+  const { showError } = useToast();
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const children = useMemo(
@@ -118,6 +120,15 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
     [onOpenTask],
   );
 
+  const handleApproveChild = useCallback(
+    (taskId: string) => {
+      transport.call("approve", { task_id: taskId }).catch((err) => {
+        if (!isDisconnectError(err)) showError(String(err));
+      });
+    },
+    [transport, showError],
+  );
+
   const { focusedId, setFocusedId, scrollSeq } = useFeedNavigation(
     orderedIds,
     !active,
@@ -147,9 +158,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
               onFocusRow={setFocusedId}
               onReview={handleOpenChild}
               onAnswer={handleOpenChild}
-              onApprove={(taskId) => {
-                transport.call("approve", { task_id: taskId }).catch(console.error);
-              }}
+              onApprove={handleApproveChild}
               onMerge={handleOpenChild}
               onOpenPr={handleOpenChild}
               onRowClick={handleOpenChild}
@@ -172,9 +181,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
               onFocusRow={setFocusedId}
               onReview={handleOpenChild}
               onAnswer={handleOpenChild}
-              onApprove={(taskId) => {
-                transport.call("approve", { task_id: taskId }).catch(console.error);
-              }}
+              onApprove={handleApproveChild}
               onMerge={handleOpenChild}
               onOpenPr={handleOpenChild}
               onRowClick={handleOpenChild}

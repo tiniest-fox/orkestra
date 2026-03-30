@@ -4,6 +4,7 @@
 //! transition to the live view is seamless.
 
 import type { ReactNode } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 interface FeedLoadingSkeletonProps {
   /** Status text shown below the spinner (e.g. "Connecting…", "Loading…"). */
@@ -19,6 +20,7 @@ export function FeedLoadingSkeleton({
   projectName,
   children,
 }: FeedLoadingSkeletonProps = {}) {
+  const isMobile = useIsMobile();
   return (
     <div className="w-screen h-screen overflow-clip flex flex-col">
       {/* Header — same structure as FeedHeader, no metrics */}
@@ -36,9 +38,11 @@ export function FeedLoadingSkeleton({
             </>
           )}
         </div>
-        <kbd className="font-mono text-[10px] font-medium text-text-quaternary bg-canvas border border-border rounded px-1.5 py-0.5 leading-none select-none opacity-50">
-          cmd+k
-        </kbd>
+        {!isMobile && (
+          <kbd className="font-mono text-[10px] font-medium text-text-quaternary bg-canvas border border-border rounded px-1.5 py-0.5 leading-none select-none opacity-50">
+            cmd+k
+          </kbd>
+        )}
       </div>
 
       {/* Body — spinner centered where the task list would be */}
@@ -48,8 +52,14 @@ export function FeedLoadingSkeleton({
         {children}
       </div>
 
-      {/* Footer — same dimensions as FeedStatusLine, empty */}
-      <div className="h-7 border-t border-border bg-surface shrink-0" />
+      {/* Footer — matches FeedStatusLine on desktop, MobileTabBar on mobile */}
+      {isMobile ? (
+        <div className="shrink-0 pb-[env(safe-area-inset-bottom)]">
+          <div className="h-[49px] border-t border-border bg-surface" />
+        </div>
+      ) : (
+        <div className="h-7 border-t border-border bg-surface shrink-0" />
+      )}
     </div>
   );
 }

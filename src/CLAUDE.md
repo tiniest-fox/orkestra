@@ -204,9 +204,21 @@ PWA installability is provided by a static `public/manifest.json` linked from `i
 
 `index.html` contains a pre-React loading skeleton (shown before JS hydrates) that mirrors `FeedLoadingSkeleton.tsx`. Because it's plain HTML, it cannot use Tailwind or CSS variables — it uses hardcoded hex colors that duplicate Forge token values from `src/index.css`.
 
-**When changing Forge color tokens, update both:**
-1. `src/index.css` — the canonical CSS variable definition
-2. `index.html` — the hardcoded hex equivalents in the pre-React skeleton
+**When changing `FeedLoadingSkeleton.tsx` (layout, structure, or colors), update `index.html` too.** The pre-React skeleton must stay dimensionally consistent with the React skeleton to avoid layout shifts during hydration. This includes:
+1. **Color changes** — `src/index.css` is canonical; `index.html` uses hardcoded hex equivalents.
+2. **Layout/structure changes** — DOM structure and dimensions in `index.html` must match `FeedLoadingSkeleton.tsx`.
+
+<!-- compound: wittingly-dominant-tuatara -->
+**Safe-area inset on mobile — use a two-div structure, not padding on a fixed-height element.** Global `box-sizing: border-box` causes `padding-bottom: env(safe-area-inset-bottom)` to be subtracted *from* the element's height instead of added. Use a wrapper div for the padding and an inner div for the fixed height:
+
+```html
+<!-- index.html -->
+<div class="skeleton-footer-safe">   <!-- wrapper: padding-bottom: env(safe-area-inset-bottom) -->
+  <div class="skeleton-footer"></div> <!-- inner: height: 49px, no padding -->
+</div>
+```
+
+This mirrors `FeedLoadingSkeleton.tsx`'s two-div pattern (outer `pb-safe` wrapper + inner `h-[49px]` div) and keeps the total height additive: `49px + safe-area-inset`.
 
 The skeleton also has a `statusText` element (`.loading-status-text`) that shows a loading message. Always populate it when adding new skeleton states so the UI doesn't jump between "has status" and "no status" variants.
 

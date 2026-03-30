@@ -9,5 +9,8 @@ export function extractErrorMessage(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
     return String((err as Record<string, unknown>).message);
   }
+  if (typeof err === "object" && err !== null) {
+    return JSON.stringify(err);
+  }
   return String(err);
 }

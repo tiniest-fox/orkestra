@@ -63,3 +63,19 @@ pub fn workflow_git_fetch(
         git::git_fetch(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }
+
+/// Get sync status for a specific task's branch relative to origin.
+///
+/// Returns null if the branch has no remote tracking ref.
+/// Requires the task to be Done with an open PR.
+#[tauri::command]
+pub fn workflow_task_sync_status(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id });
+        git::task_sync_status(state.command_context(), &params).map_err(Into::into)
+    })
+}

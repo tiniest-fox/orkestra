@@ -160,6 +160,7 @@ fn sync_status_returns_zero_when_in_sync() {
     let status = status.expect("Should return Some when in sync");
     assert_eq!(status.ahead, 0, "Expected 0 ahead when in sync");
     assert_eq!(status.behind, 0, "Expected 0 behind when in sync");
+    assert!(!status.diverged, "Expected not diverged when in sync");
 }
 
 #[test]
@@ -176,6 +177,7 @@ fn sync_status_returns_ahead_count() {
     let status = status.expect("Should return Some with status");
     assert_eq!(status.ahead, 3, "Expected 3 commits ahead");
     assert_eq!(status.behind, 0, "Expected 0 behind when only ahead");
+    assert!(!status.diverged, "Expected not diverged when only ahead");
 }
 
 #[test]
@@ -195,6 +197,7 @@ fn sync_status_returns_behind_count() {
     let status = status.expect("Should return Some with status");
     assert_eq!(status.ahead, 0, "Expected 0 ahead when only behind");
     assert_eq!(status.behind, 2, "Expected 2 commits behind");
+    assert!(!status.diverged, "Expected not diverged when only behind");
 }
 
 #[test]
@@ -217,6 +220,10 @@ fn sync_status_returns_both_when_diverged() {
     let status = status.expect("Should return Some with diverged status");
     assert_eq!(status.ahead, 2, "Expected 2 commits ahead");
     assert_eq!(status.behind, 3, "Expected 3 commits behind");
+    assert!(
+        status.diverged,
+        "Expected diverged when both ahead and behind"
+    );
 }
 
 #[test]

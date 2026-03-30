@@ -253,4 +253,13 @@ pub trait GitService: Send + Sync {
 
     /// Fetch from origin to update remote-tracking refs without merging.
     fn fetch_origin(&self) -> Result<(), GitError>;
+
+    /// Force-push a branch to origin using --force-with-lease.
+    fn force_push_branch(&self, branch: &str) -> Result<(), GitError>;
+
+    /// Get sync status for a specific branch (without detecting current branch).
+    ///
+    /// Useful for checking task branches from the main repo.
+    /// Returns `Ok(None)` if the branch doesn't exist on origin.
+    fn sync_status_for_branch(&self, branch: &str) -> Result<Option<SyncStatus>, GitError>;
 }

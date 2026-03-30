@@ -141,6 +141,8 @@ pub struct SyncStatus {
     pub ahead: u32,
     /// Commits behind origin (need to pull).
     pub behind: u32,
+    /// Whether local and remote have diverged (both ahead and behind).
+    pub diverged: bool,
 }
 
 /// Metadata for a single git commit.

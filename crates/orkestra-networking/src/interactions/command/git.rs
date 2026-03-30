@@ -77,3 +77,13 @@ pub fn git_fetch(ctx: &CommandContext, _params: &Value) -> Result<Value, ErrorPa
         .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
     Ok(Value::Null)
 }
+
+/// Returns sync status for a specific task's branch relative to origin.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub fn task_sync_status(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let status = api.task_sync_status(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(status).unwrap_or(Value::Null))
+}

@@ -80,6 +80,21 @@ impl WorkflowApi {
         )
     }
 
+    /// Force-push the task's branch to origin using --force-with-lease.
+    ///
+    /// Requires the task to be Done with an open PR. Does NOT auto-commit
+    /// pending changes — the caller is expected to have already committed.
+    pub fn force_push_pr_changes(&self, task_id: &str) -> WorkflowResult<Task> {
+        let git = self
+            .git_service()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+        integration_interactions::force_push_pr_changes::execute(
+            self.store.as_ref(),
+            git.as_ref(),
+            task_id,
+        )
+    }
+
     /// Record successful PR creation.
     pub fn pr_creation_succeeded(&self, task_id: &str, pr_url: &str) -> WorkflowResult<Task> {
         integration_interactions::pr_creation_succeeded::execute(

@@ -3,7 +3,7 @@
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::task_view::TaskView;
 use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
-use crate::workflow::ports::WorkflowResult;
+use crate::workflow::ports::{SyncStatus, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::Artifact;
 
 use super::interactions as query;
@@ -121,6 +121,16 @@ impl WorkflowApi {
             self.store.save_stage_session(&session)?;
         }
         Ok(())
+    }
+
+    /// Get sync status for a task's branch relative to origin.
+    ///
+    /// Validates the task is Done with an open PR before querying git.
+    pub fn task_sync_status(&self, task_id: &str) -> WorkflowResult<Option<SyncStatus>> {
+        let git = self
+            .git_service()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+        query::task_sync_status::execute(self.store.as_ref(), git.as_ref(), task_id)
     }
 
     /// Get stages that have logs for a task.

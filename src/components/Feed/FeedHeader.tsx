@@ -18,6 +18,7 @@ interface FeedHeaderProps {
   hotkeyActive: boolean;
   assistantActive: boolean;
   serviceProjectName?: string;
+  showHomeLink?: boolean;
 }
 
 interface Metric {
@@ -33,6 +34,7 @@ export function FeedHeader({
   hotkeyActive,
   assistantActive,
   serviceProjectName,
+  showHomeLink = false,
 }: FeedHeaderProps) {
   const transport = useTransport();
   const { currentProject } = useProjects();
@@ -56,7 +58,7 @@ export function FeedHeader({
     <div className="shrink-0">
       <div className="flex items-center justify-between px-6 h-11 border-b border-border bg-surface">
         <div className="flex items-center gap-2">
-          {serviceProjectName ? (
+          {showHomeLink ? (
             <Link
               to="/"
               className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none hover:text-text-secondary transition-colors"

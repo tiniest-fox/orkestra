@@ -71,7 +71,7 @@ function ProjectAppShell({ project, token }: { project: Project; token: string }
       <ProjectConnectionGate projectName={project.name}>
         <AppProviders>
           <ProjectDetailProvider>
-            <Orkestra serviceProjectName={project.name} />
+            <Orkestra serviceProjectName={project.name} showHomeLink />
           </ProjectDetailProvider>
         </AppProviders>
       </ProjectConnectionGate>

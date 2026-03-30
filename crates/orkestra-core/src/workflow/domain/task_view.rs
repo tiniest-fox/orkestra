@@ -55,7 +55,8 @@ pub struct DerivedTaskState {
     pub chat_agent_active: bool,
     /// Whether the task is in interactive (user-directed) mode.
     pub is_interactive: bool,
-    /// Whether the task can be bypassed (skip/send-to-stage/restart/enter-interactive).
+    /// Whether the task can be bypassed (skip/send-to-stage/restart). Note: enter-interactive
+    /// additionally accepts Done tasks — check `can_bypass || is_done` for that operation.
     pub can_bypass: bool,
 }
 

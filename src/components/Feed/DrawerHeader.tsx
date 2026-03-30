@@ -206,8 +206,10 @@ export function DrawerHeader({
           },
         ]
       : []),
-    // Interactive mode — available when task is paused and can be bypassed
-    ...(task.derived.can_bypass && !task.derived.is_interactive && onInteractive
+    // Interactive mode — available when task is paused and can be bypassed, or when task is done
+    ...((task.derived.can_bypass || task.derived.is_done) &&
+    !task.derived.is_interactive &&
+    onInteractive
       ? [
           {
             icon: <MousePointerClick />,

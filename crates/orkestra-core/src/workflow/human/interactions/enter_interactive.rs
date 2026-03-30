@@ -18,9 +18,9 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if !task.can_bypass() {
+    if !task.can_bypass() && !task.is_done() {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot enter interactive mode from state {} (expected paused state)",
+            "Cannot enter interactive mode from state {} (expected paused or done state)",
             task.state
         )));
     }

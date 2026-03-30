@@ -4,29 +4,9 @@
 //! stopping processes, listing sessions, and retrieving logs.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{domain::AssistantSession, AssistantService, LogEntry};
-use std::sync::Arc;
+use orkestra_networking::assistant;
+use serde_json::Value;
 use tauri::{State, Window};
-
-/// Create an `AssistantService` from project state.
-///
-/// The service requires: store (from DB), spawner (from provider registry), and `project_root`.
-fn create_assistant_service(
-    registry: &State<ProjectRegistry>,
-    window: &Window,
-) -> Result<AssistantService, TauriError> {
-    registry.with_project(window.label(), |state| {
-        let store = state.create_store();
-        let project_root = state.project_root().to_path_buf();
-        let provider_registry = Arc::clone(state.provider_registry());
-
-        Ok(AssistantService::new(
-            store,
-            provider_registry,
-            project_root,
-        ))
-    })
-}
 
 /// Send a message to an assistant session.
 ///
@@ -45,11 +25,11 @@ pub fn assistant_send_message(
     window: Window,
     session_id: Option<String>,
     message: String,
-) -> Result<AssistantSession, TauriError> {
-    let service = create_assistant_service(&registry, &window)?;
-    service
-        .send_message(session_id.as_deref(), &message)
-        .map_err(Into::into)
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "session_id": session_id, "message": message });
+        assistant::assistant_send_message(state.command_context(), &params).map_err(Into::into)
+    })
 }
 
 /// Stop the running agent process for a session.
@@ -60,9 +40,11 @@ pub fn assistant_stop(
     registry: State<ProjectRegistry>,
     window: Window,
     session_id: String,
-) -> Result<(), TauriError> {
-    let service = create_assistant_service(&registry, &window)?;
-    service.stop_process(&session_id).map_err(Into::into)
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "session_id": session_id });
+        assistant::assistant_stop(state.command_context(), &params).map_err(Into::into)
+    })
 }
 
 /// List all assistant sessions for this project.
@@ -72,9 +54,11 @@ pub fn assistant_stop(
 pub fn assistant_list_sessions(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<Vec<AssistantSession>, TauriError> {
-    let service = create_assistant_service(&registry, &window)?;
-    service.list_sessions().map_err(Into::into)
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        assistant::assistant_list_sessions(state.command_context(), &Value::Null)
+            .map_err(Into::into)
+    })
 }
 
 /// Get log entries for a specific assistant session.
@@ -85,9 +69,11 @@ pub fn assistant_get_logs(
     registry: State<ProjectRegistry>,
     window: Window,
     session_id: String,
-) -> Result<Vec<LogEntry>, TauriError> {
-    let service = create_assistant_service(&registry, &window)?;
-    service.get_session_logs(&session_id).map_err(Into::into)
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "session_id": session_id });
+        assistant::assistant_get_logs(state.command_context(), &params).map_err(Into::into)
+    })
 }
 
 /// Send a message to the task-scoped assistant session.
@@ -100,11 +86,11 @@ pub fn assistant_send_task_message(
     window: Window,
     task_id: String,
     message: String,
-) -> Result<AssistantSession, TauriError> {
-    let service = create_assistant_service(&registry, &window)?;
-    service
-        .send_task_message(&task_id, &message)
-        .map_err(Into::into)
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        assistant::assistant_send_task_message(state.command_context(), &params).map_err(Into::into)
+    })
 }
 
 /// List project-level assistant sessions (excludes task-scoped sessions).
@@ -114,7 +100,9 @@ pub fn assistant_send_task_message(
 pub fn assistant_list_project_sessions(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<Vec<AssistantSession>, TauriError> {
-    let service = create_assistant_service(&registry, &window)?;
-    service.list_project_sessions().map_err(Into::into)
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        assistant::assistant_list_project_sessions(state.command_context(), &Value::Null)
+            .map_err(Into::into)
+    })
 }

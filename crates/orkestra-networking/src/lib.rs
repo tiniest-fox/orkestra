@@ -17,6 +17,8 @@ pub use interactions::auth::{
     generate_pairing_code, list_devices, pair_device, revoke_device, verify_token,
 };
 pub use interactions::command::dispatch::CommandContext;
+pub use interactions::command::registry;
+pub use interactions::command::{action, assistant, git, interactive, query, stage_chat, task};
 pub use interactions::event::broadcast::execute as convert_orchestrator_event;
 // NOTE: Re-exported for src-tauri, which reuses the same GitHub CLI integration
 // rather than duplicating the ~160-line fetch + parse logic.

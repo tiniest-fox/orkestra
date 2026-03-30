@@ -2,9 +2,8 @@
 //!
 //! Push, pull, and sync status for the current branch.
 
-use std::sync::Arc;
-
-use orkestra_core::workflow::ports::{SyncStatus, WorkflowError};
+use orkestra_networking::git;
+use serde_json::Value;
 use tauri::{State, Window};
 
 use crate::error::TauriError;
@@ -21,17 +20,9 @@ use crate::project_registry::ProjectRegistry;
 pub fn workflow_git_sync_status(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<Option<SyncStatus>, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        let git = {
-            let api = state.api()?;
-            let Some(git) = api.git_service() else {
-                return Ok(None);
-            };
-            Arc::clone(git)
-        }; // mutex released here — git subprocess runs off the lock
-        git.sync_status()
-            .map_err(|e| WorkflowError::GitError(e.to_string()).into())
+        git::git_sync_status(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }
 
@@ -42,22 +33,9 @@ pub fn workflow_git_sync_status(
 pub fn workflow_git_push(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        let git = {
-            let api = state.api()?;
-            let Some(git) = api.git_service() else {
-                return Err(
-                    WorkflowError::GitError("Git service not available".to_string()).into(),
-                );
-            };
-            Arc::clone(git)
-        }; // mutex released here — git subprocess runs off the lock
-        let branch = git
-            .current_branch()
-            .map_err(|e| WorkflowError::GitError(e.to_string()))?;
-        git.push_branch(&branch)
-            .map_err(|e| WorkflowError::GitError(e.to_string()).into())
+        git::git_push(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }
 
@@ -69,19 +47,9 @@ pub fn workflow_git_push(
 pub fn workflow_git_pull(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        let git = {
-            let api = state.api()?;
-            let Some(git) = api.git_service() else {
-                return Err(
-                    WorkflowError::GitError("Git service not available".to_string()).into(),
-                );
-            };
-            Arc::clone(git)
-        }; // mutex released here — git subprocess runs off the lock
-        git.pull_branch()
-            .map_err(|e| WorkflowError::GitError(e.to_string()).into())
+        git::git_pull(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }
 
@@ -90,18 +58,8 @@ pub fn workflow_git_pull(
 pub fn workflow_git_fetch(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        let git = {
-            let api = state.api()?;
-            let Some(git) = api.git_service() else {
-                return Err(
-                    WorkflowError::GitError("Git service not available".to_string()).into(),
-                );
-            };
-            Arc::clone(git)
-        }; // mutex released here — git subprocess runs off the lock
-        git.fetch_origin()
-            .map_err(|e| WorkflowError::GitError(e.to_string()).into())
+        git::git_fetch(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }

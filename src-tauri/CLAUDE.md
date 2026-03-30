@@ -22,18 +22,42 @@ All commands are re-exported from `commands/mod.rs` and registered in `lib.rs`'s
 
 ## Adding a New Command
 
-1. Add the function in the appropriate module (or create a new one if it's a new concern)
-2. Annotate with `#[tauri::command]` — Tauri requires owned types for parameters
-3. For project-specific commands: Get the API via `registry.with_project(window.label(), |state| state.api.method())?`
-4. Return `Result<T, TauriError>` — use `?` with `WorkflowError` (auto-converts via `From` impl in `error.rs`)
-5. Re-export from `commands/mod.rs` if new module
-6. Register in the `invoke_handler!` macro in `lib.rs`
-7. Frontend TypeScript bindings regenerate on build
+<!-- compound: exquisitely-ornamental-capuchin -->
+Commands now fall into two categories: **shared** (same logic on Tauri and WebSocket) and **desktop-only** (Tauri only, no WebSocket equivalent). Choose the right path:
+
+### Shared command (most new commands)
+
+1. Add the shared handler in `crates/orkestra-networking/src/interactions/command/<module>.rs`:
+   ```rust
+   pub fn my_command(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> { ... }
+   ```
+2. Wire it in WebSocket dispatch (`crates/orkestra-networking/src/interactions/command/dispatch.rs`)
+3. Add it to `SHARED_COMMANDS` in `registry.rs` — drift-prevention tests will fail if either dispatch table is missing it
+4. Add the Tauri command in the appropriate `src-tauri/src/commands/` module, delegating via `state.command_context()`:
+   ```rust
+   #[tauri::command]
+   pub async fn my_command(state: State<'_, ProjectRegistry>, window: Window, params: Value)
+       -> Result<Value, TauriError>
+   {
+       registry.with_project(window.label(), |state| {
+           let ctx = state.command_context();
+           shared::my_command(&ctx, &params).map_err(TauriError::from)
+       })
+   }
+   ```
+5. Re-export from `commands/mod.rs` if new module, register in `invoke_handler!` in `lib.rs`
+
+### Desktop-only command (no WebSocket equivalent)
+
+1. Add the Tauri command normally — direct API or shell call, no shared handler needed
+2. Add it to `DESKTOP_ONLY_COMMANDS` in `registry.rs` — tests verify it's absent from WebSocket dispatch
+3. Re-export and register as above
 
 ## State Management
 
 - `ProjectRegistry` (`project_registry.rs`) holds `HashMap<label, ProjectState>` mapping window labels to project state
-- Each `ProjectState` contains: `Arc<Mutex<WorkflowApi>>`, workflow config, project root, database connection, and `Arc<AtomicBool>` stop flag
+- Each `ProjectState` contains: `Arc<Mutex<WorkflowApi>>`, workflow config, project root, database connection, `Arc<AtomicBool>` stop flag, and `Arc<CommandContext>` (shared handler context)
+- Use `state.command_context()` to get the `Arc<CommandContext>` for delegating to shared handlers
 - Commands receive `State<ProjectRegistry>` and `Window` from Tauri's dependency injection
 - Use `window.label()` to identify which project's state to access
 - The API lock is shared between commands and the orchestrator — hold it briefly

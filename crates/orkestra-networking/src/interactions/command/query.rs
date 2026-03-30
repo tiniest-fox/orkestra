@@ -18,196 +18,126 @@ use super::dispatch::CommandContext;
 // Simple API-backed queries
 // ============================================================================
 
-/// Handle the `get_config` method — returns the workflow configuration.
-pub(super) async fn handle_get_config(
-    ctx: Arc<CommandContext>,
-    _params: Value,
-) -> Result<Value, ErrorPayload> {
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let config = api.workflow().clone();
-        Ok(serde_json::to_value(config).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+/// Returns the workflow configuration.
+pub fn get_config(ctx: &CommandContext, _params: &Value) -> Result<Value, ErrorPayload> {
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let config = api.workflow().clone();
+    Ok(serde_json::to_value(config).unwrap_or(Value::Null))
 }
 
-/// Handle the `get_startup_data` method — returns config and full task list together.
+/// Returns config and full task list together.
 ///
 /// Combines `get_config` and `list_tasks` in one round trip.
-pub(super) async fn handle_get_startup_data(
-    ctx: Arc<CommandContext>,
-    _params: Value,
-) -> Result<Value, ErrorPayload> {
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let config = api.workflow().clone();
-        let tasks = api.list_task_views().map_err(ErrorPayload::from)?;
-        Ok(serde_json::json!({ "config": config, "tasks": tasks }))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn get_startup_data(ctx: &CommandContext, _params: &Value) -> Result<Value, ErrorPayload> {
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let config = api.workflow().clone();
+    let tasks = api.list_task_views().map_err(ErrorPayload::from)?;
+    Ok(serde_json::json!({ "config": config, "tasks": tasks }))
 }
 
-/// Handle the `get_auto_task_templates` method — loads predefined task templates.
-pub(super) async fn handle_get_auto_task_templates(
-    ctx: Arc<CommandContext>,
-    _params: Value,
+/// Loads predefined task templates.
+pub fn get_auto_task_templates(
+    ctx: &CommandContext,
+    _params: &Value,
 ) -> Result<Value, ErrorPayload> {
-    let api = Arc::clone(&ctx.api);
-    let project_root = Arc::clone(&ctx.project_root);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let config = api.workflow().clone();
-        drop(api); // release lock before file I/O
-        let templates = load_auto_task_templates(&project_root, &config);
-        Ok(serde_json::to_value(templates).unwrap_or(Value::Array(vec![])))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let config = api.workflow().clone();
+    drop(api); // release lock before file I/O
+    let templates = load_auto_task_templates(&ctx.project_root, &config);
+    Ok(serde_json::to_value(templates).unwrap_or(Value::Array(vec![])))
 }
 
-/// Handle the `get_iterations` method.
+/// Returns iterations for a task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_get_iterations(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let iterations = api.get_iterations(&task_id).map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(iterations).unwrap_or(Value::Array(vec![])))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn get_iterations(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let iterations = api.get_iterations(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(iterations).unwrap_or(Value::Array(vec![])))
 }
 
-/// Handle the `get_artifact` method.
+/// Returns a named artifact for a task.
 ///
 /// Expected params: `{ "task_id": "<id>", "name": "<artifact_name>" }`
-pub(super) async fn handle_get_artifact(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn get_artifact(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let name = params
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: name"))?
         .to_string();
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let artifact = api
-            .get_artifact(&task_id, &name)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(artifact).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let artifact = api
+        .get_artifact(&task_id, &name)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(artifact).unwrap_or(Value::Null))
 }
 
-/// Handle the `get_pending_questions` method.
+/// Returns pending questions for a task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_get_pending_questions(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let questions = api
-            .get_pending_questions(&task_id)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(questions).unwrap_or(Value::Array(vec![])))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn get_pending_questions(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let questions = api
+        .get_pending_questions(&task_id)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(questions).unwrap_or(Value::Array(vec![])))
 }
 
-/// Handle the `get_current_stage` method.
+/// Returns the current stage for a task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_get_current_stage(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let stage = api
-            .get_current_stage(&task_id)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(stage).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn get_current_stage(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let stage = api
+        .get_current_stage(&task_id)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(stage).unwrap_or(Value::Null))
 }
 
-/// Handle the `get_rejection_feedback` method.
+/// Returns rejection feedback for a task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_get_rejection_feedback(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let feedback = api
-            .get_rejection_feedback(&task_id)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(feedback).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn get_rejection_feedback(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let feedback = api
+        .get_rejection_feedback(&task_id)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(feedback).unwrap_or(Value::Null))
 }
 
 // ============================================================================
 // Project info
 // ============================================================================
 
-/// Handle the `get_project_info` method — returns basic project environment metadata.
-pub(super) async fn handle_get_project_info(
-    ctx: Arc<CommandContext>,
-    _params: Value,
-) -> Result<Value, ErrorPayload> {
-    let api = Arc::clone(&ctx.api);
-    let project_root = Arc::clone(&ctx.project_root);
-    tokio::task::spawn_blocking(move || {
-        let has_git = {
-            let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-            api.git_service().is_some()
-        };
-        let has_gh_cli = std::process::Command::new("gh")
-            .arg("--version")
-            .stdin(std::process::Stdio::null())
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        let has_run_script = project_root
-            .join(orkestra_types::config::RUN_SCRIPT_RELATIVE_PATH)
-            .exists();
-        let info = ProjectInfo {
-            project_root: project_root.display().to_string(),
-            has_git,
-            has_gh_cli,
-            has_run_script,
-        };
-        Ok(serde_json::to_value(info).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+/// Returns basic project environment metadata.
+pub fn get_project_info(ctx: &CommandContext, _params: &Value) -> Result<Value, ErrorPayload> {
+    let has_git = {
+        let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        api.git_service().is_some()
+    };
+    let has_gh_cli = std::process::Command::new("gh")
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let has_run_script = ctx
+        .project_root
+        .join(orkestra_types::config::RUN_SCRIPT_RELATIVE_PATH)
+        .exists();
+    let info = ProjectInfo {
+        project_root: ctx.project_root.display().to_string(),
+        has_git,
+        has_gh_cli,
+        has_run_script,
+    };
+    Ok(serde_json::to_value(info).unwrap_or(Value::Null))
 }
 
 // ============================================================================
@@ -222,56 +152,45 @@ pub(crate) struct BranchList {
     pub(crate) latest_commit_message: Option<String>,
 }
 
-/// Handle the `list_branches` method — returns available git branches.
+/// Returns available git branches.
 ///
 /// Returns empty lists if no git service is configured.
-pub(super) async fn handle_list_branches(
-    ctx: Arc<CommandContext>,
-    _params: Value,
-) -> Result<Value, ErrorPayload> {
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let git = {
-            let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-            let Some(git) = api.git_service() else {
-                return Ok(serde_json::to_value(BranchList {
-                    branches: vec![],
-                    current: None,
-                    latest_commit_message: None,
-                })
-                .unwrap_or(Value::Null));
-            };
-            Arc::clone(git)
-        }; // lock released here — git subprocess runs off the lock
+pub fn list_branches(ctx: &CommandContext, _params: &Value) -> Result<Value, ErrorPayload> {
+    let git = {
+        let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let Some(git) = api.git_service() else {
+            return Ok(serde_json::to_value(BranchList {
+                branches: vec![],
+                current: None,
+                latest_commit_message: None,
+            })
+            .unwrap_or(Value::Null));
+        };
+        Arc::clone(git)
+    }; // lock released here — git subprocess runs off the lock
 
-        let latest_commit_message = git
-            .commit_log(1)
-            .ok()
-            .and_then(|commits| commits.first().map(|c| c.message.clone()));
+    let latest_commit_message = git
+        .commit_log(1)
+        .ok()
+        .and_then(|commits| commits.first().map(|c| c.message.clone()));
 
-        Ok(serde_json::to_value(BranchList {
-            branches: git.list_branches().unwrap_or_default(),
-            current: git.current_branch().ok(),
-            latest_commit_message,
-        })
-        .unwrap_or(Value::Null))
+    Ok(serde_json::to_value(BranchList {
+        branches: git.list_branches().unwrap_or_default(),
+        current: git.current_branch().ok(),
+        latest_commit_message,
     })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    .unwrap_or(Value::Null))
 }
 
 // ============================================================================
 // Log queries
 // ============================================================================
 
-/// Handle the `get_logs` method — returns log entries for a task's stage/session.
+/// Returns log entries for a task's stage/session.
 ///
 /// Expected params: `{ "task_id": "<id>", "stage": "<stage>" (opt), "session_id": "<id>" (opt) }`
-pub(super) async fn handle_get_logs(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
+pub fn get_logs(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
     let stage = params
         .get("stage")
         .and_then(|v| v.as_str())
@@ -281,34 +200,21 @@ pub(super) async fn handle_get_logs(
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let logs = api
-            .get_task_logs(&task_id, stage.as_deref(), session_id.as_deref())
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(logs).unwrap_or(Value::Array(vec![])))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let logs = api
+        .get_task_logs(&task_id, stage.as_deref(), session_id.as_deref())
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(logs).unwrap_or(Value::Array(vec![])))
 }
 
-/// Handle the `get_latest_log` method — returns the most recent log entry for a task.
+/// Returns the most recent log entry for a task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_get_latest_log(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let log = api.get_latest_log(&task_id).map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(log).unwrap_or(Value::Null))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn get_latest_log(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let log = api.get_latest_log(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(log).unwrap_or(Value::Null))
 }
 
 // ============================================================================
@@ -389,20 +295,21 @@ struct GhCheckRunOutput {
 
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Handle the `get_pr_status` method — fetches PR state, checks, reviews, and comments.
+/// Fetches PR state, checks, reviews, and comments.
 ///
 /// Expected params: `{ "pr_url": "<url>" }`
-pub(super) async fn handle_get_pr_status(
-    _ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
+///
+/// Runs the async `fetch_pr_status` via `Handle::block_on` since this function
+/// is called from a `spawn_blocking` thread through the `run_sync` wrapper.
+pub fn get_pr_status(_ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let pr_url = params
         .get("pr_url")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: pr_url"))?
         .to_string();
 
-    let status = fetch_pr_status(&pr_url).await?;
+    let handle = tokio::runtime::Handle::current();
+    let status = handle.block_on(fetch_pr_status(&pr_url))?;
     Ok(serde_json::to_value(status).unwrap_or(Value::Null))
 }
 

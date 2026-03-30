@@ -15,7 +15,7 @@ use crate::highlight::SyntaxHighlighter;
 use crate::interactions::auth::{generate_pairing_code, list_devices, revoke_device};
 use crate::types::{ErrorPayload, Event};
 
-use super::{action, assistant, diff, git, query, stage_chat, task};
+use super::{action, assistant, diff, git, interactive, query, stage_chat, task};
 
 // ============================================================================
 // Command Context
@@ -70,6 +70,20 @@ impl CommandContext {
 // Dispatch
 // ============================================================================
 
+/// Run a synchronous handler on a blocking thread.
+///
+/// All shared handlers have the signature `fn(&CommandContext, Value) -> Result<Value, ErrorPayload>`.
+/// This wrapper offloads them to a `spawn_blocking` thread so they don't block the async runtime.
+async fn run_sync(
+    ctx: Arc<CommandContext>,
+    params: Value,
+    f: fn(&CommandContext, &Value) -> Result<Value, ErrorPayload>,
+) -> Result<Value, ErrorPayload> {
+    tokio::task::spawn_blocking(move || f(&ctx, &params))
+        .await
+        .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
 /// Dispatch a method call to the appropriate handler.
 ///
 /// Returns the handler's result or an error if the method is unknown.
@@ -83,71 +97,78 @@ pub async fn execute(
         "ping" => Ok(serde_json::json!({})),
 
         // -- Task CRUD --
-        "list_tasks" => task::handle_list_tasks(ctx, params).await,
-        "get_task" => task::handle_get_task(ctx, params).await,
-        "create_task" => task::handle_create_task(ctx, params).await,
-        "create_subtask" => task::handle_create_subtask(ctx, params).await,
-        "delete_task" => task::handle_delete_task(ctx, params).await,
-        "list_subtasks" => task::handle_list_subtasks(ctx, params).await,
-        "get_archived_tasks" => task::handle_get_archived_tasks(ctx, params).await,
+        "list_tasks" => run_sync(ctx, params, task::list_tasks).await,
+        "get_task" => run_sync(ctx, params, task::get_task).await,
+        "create_task" => run_sync(ctx, params, task::create_task).await,
+        "create_subtask" => run_sync(ctx, params, task::create_subtask).await,
+        "delete_task" => run_sync(ctx, params, task::delete_task).await,
+        "list_subtasks" => run_sync(ctx, params, task::list_subtasks).await,
+        "get_archived_tasks" => run_sync(ctx, params, task::get_archived_tasks).await,
 
         // -- Human actions (synchronous) --
-        "approve" => action::handle_approve(ctx, params).await,
-        "reject" => action::handle_reject(ctx, params).await,
-        "answer_questions" => action::handle_answer_questions(ctx, params).await,
-        "retry" => action::handle_retry(ctx, params).await,
-        "set_auto_mode" => action::handle_set_auto_mode(ctx, params).await,
-        "interrupt" => action::handle_interrupt(ctx, params).await,
-        "resume" => action::handle_resume(ctx, params).await,
-        "archive" => action::handle_archive(ctx, params).await,
-        "reject_with_comments" => action::handle_reject_with_comments(ctx, params).await,
-        "address_pr_feedback" => action::handle_address_pr_feedback(ctx, params).await,
-        "address_pr_conflicts" => action::handle_address_pr_conflicts(ctx, params).await,
-        "request_update" => action::handle_request_update(ctx, params).await,
-        "push_pr_changes" => action::handle_push_pr_changes(ctx, params).await,
-        "pull_pr_changes" => action::handle_pull_pr_changes(ctx, params).await,
-        "retry_pr" => action::handle_retry_pr(ctx, params).await,
-        "return_to_work" => action::handle_return_to_work(ctx, params).await,
-        "skip_stage" => action::handle_skip_stage(ctx, params).await,
-        "send_to_stage" => action::handle_send_to_stage(ctx, params).await,
-        "restart_stage" => action::handle_restart_stage(ctx, params).await,
+        "approve" => run_sync(ctx, params, action::approve).await,
+        "reject" => run_sync(ctx, params, action::reject).await,
+        "answer_questions" => run_sync(ctx, params, action::answer_questions).await,
+        "retry" => run_sync(ctx, params, action::retry).await,
+        "set_auto_mode" => run_sync(ctx, params, action::set_auto_mode).await,
+        "interrupt" => run_sync(ctx, params, action::interrupt).await,
+        "resume" => run_sync(ctx, params, action::resume).await,
+        "archive" => run_sync(ctx, params, action::archive).await,
+        "reject_with_comments" => run_sync(ctx, params, action::reject_with_comments).await,
+        "address_pr_feedback" => run_sync(ctx, params, action::address_pr_feedback).await,
+        "address_pr_conflicts" => run_sync(ctx, params, action::address_pr_conflicts).await,
+        "request_update" => run_sync(ctx, params, action::request_update).await,
+        "push_pr_changes" => run_sync(ctx, params, action::push_pr_changes).await,
+        "pull_pr_changes" => run_sync(ctx, params, action::pull_pr_changes).await,
+        "retry_pr" => run_sync(ctx, params, action::retry_pr).await,
+        "return_to_work" => run_sync(ctx, params, action::return_to_work).await,
+        "skip_stage" => run_sync(ctx, params, action::skip_stage).await,
+        "send_to_stage" => run_sync(ctx, params, action::send_to_stage).await,
+        "restart_stage" => run_sync(ctx, params, action::restart_stage).await,
 
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,
         "open_pr" => action::handle_open_pr(ctx, event_tx, params).await,
 
+        // -- Interactive mode --
+        "interactive_enter" => run_sync(ctx, params, interactive::enter).await,
+        "interactive_send_message" => run_sync(ctx, params, interactive::send_message).await,
+        "interactive_exit" => run_sync(ctx, params, interactive::exit).await,
+
         // -- Stage chat --
-        "stage_chat_send" => stage_chat::handle_stage_chat_send(ctx, params).await,
-        "stage_chat_stop" => stage_chat::handle_stage_chat_stop(ctx, params).await,
+        "stage_chat_send" => run_sync(ctx, params, stage_chat::stage_chat_send).await,
+        "stage_chat_stop" => run_sync(ctx, params, stage_chat::stage_chat_stop).await,
 
         // -- Assistant --
-        "assistant_send_message" => assistant::handle_assistant_send_message(ctx, params).await,
-        "assistant_stop" => assistant::handle_assistant_stop(ctx, params).await,
-        "assistant_list_sessions" => assistant::handle_assistant_list_sessions(ctx, params).await,
-        "assistant_get_logs" => assistant::handle_assistant_get_logs(ctx, params).await,
+        "assistant_send_message" => run_sync(ctx, params, assistant::assistant_send_message).await,
+        "assistant_stop" => run_sync(ctx, params, assistant::assistant_stop).await,
+        "assistant_list_sessions" => {
+            run_sync(ctx, params, assistant::assistant_list_sessions).await
+        }
+        "assistant_get_logs" => run_sync(ctx, params, assistant::assistant_get_logs).await,
         "assistant_send_task_message" => {
-            assistant::handle_assistant_send_task_message(ctx, params).await
+            run_sync(ctx, params, assistant::assistant_send_task_message).await
         }
         "assistant_list_project_sessions" => {
-            assistant::handle_assistant_list_project_sessions(ctx, params).await
+            run_sync(ctx, params, assistant::assistant_list_project_sessions).await
         }
 
         // -- Queries --
-        "get_config" => query::handle_get_config(ctx, params).await,
-        "get_startup_data" => query::handle_get_startup_data(ctx, params).await,
-        "get_auto_task_templates" => query::handle_get_auto_task_templates(ctx, params).await,
-        "get_iterations" => query::handle_get_iterations(ctx, params).await,
-        "get_artifact" => query::handle_get_artifact(ctx, params).await,
-        "get_pending_questions" => query::handle_get_pending_questions(ctx, params).await,
-        "get_current_stage" => query::handle_get_current_stage(ctx, params).await,
-        "get_rejection_feedback" => query::handle_get_rejection_feedback(ctx, params).await,
-        "list_branches" => query::handle_list_branches(ctx, params).await,
-        "get_logs" => query::handle_get_logs(ctx, params).await,
-        "get_latest_log" => query::handle_get_latest_log(ctx, params).await,
-        "get_pr_status" => query::handle_get_pr_status(ctx, params).await,
-        "get_project_info" => query::handle_get_project_info(ctx, params).await,
+        "get_config" => run_sync(ctx, params, query::get_config).await,
+        "get_startup_data" => run_sync(ctx, params, query::get_startup_data).await,
+        "get_auto_task_templates" => run_sync(ctx, params, query::get_auto_task_templates).await,
+        "get_iterations" => run_sync(ctx, params, query::get_iterations).await,
+        "get_artifact" => run_sync(ctx, params, query::get_artifact).await,
+        "get_pending_questions" => run_sync(ctx, params, query::get_pending_questions).await,
+        "get_current_stage" => run_sync(ctx, params, query::get_current_stage).await,
+        "get_rejection_feedback" => run_sync(ctx, params, query::get_rejection_feedback).await,
+        "list_branches" => run_sync(ctx, params, query::list_branches).await,
+        "get_logs" => run_sync(ctx, params, query::get_logs).await,
+        "get_latest_log" => run_sync(ctx, params, query::get_latest_log).await,
+        "get_pr_status" => run_sync(ctx, params, query::get_pr_status).await,
+        "get_project_info" => run_sync(ctx, params, query::get_project_info).await,
 
-        // -- Diffs --
+        // -- Diffs (transport-specific, unchanged) --
         "get_task_diff" => diff::handle_get_task_diff(ctx, params).await,
         "get_file_content" => diff::handle_get_file_content(ctx, params).await,
         "get_syntax_css" => Ok(diff::handle_get_syntax_css(&ctx, params)),
@@ -156,10 +177,10 @@ pub async fn execute(
         "get_commit_diff" => diff::handle_get_commit_diff(ctx, params).await,
 
         // -- Git sync --
-        "git_sync_status" => git::handle_git_sync_status(ctx, params).await,
-        "git_push" => git::handle_git_push(ctx, params).await,
-        "git_pull" => git::handle_git_pull(ctx, params).await,
-        "git_fetch" => git::handle_git_fetch(ctx, params).await,
+        "git_sync_status" => run_sync(ctx, params, git::git_sync_status).await,
+        "git_push" => run_sync(ctx, params, git::git_push).await,
+        "git_pull" => run_sync(ctx, params, git::git_pull).await,
+        "git_fetch" => run_sync(ctx, params, git::git_fetch).await,
 
         // -- Device management --
         "list_devices" => handle_list_devices(Arc::clone(&ctx.conn)).await,

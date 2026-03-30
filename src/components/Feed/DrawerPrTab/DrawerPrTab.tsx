@@ -59,6 +59,16 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
     });
   }, [status]);
 
+  // Clear stale comment selections when comments become outdated between polls.
+  useEffect(() => {
+    if (!status) return;
+    const outdatedIds = new Set(status.comments.filter((c) => c.outdated).map((c) => c.id));
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => !outdatedIds.has(id)));
+      return next.size !== prev.size ? next : prev;
+    });
+  }, [status]);
+
   // Notify parent of footer state whenever relevant state changes.
   useEffect(() => {
     if (!status && loading) {
@@ -122,7 +132,9 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
   if (!status && loading) {
     return (
       <div className="flex-1 overflow-y-auto p-6 flex items-center justify-center">
-        <span className="font-mono text-[11px] text-text-quaternary">Loading PR status…</span>
+        <span className="font-mono text-forge-mono-sm text-text-quaternary">
+          Loading PR status…
+        </span>
       </div>
     );
   }
@@ -130,7 +142,7 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
   if (!status) {
     return (
       <div className="flex-1 overflow-y-auto p-6 flex items-center justify-center">
-        <span className="font-mono text-[11px] text-text-quaternary">
+        <span className="font-mono text-forge-mono-sm text-text-quaternary">
           Unable to load PR status.
         </span>
       </div>
@@ -190,14 +202,14 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
             onChange={(e) => setGuidance(e.target.value)}
             placeholder="Optional guidance for the agent…"
             rows={2}
-            className="w-full font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-canvas border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
+            className="w-full font-sans text-forge-mono-md text-text-primary placeholder:text-text-quaternary bg-canvas border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
           />
         </div>
       )}
 
       {/* Empty state */}
       {!conflicts && !hasReviewContent && status.checks.length === 0 && (
-        <div className="px-6 py-8 font-mono text-[11px] text-text-quaternary">
+        <div className="px-6 py-8 font-mono text-forge-mono-sm text-text-quaternary">
           No checks or reviews yet.
         </div>
       )}

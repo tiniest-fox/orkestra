@@ -260,20 +260,72 @@ struct GhApiReview {
 }
 
 #[derive(Deserialize)]
-struct GhApiReviewComment {
-    id: i64,
-    user: Option<GhAuthor>,
+struct GhAuthor {
+    login: String,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLError {
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLResponse {
+    data: Option<GhGraphQLData>,
+    #[serde(default)]
+    errors: Option<Vec<GhGraphQLError>>,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLData {
+    repository: GhGraphQLRepository,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLRepository {
+    #[serde(rename = "pullRequest")]
+    pull_request: GhGraphQLPullRequest,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLPullRequest {
+    #[serde(rename = "reviewComments")]
+    review_comments: GhGraphQLReviewComments,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLReviewComments {
+    nodes: Vec<GhGraphQLReviewComment>,
+    #[serde(rename = "pageInfo")]
+    page_info: GhGraphQLPageInfo,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLPageInfo {
+    #[serde(rename = "hasNextPage")]
+    has_next_page: bool,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLReviewComment {
+    #[serde(rename = "databaseId")]
+    database_id: i64,
+    author: Option<GhAuthor>,
     body: String,
     path: Option<String>,
     #[serde(default)]
     line: Option<u32>,
+    #[serde(rename = "createdAt")]
     created_at: String,
-    pull_request_review_id: Option<i64>,
+    #[serde(rename = "pullRequestReview")]
+    pull_request_review: Option<GhGraphQLReviewRef>,
+    outdated: bool,
 }
 
 #[derive(Deserialize)]
-struct GhAuthor {
-    login: String,
+struct GhGraphQLReviewRef {
+    #[serde(rename = "databaseId")]
+    database_id: Option<i64>,
 }
 
 #[derive(Deserialize, Default)]
@@ -294,6 +346,28 @@ struct GhCheckRunOutput {
 }
 
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
+
+const REVIEW_COMMENTS_QUERY: &str = r"
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewComments(first: 100) {
+        nodes {
+          databaseId
+          author { login }
+          body
+          path
+          line
+          createdAt
+          pullRequestReview { databaseId }
+          outdated
+        }
+        pageInfo { hasNextPage }
+      }
+    }
+  }
+}
+";
 
 /// Fetches PR state, checks, reviews, and comments.
 ///
@@ -326,7 +400,6 @@ pub async fn fetch_pr_status(pr_url: &str) -> Result<PrStatus, ErrorPayload> {
     })?;
 
     let reviews_path = format!("repos/{owner}/{repo}/pulls/{number}/reviews");
-    let comments_path = format!("repos/{owner}/{repo}/pulls/{number}/comments");
     let pr_view_args = [
         "pr",
         "view",
@@ -349,15 +422,17 @@ pub async fn fetch_pr_status(pr_url: &str) -> Result<PrStatus, ErrorPayload> {
         .map(|sha| format!("repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"));
 
     let reviews_args: [&str; 2] = ["api", &reviews_path];
-    let comments_args: [&str; 2] = ["api", &comments_path];
 
-    let (reviews_result, comments_result, check_runs_result) =
-        tokio::join!(run_gh(&reviews_args), run_gh(&comments_args), async {
+    let (reviews_result, comments_result, check_runs_result) = tokio::join!(
+        run_gh(&reviews_args),
+        fetch_graphql_comments(owner, repo, number),
+        async {
             match &check_runs_path {
                 Some(path) => run_gh(&["api", path]).await,
                 None => Err(ErrorPayload::new("NO_HEAD_SHA", "No head SHA available")),
             }
-        });
+        }
+    );
 
     let check_enrichments: std::collections::HashMap<String, (i64, Option<String>)> =
         match check_runs_result {
@@ -390,7 +465,7 @@ pub async fn fetch_pr_status(pr_url: &str) -> Result<PrStatus, ErrorPayload> {
     };
 
     let comments = match comments_result {
-        Ok(api_stdout) => map_comments(&api_stdout),
+        Ok(c) => c,
         Err(e) => {
             tracing::warn!("[pr] Failed to fetch PR comments: {}", e.message);
             Vec::new()
@@ -457,40 +532,81 @@ fn map_reviews(api_stdout: &str) -> Vec<PrReview> {
     };
     api_reviews
         .into_iter()
-        .filter_map(|r| {
-            Some(PrReview {
-                id: r.id,
-                author: r.user?.login,
-                state: r.state,
-                body: r.body,
-                submitted_at: r.submitted_at.unwrap_or_default(),
-            })
+        .map(|r| PrReview {
+            id: r.id,
+            author: r.user.map_or_else(|| "ghost".into(), |u| u.login),
+            state: r.state,
+            body: r.body,
+            submitted_at: r.submitted_at.unwrap_or_default(),
         })
         .collect()
 }
 
-fn map_comments(api_stdout: &str) -> Vec<PrComment> {
-    let api_comments: Vec<GhApiReviewComment> = match serde_json::from_str(api_stdout) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("Failed to parse PR comments JSON: {e}");
-            Vec::new()
-        }
-    };
-    api_comments
+async fn fetch_graphql_comments(
+    owner: &str,
+    repo: &str,
+    number: &str,
+) -> Result<Vec<PrComment>, ErrorPayload> {
+    let query_arg = format!("query={REVIEW_COMMENTS_QUERY}");
+    let owner_arg = format!("owner={owner}");
+    let repo_arg = format!("repo={repo}");
+    let number_arg = format!("number={number}");
+
+    let stdout = run_gh(&[
+        "api",
+        "graphql",
+        "-f",
+        &query_arg,
+        "-F",
+        &owner_arg,
+        "-F",
+        &repo_arg,
+        "-F",
+        &number_arg,
+    ])
+    .await?;
+
+    let response: GhGraphQLResponse = serde_json::from_str(&stdout).map_err(|e| {
+        ErrorPayload::new(
+            "GH_PARSE_ERROR",
+            format!("Failed to parse GraphQL comments response: {e}"),
+        )
+    })?;
+
+    if let Some(errors) = &response.errors {
+        let messages: Vec<&str> = errors.iter().map(|e| e.message.as_str()).collect();
+        return Err(ErrorPayload::new(
+            "GH_GRAPHQL_ERROR",
+            format!("GraphQL returned errors: {}", messages.join("; ")),
+        ));
+    }
+
+    let data = response.data.ok_or_else(|| {
+        ErrorPayload::new("GH_GRAPHQL_ERROR", "GraphQL response missing data field")
+    })?;
+
+    let comments_data = data.repository.pull_request.review_comments;
+
+    if comments_data.page_info.has_next_page {
+        tracing::warn!(
+            "[pr] GraphQL reviewComments has more than 100 results; pagination not yet implemented"
+        );
+    }
+
+    Ok(comments_data
+        .nodes
         .into_iter()
-        .filter_map(|c| {
-            Some(PrComment {
-                id: c.id,
-                author: c.user?.login,
-                body: c.body,
-                path: c.path,
-                line: c.line,
-                created_at: c.created_at,
-                review_id: c.pull_request_review_id,
-            })
+        .map(|c| PrComment {
+            id: c.database_id,
+            author: c.author.map_or_else(|| "ghost".into(), |a| a.login),
+            body: c.body,
+            path: c.path,
+            line: c.line,
+            created_at: c.created_at,
+            review_id: c.pull_request_review.and_then(|r| r.database_id),
+            outdated: c.outdated,
         })
-        .collect()
+        .collect())
 }
 
 fn parse_pr_url(url: &str) -> Option<(&str, &str, &str)> {

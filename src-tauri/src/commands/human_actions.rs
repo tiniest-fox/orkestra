@@ -2,11 +2,9 @@
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
 use orkestra_core::orkestra_debug;
-use orkestra_core::workflow::{
-    spawn_merge_integration, spawn_pr_creation, AssistantService, PrCheckData, PrCommentData,
-    QuestionAnswer, Task,
-};
-use std::sync::Arc;
+use orkestra_core::workflow::{spawn_merge_integration, spawn_pr_creation, Task};
+use orkestra_networking::{action, interactive};
+use serde_json::Value;
 use tauri::{Emitter, State, Window};
 
 /// Approve the current stage artifact.
@@ -17,10 +15,11 @@ pub fn workflow_approve(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "approve {task_id}");
     registry.with_project(window.label(), |state| {
-        state.api()?.approve(&task_id).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        action::approve(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -33,10 +32,11 @@ pub fn workflow_reject(
     window: Window,
     task_id: String,
     feedback: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "reject {task_id}");
     registry.with_project(window.label(), |state| {
-        state.api()?.reject(&task_id, &feedback).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "feedback": feedback });
+        action::reject(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -48,18 +48,12 @@ pub fn workflow_answer_questions(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-    answers: Vec<QuestionAnswer>,
-) -> Result<Task, TauriError> {
-    orkestra_debug!(
-        "tauri",
-        "answer_questions {task_id}: {} answers",
-        answers.len()
-    );
+    answers: serde_json::Value,
+) -> Result<Value, TauriError> {
+    orkestra_debug!("tauri", "answer_questions {task_id}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .answer_questions(&task_id, answers)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "answers": answers });
+        action::answer_questions(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -72,13 +66,11 @@ pub fn workflow_retry(
     window: Window,
     task_id: String,
     instructions: Option<String>,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "retry {task_id}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .retry(&task_id, instructions.as_deref())
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "instructions": instructions });
+        action::retry(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -92,13 +84,11 @@ pub fn workflow_set_auto_mode(
     window: Window,
     task_id: String,
     auto_mode: bool,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "set_auto_mode {task_id}: {auto_mode}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .set_auto_mode(&task_id, auto_mode)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "auto_mode": auto_mode });
+        action::set_auto_mode(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -110,10 +100,11 @@ pub fn workflow_interrupt(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "interrupt {task_id}");
     registry.with_project(window.label(), |state| {
-        state.api()?.interrupt(&task_id).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        action::interrupt(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -126,10 +117,11 @@ pub fn workflow_resume(
     window: Window,
     task_id: String,
     message: Option<String>,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "resume {task_id}");
     registry.with_project(window.label(), |state| {
-        state.api()?.resume(&task_id, message).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        action::resume(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -178,9 +170,10 @@ pub fn workflow_retry_pr(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.retry_pr_creation(&task_id).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        action::retry_pr(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -193,13 +186,11 @@ pub fn workflow_push_pr_changes(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "push_pr_changes {task_id}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .commit_and_push_pr_changes(&task_id)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        action::push_pr_changes(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -213,10 +204,11 @@ pub fn workflow_pull_pr_changes(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "pull_pr_changes {task_id}");
     registry.with_project(window.label(), |state| {
-        state.api()?.pull_pr_changes(&task_id).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        action::pull_pr_changes(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -228,10 +220,11 @@ pub fn workflow_archive(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "archive {task_id}");
     registry.with_project(window.label(), |state| {
-        state.api()?.archive_task(&task_id).map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        action::archive(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -244,14 +237,16 @@ pub fn workflow_reject_with_comments(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-    comments: Vec<PrCommentData>,
+    comments: serde_json::Value,
     guidance: Option<String>,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .reject_with_comments(&task_id, comments, guidance)
-            .map_err(Into::into)
+        let params = serde_json::json!({
+            "task_id": task_id,
+            "comments": comments,
+            "guidance": guidance,
+        });
+        action::reject_with_comments(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -264,15 +259,18 @@ pub fn workflow_address_pr_feedback(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-    comments: Vec<PrCommentData>,
-    checks: Vec<PrCheckData>,
+    comments: serde_json::Value,
+    checks: serde_json::Value,
     guidance: Option<String>,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .address_pr_feedback(&task_id, comments, checks, guidance)
-            .map_err(Into::into)
+        let params = serde_json::json!({
+            "task_id": task_id,
+            "comments": comments,
+            "checks": checks,
+            "guidance": guidance,
+        });
+        action::address_pr_feedback(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -286,12 +284,10 @@ pub fn workflow_address_pr_conflicts(
     window: Window,
     task_id: String,
     base_branch: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .address_pr_conflicts(&task_id, &base_branch)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "base_branch": base_branch });
+        action::address_pr_conflicts(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -304,12 +300,10 @@ pub fn workflow_request_update(
     window: Window,
     task_id: String,
     feedback: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .request_update(&task_id, &feedback)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "feedback": feedback });
+        action::request_update(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -322,13 +316,11 @@ pub fn workflow_skip_stage(
     window: Window,
     task_id: String,
     message: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "skip_stage {task_id}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .skip_stage(&task_id, &message)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        action::skip_stage(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -342,13 +334,15 @@ pub fn workflow_send_to_stage(
     task_id: String,
     target_stage: String,
     message: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "send_to_stage {task_id} -> {target_stage}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .send_to_stage(&task_id, &target_stage, &message)
-            .map_err(Into::into)
+        let params = serde_json::json!({
+            "task_id": task_id,
+            "target_stage": target_stage,
+            "message": message,
+        });
+        action::send_to_stage(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -362,13 +356,11 @@ pub fn workflow_restart_stage(
     window: Window,
     task_id: String,
     message: String,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "restart_stage {task_id}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .restart_stage(&task_id, &message)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        action::restart_stage(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -381,14 +373,11 @@ pub fn interactive_enter(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "interactive_enter {task_id}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .enter_interactive_mode(&task_id)
-            .map(|_| ())
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id });
+        interactive::enter(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -402,16 +391,11 @@ pub fn interactive_send_message(
     window: Window,
     task_id: String,
     message: String,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "interactive_send_message {task_id}");
     registry.with_project(window.label(), |state| {
-        let store = state.create_store();
-        let project_root = state.project_root().to_path_buf();
-        let provider_registry = Arc::clone(state.provider_registry());
-        AssistantService::new(store, provider_registry, project_root)
-            .send_interactive_task_message(&task_id, &message)
-            .map(|_| ())
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        interactive::send_message(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -426,13 +410,11 @@ pub fn interactive_exit(
     window: Window,
     task_id: String,
     target_stage: Option<String>,
-) -> Result<(), TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "interactive_exit {task_id}");
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-        api.exit_interactive_mode(&task_id, target_stage.as_deref())
-            .map(|_| ())
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "target_stage": target_stage });
+        interactive::exit(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -450,12 +432,10 @@ pub fn workflow_return_to_work(
     window: Window,
     task_id: String,
     message: Option<String>,
-) -> Result<Task, TauriError> {
+) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "return_to_work {task_id}");
     registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .return_to_work(&task_id, message)
-            .map_err(Into::into)
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        action::return_to_work(state.command_context(), &params).map_err(Into::into)
     })
 }

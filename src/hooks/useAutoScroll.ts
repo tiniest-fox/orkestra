@@ -42,8 +42,8 @@ export function useAutoScroll<T extends HTMLElement>(
   }, []);
 
   // Direction-based scroll detection:
-  // - Scrolling UP disables auto-scroll (user wants to read earlier content)
-  // - Scrolling DOWN AND near bottom re-enables auto-scroll
+  // - Scrolling UP AND away from bottom disables auto-scroll (user wants to read earlier content)
+  // - Near bottom (any direction) re-enables auto-scroll
   // - Scrolling DOWN but NOT near bottom leaves state unchanged (user is reading)
   const handleScroll = useCallback(() => {
     if (!container) return;
@@ -53,11 +53,13 @@ export function useAutoScroll<T extends HTMLElement>(
     const isNearBottom =
       container.scrollHeight - currentScrollTop - container.clientHeight <= NEAR_BOTTOM_THRESHOLD;
 
-    if (scrolledUp) {
-      // User scrolled UP - disable auto-scroll
+    if (scrolledUp && !isNearBottom) {
+      // User scrolled UP away from bottom - disable auto-scroll.
+      // We don't disable when still near bottom because container resizes (e.g.,
+      // textarea shrinking after send) clamp scrollTop down without user intent.
       isAutoScrollEnabledRef.current = false;
     } else if (isNearBottom) {
-      // Scrolled DOWN and near bottom - re-enable auto-scroll
+      // Near bottom (regardless of direction) - enable auto-scroll
       isAutoScrollEnabledRef.current = true;
     }
     // Scrolled DOWN but not near bottom - leave auto-scroll state unchanged

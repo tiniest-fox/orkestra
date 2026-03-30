@@ -3,7 +3,7 @@
 // The "Done" footer lets the user exit interactive mode and route to a stage or
 // mark as done (return to normal pipeline queue).
 
-import { ChevronDown } from "lucide-react";
+import { Check } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
@@ -91,7 +91,7 @@ function DoneMenu({ task, onExit, onClose }: DoneMenuProps) {
   return (
     <div
       ref={menuRef}
-      className="absolute bottom-full left-0 right-0 mb-1 bg-surface border border-border rounded-panel-sm shadow-lg z-10 overflow-hidden"
+      className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-panel-sm shadow-lg z-10 overflow-hidden"
     >
       <div className="px-3 py-1.5 border-b border-border">
         <span className="font-mono text-forge-mono-label text-text-quaternary uppercase tracking-wider">
@@ -265,11 +265,24 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
 
   const displayMessages = buildDisplayMessages(logs);
 
-  const headerActions: DrawerAction[] = [];
+  const headerActions: DrawerAction[] = [
+    {
+      icon: <Check size={14} />,
+      label: "Done",
+      onClick: () => setShowDoneMenu((o) => !o),
+      disabled: exiting,
+      active: showDoneMenu,
+    },
+  ];
 
   return (
     <div className="flex flex-col h-full">
-      <DrawerHeader title="Interactive" onClose={onClose} actions={headerActions} />
+      <div className="relative">
+        <DrawerHeader title="Interactive" onClose={onClose} actions={headerActions} />
+        {showDoneMenu && (
+          <DoneMenu task={task} onExit={handleExit} onClose={() => setShowDoneMenu(false)} />
+        )}
+      </div>
       <DrawerTabBar
         tabs={TABS}
         activeTab={activeTab}
@@ -341,36 +354,20 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
             onStop={handleStop}
             placeholder="Direct the agent…"
             error={error}
-            className="shrink-0 px-4 pt-2 pb-0 bg-canvas"
+            className="shrink-0 px-4 pt-2 pb-4 bg-canvas"
           />
         </>
       )}
 
       {/* Diff tab */}
-      {activeTab === "diff" && (
-        <div className="flex-1 overflow-hidden">
-          <DrawerDiffTab active={activeTab === "diff"} />
+      {activeTab === "diff" && <DrawerDiffTab active />}
+
+      {/* Error display for non-agent tabs */}
+      {activeTab !== "agent" && error && (
+        <div className="shrink-0 px-4 py-3 border-t border-border bg-canvas">
+          <p className="font-sans text-forge-mono-md text-status-error">{error}</p>
         </div>
       )}
-
-      {/* Done footer */}
-      <div className="relative shrink-0 px-4 py-3 border-t border-border bg-canvas">
-        {showDoneMenu && (
-          <DoneMenu task={task} onExit={handleExit} onClose={() => setShowDoneMenu(false)} />
-        )}
-        {activeTab !== "agent" && error && (
-          <p className="font-sans text-forge-mono-md text-status-error mb-2">{error}</p>
-        )}
-        <button
-          type="button"
-          onClick={() => setShowDoneMenu((o) => !o)}
-          disabled={exiting}
-          className="flex items-center gap-1.5 w-full justify-center px-4 py-2 font-sans text-forge-body font-medium bg-accent text-white rounded-md hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {exiting ? "Exiting…" : "Done"}
-          <ChevronDown className="w-4 h-4" />
-        </button>
-      </div>
     </div>
   );
 }

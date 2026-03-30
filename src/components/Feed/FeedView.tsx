@@ -7,10 +7,12 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { stalenessClass } from "../../hooks/useStalenessTimer";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { useTasks } from "../../providers/TasksProvider";
+import { useToast } from "../../providers/ToastProvider";
 import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { confirmAction } from "../../utils/confirmAction";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
+import { isDisconnectError } from "../../utils/transportErrors";
 import { EmptyState } from "../ui/EmptyState";
 import { ModalPanel } from "../ui/ModalPanel";
 import { NavigationScope } from "../ui/NavigationScope";
@@ -73,6 +75,7 @@ interface FeedViewProps {
 export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
   const transport = useTransport();
   const { applyOptimistic, isStale } = useTasks();
+  const { showError } = useToast();
   const isMobile = useIsMobile();
   const feedBodyRef = useRef<HTMLDivElement>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -353,18 +356,26 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
                 onAnswer={setActiveTaskId}
                 onApprove={(taskId) => {
                   applyOptimistic(taskId, { type: "approve" });
-                  transport.call("approve", { task_id: taskId }).catch(console.error);
+                  transport.call("approve", { task_id: taskId }).catch((err) => {
+                    if (!isDisconnectError(err)) showError(String(err));
+                  });
                 }}
                 onMerge={(taskId) => {
-                  transport.call("merge_task", { task_id: taskId }).catch(console.error);
+                  transport.call("merge_task", { task_id: taskId }).catch((err) => {
+                    if (!isDisconnectError(err)) showError(String(err));
+                  });
                 }}
                 onOpenPr={(taskId) => {
-                  transport.call("open_pr", { task_id: taskId }).catch(console.error);
+                  transport.call("open_pr", { task_id: taskId }).catch((err) => {
+                    if (!isDisconnectError(err)) showError(String(err));
+                  });
                 }}
                 onArchive={async (taskId) => {
                   if (!(await confirmAction("Archive this task?"))) return;
                   applyOptimistic(taskId, { type: "archive" });
-                  transport.call("archive", { task_id: taskId }).catch(console.error);
+                  transport.call("archive", { task_id: taskId }).catch((err) => {
+                    if (!isDisconnectError(err)) showError(String(err));
+                  });
                 }}
                 onInteractive={openInteractive}
                 onRowClick={onStripRowClick}

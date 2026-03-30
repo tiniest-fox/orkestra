@@ -9,6 +9,7 @@ import type { ConnectionState, Transport } from "./types";
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 /** A message received from the server — either an RPC response or a server-push event. */
@@ -23,6 +24,8 @@ type ServerMessage =
 
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 10_000;
+const PROBE_TIMEOUT_MS = 2_000;
 
 // ============================================================================
 // Implementation
@@ -53,6 +56,7 @@ export class WebSocketTransport implements Transport {
   // Set to true after a successful connection so the first disconnect triggers an instant reconnect.
   // Consumed (set to false) when used, and restored on the next successful open.
   private _isFirstReconnect = false;
+  private _probeInFlight = false;
 
   constructor(
     private readonly _url: string,
@@ -76,19 +80,69 @@ export class WebSocketTransport implements Transport {
       }
 
       const id = String(this._nextId++);
+
+      const timer = setTimeout(() => {
+        if (!this._pending.has(id)) return;
+        this._pending.delete(id);
+        reject(new Error("Request timed out"));
+        this._handleDisconnect();
+      }, REQUEST_TIMEOUT_MS);
+
       this._pending.set(id, {
         resolve: resolve as (value: unknown) => void,
         reject,
+        timer,
       });
 
       const message = JSON.stringify({ id, method, params: params ?? {} });
       try {
         this._ws.send(message);
       } catch (err) {
+        clearTimeout(timer);
         this._pending.delete(id);
         reject(err);
       }
     });
+  }
+
+  /** Probe connection health by sending a ping RPC. Force-disconnects if no response within 2s. */
+  probeConnection(): void {
+    if (this._connectionState !== "connected" || !this._ws || this._probeInFlight) return;
+    this._probeInFlight = true;
+
+    const probeId = String(this._nextId++);
+    const ws = this._ws;
+
+    const timer = setTimeout(() => {
+      this._probeInFlight = false;
+      if (!this._pending.has(probeId)) return;
+      this._pending.delete(probeId);
+      // Socket is likely dead — force reconnect
+      if (this._ws === ws) {
+        this._handleDisconnect();
+      }
+    }, PROBE_TIMEOUT_MS);
+
+    this._pending.set(probeId, {
+      resolve: () => {
+        clearTimeout(timer);
+        this._probeInFlight = false;
+      },
+      reject: () => {
+        clearTimeout(timer);
+        this._probeInFlight = false;
+      },
+      timer,
+    });
+
+    try {
+      ws.send(JSON.stringify({ id: probeId, method: "ping", params: {} }));
+    } catch {
+      clearTimeout(timer);
+      this._pending.delete(probeId);
+      this._probeInFlight = false;
+      this._handleDisconnect();
+    }
   }
 
   on<T = unknown>(event: string, handler: (data: T) => void): () => void {
@@ -128,6 +182,7 @@ export class WebSocketTransport implements Transport {
     }
     // Reject any pending requests so callers don't hang.
     for (const [, request] of this._pending) {
+      clearTimeout(request.timer);
       request.reject(new Error("Transport closed"));
     }
     this._pending.clear();
@@ -193,6 +248,7 @@ export class WebSocketTransport implements Transport {
       const pending = this._pending.get(msg.id);
       if (!pending) return;
       this._pending.delete(msg.id);
+      clearTimeout(pending.timer);
 
       if ("error" in msg && msg.error) {
         pending.reject(new Error(`${msg.error.code}: ${msg.error.message}`));
@@ -209,6 +265,7 @@ export class WebSocketTransport implements Transport {
 
     // Reject all in-flight requests so callers don't hang forever.
     for (const [, request] of this._pending) {
+      clearTimeout(request.timer);
       request.reject(new Error("WebSocket disconnected"));
     }
     this._pending.clear();

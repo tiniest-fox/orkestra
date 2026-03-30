@@ -1,6 +1,7 @@
 // React context provider that creates and exposes the transport singleton.
 
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { useConnectionProbe } from "../hooks/useConnectionProbe";
 import { createTransport } from "./factory";
 import type { ConnectionState, Transport } from "./types";
 
@@ -20,6 +21,12 @@ interface TransportProviderProps {
   children: ReactNode;
 }
 
+/** Wires transport-level effects (e.g., connection probe on visibility change). */
+function TransportEffects({ transport }: { transport: Transport }) {
+  useConnectionProbe(transport);
+  return null;
+}
+
 /**
  * Provides the transport singleton to the component tree.
  *
@@ -34,7 +41,12 @@ export function TransportProvider({
 }: TransportProviderProps) {
   const [transport] = useState(() => injectedTransport ?? createTransport());
 
-  return <TransportContext.Provider value={transport}>{children}</TransportContext.Provider>;
+  return (
+    <TransportContext.Provider value={transport}>
+      <TransportEffects transport={transport} />
+      {children}
+    </TransportContext.Provider>
+  );
 }
 
 // ============================================================================

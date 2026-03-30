@@ -17,6 +17,7 @@ vi.mock("./providers", () => ({
   ProjectsProvider: ({ children }: { children: ReactNode }) => children,
   WorkflowConfigProvider: ({ children }: { children: ReactNode }) => children,
   TasksProvider: ({ children }: { children: ReactNode }) => children,
+  ToastProvider: ({ children }: { children: ReactNode }) => children,
   PrStatusProvider: ({ children }: { children: ReactNode }) => children,
   GitHistoryProvider: ({ children }: { children: ReactNode }) => children,
   useProjects: () => mockUseProjects(),

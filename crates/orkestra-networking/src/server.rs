@@ -296,6 +296,7 @@ async fn handle_connection(mut socket: WebSocket, state: ServerState) {
         Instant::now() + Duration::from_secs(30),
         Duration::from_secs(30),
     );
+    let mut last_pong_at = Instant::now();
 
     loop {
         tokio::select! {
@@ -315,8 +316,9 @@ async fn handle_connection(mut socket: WebSocket, state: ServerState) {
                             break;
                         }
                     }
+                    Some(Ok(Message::Pong(_))) => { last_pong_at = Instant::now(); }
                     Some(Ok(Message::Close(_)) | Err(_)) | None => break,
-                    Some(Ok(_)) => {} // ignore binary / ping / pong
+                    Some(Ok(_)) => {} // ignore binary / ping
                 }
             }
 
@@ -346,6 +348,10 @@ async fn handle_connection(mut socket: WebSocket, state: ServerState) {
 
             // Keepalive ping
             _ = ping_interval.tick() => {
+                // Close if no pong received within 90s (3 missed ping cycles).
+                if last_pong_at.elapsed() > Duration::from_secs(90) {
+                    break;
+                }
                 if socket.send(Message::Ping(vec![].into())).await.is_err() {
                     break;
                 }

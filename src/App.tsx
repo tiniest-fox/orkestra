@@ -18,6 +18,7 @@ import {
   ProjectsProvider,
   PrStatusProvider,
   TasksProvider,
+  ToastProvider,
   useProjects,
   WorkflowConfigProvider,
 } from "./providers";
@@ -138,15 +139,17 @@ function AppContent() {
   // ReconnectingBanner appears as an overlay during WebSocket disconnects
   // without unmounting the provider tree.
   return (
-    <WorkflowConfigProvider>
-      <TasksProvider>
-        <PrStatusProvider>
-          <GitHistoryProvider>
-            <ReconnectingBanner />
-            <Orkestra serviceProjectName={IS_TAURI ? tauriProjectName : undefined} />
-          </GitHistoryProvider>
-        </PrStatusProvider>
-      </TasksProvider>
-    </WorkflowConfigProvider>
+    <ToastProvider>
+      <WorkflowConfigProvider>
+        <TasksProvider>
+          <PrStatusProvider>
+            <GitHistoryProvider>
+              <ReconnectingBanner />
+              <Orkestra serviceProjectName={IS_TAURI ? tauriProjectName : undefined} />
+            </GitHistoryProvider>
+          </PrStatusProvider>
+        </TasksProvider>
+      </WorkflowConfigProvider>
+    </ToastProvider>
   );
 }

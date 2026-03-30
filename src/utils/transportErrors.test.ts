@@ -30,4 +30,8 @@ describe("isDisconnectError", () => {
     expect(isDisconnectError("WebSocket not connected")).toBe(true);
     expect(isDisconnectError("some other error")).toBe(false);
   });
+
+  it("identifies timeout errors as disconnect errors", () => {
+    expect(isDisconnectError(new Error("Request timed out"))).toBe(true);
+  });
 });

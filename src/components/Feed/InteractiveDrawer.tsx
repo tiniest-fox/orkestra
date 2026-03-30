@@ -7,10 +7,11 @@ import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
-import { useWorkflowConfig } from "../../providers";
+import { useToast, useWorkflowConfig } from "../../providers";
 import { useTransport } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowTaskView } from "../../types/workflow";
 import { stripParameterBlocks } from "../../utils/feedContent";
+import { isDisconnectError } from "../../utils/transportErrors";
 import { resolveFlowStageNames } from "../../utils/workflowNavigation";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Drawer } from "../ui/Drawer/Drawer";
@@ -144,6 +145,7 @@ interface InteractiveDrawerBodyProps {
 function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   const transport = useTransport();
   const config = useWorkflowConfig();
+  const { showError } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>("agent");
   const [session, setSession] = useState<AssistantSession | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -229,7 +231,9 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   // -- Stop agent --
   const handleStop = useCallback(async () => {
     if (!session?.id) return;
-    await transport.call("assistant_stop", { session_id: session.id }).catch(console.error);
+    await transport.call("assistant_stop", { session_id: session.id }).catch((err) => {
+      if (!isDisconnectError(err)) showError(String(err));
+    });
     const allSessions = await transport
       .call<AssistantSession[]>("assistant_list_sessions", {})
       .catch(() => [] as AssistantSession[]);
@@ -237,7 +241,7 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
       (s) => s.task_id === task.id && s.session_type === "interactive",
     );
     if (updated) setSession(updated);
-  }, [transport, session?.id, task.id]);
+  }, [transport, session?.id, task.id, showError]);
 
   // -- Exit interactive mode --
   const handleExit = useCallback(

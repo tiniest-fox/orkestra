@@ -80,6 +80,8 @@ pub async fn execute(
     params: Value,
 ) -> Result<Value, ErrorPayload> {
     match method {
+        "ping" => Ok(serde_json::json!({})),
+
         // -- Task CRUD --
         "list_tasks" => task::handle_list_tasks(ctx, params).await,
         "get_task" => task::handle_get_task(ctx, params).await,

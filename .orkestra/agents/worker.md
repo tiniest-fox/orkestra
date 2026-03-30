@@ -304,6 +304,11 @@ When implementing or extending the `transport.call()` / WebSocket dispatch layer
 
 **Parallel structures** — `METHOD_MAP` in `TauriTransport.ts` and the Rust dispatch table are maintained in parallel. When adding a new command, update both and add a cross-reference comment to make the link explicit.
 
+<!-- compound: seasonally-sensual-guineapig -->
+**Dead TCP + timeout: never call `ws.close()` in a timeout handler** — On a dead TCP connection, `ws.close()` itself hangs (the browser's close handshake waits for an acknowledgement that never arrives). When a `transport.call()` times out, the timeout handler must call `_handleDisconnect()` directly to force-close state and trigger reconnection — never `ws.close()`. Additionally, store the `setTimeout` handle inside the `PendingRequest` entry and clear it inside `_handleDisconnect` (before resolving/rejecting any pending requests) to prevent double-rejection crashes when disconnect fires concurrently with a timeout.
+
+**New timeout/transport error strings must go in `DISCONNECT_MESSAGES`** — Any error message that a timeout or dead-socket condition produces (e.g., `"Request timed out"`) must be registered in `DISCONNECT_MESSAGES` in `transportErrors.ts`. This ensures `isDisconnectError()` returns `true` for these errors, so action-handler `.catch()` guards correctly suppress spurious toast notifications during the exact reconnection scenario you're fixing.
+
 <!-- compound: doubly-endearing-turaco -->
 **Always use canonical command names** — When calling backend commands from the frontend, always use `transport.call("canonical-name", ...)` where the name matches the key in `METHOD_MAP` (e.g. `"archive"`, `"approve"`). Never use the raw Tauri command string (e.g. `"workflow_archive"`) — it bypasses the transport abstraction and breaks WebSocket clients. The `METHOD_MAP` in `TauriTransport.ts` is the single source of truth for command names.
 

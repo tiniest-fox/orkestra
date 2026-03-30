@@ -4,6 +4,7 @@ const DISCONNECT_MESSAGES = [
   "WebSocket not connected",
   "WebSocket disconnected",
   "Transport closed",
+  "Request timed out",
 ];
 
 /**

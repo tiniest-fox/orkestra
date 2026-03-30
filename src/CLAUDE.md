@@ -304,6 +304,23 @@ The `FeedRowActions.tsx` "View" button demonstrates this pattern. All new action
 
 `useTaskDrawerState.ts` contains a pre-existing `invokeAndClose` helper that silently swallows backend errors (logs to `console.error` but does not update any error state). **Do not use `invokeAndClose` for new action handlers that need to surface errors to the user.**
 
+<!-- compound: seasonally-sensual-guineapig -->
+**Always guard action handler `.catch()` calls with `isDisconnectError`** — Any action handler that calls `transport.call()` and shows a toast on error must filter through `isDisconnectError(err)` before calling `showError`. Without this guard, dead-socket reconnection produces spurious "Request timed out" toasts — the exact scenario these transport-layer fixes are meant to make silent.
+
+```tsx
+import { isDisconnectError } from "../transport/transportErrors";
+
+onApprove: async (taskId) => {
+  try {
+    await transport.call("approve", { task_id: taskId });
+  } catch (err) {
+    if (!isDisconnectError(err)) showError(String(err)); // suppress disconnect/timeout noise
+  }
+},
+```
+
+This applies to every `.catch()` or `catch (err)` block in `FeedView.tsx`, `AssistantDrawer.tsx`, `InteractiveDrawer.tsx`, `SubtasksSection.tsx`, and any new component with feed actions. Reviewers check all action handlers — missing guards are a guaranteed HIGH finding.
+
 For new handlers that users care about (e.g., submitting feedback, line comments), handle the error explicitly and store it in a `useState` error variable that the UI renders:
 
 ```tsx

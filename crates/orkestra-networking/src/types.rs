@@ -94,6 +94,7 @@ pub struct PrComment {
     pub line: Option<u32>,
     pub created_at: String,
     pub review_id: Option<i64>,
+    pub outdated: bool,
 }
 
 // ============================================================================

@@ -721,6 +721,8 @@ export interface PrComment {
   created_at: string;
   /** Parent review ID if this comment belongs to a review. Null for standalone comments. */
   review_id: number | null;
+  /** Whether the referenced code has changed since this comment was left. */
+  outdated: boolean;
 }
 
 // =============================================================================

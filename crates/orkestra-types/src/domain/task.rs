@@ -272,11 +272,13 @@ impl Task {
         self.is_awaiting_review() || matches!(self.state, TaskState::Interrupted { .. })
     }
 
-    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage/restart/enter-interactive).
+    /// Check if the task is in a state that allows stage bypass (skip/send-to-stage/restart).
     ///
     /// Valid when task is idle (queued but not yet running), paused for human input, or in
     /// interactive mode: `Queued`, `AwaitingApproval`, `AwaitingQuestionAnswer`,
     /// `AwaitingRejectionConfirmation`, `Interrupted`, `Failed`, `Blocked`, or `Interactive`.
+    ///
+    /// Note: `enter_interactive` also accepts `Done` state independently of this predicate.
     pub fn can_bypass(&self) -> bool {
         matches!(
             self.state,

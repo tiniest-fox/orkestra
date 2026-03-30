@@ -28,8 +28,12 @@ function createMockContainer(
   Object.defineProperty(container, "scrollHeight", {
     get: () => props.scrollHeight ?? 1000,
   });
+  let _clientHeight = props.clientHeight ?? 500;
   Object.defineProperty(container, "clientHeight", {
-    get: () => props.clientHeight ?? 500,
+    get: () => _clientHeight,
+    set: (value: number) => {
+      _clientHeight = value;
+    },
   });
 
   return container;
@@ -503,6 +507,43 @@ describe("useAutoScroll", () => {
         vi.runAllTimers();
       });
       expect(container2.scrollTop).toBe(1000);
+    });
+  });
+
+  describe("container resize near bottom", () => {
+    it("does not disable auto-scroll when scrollTop decreases but stays near bottom", async () => {
+      // Simulates: user is at bottom → sends chat message → textarea shrinks →
+      // container grows → browser clamps scrollTop down. This should NOT disable auto-scroll.
+      const container = createMockContainer({
+        scrollTop: 500, // at bottom (scrollHeight=1000, clientHeight=500)
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
+      const { result } = renderHook(() => useAutoScroll<HTMLDivElement>(true));
+
+      act(() => {
+        result.current.containerRef(container);
+      });
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Container grows by 50px (textarea shrank), browser clamps scrollTop from 500 to 450
+      // scrollHeight stays 1000, clientHeight becomes 550, scrollTop becomes 450
+      // 1000 - 450 - 550 = 0, so still at bottom
+      (container as unknown as { clientHeight: number }).clientHeight = 550;
+      container.scrollTop = 450;
+      act(() => {
+        result.current.handleScroll();
+      });
+
+      // Auto-scroll should still be enabled — trigger mutation and verify scroll to bottom
+      await triggerMutationAndFlush(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(container.scrollTop).toBe(1000);
     });
   });
 

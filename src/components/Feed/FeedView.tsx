@@ -490,6 +490,14 @@ export function FeedView({ config, tasks, serviceProjectName }: FeedViewProps) {
             setAssistantOpen(false);
             setTaskAssistantId(null);
           }}
+          onBack={
+            taskAssistantId
+              ? () => {
+                  setActiveTaskId(taskAssistantId);
+                  setTaskAssistantId(null);
+                }
+              : undefined
+          }
           taskId={taskAssistantId ?? undefined}
         />
       )}

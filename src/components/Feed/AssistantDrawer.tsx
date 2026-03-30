@@ -167,11 +167,13 @@ function AgentEntries({ entries }: { entries: LogEntry[] }) {
 
 interface AssistantDrawerProps {
   onClose: () => void;
+  /** When provided, renders a back-arrow in the header (e.g. return to task drawer). */
+  onBack?: () => void;
   /** When set, operates in task mode — scoped to this task's assistant session. */
   taskId?: string;
 }
 
-export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
+export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProps) {
   const transport = useTransport();
   const { showError } = useToast();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
@@ -410,6 +412,7 @@ export function AssistantDrawer({ onClose, taskId }: AssistantDrawerProps) {
               </span>
             }
             onClose={onClose}
+            onBack={onBack}
             actions={headerActions}
           />
 

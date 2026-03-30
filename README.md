@@ -65,6 +65,7 @@ cargo fmt --all           # Format code
 pnpm check --error-on-warnings   # Biome lint + format
 pnpm exec tsc --noEmit           # TypeScript type check
 pnpm test:run                    # Unit tests
+pnpm knip                        # Dead code / unused exports
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full development workflow.

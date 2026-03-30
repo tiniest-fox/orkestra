@@ -1,3 +1,4 @@
+export { AppProviders } from "./AppProviders";
 export { GitHistoryProvider, useGitHistory } from "./GitHistoryProvider";
 export { ProjectInfoProvider, useProjectInfo } from "./ProjectInfoProvider";
 export { ProjectDetailProvider, ProjectsProvider, useProjects } from "./ProjectsProvider";

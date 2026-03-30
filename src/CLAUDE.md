@@ -108,6 +108,16 @@ When a provider holds `useState` initialized from a prop (e.g., a connection key
 - Access shared state via the provider hooks (`useTasks()`, `useWorkflowConfig()`). Don't prop-drill shared data.
 - Local UI state (open/closed, selected tab, form inputs, drawer visibility) stays in the component via `useState`.
 
+### Shared Provider Stack (`AppProviders`)
+
+`AppProviders` (`providers/AppProviders.tsx`) is the canonical provider stack shared by every entry point (Tauri `App.tsx`, service `ProjectPage.tsx`). It wraps: `ToastProvider → WorkflowConfigProvider → TasksProvider → PrStatusProvider → GitHistoryProvider`.
+
+**When adding a new provider, decide:**
+- **Goes inside `AppProviders`**: needed by every entry point, must live inside `TransportProvider`. Add it in dependency order (dependencies closer to the root).
+- **Stays outside**: entry-point-specific providers (`ProjectsProvider` in Tauri/PWA, `ProjectDetailProvider` in service mode) and connection-gate UI (`ReconnectingBanner`, `ProjectConnectionGate`) belong at their specific call site.
+
+The split exists because each entry point manages its own `TransportProvider` (Tauri injects a `TauriTransport`; service mode injects a `WebSocketTransport` keyed to the project) and its own connection-gating UX, while the data providers inside are identical across all paths.
+
 <!-- compound: fairly-prolific-jabiru -->
 ### Optimistic Updates Pattern
 

@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProjectPicker } from "./components/ProjectPicker";
 import "./index.css";
 import type { StartupData } from "./startup";
@@ -23,7 +24,9 @@ function mountPicker() {
   const errorMessage = params.get("error") ?? undefined;
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <ProjectPicker errorMessage={errorMessage} />
+      <ErrorBoundary>
+        <ProjectPicker errorMessage={errorMessage} />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 }
@@ -34,7 +37,9 @@ function mountPicker() {
 function mountApp() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 }

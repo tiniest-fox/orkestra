@@ -4,13 +4,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { FeedLoadingSkeleton } from "../components/Feed/FeedLoadingSkeleton";
 import { Orkestra } from "../components/Orkestra";
-import {
-  GitHistoryProvider,
-  ProjectDetailProvider,
-  PrStatusProvider,
-  TasksProvider,
-  WorkflowConfigProvider,
-} from "../providers";
+import { AppProviders, ProjectDetailProvider } from "../providers";
 import { TransportProvider, useConnectionState } from "../transport";
 import { WebSocketTransport } from "../transport/WebSocketTransport";
 import type { Project } from "./api";
@@ -75,17 +69,11 @@ function ProjectAppShell({ project, token }: { project: Project; token: string }
   return (
     <TransportProvider transport={transport}>
       <ProjectConnectionGate projectName={project.name}>
-        <ProjectDetailProvider>
-          <WorkflowConfigProvider>
-            <TasksProvider>
-              <PrStatusProvider>
-                <GitHistoryProvider>
-                  <Orkestra serviceProjectName={project.name} />
-                </GitHistoryProvider>
-              </PrStatusProvider>
-            </TasksProvider>
-          </WorkflowConfigProvider>
-        </ProjectDetailProvider>
+        <AppProviders>
+          <ProjectDetailProvider>
+            <Orkestra serviceProjectName={project.name} />
+          </ProjectDetailProvider>
+        </AppProviders>
       </ProjectConnectionGate>
     </TransportProvider>
   );

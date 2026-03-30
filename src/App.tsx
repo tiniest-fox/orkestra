@@ -13,15 +13,7 @@ import { FeedLoadingSkeleton } from "./components/Feed/FeedLoadingSkeleton";
 import { Orkestra } from "./components/Orkestra";
 import { ReconnectingBanner } from "./components/ReconnectingBanner";
 import { Button } from "./components/ui";
-import {
-  GitHistoryProvider,
-  ProjectsProvider,
-  PrStatusProvider,
-  TasksProvider,
-  ToastProvider,
-  useProjects,
-  WorkflowConfigProvider,
-} from "./providers";
+import { AppProviders, ProjectsProvider, useProjects } from "./providers";
 import { TransportProvider, useConnectionState, useHasConnected, useTransport } from "./transport";
 import type { ProjectInfo } from "./types/project";
 
@@ -139,17 +131,9 @@ function AppContent() {
   // ReconnectingBanner appears as an overlay during WebSocket disconnects
   // without unmounting the provider tree.
   return (
-    <ToastProvider>
-      <WorkflowConfigProvider>
-        <TasksProvider>
-          <PrStatusProvider>
-            <GitHistoryProvider>
-              <ReconnectingBanner />
-              <Orkestra serviceProjectName={IS_TAURI ? tauriProjectName : undefined} />
-            </GitHistoryProvider>
-          </PrStatusProvider>
-        </TasksProvider>
-      </WorkflowConfigProvider>
-    </ToastProvider>
+    <AppProviders>
+      <ReconnectingBanner />
+      <Orkestra serviceProjectName={IS_TAURI ? tauriProjectName : undefined} />
+    </AppProviders>
   );
 }

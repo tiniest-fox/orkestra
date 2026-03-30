@@ -3,13 +3,16 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ServiceApp } from "./ServiceApp";
 import "../index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <ServiceApp />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ServiceApp />
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>,
 );

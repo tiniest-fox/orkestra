@@ -27,6 +27,7 @@ cargo test --workspace       # All tests
 pnpm check --error-on-warnings   # Biome lint + format
 pnpm exec tsc --noEmit           # TypeScript type check
 pnpm test:run                    # Unit tests (Vitest)
+pnpm knip                        # Dead code / unused exports
 ```
 
 The automated gate script (`.orkestra/scripts/checks.sh`) runs the relevant subset based on what files changed. Run it locally to verify before pushing.

@@ -1,8 +1,7 @@
-//! Activity log — iteration history rendered as a stage-grouped timeline.
+// Activity log — iteration history rendered as a stage-grouped timeline.
 
 import { History } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type {
   IterationTrigger,
   WorkflowIteration,
@@ -11,6 +10,7 @@ import type {
 } from "../../types/workflow";
 import { PROSE_CLASSES } from "../../utils/prose";
 import { EmptyState } from "../ui/EmptyState";
+import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 
 // ============================================================================
 // Public component
@@ -85,7 +85,9 @@ function IterationEntry({ iteration }: { iteration: WorkflowIteration }) {
       </div>
       {iteration.activity_log && (
         <div className={`text-forge-body mt-2 ${PROSE_CLASSES}`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{iteration.activity_log}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
+            {iteration.activity_log}
+          </ReactMarkdown>
         </div>
       )}
     </div>
@@ -185,7 +187,9 @@ function ContextCallout({ trigger }: { trigger: IterationTrigger }) {
         {info.label}
       </div>
       <div className={`text-forge-body text-text-tertiary ${PROSE_CLASSES}`}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{info.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
+          {info.content}
+        </ReactMarkdown>
       </div>
     </div>
   );

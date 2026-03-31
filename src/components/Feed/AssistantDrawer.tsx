@@ -1,9 +1,8 @@
-//! Assistant chat drawer — project-level and task-scoped AI chat with session management.
+// Assistant chat drawer — project-level and task-scoped AI chat with session management.
 
 import { History, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import { useToast } from "../../providers/ToastProvider";
@@ -20,6 +19,7 @@ import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
+import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ChatComposeArea } from "./ChatComposeArea";
 import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 import { QuestionCard } from "./QuestionCard";
@@ -72,7 +72,9 @@ function AssistantTextLine({ content }: { content: string }) {
   if (!cleaned) return null;
   return (
     <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
+        {cleaned}
+      </ReactMarkdown>
     </div>
   );
 }

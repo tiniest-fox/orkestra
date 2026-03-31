@@ -1,12 +1,11 @@
-//! Feed log list — Forge-styled activity log for FocusDrawer and ReviewDrawer.
-//!
-//! A variant of LogList tuned for the Feed's compact, monospaced aesthetic.
-//! Tool calls are compact one-liners; thinking is subtle prose; user messages
-//! are minimal dividers. All colours use Forge design system Tailwind tokens.
+// Feed log list — Forge-styled activity log for FocusDrawer and ReviewDrawer.
+//
+// A variant of LogList tuned for the Feed's compact, monospaced aesthetic.
+// Tool calls are compact one-liners; thinking is subtle prose; user messages
+// are minimal dividers. All colours use Forge design system Tailwind tokens.
 
 import { Terminal } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { LogEntry, ResumeType } from "../../types/workflow";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -14,6 +13,7 @@ import { toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { EmptyState, ErrorState } from "../ui";
+import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 
 // ============================================================================
@@ -145,7 +145,9 @@ function ThinkingLine({ content }: { content: string }) {
   if (!cleaned) return null;
   return (
     <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
+        {cleaned}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -182,7 +184,9 @@ function UserBubble({ content, resumeType }: { content: string; resumeType?: Res
     <div className="flex justify-end py-3">
       <div className={`max-w-[85%] rounded-lg px-3 py-2 ${BUBBLE_STYLES[group]}`}>
         <div className={`text-forge-body text-text-primary ${PROSE_CLASSES}`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
+            {content}
+          </ReactMarkdown>
         </div>
       </div>
     </div>

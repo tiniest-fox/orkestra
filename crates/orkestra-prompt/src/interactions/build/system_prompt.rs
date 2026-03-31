@@ -207,6 +207,23 @@ mod tests {
     }
 
     #[test]
+    fn test_system_prompt_contains_visual_communication() {
+        let templates = test_templates();
+        let agent_def = "You are a worker agent.";
+        let output_format = "## Output Format\n\nProduce JSON.";
+
+        let system_prompt = render_system_prompt(&templates, agent_def, output_format);
+
+        assert!(
+            system_prompt.contains("Visual Communication"),
+            "system prompt should include Visual Communication section"
+        );
+        assert!(system_prompt.contains("wireframe"));
+        assert!(system_prompt.contains("mermaid"));
+        assert!(system_prompt.contains("Tailwind"));
+    }
+
+    #[test]
     fn test_render_agent_definition_passthrough() {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);

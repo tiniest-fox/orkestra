@@ -581,6 +581,21 @@ it("behaves correctly in Tauri mode", async () => {
 Each test gets a fresh module evaluation. Always pair with `vi.unstubAllEnvs()` cleanup.
 - **`vi.runAllTimersAsync()` with `setInterval` causes infinite loop**: `vi.runAllTimersAsync()` repeatedly fires all pending timers including `setInterval`, triggering indefinitely until Vitest aborts at 10000 iterations. Use `vi.advanceTimersByTimeAsync(N)` instead — it only fires timers that would trigger within N milliseconds, so it's bounded and safe with intervals.
 
+<!-- compound: sketchily-soaring-tick -->
+- **`vi.mock` factory cannot reference `const` variables**: `vi.mock(...)` is hoisted to the top of the file by Vitest's transformer, but `const`/`let` declarations are not — they stay in place. Any `const mockFn = vi.fn()` referenced inside a `vi.mock(...)` factory will be `undefined` at runtime. Use `vi.hoisted()` to declare mocks that factories need:
+
+```ts
+const { mockRender, mockCreateRoot } = vi.hoisted(() => {
+  const mockRender = vi.fn();
+  const mockCreateRoot = vi.fn(() => ({ render: mockRender, unmount: vi.fn() }));
+  return { mockRender, mockCreateRoot };
+});
+
+vi.mock("react-dom/client", () => ({ createRoot: mockCreateRoot }));
+```
+
+`vi.hoisted()` runs before the module is mocked, so its return values are available when factory functions execute.
+
 <!-- compound: boorishly-profitable-cat -->
 
 <!-- compound: garishly-true-wren -->

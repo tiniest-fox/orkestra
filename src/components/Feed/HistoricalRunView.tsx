@@ -1,4 +1,4 @@
-//! Historical run view — artifact and logs for a past stage run.
+// Historical run view — artifact and logs for a past stage run.
 
 import { FileText } from "lucide-react";
 import { useRef } from "react";
@@ -46,7 +46,10 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {activeTab === "artifact" ? (
           artifact ? (
-            <ArtifactView artifact={artifact} />
+            <ArtifactView
+              artifact={artifact}
+              outcome={run.iterations[run.iterations.length - 1]?.outcome}
+            />
           ) : (
             <EmptyState icon={FileText} message="No artifact for this stage." />
           )

@@ -531,6 +531,22 @@ This applies to any code gated on `IS_TAURI` that needs project context. The `ge
 - Workflow domain types live in `types/workflow.ts`.
 - Don't duplicate backend types — the Tauri bindings generate TypeScript types from Rust.
 
+## Artifact and Iteration Numbering
+
+<!-- compound: frivolously-memorable-spitz -->
+
+Both `WorkflowArtifact.iteration` and `WorkflowIteration.iteration_number` are **1-based**. Do not add a `+1` offset when matching an artifact to its producing iteration — compare them directly:
+
+```ts
+// Correct
+task.iterations.find(it => it.stage === artifact.stage && it.iteration_number === artifact.iteration)
+
+// Wrong — artifact.iteration is already 1-based
+task.iterations.find(it => it.stage === artifact.stage && it.iteration_number === artifact.iteration + 1)
+```
+
+Legacy artifacts produced before the `iteration` field existed have `iteration: 0` (from `#[serde(default)]` on the Rust side). Since valid `iteration_number` values start at 1, these will never match — correct graceful degradation, no badge shown.
+
 ## TanStack Virtual Patterns
 
 <!-- compound: dourly-topical-pratincole -->

@@ -203,7 +203,7 @@ export interface WorkflowArtifact {
   stage: string;
   /** When the artifact was created. */
   created_at: string;
-  /** Iteration number that produced this artifact (0-indexed). */
+  /** Iteration number that produced this artifact (1-based). */
   iteration: number;
 }
 

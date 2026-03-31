@@ -18,14 +18,10 @@ jobs:
     name: Rust
     runs-on: ubuntu-latest
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+      RUSTC_WRAPPER: ""
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.5
 
       - name: Install system dependencies
         # Keep in sync with .devcontainer/Dockerfile (Tauri build deps)
@@ -141,14 +137,9 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: write
-    env:
-      SCCACHE_GHA_ENABLED: "true"
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.5
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

@@ -400,6 +400,11 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
                 "ReturnFromInteractive triggers always supersede the session; is_resume cannot be true here"
             )
         }
+        Some(IterationTrigger::ChatCompletion) => {
+            // Stage was completed during chat — if a new spawn is triggered after this,
+            // continue in the existing session without special context.
+            ResumeType::Continue
+        }
     }
 }
 

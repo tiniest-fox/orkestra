@@ -9,10 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
+use super::try_complete_from_output;
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::LogEntry;
-use crate::workflow::execution::{AgentParser, ProviderRegistry};
+use crate::workflow::execution::{get_agent_schema, AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use orkestra_process::{is_process_running, kill_process_tree, ProcessConfig, ProcessHandle};
 
@@ -85,6 +86,7 @@ pub fn execute(
         &mut session,
         &stage,
         &worktree_path,
+        project_root,
         message,
         &now,
     )
@@ -109,6 +111,27 @@ fn resolve_worktree_path(
     )
 }
 
+/// Extract a hint string from the schema's type enum values.
+///
+/// Produces a comma-separated list like "summary, failed, blocked" for injection
+/// into the chat context note so the agent knows what type values are valid.
+fn schema_type_hint(schema: &serde_json::Value) -> String {
+    schema
+        .get("properties")
+        .and_then(|p| p.get("type"))
+        .and_then(|t| t.get("enum"))
+        .and_then(|e| e.as_array())
+        .map_or_else(
+            || "summary, failed, blocked".to_string(),
+            |arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+        )
+}
+
 /// Kill any running chat agent, spawn a new one, and start reading its output in background.
 #[allow(clippy::too_many_arguments)]
 fn spawn_chat_agent(
@@ -119,6 +142,7 @@ fn spawn_chat_agent(
     session: &mut crate::workflow::domain::StageSession,
     stage: &str,
     worktree_path: &Path,
+    project_root: &Path,
     message: &str,
     now: &str,
 ) -> WorkflowResult<()> {
@@ -143,6 +167,17 @@ fn spawn_chat_agent(
         .resolve(model_spec.as_deref())
         .map_err(|e| WorkflowError::Storage(format!("Provider resolution failed: {e}")))?;
 
+    // Compute stage schema for structured output detection in the background thread.
+    // Uses the canonical get_agent_schema() which respects custom schema_file configs.
+    let effective_stage = workflow
+        .effective_stage_config(stage, task_flow)
+        .ok_or_else(|| WorkflowError::InvalidState(format!("Unknown stage: {stage}")))?;
+    let schema_str = get_agent_schema(&effective_stage, Some(project_root))
+        .ok_or_else(|| WorkflowError::InvalidState(format!("No schema for stage: {stage}")))?;
+    let schema: serde_json::Value = serde_json::from_str(&schema_str).map_err(|e| {
+        WorkflowError::InvalidState(format!("Generated schema is not valid JSON: {e}"))
+    })?;
+
     // Validate session has a session ID for resume
     let session_id = session.claude_session_id.as_ref().ok_or_else(|| {
         WorkflowError::InvalidState(format!(
@@ -161,9 +196,19 @@ fn spawn_chat_agent(
 
     let pid = handle.pid;
 
+    // Prepend a context note to the message so the agent knows it can produce structured output
+    let type_hint = schema_type_hint(&schema);
+    let chat_context = format!(
+        "[System: You are in stage chat mode. If you want to complete this stage, \
+         output your structured JSON response (matching the stage's output schema) \
+         as raw text — the system will detect and process it as a stage completion. \
+         Your previous structured output schema had type field options including: {type_hint}]\n\n"
+    );
+    let full_message = format!("{chat_context}{message}");
+
     // Write message to stdin (closes stdin after write)
     handle
-        .write_prompt(message)
+        .write_prompt(&full_message)
         .map_err(|e| WorkflowError::Storage(format!("Failed to write chat message: {e}")))?;
 
     // Create parser before committing PID to database — if this fails, ProcessHandle drops
@@ -179,10 +224,12 @@ fn spawn_chat_agent(
     // Take stderr before moving handle into background thread
     let stderr = handle.take_stderr();
 
-    // Spawn background reader — only writes log entries, no state transitions
+    // Spawn background reader — writes log entries and detects structured output
     let task_id_owned = session.task_id.clone();
     let session_id_owned = session.id.clone();
     let stage_owned = stage.to_string();
+    let workflow_owned = workflow.clone();
+    let schema_owned = schema;
     thread::spawn(move || {
         read_chat_output(
             pid,
@@ -193,6 +240,8 @@ fn spawn_chat_agent(
             parser,
             handle,
             stderr,
+            &workflow_owned,
+            &schema_owned,
         );
     });
 
@@ -202,7 +251,8 @@ fn spawn_chat_agent(
 /// Read chat agent output, parse log entries, and write to the stage session logs.
 ///
 /// Runs in a background thread. Reads stdout, parses each line, writes log entries,
-/// appends `ProcessExit` when done, and clears the PID on the session.
+/// accumulates text for structured output detection, appends `ProcessExit` when done,
+/// and clears the PID on the session.
 #[allow(clippy::too_many_arguments)]
 fn read_chat_output(
     pid: u32,
@@ -213,6 +263,8 @@ fn read_chat_output(
     mut parser: Box<dyn AgentParser>,
     mut handle: ProcessHandle,
     stderr: Option<std::process::ChildStderr>,
+    workflow: &WorkflowConfig,
+    schema: &serde_json::Value,
 ) {
     use std::io::BufRead;
 
@@ -228,6 +280,8 @@ fn read_chat_output(
         });
     }
 
+    let mut accumulated_text: Vec<String> = Vec::new();
+
     for line in handle.lines() {
         match line {
             Ok(line) => {
@@ -238,6 +292,9 @@ fn read_chat_output(
                 let update = parser.parse_line(&line);
 
                 for entry in update.log_entries {
+                    if let LogEntry::Text { ref content } = entry {
+                        accumulated_text.push(content.clone());
+                    }
                     if let Err(e) = store.append_log_entry(session_id, &entry) {
                         orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
                     }
@@ -250,11 +307,53 @@ fn read_chat_output(
         }
     }
 
-    // Finalize parser
+    // Finalize parser and accumulate text from finalized entries
     let finalized = parser.finalize();
     for entry in finalized {
+        if let LogEntry::Text { ref content } = entry {
+            accumulated_text.push(content.clone());
+        }
         if let Err(e) = store.append_log_entry(session_id, &entry) {
             orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
+        }
+    }
+
+    // Try to detect structured output and complete the stage
+    let mut detection_succeeded = false;
+    if !accumulated_text.is_empty() {
+        let full_text = accumulated_text.join("");
+        match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &full_text)
+        {
+            Ok(true) => {
+                orkestra_debug!(
+                    "stage_chat",
+                    "Detected structured output in chat, stage completed for task {}",
+                    task_id
+                );
+                detection_succeeded = true;
+            }
+            Ok(false) => {} // No structured output detected, continue normal flow
+            Err(e) => {
+                orkestra_debug!(
+                    "stage_chat",
+                    "Error during structured output detection: {}",
+                    e
+                );
+                // Append error as a visible log entry so the user can see what went wrong
+                let error_msg = format!(
+                    "[System] Structured output detection failed: {e}. \
+                     The agent's response was treated as regular chat text."
+                );
+                if let Err(log_err) =
+                    store.append_log_entry(session_id, &LogEntry::Text { content: error_msg })
+                {
+                    orkestra_debug!(
+                        "stage_chat",
+                        "Failed to append error log entry: {}",
+                        log_err
+                    );
+                }
+            }
         }
     }
 
@@ -267,18 +366,20 @@ fn read_chat_output(
         );
     }
 
-    // Clear PID on session
-    let now = chrono::Utc::now().to_rfc3339();
-    if let Ok(Some(mut session)) = store.get_stage_session(task_id, stage) {
-        // Only clear PID if this session is the one we were reading for
-        if session.id == session_id {
-            session.agent_finished(&now);
-            if let Err(e) = store.save_stage_session(&session) {
-                orkestra_debug!(
-                    "stage_chat",
-                    "Failed to save session after agent exit: {}",
-                    e
-                );
+    // Clear PID on session (skip if detection already handled session cleanup via exit_chat)
+    if !detection_succeeded {
+        let now = chrono::Utc::now().to_rfc3339();
+        if let Ok(Some(mut session)) = store.get_stage_session(task_id, stage) {
+            // Only clear PID if this session is the one we were reading for
+            if session.id == session_id {
+                session.agent_finished(&now);
+                if let Err(e) = store.save_stage_session(&session) {
+                    orkestra_debug!(
+                        "stage_chat",
+                        "Failed to save session after agent exit: {}",
+                        e
+                    );
+                }
             }
         }
     }

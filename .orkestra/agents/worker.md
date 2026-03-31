@@ -373,6 +373,22 @@ Before outputting a completion summary, explicitly verify each file or change th
 
 **Anti-pattern to avoid:** Finding that the primary file is already changed, then concluding the task is complete without checking every other file the breakdown mentions. This is the most common cause of repeated rejection cycles — the reviewer catches the missed file every time.
 
+<!-- compound: inaudibly-glowing-sheathbill -->
+## Use Canonical Schema Generation — Never Duplicate `get_agent_schema`
+
+When any new code path needs to build an agent JSON schema (e.g., a new spawning route, a chat completion flow), always use the canonical two-step pattern:
+
+```rust
+let stage_config = config.effective_stage_config(stage_name, task_flow)?;
+let schema = get_agent_schema(project_root, &stage_config, config)?;
+```
+
+`effective_stage_config` (on `WorkflowConfig`) returns the flow-overridden `StageConfig` including capabilities and schema_file lookup. `get_agent_schema` (in `workflow::execution`) is the canonical schema builder — it handles `schema_file` override, `SchemaConfig`, and capability flags.
+
+**Never** build a `SchemaConfig` inline or compute a schema independently — reviewers treat this as HIGH severity duplication because it diverges silently (e.g., skipping `schema_file` lookup breaks per-project schema overrides). The violation that triggered a full rejection cycle: `spawn_chat_agent` built its own `SchemaConfig { ... }` instead of calling `get_agent_schema`.
+
+If you find yourself reaching for `SchemaConfig { ask_questions: ..., subtasks: ..., ... }` directly, stop — use the canonical path instead.
+
 <!-- compound: gallantly-open-sparrowhawk -->
 ## Keep Frontend TypeScript Unions in Sync with Rust Enum Variants
 

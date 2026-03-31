@@ -1,8 +1,9 @@
 //! E2E tests for stage chat: `send_message`, `return_to_work`, and approve after chat.
 //!
 //! These tests verify that stage chat correctly sets chat state and logs
-//! messages, and that `return_to_work` transitions the task back to Queued with
-//! the `ReturnToWork` iteration trigger.
+//! messages, that `return_to_work` transitions the task back to Queued with
+//! the `ReturnToWork` iteration trigger, and that the system detects structured
+//! output in chat text and completes the stage autonomously.
 
 use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
@@ -589,4 +590,374 @@ fn test_return_to_work_resumes_without_has_activity() {
 
     // Verify the resume prompt was used (not the initial prompt)
     ctx.assert_resume_prompt_contains("return_to_work", &["structured output", "done chatting"]);
+}
+
+// =============================================================================
+// Tests: chat structured output detection
+// =============================================================================
+
+/// Valid approval JSON for the `chat_test_workflow` schema (which uses `with_approval`).
+///
+/// The schema has type enum: ["approval", "failed", "blocked"].
+const VALID_APPROVAL_JSON: &str =
+    r#"{"type":"approval","decision":"approve","content":"The implementation looks great."}"#;
+
+const VALID_FAILED_JSON: &str = r#"{"type":"failed","error":"Something went wrong."}"#;
+
+const VALID_APPROVAL_WITH_ACTIVITY_LOG_JSON: &str = r#"{"type":"approval","decision":"approve","content":"Looks good.","activity_log":"- Reviewed implementation\n- Found no issues"}"#;
+
+// =============================================================================
+// Test: valid JSON in chat output transitions task to AwaitingApproval
+// =============================================================================
+
+#[test]
+fn test_chat_structured_output_completes_stage() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Chat completion test",
+        "Test structured output detection",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Verify we're in AwaitingApproval
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_awaiting_review(), "Task should be awaiting review");
+
+    // Simulate the detection path: valid JSON in accumulated chat text
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", None, VALID_APPROVAL_JSON)
+        .expect("detection should not error");
+
+    assert!(detected, "Valid approval JSON should be detected");
+
+    // Task should still be in AwaitingApproval (approval output awaits human confirmation)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should still be awaiting review after approval output (human must confirm), got: {:?}",
+        task.state
+    );
+
+    // A ChatCompletion iteration should exist
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let chat_iter = iterations.iter().find(|i| {
+        i.stage == "work" && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))
+    });
+    assert!(
+        chat_iter.is_some(),
+        "Should have a ChatCompletion iteration. Iterations: {iterations:?}"
+    );
+
+    // Session chat_active should be false (exit_chat was called)
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("Session should exist");
+    assert!(
+        !session.chat_active,
+        "chat_active should be false after completion"
+    );
+}
+
+// =============================================================================
+// Test: invalid JSON is silently ignored
+// =============================================================================
+
+#[test]
+fn test_chat_invalid_json_silently_ignored() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Invalid JSON test",
+        "Test that invalid JSON is ignored",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", None, "this is not json at all")
+        .expect("detection should not error");
+
+    assert!(
+        !detected,
+        "Plain text should not be detected as structured output"
+    );
+
+    // State should be unchanged
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task state should be unchanged after non-JSON chat"
+    );
+}
+
+// =============================================================================
+// Test: JSON with wrong schema is silently ignored
+// =============================================================================
+
+#[test]
+fn test_chat_wrong_schema_json_silently_ignored() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Wrong schema test",
+        "Test that wrong schema JSON is ignored",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // JSON that is valid JSON but doesn't match the stage schema (wrong type value)
+    let detected = ctx
+        .api()
+        .detect_chat_completion(
+            &task_id,
+            "work",
+            None,
+            r#"{"type":"unknown_type","content":"something"}"#,
+        )
+        .expect("detection should not error");
+
+    assert!(!detected, "JSON with wrong type should not be detected");
+}
+
+// =============================================================================
+// Test: detection works during Interrupted phase
+// =============================================================================
+
+#[test]
+fn test_chat_structured_output_during_interrupted() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Interrupted detection test",
+        "Test structured output detection during interrupted state",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Simulate interrupted state
+    save_session_for_test(&ctx, &task_id, "work", "interrupted-detect-session");
+    ctx.api().agent_started(&task_id).unwrap();
+    let task = ctx.api().interrupt(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Interrupted { .. }),
+        "Task should be Interrupted"
+    );
+
+    // Detection should work from Interrupted state (can_chat() returns true)
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", None, VALID_APPROVAL_JSON)
+        .expect("detection should not error");
+
+    assert!(
+        detected,
+        "Should detect structured output during Interrupted state"
+    );
+
+    // A ChatCompletion iteration should have been created
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let chat_iter = iterations.iter().find(|i| {
+        i.stage == "work" && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))
+    });
+    assert!(
+        chat_iter.is_some(),
+        "Should have a ChatCompletion iteration. Iterations: {iterations:?}"
+    );
+}
+
+// =============================================================================
+// Test: detection skipped if human already approved (race condition guard)
+// =============================================================================
+
+#[test]
+fn test_chat_detection_skipped_if_already_approved() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Race condition test",
+        "Test that detection is skipped if task is no longer in chat state",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Human approves before detection runs
+    ctx.api().approve(&task_id).expect("approve should succeed");
+
+    // The task is no longer in a chat-capable state (can_chat() = false)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        !task.can_chat(),
+        "Task should not be in chat state after approval, got: {:?}",
+        task.state
+    );
+
+    // Detection should return Ok(false) silently
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", None, VALID_APPROVAL_JSON)
+        .expect("detection should not error");
+
+    assert!(
+        !detected,
+        "Detection should be skipped if task is no longer in chat state"
+    );
+}
+
+// =============================================================================
+// Test: agent outputs failed JSON → task transitions to Failed
+// =============================================================================
+
+#[test]
+fn test_chat_structured_output_failed() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Failed detection test",
+        "Test failed output detection",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", None, VALID_FAILED_JSON)
+        .expect("detection should not error");
+
+    assert!(detected, "Failed JSON should be detected and processed");
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Failed { .. }),
+        "Task should be Failed after failed output, got: {:?}",
+        task.state
+    );
+}
+
+// =============================================================================
+// Test: markdown-fenced JSON is detected
+// =============================================================================
+
+#[test]
+fn test_chat_markdown_fenced_json_detected() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Markdown fence test",
+        "Test that JSON in markdown fences is detected",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Wrap the JSON in a markdown code fence
+    let fenced = format!("```json\n{VALID_APPROVAL_JSON}\n```");
+
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", None, &fenced)
+        .expect("detection should not error");
+
+    assert!(detected, "Markdown-fenced JSON should be detected");
+}
+
+// =============================================================================
+// Test: JSON in prose + fence is detected (mixed text)
+// =============================================================================
+
+#[test]
+fn test_chat_prose_with_fenced_json_detected() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Prose and JSON test",
+        "Test that JSON embedded in prose is detected",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Mix prose before the fenced JSON
+    let mixed = format!(
+        "I've reviewed the implementation and it looks good. Here is my structured output:\n\n```json\n{VALID_APPROVAL_JSON}\n```"
+    );
+
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", None, &mixed)
+        .expect("detection should not error");
+
+    assert!(detected, "JSON embedded in prose should be detected");
+}
+
+// =============================================================================
+// Test: activity_log in structured output lands on the ChatCompletion iteration
+// =============================================================================
+
+#[test]
+fn test_chat_structured_output_activity_log_on_correct_iteration() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Activity log iteration test",
+        "Test activity log lands on ChatCompletion iteration",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Detect structured output that includes an activity_log
+    let detected = ctx
+        .api()
+        .detect_chat_completion(
+            &task_id,
+            "work",
+            None,
+            VALID_APPROVAL_WITH_ACTIVITY_LOG_JSON,
+        )
+        .expect("detection should not error");
+
+    assert!(
+        detected,
+        "Valid approval JSON with activity_log should be detected"
+    );
+
+    // Find the ChatCompletion iteration and verify it has the activity log
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let chat_iter = iterations.iter().find(|i| {
+        i.stage == "work" && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))
+    });
+    let chat_iter = chat_iter.expect("Should have a ChatCompletion iteration");
+    assert_eq!(
+        chat_iter.activity_log.as_deref(),
+        Some("- Reviewed implementation\n- Found no issues"),
+        "Activity log should be on the ChatCompletion iteration, not the previous one"
+    );
 }

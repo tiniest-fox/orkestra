@@ -34,28 +34,13 @@ fi
 # Bump versions in all manifests
 bin/bump-version "$BARE_VERSION"
 
+# Fast pre-flight checks — full suite runs in CI after push
 echo ""
-echo "Running frontend checks..."
-pnpm install --frozen-lockfile
-pnpm build
-echo "  ✓ pnpm build"
-pnpm check
-echo "  ✓ pnpm check"
-pnpm lint
-echo "  ✓ pnpm lint"
-pnpm test:run
-echo "  ✓ pnpm test:run"
-pnpm knip
-echo "  ✓ pnpm knip"
-
-echo ""
-echo "Running Rust checks..."
+echo "Running pre-flight checks..."
 cargo fmt --all -- --check
 echo "  ✓ cargo fmt"
-cargo clippy --workspace
-echo "  ✓ cargo clippy"
-cargo test --workspace
-echo "  ✓ cargo test"
+pnpm check
+echo "  ✓ pnpm check"
 
 # Stage all modified manifests and Cargo.lock
 git add \

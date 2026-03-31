@@ -154,6 +154,8 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: write
+    env:
+      RUSTC_WRAPPER: ""
 
     steps:
       - uses: actions/checkout@v4

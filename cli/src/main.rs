@@ -1431,6 +1431,9 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
         IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
         IterationTrigger::Restart { message } => format!("restart stage\n    \"{message}\""),
         IterationTrigger::ReturnFromInteractive => "interactive session completed".to_string(),
+        IterationTrigger::ChatCompletion => {
+            "chat completion (structured output detected)".to_string()
+        }
     }
 }
 

@@ -50,76 +50,14 @@ pub fn execute(
         iteration_service.set_activity_log(task_id, &current_stage, log)?;
     }
 
-    match output {
-        StageOutput::Questions { questions } => {
-            super::handle_questions::execute(
-                workflow,
-                iteration_service,
-                &mut task,
-                &questions,
-                &current_stage,
-                &now,
-            )?;
-        }
-        StageOutput::Artifact { content, .. } => {
-            super::handle_artifact::execute(
-                workflow,
-                iteration_service,
-                &mut task,
-                &content,
-                &current_stage,
-                &now,
-            )?;
-        }
-        StageOutput::Approval {
-            decision, content, ..
-        } => {
-            super::handle_approval::execute(
-                workflow,
-                iteration_service,
-                &mut task,
-                &current_stage,
-                &decision,
-                &content,
-                &now,
-            )?;
-        }
-        StageOutput::Subtasks {
-            content, subtasks, ..
-        } => {
-            super::handle_subtasks::execute(
-                workflow,
-                iteration_service,
-                &mut task,
-                &content,
-                &subtasks,
-                &current_stage,
-                &now,
-            )?;
-        }
-        StageOutput::Failed { error } => {
-            stage::end_iteration::execute(
-                iteration_service,
-                &task,
-                Outcome::AgentError {
-                    error: error.clone(),
-                },
-            )?;
-            task.state = TaskState::failed_at(&current_stage, &error);
-            task.updated_at = now;
-        }
-        StageOutput::Blocked { reason } => {
-            stage::end_iteration::execute(
-                iteration_service,
-                &task,
-                Outcome::Blocked {
-                    reason: reason.clone(),
-                },
-            )?;
-            task.state = TaskState::blocked_at(&current_stage, &reason);
-            task.updated_at = now;
-        }
-    }
+    dispatch_output(
+        workflow,
+        iteration_service,
+        &mut task,
+        output,
+        &current_stage,
+        &now,
+    )?;
 
     orkestra_debug!(
         "action",
@@ -130,4 +68,90 @@ pub fn execute(
 
     store.save_task(&task)?;
     Ok(task)
+}
+
+/// Route a parsed stage output to the appropriate handler.
+///
+/// Shared between normal agent completion (`process_output::execute`) and
+/// chat-mode completion (`try_complete_from_output`). Does NOT load/save
+/// the task — callers handle persistence.
+pub(crate) fn dispatch_output(
+    workflow: &WorkflowConfig,
+    iteration_service: &IterationService,
+    task: &mut Task,
+    output: StageOutput,
+    current_stage: &str,
+    now: &str,
+) -> WorkflowResult<()> {
+    match output {
+        StageOutput::Questions { questions } => {
+            super::handle_questions::execute(
+                workflow,
+                iteration_service,
+                task,
+                &questions,
+                current_stage,
+                now,
+            )?;
+        }
+        StageOutput::Artifact { content, .. } => {
+            super::handle_artifact::execute(
+                workflow,
+                iteration_service,
+                task,
+                &content,
+                current_stage,
+                now,
+            )?;
+        }
+        StageOutput::Approval {
+            decision, content, ..
+        } => {
+            super::handle_approval::execute(
+                workflow,
+                iteration_service,
+                task,
+                current_stage,
+                &decision,
+                &content,
+                now,
+            )?;
+        }
+        StageOutput::Subtasks {
+            content, subtasks, ..
+        } => {
+            super::handle_subtasks::execute(
+                workflow,
+                iteration_service,
+                task,
+                &content,
+                &subtasks,
+                current_stage,
+                now,
+            )?;
+        }
+        StageOutput::Failed { error } => {
+            stage::end_iteration::execute(
+                iteration_service,
+                task,
+                Outcome::AgentError {
+                    error: error.clone(),
+                },
+            )?;
+            task.state = TaskState::failed_at(current_stage, &error);
+            task.updated_at = now.to_string();
+        }
+        StageOutput::Blocked { reason } => {
+            stage::end_iteration::execute(
+                iteration_service,
+                task,
+                Outcome::Blocked {
+                    reason: reason.clone(),
+                },
+            )?;
+            task.state = TaskState::blocked_at(current_stage, &reason);
+            task.updated_at = now.to_string();
+        }
+    }
+    Ok(())
 }

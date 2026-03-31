@@ -367,6 +367,24 @@ impl WorkflowConfig {
             .or_else(|| self.stage(stage_name).and_then(StageConfig::prompt_path))
     }
 
+    /// Get an effective `StageConfig` with flow overrides applied.
+    ///
+    /// Returns a clone of the global stage config with capabilities replaced
+    /// by the flow override (if any). This is the correct input for
+    /// `get_agent_schema()` when you need flow-aware schema generation.
+    pub fn effective_stage_config(
+        &self,
+        stage_name: &str,
+        flow: Option<&str>,
+    ) -> Option<StageConfig> {
+        let stage = self.stage(stage_name)?;
+        let mut effective = stage.clone();
+        if let Some(caps) = self.flow_override(stage_name, flow, |o| o.capabilities.clone()) {
+            effective.capabilities = caps;
+        }
+        Some(effective)
+    }
+
     /// Get the effective capabilities for a stage in a flow.
     ///
     /// Flow overrides fully replace (not merge) the global capabilities.

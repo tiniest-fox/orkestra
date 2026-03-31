@@ -124,6 +124,9 @@ pub enum IterationTrigger {
     /// Old DB records with `interactive` type deserialize as this variant.
     #[serde(alias = "interactive")]
     ReturnFromInteractive,
+    /// The agent produced structured output during a chat conversation,
+    /// completing the stage without requiring `return_to_work`.
+    ChatCompletion,
 }
 
 /// A single iteration (attempt) within a stage.

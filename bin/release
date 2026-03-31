@@ -35,7 +35,21 @@ fi
 bin/bump-version "$BARE_VERSION"
 
 echo ""
-echo "Running verification suite..."
+echo "Running frontend checks..."
+pnpm install --frozen-lockfile
+pnpm build
+echo "  ✓ pnpm build"
+pnpm check
+echo "  ✓ pnpm check"
+pnpm lint
+echo "  ✓ pnpm lint"
+pnpm test:run
+echo "  ✓ pnpm test:run"
+pnpm knip
+echo "  ✓ pnpm knip"
+
+echo ""
+echo "Running Rust checks..."
 cargo fmt --all -- --check
 echo "  ✓ cargo fmt"
 cargo clippy --workspace

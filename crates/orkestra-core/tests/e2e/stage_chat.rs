@@ -598,7 +598,7 @@ fn test_return_to_work_resumes_without_has_activity() {
 
 /// Valid approval JSON for the `chat_test_workflow` schema (which uses `with_approval`).
 ///
-/// The schema has type enum: ["approval", "failed", "blocked"].
+/// The schema has type enum: `["approval", "failed", "blocked"]`.
 const VALID_APPROVAL_JSON: &str =
     r#"{"type":"approval","decision":"approve","content":"The implementation looks great."}"#;
 

@@ -58,7 +58,11 @@ fn format_commit_summaries(git: &dyn GitService, worktree_path: &Path) -> String
                 let _ = writeln!(summary, "- {} {}", commit.hash, commit.message);
                 if let Some(body) = &commit.body {
                     let truncated = if body.len() > 200 {
-                        &body[..body.floor_char_boundary(200)]
+                        let mut end = 200;
+                        while !body.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        &body[..end]
                     } else {
                         body
                     };

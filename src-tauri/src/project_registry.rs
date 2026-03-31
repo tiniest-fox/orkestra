@@ -18,8 +18,8 @@ use orkestra_core::workflow::execution::{
 };
 use orkestra_core::workflow::ports::ProcessSpawner;
 use orkestra_core::workflow::{
-    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, TaskView, WorkflowApi,
-    WorkflowConfig, WorkflowStore,
+    Git2GitService, GitService, SqliteWorkflowStore, TaskView, WorkflowApi, WorkflowConfig,
+    WorkflowStore,
 };
 use orkestra_networking::CommandContext;
 use serde::{Deserialize, Serialize};
@@ -35,17 +35,10 @@ use crate::run_process::RunProcessRegistry;
 pub struct ProjectState {
     api: Arc<Mutex<WorkflowApi>>,
     config: WorkflowConfig,
-    auto_task_templates: Vec<AutoTaskTemplate>,
     project_root: PathBuf,
     /// Database connection, kept alive for the lifetime of the project window.
     #[allow(dead_code)]
     db_conn: DatabaseConnection,
-    /// Whether git service is available for worktree isolation.
-    has_git: bool,
-    /// Whether the `gh` CLI is available for PR creation.
-    has_gh_cli: bool,
-    /// Shared provider registry for agent spawning.
-    provider_registry: Arc<ProviderRegistry>,
     /// Stop flag for the orchestrator loop.
     pub(crate) stop_flag: Arc<AtomicBool>,
     /// Prefetched tasks from startup, consumed once by React.
@@ -60,7 +53,6 @@ impl ProjectState {
     /// Create a new `ProjectState` with the given workflow config and database path.
     pub fn new(
         workflow: WorkflowConfig,
-        auto_task_templates: Vec<AutoTaskTemplate>,
         db_path: &Path,
         project_root: PathBuf,
         run_pids: Arc<Mutex<Vec<u32>>>,
@@ -84,22 +76,21 @@ impl ProjectState {
         let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
 
         // Try to create git service for worktree support
-        let (git_service, has_git): (Option<Arc<dyn GitService>>, bool) =
-            match Git2GitService::new(&project_root) {
-                Ok(git) => {
-                    orkestra_debug!(
-                        "git",
-                        "Git service initialized for {}",
-                        project_root.display()
-                    );
-                    (Some(Arc::new(git)), true)
-                }
-                Err(e) => {
-                    orkestra_debug!("git", "Git service unavailable: {}", e);
-                    orkestra_debug!("git", "Tasks will run without git worktree isolation");
-                    (None, false)
-                }
-            };
+        let git_service: Option<Arc<dyn GitService>> = match Git2GitService::new(&project_root) {
+            Ok(git) => {
+                orkestra_debug!(
+                    "git",
+                    "Git service initialized for {}",
+                    project_root.display()
+                );
+                Some(Arc::new(git))
+            }
+            Err(e) => {
+                orkestra_debug!("git", "Git service unavailable: {}", e);
+                orkestra_debug!("git", "Tasks will run without git worktree isolation");
+                None
+            }
+        };
 
         // Construct shared provider registry (built before the API so it can be wired in)
         let mut provider_registry = ProviderRegistry::new("claudecode");
@@ -129,13 +120,6 @@ impl ProjectState {
                 .with_project_root(project_root.clone())
         };
 
-        let has_gh_cli = std::process::Command::new("gh")
-            .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok();
-
         let stop_flag = Arc::new(AtomicBool::new(false));
 
         let api_arc = Arc::new(Mutex::new(api));
@@ -151,13 +135,9 @@ impl ProjectState {
 
         Ok(Self {
             config: workflow,
-            auto_task_templates,
             api: api_arc,
             project_root,
             db_conn: conn,
-            has_git,
-            has_gh_cli,
-            provider_registry,
             stop_flag,
             startup_tasks: Arc::new(Mutex::new(None)),
             run_processes: RunProcessRegistry::new(run_pids),
@@ -189,11 +169,6 @@ impl ProjectState {
         &self.config
     }
 
-    /// Get the auto-task templates.
-    pub fn auto_task_templates(&self) -> &[AutoTaskTemplate] {
-        &self.auto_task_templates
-    }
-
     /// Get the project root path.
     pub fn project_root(&self) -> &Path {
         &self.project_root
@@ -202,21 +177,6 @@ impl ProjectState {
     /// Create a new `WorkflowStore` for the orchestrator.
     pub fn create_store(&self) -> Arc<dyn WorkflowStore> {
         Arc::new(SqliteWorkflowStore::new(self.db_conn.shared()))
-    }
-
-    /// Check if git service is available.
-    pub fn has_git_service(&self) -> bool {
-        self.has_git
-    }
-
-    /// Check if the `gh` CLI is available.
-    pub fn has_gh_cli(&self) -> bool {
-        self.has_gh_cli
-    }
-
-    /// Get the shared provider registry.
-    pub fn provider_registry(&self) -> &Arc<ProviderRegistry> {
-        &self.provider_registry
     }
 
     /// Get the run process registry for this project.

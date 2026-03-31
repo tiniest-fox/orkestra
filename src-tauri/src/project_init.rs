@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use orkestra_core::orkestra_debug;
-use orkestra_core::workflow::{load_auto_task_templates, load_workflow_for_project};
+use orkestra_core::workflow::load_workflow_for_project;
 
 use crate::project_registry::ProjectState;
 
@@ -79,16 +79,12 @@ pub fn initialize_project(
         ));
     }
 
-    // Load auto-task templates (non-fatal — empty list on failure)
-    let auto_task_templates = load_auto_task_templates(project_root, &workflow_config);
-
     // Create database path
     let db_path = orkestra_dir.join(".database/orkestra.db");
 
     // Create ProjectState (initializes database connection)
     ProjectState::new(
         workflow_config,
-        auto_task_templates,
         &db_path,
         project_root.to_path_buf(),
         run_pids,

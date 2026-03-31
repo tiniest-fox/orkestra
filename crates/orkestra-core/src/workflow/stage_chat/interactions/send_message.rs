@@ -254,6 +254,7 @@ fn spawn_chat_agent(
 /// accumulates text for structured output detection, appends `ProcessExit` when done,
 /// and clears the PID on the session.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 fn read_chat_output(
     pid: u32,
     store: &Arc<dyn WorkflowStore>,

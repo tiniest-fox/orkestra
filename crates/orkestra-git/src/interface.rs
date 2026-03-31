@@ -58,6 +58,10 @@ pub trait GitService: Send + Sync {
     ///
     /// - `delete_branch=true`: Delete both worktree and branch (task abandoned)
     /// - `delete_branch=false`: Delete worktree only, keep branch (task merged)
+    ///
+    /// If `.orkestra/scripts/worktree_cleanup.sh` exists, it will be executed with the
+    /// worktree path as an argument before removal (for project-specific cleanup like
+    /// stopping processes or removing generated files). Script failures do not block removal.
     fn remove_worktree(&self, task_id: &str, delete_branch: bool) -> Result<(), GitError>;
 
     /// List worktree directory names (task IDs) under the worktrees directory.

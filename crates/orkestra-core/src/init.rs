@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 const DEFAULT_WORKTREE_SETUP: &str = include_str!("defaults/worktree_setup.sh");
+const DEFAULT_WORKTREE_CLEANUP: &str = include_str!("defaults/worktree_cleanup.sh");
 const DEFAULT_CHECKS: &str = include_str!("defaults/checks.sh");
 const DEFAULT_WORKFLOW: &str = include_str!("defaults/workflow.yaml");
 
@@ -42,6 +43,11 @@ pub fn ensure_orkestra_project(orkestra_dir: &Path) -> std::io::Result<()> {
         orkestra_dir,
         "scripts/worktree_setup.sh",
         DEFAULT_WORKTREE_SETUP,
+    )?;
+    write_default_executable(
+        orkestra_dir,
+        "scripts/worktree_cleanup.sh",
+        DEFAULT_WORKTREE_CLEANUP,
     )?;
     write_default_executable(orkestra_dir, "scripts/checks.sh", DEFAULT_CHECKS)?;
     write_default(orkestra_dir, "workflow.yaml", DEFAULT_WORKFLOW)?;
@@ -273,6 +279,12 @@ mod tests {
             "worktree_setup.sh should be created"
         );
 
+        let worktree_cleanup_path = orkestra_dir.join("scripts/worktree_cleanup.sh");
+        assert!(
+            worktree_cleanup_path.exists(),
+            "worktree_cleanup.sh should be created"
+        );
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -287,6 +299,16 @@ mod tests {
                 mode & 0o111,
                 0o111,
                 "worktree_setup.sh should be executable"
+            );
+
+            let mode = fs::metadata(&worktree_cleanup_path)
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o111,
+                0o111,
+                "worktree_cleanup.sh should be executable"
             );
         }
     }

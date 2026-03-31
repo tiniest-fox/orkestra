@@ -522,3 +522,14 @@ When a new worktree is created for a task, `.orkestra/scripts/worktree_setup.sh`
 WORKTREE_PATH="$1"
 # Copy .env, run pnpm install, etc.
 ```
+
+### Worktree Cleanup
+
+When a worktree is removed, `.orkestra/scripts/worktree_cleanup.sh` runs automatically before deletion. Use this for project-specific teardown (removing symlinks, stopping dev servers, etc.):
+
+```bash
+WORKTREE_PATH="$1"
+# Remove symlinks, kill dev servers, etc.
+```
+
+**Important:** Cleanup script failures do not block worktree removal — if the script exits non-zero, the error is silently discarded and removal proceeds. This is intentional: a stuck worktree is worse than incomplete cleanup. If the worktree directory no longer exists when removal is triggered, the script is skipped entirely. Add your own logging inside the script if you need visibility into failures.

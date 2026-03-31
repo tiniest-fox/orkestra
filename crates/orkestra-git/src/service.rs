@@ -72,6 +72,11 @@ impl GitService for Git2GitService {
     }
 
     fn remove_worktree(&self, task_id: &str, delete_branch: bool) -> Result<(), GitError> {
+        let worktree_path = self.worktrees_dir.join(task_id);
+        if worktree_path.exists() {
+            let _ =
+                interactions::worktree::cleanup_script::execute(&self.repo_path, &worktree_path);
+        }
         interactions::worktree::remove::execute(
             &self.repo,
             &self.worktrees_dir,
@@ -591,6 +596,81 @@ mod tests {
             .unwrap();
 
         (remote_dir, clone_dir, repo_path)
+    }
+
+    #[test]
+    fn test_remove_worktree_runs_cleanup_script() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        let result = git
+            .create_worktree("TASK-CLEANUP", None)
+            .expect("Failed to create worktree");
+        assert!(result.worktree_path.exists());
+
+        let scripts_dir = repo_path.join(".orkestra/scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        std::fs::write(
+            scripts_dir.join("worktree_cleanup.sh"),
+            "#!/bin/bash\ntouch \"$(pwd)/.cleanup_ran\"\necho \"$1\" > \"$(pwd)/.cleanup_arg\"",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(scripts_dir.join("worktree_cleanup.sh"))
+                .unwrap()
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(scripts_dir.join("worktree_cleanup.sh"), perms).unwrap();
+        }
+
+        git.remove_worktree("TASK-CLEANUP", true)
+            .expect("Failed to remove worktree");
+
+        assert!(
+            repo_path.join(".cleanup_ran").exists(),
+            "Cleanup script should have run"
+        );
+        let cleanup_arg = std::fs::read_to_string(repo_path.join(".cleanup_arg"))
+            .expect("Cleanup arg not written");
+        assert_eq!(
+            cleanup_arg.trim(),
+            result.worktree_path.to_str().unwrap(),
+            "Cleanup script should have received the worktree path as $1"
+        );
+        assert!(!result.worktree_path.exists());
+    }
+
+    #[test]
+    fn test_cleanup_script_failure_does_not_block_removal() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        let result = git
+            .create_worktree("TASK-FAILCLEAN", None)
+            .expect("Failed to create worktree");
+
+        let scripts_dir = repo_path.join(".orkestra/scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        std::fs::write(
+            scripts_dir.join("worktree_cleanup.sh"),
+            "#!/bin/bash\nexit 1",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(scripts_dir.join("worktree_cleanup.sh"))
+                .unwrap()
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(scripts_dir.join("worktree_cleanup.sh"), perms).unwrap();
+        }
+
+        git.remove_worktree("TASK-FAILCLEAN", true)
+            .expect("Removal should succeed even if cleanup fails");
+        assert!(!result.worktree_path.exists(), "Worktree should be removed");
     }
 
     #[test]

@@ -28,9 +28,8 @@ pub fn execute(
 ) -> WorkflowResult<bool> {
     // Try to extract JSON from the accumulated text (first match wins)
     let json_str = extract_json(accumulated_text);
-    let json_str = match json_str {
-        Some(s) => s,
-        None => return Ok(false),
+    let Some(json_str) = json_str else {
+        return Ok(false);
     };
 
     // Validate extracted JSON against the stage schema
@@ -46,9 +45,8 @@ pub fn execute(
     };
 
     // Re-load task and check can_chat() — human may have acted in the meantime
-    let mut task = match store.get_task(task_id)? {
-        Some(t) => t,
-        None => return Ok(false),
+    let Some(mut task) = store.get_task(task_id)? else {
+        return Ok(false);
     };
 
     if !task.can_chat() {

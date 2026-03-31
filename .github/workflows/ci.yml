@@ -107,6 +107,23 @@ jobs:
         run: pnpm knip
 
   # ============================================================================
+  # Deploy service to Dokploy on every passing main push
+  # ============================================================================
+  deploy-service:
+    name: Deploy Service
+    needs: [rust, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: benbristow/dokploy-deploy-action@0.2.2
+        with:
+          api_token: ${{ secrets.DOKPLOY_AUTH_TOKEN }}
+          application_id: ${{ secrets.DOKPLOY_APPLICATION_ID }}
+          dokploy_url: ${{ secrets.DOKPLOY_URL }}
+          service_type: application
+
+  # ============================================================================
   # Resolve the release tag — skipped if this commit isn't tagged
   # ============================================================================
   resolve-tag:

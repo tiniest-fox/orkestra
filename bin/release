@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Usage: bin/release <version>
-# Bumps version in all manifests, verifies the build, commits, tags, and pushes.
+# Usage: bin/release [version]
+#
+# Without a version argument: inspects the current version and decides
+# automatically — if the current tag has already been released on GitHub it
+# bumps the patch version; if not it retags HEAD and retries the release.
+#
+# With an explicit version argument: always bumps to that version.
 set -euo pipefail
-
-VERSION=${1:?Usage: bin/release <version>  (e.g. 0.2.0 or v0.2.0)}
-
-# Strip leading 'v' for the bump script; keep it for the tag
-BARE_VERSION="${VERSION#v}"
-TAG="v${BARE_VERSION}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -25,61 +24,99 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
   exit 1
 fi
 
-# Guard against re-running with an already-existing tag
-if git tag -l "$TAG" | grep -q "$TAG"; then
-  echo "Error: tag $TAG already exists. Delete it first: git tag -d $TAG" >&2
-  exit 1
+# ── Resolve version and mode ──────────────────────────────────────────────────
+
+CURRENT_VERSION=$(node -p "require('./package.json').version")
+CURRENT_TAG="v${CURRENT_VERSION}"
+
+if [ -n "${1:-}" ]; then
+  # Explicit version provided — always bump to it
+  BARE_VERSION="${1#v}"
+  TAG="v${BARE_VERSION}"
+  MODE="bump"
+elif gh release view "$CURRENT_TAG" >/dev/null 2>&1; then
+  # Current tag has a GitHub Release — bump patch version
+  BARE_VERSION=$(node -p "
+    const [major, minor, patch] = '$CURRENT_VERSION'.split('.').map(Number);
+    \`\${major}.\${minor}.\${patch + 1}\`
+  ")
+  TAG="v${BARE_VERSION}"
+  MODE="bump"
+  echo "Current release $CURRENT_TAG is live — bumping to $TAG"
+else
+  # Tag exists but no release yet — CI failed or is pending; retag and retry
+  BARE_VERSION="$CURRENT_VERSION"
+  TAG="$CURRENT_TAG"
+  MODE="retag"
+  echo "Release $CURRENT_TAG not yet deployed — retagging HEAD and retrying"
 fi
 
-# Bump versions in all manifests
-bin/bump-version "$BARE_VERSION"
+# ── Execute ───────────────────────────────────────────────────────────────────
 
-# Fast pre-flight checks — full suite runs in CI after push
-echo ""
-echo "Running pre-flight checks..."
-cargo fmt --all -- --check
-echo "  ✓ cargo fmt"
-pnpm check
-echo "  ✓ pnpm check"
+if [ "$MODE" = "bump" ]; then
+  if git tag -l "$TAG" | grep -q "$TAG"; then
+    echo "Error: tag $TAG already exists. Delete it first: git tag -d $TAG" >&2
+    exit 1
+  fi
 
-# Stage all modified manifests and Cargo.lock
-git add \
-  package.json \
-  src-tauri/tauri.conf.json \
-  src-tauri/Cargo.toml \
-  cli/Cargo.toml \
-  daemon/Cargo.toml \
-  relay/Cargo.toml \
-  service/Cargo.toml \
-  crates/orkestra-agent/Cargo.toml \
-  crates/orkestra-core/Cargo.toml \
-  crates/orkestra-debug/Cargo.toml \
-  crates/orkestra-git/Cargo.toml \
-  crates/orkestra-networking/Cargo.toml \
-  crates/orkestra-parser/Cargo.toml \
-  crates/orkestra-process/Cargo.toml \
-  crates/orkestra-prompt/Cargo.toml \
-  crates/orkestra-relay-protocol/Cargo.toml \
-  crates/orkestra-schema/Cargo.toml \
-  crates/orkestra-service/Cargo.toml \
-  crates/orkestra-store/Cargo.toml \
-  crates/orkestra-types/Cargo.toml \
-  crates/orkestra-utility/Cargo.toml \
-  Cargo.lock
+  bin/bump-version "$BARE_VERSION"
 
-git commit -m "chore: release $TAG"
-git tag "$TAG"
-
-echo ""
-echo "Created commit and tag $TAG."
-echo "Push to trigger the release build:"
-echo ""
-echo "  git push origin main $TAG"
-echo ""
-read -r -p "Push now? [y/N] " CONFIRM
-if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-  git push origin main "$TAG"
+  # Fast pre-flight checks — full suite runs in CI after push
   echo ""
-  echo "Pushed. GitHub Actions will build the release at:"
-  echo "  https://github.com/$(git remote get-url origin | sed 's/.*github.com[:/]//' | sed 's/\.git$//')/actions"
+  echo "Running pre-flight checks..."
+  cargo fmt --all -- --check
+  echo "  ✓ cargo fmt"
+  pnpm check
+  echo "  ✓ pnpm check"
+
+  git add \
+    package.json \
+    src-tauri/tauri.conf.json \
+    src-tauri/Cargo.toml \
+    cli/Cargo.toml \
+    daemon/Cargo.toml \
+    relay/Cargo.toml \
+    service/Cargo.toml \
+    crates/orkestra-agent/Cargo.toml \
+    crates/orkestra-core/Cargo.toml \
+    crates/orkestra-debug/Cargo.toml \
+    crates/orkestra-git/Cargo.toml \
+    crates/orkestra-networking/Cargo.toml \
+    crates/orkestra-parser/Cargo.toml \
+    crates/orkestra-process/Cargo.toml \
+    crates/orkestra-prompt/Cargo.toml \
+    crates/orkestra-relay-protocol/Cargo.toml \
+    crates/orkestra-schema/Cargo.toml \
+    crates/orkestra-service/Cargo.toml \
+    crates/orkestra-store/Cargo.toml \
+    crates/orkestra-types/Cargo.toml \
+    crates/orkestra-utility/Cargo.toml \
+    Cargo.lock
+
+  git commit -m "chore: release $TAG"
+  git tag "$TAG"
+
+  echo ""
+  echo "Created commit and tag $TAG."
+  read -r -p "Push now? [y/N] " CONFIRM
+  if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    git push origin main "$TAG"
+  fi
+
+else
+  # Retag: move the tag to the current HEAD commit
+  git tag -d "$TAG" 2>/dev/null || true
+  git push origin ":refs/tags/$TAG" 2>/dev/null || true
+  git tag "$TAG"
+
+  echo ""
+  echo "Retagged $TAG at HEAD."
+  read -r -p "Push now? [y/N] " CONFIRM
+  if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    git push origin main "$TAG"
+  fi
 fi
+
+echo ""
+echo "GitHub Actions will build the release at:"
+echo "  https://github.com/$(git remote get-url origin | sed 's/.*github.com[:/]//' | sed 's/\.git$//')/actions"

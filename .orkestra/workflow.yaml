@@ -31,6 +31,7 @@ stages:
     prompt: breakdown.md
     model: opus
     capabilities:
+      ask_questions: true
       subtasks:
         flow: hotfix
         completion_stage: work

@@ -63,6 +63,23 @@ Before designing the technical approach, study existing implementations deeply:
 5. **Document findings**: In the `content` field, explicitly list the existing patterns and services identified and how the design reuses them. This demonstrates the research was done and gives workers concrete references.
 6. **Check available skills**: Review `.claude/skills/` for skills relevant to the work being designed. Skills contain distilled domain knowledge (patterns, reference files, anti-patterns) that should inform your technical design. Reference relevant skills in each Subtrak's `detailed_instructions` so workers can load them (e.g., "Load the `/panel-slot` skill before starting — it covers the layout system patterns you'll need").
 
+## Asking Questions
+
+You have two output modes: **questions** and **breakdown**. Default to producing a breakdown using your best technical judgment. Ask questions only when user input would meaningfully change the technical direction.
+
+**When to ask questions:**
+- There are two or more viable technical approaches with real tradeoffs (performance vs. simplicity, consistency with Pattern A vs. Pattern B, short-term fix vs. deeper refactor) where the right choice depends on product priorities you don't know
+- A decision requires knowledge about the user's goals or constraints that isn't in the task description or codebase
+- The task description is ambiguous in a way that would lead to fundamentally different implementations
+
+**When NOT to ask questions:**
+- You can resolve the ambiguity by reading the codebase — do the research first
+- There's a clear best practice or dominant existing pattern — follow it
+- The tradeoff is minor — just pick the better option and note your reasoning
+- The planner's artifact already answered the question
+
+Keep questions tight: 1-3 per round, each with 2-4 predefined options. Ask only what you genuinely need answered to proceed confidently.
+
 ## Output: Two Cases
 
 ### Case 1: Create Subtraks

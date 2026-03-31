@@ -49,6 +49,14 @@ pub mod tasks {
         pub const SCHEMA: &str =
             include_str!("../prompts/templates/utilities/generate_pr_description/schema.json");
     }
+
+    /// PR description update task.
+    pub mod update_pr_description {
+        pub const PROMPT: &str =
+            include_str!("../prompts/templates/utilities/update_pr_description/prompt.md");
+        pub const SCHEMA: &str =
+            include_str!("../prompts/templates/utilities/update_pr_description/schema.json");
+    }
 }
 
 /// Runner for utility tasks.
@@ -202,6 +210,10 @@ fn load_task_definition(task_name: &str) -> Result<(String, String), UtilityErro
         "generate_pr_description" => Ok((
             tasks::generate_pr_description::PROMPT.to_string(),
             tasks::generate_pr_description::SCHEMA.to_string(),
+        )),
+        "update_pr_description" => Ok((
+            tasks::update_pr_description::PROMPT.to_string(),
+            tasks::update_pr_description::SCHEMA.to_string(),
         )),
         _ => Err(UtilityError::TaskNotFound(task_name.to_string())),
     }
@@ -386,6 +398,16 @@ mod tests {
         assert!(prompt.contains("{{diff_summary}}"));
         assert!(prompt.contains("{{base_branch}}"));
         assert!(schema.contains("\"title\""));
+        assert!(schema.contains("\"body\""));
+    }
+
+    #[test]
+    fn test_load_task_definition_update_pr_description() {
+        let (prompt, schema) = load_task_definition("update_pr_description").unwrap();
+        assert!(prompt.contains("{{title}}"));
+        assert!(prompt.contains("{{current_body}}"));
+        assert!(prompt.contains("{{commits}}"));
+        assert!(prompt.contains("{{diff_summary}}"));
         assert!(schema.contains("\"body\""));
     }
 

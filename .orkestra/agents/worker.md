@@ -288,6 +288,9 @@ The `filter` on `Option` combines the `Some` check with the condition check, and
 
 **Visibility**: Use `pub(crate)` for types and modules only consumed within their own crate (e.g., internal `types.rs` in `orkestra-core`). Reserve `pub` for items that genuinely cross crate boundaries. Since all workspace crates are internal today, this is stylistic but expresses intent clearly and prevents accidental cross-crate exposure.
 
+<!-- compound: only-fulfilling-basset -->
+When adding a new submodule declaration to `mod.rs` (e.g., `pub mod pr_description_audit`), check what visibility sibling module declarations use and match it — don't default to `pub`. Most internal modules use `pub(crate)`.
+
 **`debug_assert!` vs `assert!`**: Use `debug_assert!` only for invariants that are architecturally unreachable in production — states the entry point structurally prevents (e.g., agent spawn requires a worktree, so "no worktree + active agent" is impossible). Use `assert!` for invariants that must hold in all builds including tests. When in doubt, prefer `assert!`.
 
 <!-- compound: evenly-prosperous-turkey -->

@@ -11,6 +11,10 @@ pub enum PrError {
     CreationFailed(String),
     /// gh CLI not found.
     CliNotFound,
+    /// Failed to update pull request.
+    UpdateFailed(String),
+    /// Failed to read pull request data.
+    ReadFailed(String),
 }
 
 impl fmt::Display for PrError {
@@ -22,6 +26,8 @@ impl fmt::Display for PrError {
                 f,
                 "gh CLI not found (install GitHub CLI: https://cli.github.com/)"
             ),
+            Self::UpdateFailed(msg) => write!(f, "Failed to update pull request: {msg}"),
+            Self::ReadFailed(msg) => write!(f, "Failed to read pull request data: {msg}"),
         }
     }
 }
@@ -42,6 +48,25 @@ pub trait PrService: Send + Sync {
         title: &str,
         body: &str,
     ) -> Result<String, PrError>;
+
+    /// Get the body/description of an existing pull request.
+    ///
+    /// Returns the PR body as a string. Uses the branch name to find the PR.
+    fn get_pull_request_body(
+        &self,
+        repo_root: &std::path::Path,
+        branch: &str,
+    ) -> Result<String, PrError>;
+
+    /// Update the body/description of an existing pull request.
+    ///
+    /// Overwrites the entire body with the new content.
+    fn update_pull_request_body(
+        &self,
+        repo_root: &std::path::Path,
+        branch: &str,
+        body: &str,
+    ) -> Result<(), PrError>;
 }
 
 // =============================================================================
@@ -57,6 +82,9 @@ pub mod mock {
     /// Mock PR service for testing.
     pub struct MockPrService {
         results: Mutex<VecDeque<Result<String, PrError>>>,
+        get_body_results: Mutex<VecDeque<Result<String, PrError>>>,
+        update_body_results: Mutex<VecDeque<Result<(), PrError>>>,
+        update_body_calls: Mutex<Vec<(String, String)>>,
     }
 
     impl MockPrService {
@@ -64,12 +92,30 @@ pub mod mock {
         pub fn new() -> Self {
             Self {
                 results: Mutex::new(VecDeque::new()),
+                get_body_results: Mutex::new(VecDeque::new()),
+                update_body_results: Mutex::new(VecDeque::new()),
+                update_body_calls: Mutex::new(Vec::new()),
             }
         }
 
         /// Set the result for the next PR creation.
         pub fn set_next_result(&self, result: Result<String, PrError>) {
             self.results.lock().unwrap().push_back(result);
+        }
+
+        /// Set the result for the next `get_pull_request_body` call.
+        pub fn set_next_get_body_result(&self, result: Result<String, PrError>) {
+            self.get_body_results.lock().unwrap().push_back(result);
+        }
+
+        /// Set the result for the next `update_pull_request_body` call.
+        pub fn set_next_update_body_result(&self, result: Result<(), PrError>) {
+            self.update_body_results.lock().unwrap().push_back(result);
+        }
+
+        /// Returns all (branch, body) pairs passed to `update_pull_request_body`.
+        pub fn update_body_calls(&self) -> Vec<(String, String)> {
+            self.update_body_calls.lock().unwrap().clone()
         }
     }
 
@@ -93,6 +139,35 @@ pub mod mock {
                 .unwrap()
                 .pop_front()
                 .unwrap_or_else(|| Ok("https://github.com/test/repo/pull/1".to_string()))
+        }
+
+        fn get_pull_request_body(
+            &self,
+            _repo_root: &std::path::Path,
+            _branch: &str,
+        ) -> Result<String, PrError> {
+            self.get_body_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Ok("## Summary\n\n- Default PR body".to_string()))
+        }
+
+        fn update_pull_request_body(
+            &self,
+            _repo_root: &std::path::Path,
+            branch: &str,
+            body: &str,
+        ) -> Result<(), PrError> {
+            self.update_body_calls
+                .lock()
+                .unwrap()
+                .push((branch.to_string(), body.to_string()));
+            self.update_body_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()))
         }
     }
 

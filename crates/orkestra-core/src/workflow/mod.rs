@@ -109,6 +109,9 @@ pub use assistant::service::AssistantService;
 pub use cleanup::cleanup_stale_target_lock;
 pub use integration::merge::{merge_task_sync, spawn_merge_integration};
 pub use integration::pr_creation::{create_pr_sync, spawn_pr_creation};
+pub use integration::pr_description_audit::{
+    audit_pr_description_sync, spawn_pr_description_audit,
+};
 pub use iteration::IterationService;
 pub use log_service::LogService;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};

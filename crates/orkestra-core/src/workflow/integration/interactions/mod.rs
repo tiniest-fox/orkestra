@@ -1,5 +1,6 @@
 //! Git integration interactions: merge, PR creation, commit, recovery.
 
+pub(crate) mod audit_pr_description;
 pub mod begin_pr_creation;
 pub mod build_diff_summary;
 pub mod collect_pr_artifacts;

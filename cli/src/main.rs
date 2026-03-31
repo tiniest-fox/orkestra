@@ -1072,6 +1072,9 @@ fn handle_push_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
             std::process::exit(1);
         }
     };
+    // TODO: wire PR description audit for CLI push
+    // The CLI accesses WorkflowApi directly (not Arc<Mutex<WorkflowApi>>), so
+    // audit_pr_description_sync cannot be called here without restructuring main.
 
     if pretty {
         if let Some(pr_url) = &task.pr_url {

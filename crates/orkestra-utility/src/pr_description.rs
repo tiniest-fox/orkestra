@@ -55,6 +55,19 @@ pub trait PrDescriptionGenerator: Send + Sync {
         base_branch: &str,
         model_names: &[String],
     ) -> Result<(String, String), String>;
+
+    /// Attempt to update an existing PR body to reflect the current branch state.
+    ///
+    /// Receives the current PR body and the current branch state (commits + diff).
+    /// Returns `Ok(updated_body)` on success, `Err(reason)` on failure.
+    /// The caller handles fallback (keeping the existing body unchanged).
+    fn update_pr_description(
+        &self,
+        task_title: &str,
+        current_body: &str,
+        commits_summary: &str,
+        diff_summary: &str,
+    ) -> Result<String, String>;
 }
 
 /// Append model attribution footer to a PR body.
@@ -104,6 +117,17 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         let body_with_footer = format!("{}{}", body, format_pr_footer(model_names));
         Ok((title, body_with_footer))
     }
+
+    fn update_pr_description(
+        &self,
+        task_title: &str,
+        current_body: &str,
+        commits_summary: &str,
+        diff_summary: &str,
+    ) -> Result<String, String> {
+        update_pr_description_sync(task_title, current_body, commits_summary, diff_summary, 60)
+            .map_err(|e| e.to_string())
+    }
 }
 
 // =============================================================================
@@ -151,6 +175,20 @@ pub mod mock {
                     format_pr_footer(model_names)
                 );
                 Ok((task_title.to_string(), body))
+            }
+        }
+
+        fn update_pr_description(
+            &self,
+            _task_title: &str,
+            current_body: &str,
+            _commits_summary: &str,
+            _diff_summary: &str,
+        ) -> Result<String, String> {
+            if self.fail {
+                Err("Mock PR description update failed".into())
+            } else {
+                Ok(format!("{current_body}\n\n_Updated by mock_"))
             }
         }
     }
@@ -206,6 +244,32 @@ pub fn generate_pr_description_sync(
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing body"))?;
 
     Ok((title.to_string(), body.to_string()))
+}
+
+/// Updates an existing PR description synchronously using a lightweight Claude instance.
+///
+/// Returns the complete updated PR body, or an error if generation fails.
+pub fn update_pr_description_sync(
+    task_title: &str,
+    current_body: &str,
+    commits_summary: &str,
+    diff_summary: &str,
+    timeout_secs: u64,
+) -> std::io::Result<String> {
+    let runner = UtilityRunner::new().with_timeout(timeout_secs);
+    let context = json!({
+        "title": task_title,
+        "current_body": current_body,
+        "commits": commits_summary,
+        "diff_summary": diff_summary,
+    });
+    let output = runner
+        .run("update_pr_description", &context)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    output["body"]
+        .as_str()
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing body"))
 }
 
 // ============================================================================

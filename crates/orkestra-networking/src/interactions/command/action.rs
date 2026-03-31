@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use orkestra_core::workflow::{
-    spawn_merge_integration, spawn_pr_creation, PrCheckData, PrCommentData, QuestionAnswer,
+    spawn_merge_integration, spawn_pr_creation, spawn_pr_description_audit, PrCheckData,
+    PrCommentData, QuestionAnswer,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -198,10 +199,13 @@ pub fn request_update(ctx: &CommandContext, params: &Value) -> Result<Value, Err
 /// Expected params: `{ "task_id": "<id>" }`
 pub fn push_pr_changes(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(params)?;
-    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api
-        .commit_and_push_pr_changes(&task_id)
-        .map_err(ErrorPayload::from)?;
+    let task = {
+        let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        api.commit_and_push_pr_changes(&task_id)
+            .map_err(ErrorPayload::from)?
+    };
+    // Lock released — spawn best-effort description audit in background
+    spawn_pr_description_audit(&ctx.api, &task_id);
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 

@@ -104,6 +104,61 @@ impl PrService for GhPrService {
         let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(url)
     }
+
+    fn get_pull_request_body(&self, repo_root: &Path, branch: &str) -> Result<String, PrError> {
+        let output = Command::new("gh")
+            .args(["pr", "view", "--head", branch, "--json", "body"])
+            .current_dir(repo_root)
+            .output()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    PrError::CliNotFound
+                } else {
+                    PrError::ReadFailed(format!("Failed to run gh pr view: {e}"))
+                }
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(PrError::ReadFailed(format!("gh pr view failed: {stderr}")));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| PrError::ReadFailed(format!("Failed to parse gh output: {e}")))?;
+
+        parsed["body"]
+            .as_str()
+            .map(std::string::ToString::to_string)
+            .ok_or_else(|| PrError::ReadFailed("No body field in gh output".into()))
+    }
+
+    fn update_pull_request_body(
+        &self,
+        repo_root: &Path,
+        branch: &str,
+        body: &str,
+    ) -> Result<(), PrError> {
+        let output = Command::new("gh")
+            .args(["pr", "edit", "--head", branch, "--body", body])
+            .current_dir(repo_root)
+            .output()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    PrError::CliNotFound
+                } else {
+                    PrError::UpdateFailed(format!("Failed to run gh pr edit: {e}"))
+                }
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(PrError::UpdateFailed(format!(
+                "gh pr edit failed: {stderr}"
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "description": "The complete updated PR description body in GitHub-flavored markdown"
+    }
+  },
+  "required": ["body"],
+  "additionalProperties": false
+}

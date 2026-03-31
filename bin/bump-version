@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: bin/bump-version <version>
-# Updates the version in all four canonical locations.
+# Updates the version in all canonical locations across the workspace.
 set -euo pipefail
 
 VERSION=${1:?Usage: bin/bump-version <version>  (e.g. 0.2.0)}
@@ -9,11 +9,11 @@ VERSION=${1:?Usage: bin/bump-version <version>  (e.g. 0.2.0)}
 VERSION="${VERSION#v}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
 echo "Bumping version to $VERSION..."
 
 # package.json
-cd "$REPO_ROOT"
 node -e "
   const fs = require('fs');
   const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -31,34 +31,44 @@ node -e "
 "
 echo "  ✓ src-tauri/tauri.conf.json"
 
-# src-tauri/Cargo.toml — replace version only within the [package] section
-node -e "
-  const fs = require('fs');
-  const content = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
-  // Match version = \"...\" only within the leading [package] block (before any other section)
-  const updated = content.replace(
-    /^(\[package\][^\[]*\nversion\s*=\s*)\"[^\"]*\"/ms,
-    '\$1\"$VERSION\"'
-  );
-  if (updated === content) { console.error('src-tauri/Cargo.toml: version line not found'); process.exit(1); }
-  fs.writeFileSync('src-tauri/Cargo.toml', updated);
-"
-echo "  ✓ src-tauri/Cargo.toml"
+# All Cargo.toml files — replace version only within the [package] section
+CARGO_TOML_FILES=(
+  src-tauri/Cargo.toml
+  cli/Cargo.toml
+  daemon/Cargo.toml
+  relay/Cargo.toml
+  service/Cargo.toml
+  crates/orkestra-agent/Cargo.toml
+  crates/orkestra-core/Cargo.toml
+  crates/orkestra-debug/Cargo.toml
+  crates/orkestra-git/Cargo.toml
+  crates/orkestra-networking/Cargo.toml
+  crates/orkestra-parser/Cargo.toml
+  crates/orkestra-process/Cargo.toml
+  crates/orkestra-prompt/Cargo.toml
+  crates/orkestra-relay-protocol/Cargo.toml
+  crates/orkestra-schema/Cargo.toml
+  crates/orkestra-service/Cargo.toml
+  crates/orkestra-store/Cargo.toml
+  crates/orkestra-types/Cargo.toml
+  crates/orkestra-utility/Cargo.toml
+)
 
-# cli/Cargo.toml — same approach
-node -e "
-  const fs = require('fs');
-  const content = fs.readFileSync('cli/Cargo.toml', 'utf8');
-  const updated = content.replace(
-    /^(\[package\][^\[]*\nversion\s*=\s*)\"[^\"]*\"/ms,
-    '\$1\"$VERSION\"'
-  );
-  if (updated === content) { console.error('cli/Cargo.toml: version line not found'); process.exit(1); }
-  fs.writeFileSync('cli/Cargo.toml', updated);
-"
-echo "  ✓ cli/Cargo.toml"
+for TOML in "${CARGO_TOML_FILES[@]}"; do
+  node -e "
+    const fs = require('fs');
+    const content = fs.readFileSync('$TOML', 'utf8');
+    const updated = content.replace(
+      /^(\[package\][^\[]*\nversion\s*=\s*)\"[^\"]*\"/ms,
+      '\$1\"$VERSION\"'
+    );
+    if (updated === content) { console.error('$TOML: version line not found'); process.exit(1); }
+    fs.writeFileSync('$TOML', updated);
+  "
+  echo "  ✓ $TOML"
+done
 
-# Regenerate Cargo.lock to reflect the version change
+# Regenerate Cargo.lock to reflect the version changes
 cargo generate-lockfile --quiet 2>/dev/null || true
 echo "  ✓ Cargo.lock"
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: bin/release <version>
-# Bumps the version, commits, tags, and pushes — GitHub Actions does the rest.
+# Bumps version in all manifests, verifies the build, commits, tags, and pushes.
 set -euo pipefail
 
 VERSION=${1:?Usage: bin/release <version>  (e.g. 0.2.0 or v0.2.0)}
@@ -31,12 +31,44 @@ if git tag -l "$TAG" | grep -q "$TAG"; then
   exit 1
 fi
 
-# Bump versions in all four files
+# Bump versions in all manifests
 bin/bump-version "$BARE_VERSION"
 
-# Commit and tag
-git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml cli/Cargo.toml Cargo.lock
-git commit -m "chore: bump version to $TAG"
+echo ""
+echo "Running verification suite..."
+cargo fmt --all -- --check
+echo "  ✓ cargo fmt"
+cargo clippy --workspace
+echo "  ✓ cargo clippy"
+cargo test --workspace
+echo "  ✓ cargo test"
+
+# Stage all modified manifests and Cargo.lock
+git add \
+  package.json \
+  src-tauri/tauri.conf.json \
+  src-tauri/Cargo.toml \
+  cli/Cargo.toml \
+  daemon/Cargo.toml \
+  relay/Cargo.toml \
+  service/Cargo.toml \
+  crates/orkestra-agent/Cargo.toml \
+  crates/orkestra-core/Cargo.toml \
+  crates/orkestra-debug/Cargo.toml \
+  crates/orkestra-git/Cargo.toml \
+  crates/orkestra-networking/Cargo.toml \
+  crates/orkestra-parser/Cargo.toml \
+  crates/orkestra-process/Cargo.toml \
+  crates/orkestra-prompt/Cargo.toml \
+  crates/orkestra-relay-protocol/Cargo.toml \
+  crates/orkestra-schema/Cargo.toml \
+  crates/orkestra-service/Cargo.toml \
+  crates/orkestra-store/Cargo.toml \
+  crates/orkestra-types/Cargo.toml \
+  crates/orkestra-utility/Cargo.toml \
+  Cargo.lock
+
+git commit -m "chore: release $TAG"
 git tag "$TAG"
 
 echo ""

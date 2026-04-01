@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: ""
+      CARGO_PROFILE_DEV_DEBUG: "0"  # no debug info in CI — faster cold compiles
 
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +65,8 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -71,8 +74,11 @@ jobs:
       - name: Lint
         run: cargo clippy --workspace -- -D warnings
 
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Test
-        run: cargo test --workspace
+        run: cargo nextest run --workspace
 
   # ============================================================================
   # Frontend: formatting, lints, tests, and dead code detection

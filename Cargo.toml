@@ -29,3 +29,7 @@ split-debuginfo = "unpacked"     # faster linking on macOS
 
 [profile.dev.build-override]
 opt-level = 3                    # faster proc-macros (serde, tauri)
+
+[profile.ci]
+inherits = "dev"
+debug = 0                        # no debug info needed in CI, faster compile + link

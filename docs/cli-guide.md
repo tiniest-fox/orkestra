@@ -1,6 +1,6 @@
 # Orkestra CLI (`ork`) Reference
 
-Command-line tool for managing Orkestra workflow tasks. Agents don't use this directly—they output JSON. This is for human debugging and manual task management.
+Command-line tool for managing Orkestra workflow Traks. Agents don't use this directly—they output JSON. This is for human debugging and manual Trak management.
 
 ## Setup
 
@@ -14,60 +14,60 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 
 ## Commands
 
-### Task Management
+### Trak Management
 
-**`ork task list [OPTIONS]`**
-- Lists all tasks
+**`ork trak list [OPTIONS]`**
+- Lists all Traks
 - `--status <FILTER>`: Filter by `active`, `done`, `archived`, `failed`, or `blocked`
-- `--parent <ID>`: List subtasks of a parent task
-- `--depends-on <ID>`: List tasks that depend on this task
+- `--parent <ID>`: List subtraks of a parent Trak
+- `--depends-on <ID>`: List Traks that depend on this Trak
 
-**`ork task show <ID> [OPTIONS]`**
-- Shows full task details, artifacts, and metadata
+**`ork trak show <ID> [OPTIONS]`**
+- Shows full Trak details, artifacts, and metadata
 - `--iterations`: Show iteration history (stages, outcomes, feedback)
 - `--sessions`: Show stage session history (spawning, PIDs, state)
 - `--git`: Show git state (branch, HEAD, dirty status)
 
-**`ork task create -t <TITLE> -d <DESCRIPTION> [OPTIONS]`**
-- Creates new task
-- `-t, --title`: Task title (required)
-- `-d, --description`: Task description (required)
+**`ork trak create -t <TITLE> -d <DESCRIPTION> [OPTIONS]`**
+- Creates new Trak
+- `-t, --title`: Trak title (required)
+- `-d, --description`: Trak description (required)
 - `-b, --base-branch`: Base branch for worktree (optional)
-- `--flow <NAME>`: Assign task to a named flow (e.g., "quick", "hotfix")
+- `--flow <NAME>`: Assign Trak to a named flow (e.g., "quick", "hotfix")
 - Creates worktree at `.orkestra/.worktrees/<task-id>` and branch `task/<task-id>` if git available
 
-**`ork task approve <ID>`**
+**`ork trak approve <ID>`**
 - Approves current stage, advances to next or marks done
-- Requires task in `AwaitingReview` phase
+- Requires Trak in `AwaitingReview` phase
 
-**`ork task reject <ID> --feedback <FEEDBACK>`**
+**`ork trak reject <ID> --feedback <FEEDBACK>`**
 - Rejects current stage with feedback
 - `-f, --feedback`: Reason for rejection (required)
 - Creates new iteration, returns to `Idle` phase
 
-**`ork task skip <ID> --message <MESSAGE>`**
+**`ork trak skip <ID> --message <MESSAGE>`**
 - Skips the current stage, advancing to the next stage (or marks Done if last stage)
 - `-m, --message`: Reason for skipping (required)
-- Requires task in `AwaitingApproval`, `AwaitingQuestionAnswer`, `AwaitingRejectionConfirmation`, or `Interrupted` phase
+- Requires Trak in `AwaitingApproval`, `AwaitingQuestionAnswer`, `AwaitingRejectionConfirmation`, or `Interrupted` phase
 - The message is injected as redirect context into the next agent's prompt
 
-**`ork task send-to-stage <ID> --stage <STAGE> --message <MESSAGE>`**
-- Sends a task to any named stage in the pipeline (forward or backward)
+**`ork trak send-to-stage <ID> --stage <STAGE> --message <MESSAGE>`**
+- Sends a Trak to any named stage in the pipeline (forward or backward)
 - `-s, --stage`: Target stage name (required)
 - `-m, --message`: Reason for the redirect (required)
-- Requires task in `AwaitingApproval`, `AwaitingQuestionAnswer`, `AwaitingRejectionConfirmation`, or `Interrupted` phase
+- Requires Trak in `AwaitingApproval`, `AwaitingQuestionAnswer`, `AwaitingRejectionConfirmation`, or `Interrupted` phase
 - Sending backward supersedes the existing session; the agent receives the message as redirect context
 
-**`ork task interrupt <ID>`**
+**`ork trak interrupt <ID>`**
 - Interrupts a running agent execution
 - Kills the agent process and transitions to `Interrupted` phase
-- Requires task in `AgentWorking` phase
+- Requires Trak in `AgentWorking` phase
 
-**`ork task resume <ID> [--message <MESSAGE>]`**
-- Resumes an interrupted task
+**`ork trak resume <ID> [--message <MESSAGE>]`**
+- Resumes an interrupted Trak
 - `-m, --message`: Optional message to guide the agent on resume
 - Creates new iteration with `ManualResume` trigger, returns to `Idle` phase
-- Requires task in `Interrupted` phase
+- Requires Trak in `Interrupted` phase
 
 ### Logs
 
@@ -91,7 +91,7 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 ## Status Values
 
 - `Active(<stage>)` - Working on stage
-- `Waiting(<stage>)` - Waiting on child tasks
+- `Waiting(<stage>)` - Waiting on child Traks
 - `Done` - Completed successfully
 - `Archived` - Completed and merged
 - `Failed: <msg>` - Cannot continue
@@ -107,14 +107,14 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 - `Interrupted` - Agent was manually interrupted, awaiting resume
 - `Integrating` - Merging to main branch
 
-## Task Lifecycle
+## Trak Lifecycle
 
-1. `ork task create` → `Active(first_stage)`, `Awaiting Setup`
+1. `ork trak create` → `Active(first_stage)`, `Awaiting Setup`
 2. Orchestrator creates worktree → `Idle`
 3. Orchestrator spawns agent → `Working`
 4. Agent outputs → `Review`
-5. `ork task approve` → next stage or `Done`
-6. `ork task reject` → new iteration, back to `Idle`
+5. `ork trak approve` → next stage or `Done`
+6. `ork trak reject` → new iteration, back to `Idle`
 7. When `Done`, orchestrator merges → `Integrating` → `Archived`
 
 ## Exit Codes

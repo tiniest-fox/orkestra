@@ -1437,7 +1437,7 @@ fn test_subtask_prompt_includes_sibling_context() {
 
     // Verify sibling section exists
     assert!(
-        prompt.contains("## Sibling Subtasks"),
+        prompt.contains("## Sibling Subtraks"),
         "Prompt should contain sibling section. Got:\n{}",
         &prompt[..prompt.len().min(2000)]
     );

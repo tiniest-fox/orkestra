@@ -1,4 +1,4 @@
-//! Post-loop integration (merge or PR) and final task output.
+//! Post-loop integration (merge or PR) and final Trak output.
 
 use std::sync::{Arc, Mutex};
 
@@ -15,7 +15,7 @@ pub fn execute(
         .lock()
         .map_err(|_| "Workflow API lock poisoned".to_string())?
         .get_task(task_id)
-        .map_err(|e| format!("Failed to get task: {e}"))?;
+        .map_err(|e| format!("Failed to get trak: {e}"))?;
 
     // Only attempt post-loop integration when task is Done.
     // If already Archived, the orchestrator handled integration (auto_merge) — skip.
@@ -40,10 +40,10 @@ pub fn execute(
         .lock()
         .map_err(|_| "Workflow API lock poisoned".to_string())?
         .get_task(task_id)
-        .map_err(|e| format!("Failed to get final task: {e}"))?;
+        .map_err(|e| format!("Failed to get final Trak: {e}"))?;
 
     if pretty {
-        println!("Task {task_id} complete");
+        println!("trak {task_id} complete");
         println!("State: {}", crate::format_state(&final_task.state));
         if let Some(branch) = &final_task.branch_name {
             println!("Branch: {branch}");

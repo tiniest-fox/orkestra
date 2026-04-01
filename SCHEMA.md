@@ -6,9 +6,9 @@ This document describes the SQLite database schema used by Orkestra. The schema 
 
 Orkestra stores all workflow state in a SQLite database at `.orkestra/.database/orkestra.db`. The schema consists of seven tables:
 
-- **`workflow_tasks`** — Task definitions, status, artifacts, and configuration
+- **`workflow_tasks`** — Trak definitions, status, artifacts, and configuration
 - **`workflow_iterations`** — Individual agent/script runs within stages
-- **`workflow_stage_sessions`** — Agent process session tracking for task-specific work
+- **`workflow_stage_sessions`** — Agent process session tracking for Trak-specific work
 - **`assistant_sessions`** — Agent process session tracking for project-level assistant chat
 - **`log_entries`** — Structured logs from agent sessions (both stage and assistant sessions)
 - **`device_tokens`** — Authenticated remote devices (WebSocket clients via `orkd`)
@@ -22,7 +22,7 @@ All workflow state is accessed through the `WorkflowStore` trait. The orchestrat
 
 ### `workflow_tasks`
 
-Stores task definitions, workflow position, execution phase, artifacts, and git state.
+Stores Trak definitions, workflow position, execution phase, artifacts, and git state.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|

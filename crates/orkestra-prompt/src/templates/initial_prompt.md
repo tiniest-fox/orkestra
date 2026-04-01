@@ -14,11 +14,11 @@
 
 ---
 
-## Your Current Task
+## Your Current Trak
 
-**Task ID**: {{task_id}}
+**Trak ID**: {{task_id}}
 
-Your task definition is at `{{task_file_path}}`. Read it before starting work.
+Your Trak definition is at `{{task_file_path}}`. Read it before starting work.
 
 {{#if artifacts}}
 ## Input Artifacts
@@ -30,9 +30,9 @@ The following artifacts are available in your worktree. You MUST read these arti
 {{/each}}
 {{/if}}
 {{#if sibling_tasks}}
-## Sibling Subtasks
+## Sibling Subtraks
 
-This task is part of a breakdown. Here are your siblings:
+This Trak is part of a breakdown. Here are your siblings:
 
 {{#each sibling_tasks}}
 - **{{this.short_id}}** {{this.title}}{{#if this.dependency_relationship}} [{{this.dependency_relationship}}]{{/if}} ({{this.status_display}})

@@ -1,94 +1,94 @@
 ---
 name: ork-cli
-description: Orkestra CLI for task management, debugging, and inspection
+description: Orkestra CLI for Trak management, debugging, and inspection
 ---
 
 # Orkestra CLI (`ork`) Reference
 
-The `ork` CLI is the primary tool for task management and debugging outside the UI. Use it to create tasks, inspect state, view agent logs, and manage the task lifecycle.
+The `ork` CLI is the primary tool for Trak management and debugging outside the UI. Use it to create Traks, inspect state, view agent logs, and manage the Trak lifecycle.
 
 ## Development Usage
 
 During development, use the wrapper script which handles building automatically:
 
 ```bash
-bin/ork task list
-bin/ork task show <task-id>
-bin/ork task create -t "Title" -d "Description"
+bin/ork trak list
+bin/ork trak show <task-id>
+bin/ork trak create -t "Title" -d "Description"
 ```
 
 ## Quick Reference
 
 | Command | Purpose |
 |---------|---------|
-| `ork task list` | List all tasks with optional filters |
-| `ork task show <ID>` | Show task details, artifacts, metadata |
-| `ork task create -t TITLE -d DESC` | Create a new task |
-| `ork task approve <ID>` | Approve current stage |
-| `ork task reject <ID> -f MSG` | Reject with feedback |
-| `ork task merge <ID>` | Merge Done task's branch into base |
-| `ork task open-pr <ID>` | Create PR for a Done task |
-| `ork task retry-pr <ID>` | Retry failed PR creation |
-| `ork task retry <ID>` | Retry a failed/blocked task |
+| `ork trak list` | List all Traks with optional filters |
+| `ork trak show <ID>` | Show Trak details, artifacts, metadata |
+| `ork trak create -t TITLE -d DESC` | Create a new Trak |
+| `ork trak approve <ID>` | Approve current stage |
+| `ork trak reject <ID> -f MSG` | Reject with feedback |
+| `ork trak merge <ID>` | Merge Done Trak's branch into base |
+| `ork trak open-pr <ID>` | Create PR for a Done Trak |
+| `ork trak retry-pr <ID>` | Retry failed PR creation |
+| `ork trak retry <ID>` | Retry a failed/blocked Trak |
 | `ork logs <ID> --stage NAME` | View agent/script logs |
 
 Add `--pretty` to any command for human-readable output instead of JSON.
 
-## Task Management Commands
+## Trak Management Commands
 
-### Listing Tasks
+### Listing Traks
 
 ```bash
-# All tasks
-ork task list
+# All Traks
+ork trak list
 
 # Filter by status
-ork task list --status active    # Currently in progress
-ork task list --status done      # Completed
-ork task list --status archived  # Merged to main
-ork task list --status failed    # Failed tasks
-ork task list --status blocked   # Blocked on dependency
+ork trak list --status active    # Currently in progress
+ork trak list --status done      # Completed
+ork trak list --status archived  # Merged to main
+ork trak list --status failed    # Failed Traks
+ork trak list --status blocked   # Blocked on dependency
 
 # Filter by relationships
-ork task list --parent <ID>      # Subtasks of a parent
-ork task list --depends-on <ID>  # Tasks depending on this task
+ork trak list --parent <ID>      # Subtraks of a parent
+ork trak list --depends-on <ID>  # Traks depending on this Trak
 ```
 
-### Inspecting Tasks
+### Inspecting Traks
 
 ```bash
-# Basic task details
-ork task show <ID>
+# Basic Trak details
+ork trak show <ID>
 
 # With iteration history (stages, outcomes, feedback)
-ork task show <ID> --iterations
+ork trak show <ID> --iterations
 
 # With session history (spawning, PIDs, state)
-ork task show <ID> --sessions
+ork trak show <ID> --sessions
 
 # With git state (branch, HEAD, dirty status)
-ork task show <ID> --git
+ork trak show <ID> --git
 
 # Full diagnostic view (combine all)
-ork task show <ID> --iterations --sessions --git
+ork trak show <ID> --iterations --sessions --git
 ```
 
-### Creating Tasks
+### Creating Traks
 
 ```bash
-# Basic task creation
-ork task create -t "Fix login bug" -d "Users can't log in with email"
+# Basic Trak creation
+ork trak create -t "Fix login bug" -d "Users can't log in with email"
 
 # With specific base branch
-ork task create -t "Add feature" -d "Description" -b feature-branch
+ork trak create -t "Add feature" -d "Description" -b feature-branch
 
 # With a named flow (shorter pipeline)
-ork task create -t "Hotfix" -d "Critical fix" --flow hotfix
+ork trak create -t "Hotfix" -d "Critical fix" --flow hotfix
 ```
 
 Options:
-- `-t, --title`: Task title (required)
-- `-d, --description`: Task description (required)
+- `-t, --title`: Trak title (required)
+- `-d, --description`: Trak description (required)
 - `-b, --base-branch`: Base branch for worktree (optional, defaults to main)
 - `--flow <NAME>`: Assign to a named flow (e.g., "quick", "hotfix")
 
@@ -96,35 +96,35 @@ Options:
 
 ```bash
 # Approve current stage, advance to next
-ork task approve <ID>
+ork trak approve <ID>
 
 # Reject with feedback (creates new iteration)
-ork task reject <ID> --feedback "Missing error handling"
-ork task reject <ID> -f "Needs tests"
+ork trak reject <ID> --feedback "Missing error handling"
+ork trak reject <ID> -f "Needs tests"
 ```
 
 ### Integration Commands
 
 ```bash
-# Merge a Done task's branch into its base branch
-ork task merge <ID>
+# Merge a Done Trak's branch into its base branch
+ork trak merge <ID>
 
-# Create a pull request for a Done task
-ork task open-pr <ID>
+# Create a pull request for a Done Trak
+ork trak open-pr <ID>
 
 # Retry failed PR creation (recovers Failed → Done)
-ork task retry-pr <ID>
+ork trak retry-pr <ID>
 ```
 
 ### Retry Commands
 
 ```bash
-# Retry a failed or blocked task (recovers to Idle phase)
-ork task retry <ID>
+# Retry a failed or blocked Trak (recovers to Idle phase)
+ork trak retry <ID>
 
 # Retry with specific instructions for the agent
-ork task retry <ID> --instructions "Focus on the auth module only"
-ork task retry <ID> -i "Skip the refactoring, just fix the bug"
+ork trak retry <ID> --instructions "Focus on the auth module only"
+ork trak retry <ID> -i "Skip the refactoring, just fix the bug"
 ```
 
 ## Viewing Logs
@@ -154,7 +154,7 @@ ork logs <ID> --stage work --limit 50 --offset 100  # Skip first 100
 | Status | Meaning |
 |--------|---------|
 | `Active(<stage>)` | Working on the named stage |
-| `Waiting(<stage>)` | Waiting for child tasks to complete |
+| `Waiting(<stage>)` | Waiting for child Traks to complete |
 | `Done` | Completed successfully |
 | `Archived` | Completed and merged to main |
 | `Failed: <msg>` | Cannot continue (requires manual intervention) |
@@ -173,28 +173,28 @@ ork logs <ID> --stage work --limit 50 --offset 100  # Skip first 100
 | `Integrating` | Merging to main branch |
 | `Finishing` | Completing final steps |
 | `Committing` | Creating commit |
-| `Finished` | Task fully complete |
+| `Finished` | Trak fully complete |
 
 ## Common Workflows
 
-### Creating and Tracking a Task
+### Creating and Tracking a Trak
 
 ```bash
-# Create the task
-ork task create -t "Add user notifications" -d "Send email on important events"
+# Create the Trak
+ork trak create -t "Add user notifications" -d "Send email on important events"
 
-# Watch progress (tasks start automatically)
-ork task list --status active --pretty
+# Watch progress (Traks start automatically)
+ork trak list --status active --pretty
 
-# Check specific task state
-ork task show <ID> --pretty
+# Check specific Trak state
+ork trak show <ID> --pretty
 ```
 
-### Debugging a Stuck Task
+### Debugging a Stuck Trak
 
 ```bash
 # Full diagnostic view
-ork task show <ID> --iterations --sessions --git --pretty
+ork trak show <ID> --iterations --sessions --git --pretty
 
 # Check what happened in the stage
 ork logs <ID> --stage work --pretty
@@ -207,7 +207,7 @@ ork logs <ID> --stage work --type error
 
 ```bash
 # See what the agent produced
-ork task show <ID> --pretty
+ork trak show <ID> --pretty
 
 # Check the agent's reasoning
 ork logs <ID> --stage work --type text
@@ -220,31 +220,31 @@ ork logs <ID> --stage work --type tool_use
 
 ```bash
 # Reject with specific feedback
-ork task reject <ID> -f "Missing edge case handling for empty arrays"
+ork trak reject <ID> -f "Missing edge case handling for empty arrays"
 
-# The task returns to Idle, creating a new iteration
+# The Trak returns to Idle, creating a new iteration
 # The agent will receive the feedback in their next prompt
-ork task show <ID> --iterations --pretty
+ork trak show <ID> --iterations --pretty
 ```
 
-### Retrying Failed Tasks
+### Retrying Failed Traks
 
 ```bash
-# Retry a failed task with guidance
-ork task retry <ID> -i "The API changed, use v2 endpoint instead"
+# Retry a failed Trak with guidance
+ork trak retry <ID> -i "The API changed, use v2 endpoint instead"
 
 # Retry a failed PR creation
-ork task retry-pr <ID>
+ork trak retry-pr <ID>
 ```
 
 ### Integrating Completed Work
 
 ```bash
 # Merge directly (for local integration)
-ork task merge <ID>
+ork trak merge <ID>
 
 # Or create a PR (for team review)
-ork task open-pr <ID>
+ork trak open-pr <ID>
 ```
 
 ## Reference Files

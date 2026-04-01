@@ -449,7 +449,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   const handleOpenPr = useCallback(() => callAndClose("open_pr"), [callAndClose]);
 
   const handleArchive = useCallback(async () => {
-    if (!(await confirmAction("Archive this task?"))) return;
+    if (!(await confirmAction("Archive this Trak?"))) return;
     applyOptimistic(task.id, { type: "archive" });
     return callAndClose("archive");
   }, [callAndClose, applyOptimistic, task.id]);

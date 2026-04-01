@@ -8,4 +8,4 @@ The user left this final message before returning to work:
 > {{message}}
 
 {{/if}}
-The user has indicated they're done chatting and wants you to return to producing structured output. Continue working on the task and produce your output as valid JSON.
+The user has indicated they're done chatting and wants you to return to producing structured output. Continue working on the Trak and produce your output as valid JSON.

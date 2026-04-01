@@ -1,4 +1,4 @@
-//! Initialize project, database, git service, and task for a play run.
+//! Initialize project, database, git service, and Trak for a play run.
 
 use std::sync::{Arc, Mutex};
 
@@ -72,9 +72,9 @@ pub fn execute(
             TaskCreationMode::AutoMode,
             flow,
         )
-        .map_err(|e| format!("Failed to create task: {e}"))?;
+        .map_err(|e| format!("Failed to create trak: {e}"))?;
     let task_id = task.id.clone();
-    eprintln!("Created task: {task_id}");
+    eprintln!("Created trak: {task_id}");
 
     Ok(super::PlayContext {
         api,

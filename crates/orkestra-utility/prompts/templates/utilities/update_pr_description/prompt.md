@@ -1,6 +1,6 @@
 You are updating an existing GitHub pull request description to reflect the current state of the branch.
 
-Task: {{title}}
+Trak: {{title}}
 
 ## Current PR Description
 

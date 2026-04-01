@@ -16,13 +16,13 @@ Technical debt and future improvements.
 
 ## CLI Improvements
 
-- [ ] **`ork task list --parent <ID>`** — List subtasks of a parent task. Currently requires querying the database directly to see which subtasks belong to a parent.
-- [ ] **`ork task show <ID> --iterations`** — Show iteration history (rejections, feedback, outcomes). Useful for debugging why a task is stuck in a feedback loop.
-- [ ] **`ork task show <ID> --git`** — Show git state (branch, worktree HEAD, dirty status). Needed when diagnosing stale worktree or merge issues.
-- [ ] **`ork logs <task-id>`** — Stream or tail log entries for a task's current (or specified) stage session. Logs exist in the `log_entries` table but are only viewable through the UI.
-- [ ] **`ork logs <task-id> --session <session-id>`** — View logs for a specific stage session. Useful when a task has been through multiple sessions (retries, rejections).
-- [ ] **`ork task show <ID> --sessions`** — Show stage session history (spawn count, session state, agent PIDs). Needed when debugging session resume failures or orphaned agents.
-- [ ] **`ork task list --status blocked`** — Already works, but add `--depends-on <ID>` to find all tasks waiting on a specific dependency.
+- [ ] **`ork trak list --parent <ID>`** — List subtraks of a parent Trak. Currently requires querying the database directly to see which subtraks belong to a parent.
+- [ ] **`ork trak show <ID> --iterations`** — Show iteration history (rejections, feedback, outcomes). Useful for debugging why a Trak is stuck in a feedback loop.
+- [ ] **`ork trak show <ID> --git`** — Show git state (branch, worktree HEAD, dirty status). Needed when diagnosing stale worktree or merge issues.
+- [ ] **`ork logs <task-id>`** — Stream or tail log entries for a Trak's current (or specified) stage session. Logs exist in the `log_entries` table but are only viewable through the UI.
+- [ ] **`ork logs <task-id> --session <session-id>`** — View logs for a specific stage session. Useful when a Trak has been through multiple sessions (retries, rejections).
+- [ ] **`ork trak show <ID> --sessions`** — Show stage session history (spawn count, session state, agent PIDs). Needed when debugging session resume failures or orphaned agents.
+- [ ] **`ork trak list --status blocked`** — Already works, but add `--depends-on <ID>` to find all Traks waiting on a specific dependency.
 
 ## Performance
 
@@ -31,7 +31,7 @@ Technical debt and future improvements.
 
 ## CLI-Only Mode (No UI, No Daemon)
 
-Run Orkestra as a standalone CLI tool: `ork run -t "Fix auth bug" -d "..."` creates a task and drives it through the entire workflow to completion, then exits. No Tauri, no orchestrator loop, no daemon process.
+Run Orkestra as a standalone CLI tool: `ork run -t "Fix auth bug" -d "..."` creates a Trak and drives it through the entire workflow to completion, then exits. No Tauri, no orchestrator loop, no daemon process.
 
 ### Why this is feasible
 
@@ -78,22 +78,22 @@ No polling. No daemon. No event callbacks. Just a sequential function that reuse
 
 ### Phased implementation
 
-**Phase 1: Single task, no subtasks (~200-300 lines)**
+**Phase 1: Single Trak, no subtraks (~200-300 lines)**
 - New function: `run_task_to_completion(api, task_id)` in a new module (e.g., `workflow/services/runner.rs`)
-- Drives a single task through all stages sequentially
+- Drives a single Trak through all stages sequentially
 - Auto-approves artifacts, auto-answers questions, handles rejections
 - Commits after each agent stage, runs script stages inline
 - Integrates (rebase + merge) on completion
-- New CLI command: `ork run` that creates a task and calls the runner
+- New CLI command: `ork run` that creates a Trak and calls the runner
 - Streams progress to stderr (stage transitions, agent status)
-- Skip: subtasks, crash recovery, parallelism
+- Skip: subtraks, crash recovery, parallelism
 
-**Phase 2: Subtask support (~150-200 lines)**
-- When a stage outputs subtasks: create them, then run each to completion serially
-- Recursive: `run_task_to_completion()` calls itself for each subtask
-- After all subtasks complete, advance parent to `completion_stage`
-- Handle subtask dependencies (topological sort, run in dependency order)
-- Each subtask gets its own worktree branched from parent
+**Phase 2: Subtrak support (~150-200 lines)**
+- When a stage outputs subtraks: create them, then run each to completion serially
+- Recursive: `run_task_to_completion()` calls itself for each subtrak
+- After all subtraks complete, advance parent to `completion_stage`
+- Handle subtrak dependencies (topological sort, run in dependency order)
+- Each subtrak gets its own worktree branched from parent
 
 **Phase 3: Polish (~100-150 lines)**
 - Better error reporting (which stage failed, agent output on failure)
@@ -103,7 +103,7 @@ No polling. No daemon. No event callbacks. Just a sequential function that reuse
 - Optional: `--no-integrate` flag to skip final merge
 
 **Phase 4: Nice-to-haves (future)**
-- Parallel subtask execution (spawn threads, join all)
+- Parallel subtrak execution (spawn threads, join all)
 - Session resume on crash (store session ID, detect incomplete runs)
 - `ork run --watch` mode (poll for new tasks, run each to completion)
 - Progress bar / TUI output for long-running agents
@@ -111,7 +111,7 @@ No polling. No daemon. No event callbacks. Just a sequential function that reuse
 ### Key design decisions
 
 - **No `OrchestratorLoop` reuse** — the runner is a new, simpler code path. The orchestrator handles concerns (multi-task, polling, human interaction) that don't apply here.
-- **Auto-mode is implicit** — all tasks created via `ork run` are auto-mode. No flag needed.
+- **Auto-mode is implicit** — all Traks created via `ork run` are auto-mode. No flag needed.
 - **Commit inline** — instead of spawning background commit threads, commit synchronously after each stage. The commit message generation (which calls an LLM) blocks, but that's fine for CLI.
 - **Integration is opt-out** — by default, merge the result back to base branch. `--no-integrate` skips this.
 - **Subtasks are serial** — parallel execution is a Phase 4 optimization. Serial is correct and simple.

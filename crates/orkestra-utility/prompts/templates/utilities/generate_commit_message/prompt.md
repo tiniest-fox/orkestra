@@ -1,6 +1,6 @@
 Generate a git commit message for the following changes.
 
-Task: {{title}}
+Trak: {{title}}
 Description: {{description}}
 
 Changed files:

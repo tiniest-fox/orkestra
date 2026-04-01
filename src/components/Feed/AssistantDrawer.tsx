@@ -402,7 +402,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
           <DrawerHeader
             title={
               <span className="flex items-center gap-2.5">
-                <span>{taskId ? "Task Assistant" : "Assistant"}</span>
+                <span>{taskId ? "Trak Assistant" : "Assistant"}</span>
                 {sessionTitle && (
                   <>
                     <span className="text-border select-none">/</span>

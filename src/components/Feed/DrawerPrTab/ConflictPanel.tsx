@@ -9,7 +9,7 @@ export function ConflictPanel({ baseBranch }: { baseBranch: string }) {
       <p className="font-sans text-[12px] text-text-secondary leading-relaxed">
         This branch has conflicts with{" "}
         <span className="font-mono text-[11px] bg-canvas px-1 py-0.5 rounded">{baseBranch}</span>.
-        Use "Fix Conflicts" to send the task back to the agent for resolution.
+        Use "Fix Conflicts" to send the Trak back to the agent for resolution.
       </p>
     </div>
   );

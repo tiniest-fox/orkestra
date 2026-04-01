@@ -373,7 +373,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                   });
                 }}
                 onArchive={async (taskId) => {
-                  if (!(await confirmAction("Archive this task?"))) return;
+                  if (!(await confirmAction("Archive this Trak?"))) return;
                   applyOptimistic(taskId, { type: "archive" });
                   transport.call("archive", { task_id: taskId }).catch((err) => {
                     if (!isDisconnectError(err)) showError(String(err));
@@ -388,15 +388,15 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
             <EmptyState
               className="flex-1"
               icon={Inbox}
-              message="No tasks yet."
-              description="Create a task to get started."
+              message="No Traks yet."
+              description="Create a Trak to get started."
             />
           )}
           {hasNoFilterMatches && (
             <EmptyState
               className="flex-1"
               icon={Inbox}
-              message="No matching tasks."
+              message="No matching Traks."
               description="Try a different search term."
             />
           )}

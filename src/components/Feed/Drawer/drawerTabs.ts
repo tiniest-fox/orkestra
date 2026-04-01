@@ -142,7 +142,7 @@ export function availableTabs(
   }
   if (task.derived.is_waiting_on_children) {
     return [
-      { id: "subtasks", label: "Subtasks", hotkey: "t" },
+      { id: "subtasks", label: "Subtraks", hotkey: "t" },
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),

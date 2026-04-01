@@ -28,7 +28,7 @@ interface UseCommandBarReturn {
 }
 
 const COMMANDS = [
-  { name: "new", label: "New Task", description: "Create a new task" },
+  { name: "new", label: "New Trak", description: "Create a new Trak" },
   { name: "assistant", label: "Assistant", description: "Open project assistant" },
   { name: "fetch", label: "Fetch", description: "Fetch from origin" },
   { name: "pull", label: "Pull", description: "Pull from origin" },

@@ -80,7 +80,7 @@ pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Resu
 /// so agents can read task identity on demand rather than receiving it inline.
 fn format_task_definition(task: &Task) -> String {
     format!(
-        "**Task ID**: {}\n**Title**: {}\n\n### Description\n{}",
+        "**Trak ID**: {}\n**Title**: {}\n\n### Description\n{}",
         task.id, task.title, task.description
     )
 }
@@ -150,7 +150,7 @@ mod tests {
 
         let task_md =
             fs::read_to_string(temp_dir.path().join(".orkestra/.artifacts/task.md")).unwrap();
-        assert!(task_md.contains("**Task ID**: task-abc"));
+        assert!(task_md.contains("**Trak ID**: task-abc"));
         assert!(task_md.contains("**Title**: My Task Title"));
         assert!(task_md.contains("### Description"));
         assert!(task_md.contains("A detailed description of the task."));

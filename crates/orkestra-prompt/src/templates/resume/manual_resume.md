@@ -8,4 +8,4 @@ Message from the user:
 {{message}}
 {{/if}}
 
-Continue working on the task and produce your output as valid JSON.
+Continue working on the Trak and produce your output as valid JSON.

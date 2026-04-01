@@ -1765,8 +1765,8 @@ fn test_session_reset_on_cross_stage_rejection() {
         &prompt[..prompt.len().min(100)]
     );
     assert!(
-        prompt.contains("## Your Current Task"),
-        "Full prompt should contain task section"
+        prompt.contains("## Your Current Trak"),
+        "Full prompt should contain trak section"
     );
 
     // Feedback should be embedded in the full prompt

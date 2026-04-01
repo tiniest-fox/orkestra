@@ -776,7 +776,7 @@ mod tests {
 
         assert!(!user_message.contains("Output Format"));
         assert!(!user_message.contains("worker agent"));
-        assert!(user_message.contains("Task ID"));
+        assert!(user_message.contains("Trak ID"));
         assert!(user_message.contains("task-1"));
         assert!(user_message.contains(".orkestra/.artifacts/task.md"));
     }
@@ -923,8 +923,8 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        assert!(user_message.contains("## Sibling Subtasks"));
-        assert!(user_message.contains("This task is part of a breakdown"));
+        assert!(user_message.contains("## Sibling Subtraks"));
+        assert!(user_message.contains("This Trak is part of a breakdown"));
         assert!(user_message.contains("**bird** First subtask"));
         assert!(user_message.contains("(pending)"));
         assert!(user_message.contains("Do the first thing"));
@@ -946,8 +946,8 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        assert!(!user_message.contains("## Sibling Subtasks"));
-        assert!(!user_message.contains("This task is part of a breakdown"));
+        assert!(!user_message.contains("## Sibling Subtraks"));
+        assert!(!user_message.contains("This Trak is part of a breakdown"));
     }
 
     // -- Activity log dedup tests --

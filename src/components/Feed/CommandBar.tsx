@@ -123,7 +123,7 @@ export function CommandBar({
         value={filterText}
         onChange={(e) => onFilterChange(e.target.value)}
         onKeyDown={onInputKeyDown}
-        placeholder="Filter tasks or type a command..."
+        placeholder="Filter Traks or type a command..."
         className="flex-1 bg-transparent outline-none font-mono text-[12px] text-text-primary placeholder:text-text-quaternary"
       />
 
@@ -141,7 +141,7 @@ export function CommandBar({
             onSelect={executeItem}
           />
           <DropdownSection
-            label="Tasks"
+            label="Traks"
             items={taskItems}
             highlightedIndex={highlightedIndex}
             onHighlight={setHighlightedIndex}

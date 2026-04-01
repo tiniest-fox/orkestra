@@ -97,7 +97,7 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
 
   return (
     <>
-      <DrawerHeader title="New Task" onClose={onClose} />
+      <DrawerHeader title="New Trak" onClose={onClose} />
 
       {/* Description */}
       <div className="px-4 pt-4 pb-3">
@@ -177,7 +177,7 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
             onClick={handleSubmit}
             fullWidth
           >
-            {submitting ? "Creating…" : "Create Task"}
+            {submitting ? "Creating…" : "Create Trak"}
           </Button>
         </HotkeyScope>
       </div>

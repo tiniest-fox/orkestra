@@ -1,4 +1,4 @@
-//! Orkestra CLI - Debug tool for viewing workflow tasks.
+//! Orkestra CLI - Debug tool for viewing workflow Traks.
 //!
 //! This CLI provides read-only access to the workflow system for debugging purposes.
 
@@ -37,7 +37,7 @@ enum StatusFilter {
 
 #[derive(Parser)]
 #[command(name = "ork")]
-#[command(about = "CLI for Orkestra task management (debug)", long_about = None)]
+#[command(about = "CLI for Orkestra Trak management (debug)", long_about = None)]
 struct Cli {
     /// Output human-readable formatting instead of JSON
     #[arg(long, global = true)]
@@ -49,14 +49,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Task management commands
+    /// Trak management commands
+    #[command(name = "trak", alias = "task")]
     Task {
         #[command(subcommand)]
         action: TaskAction,
     },
     /// View agent and script logs
     Logs {
-        /// Task ID
+        /// Trak ID
         task_id: String,
         /// Stage name (required for viewing logs)
         #[arg(long)]
@@ -71,24 +72,24 @@ enum Commands {
         #[arg(long, default_value = "0")]
         offset: usize,
     },
-    /// Utility task commands
+    /// Utility Trak commands
     Utility {
         #[command(subcommand)]
         action: UtilityAction,
     },
     /// Generate a pairing code for daemon access
     Pair,
-    /// Run a task through all workflow stages non-interactively
+    /// Run a Trak through all workflow stages non-interactively
     Play {
-        /// Task description
+        /// Trak description
         description: String,
-        /// Task title (defaults to description if omitted)
+        /// Trak title (defaults to description if omitted)
         #[arg(short, long)]
         title: Option<String>,
-        /// Base branch for the task worktree
+        /// Base branch for the Trak worktree
         #[arg(short, long)]
         base_branch: Option<String>,
-        /// Assign task to a named flow
+        /// Assign Trak to a named flow
         #[arg(long)]
         flow: Option<String>,
         /// Skip merge to base branch after completion
@@ -102,21 +103,21 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum TaskAction {
-    /// List all tasks
+    /// List all Traks
     List {
         /// Filter by status (active, done, failed, blocked)
         #[arg(long)]
         status: Option<StatusFilter>,
-        /// List subtasks of a parent task
+        /// List Subtraks of a parent Trak
         #[arg(long)]
         parent: Option<String>,
-        /// List tasks that depend on this task
+        /// List Traks that depend on this Trak
         #[arg(long)]
         depends_on: Option<String>,
     },
-    /// Show details for a specific task
+    /// Show details for a specific Trak
     Show {
-        /// Task ID
+        /// Trak ID
         id: String,
         /// Show iteration history (stages, outcomes, feedback)
         #[arg(long)]
@@ -128,62 +129,62 @@ enum TaskAction {
         #[arg(long)]
         git: bool,
     },
-    /// Create a new task
+    /// Create a new Trak
     Create {
-        /// Task title
+        /// Trak title
         #[arg(short, long)]
         title: String,
-        /// Task description
+        /// Trak description
         #[arg(short, long)]
         description: String,
-        /// Base branch for the task worktree
+        /// Base branch for the Trak worktree
         #[arg(short, long)]
         base_branch: Option<String>,
-        /// Assign task to a named flow (e.g., "quick", "hotfix")
+        /// Assign Trak to a named flow (e.g., "quick", "hotfix")
         #[arg(long)]
         flow: Option<String>,
     },
     /// Approve the current stage artifact
     Approve {
-        /// Task ID
+        /// Trak ID
         id: String,
     },
     /// Reject the current stage artifact with feedback
     Reject {
-        /// Task ID
+        /// Trak ID
         id: String,
         /// Feedback explaining why the artifact was rejected
         #[arg(short, long)]
         feedback: String,
     },
-    /// Merge a Done task's branch into its base branch
+    /// Merge a Done Trak's branch into its base branch
     Merge {
-        /// Task ID to merge
+        /// Trak ID to merge
         id: String,
     },
-    /// Create a pull request for a Done task's branch
+    /// Create a pull request for a Done Trak's branch
     OpenPr {
-        /// Task ID to create PR for
+        /// Trak ID to create PR for
         id: String,
     },
     /// Retry PR creation (recover from Failed back to Done)
     RetryPr {
-        /// Task ID to retry
+        /// Trak ID to retry
         id: String,
     },
     /// Push updated changes to an existing open PR
     PushPr {
-        /// Task ID to push PR changes for
+        /// Trak ID to push PR changes for
         id: String,
     },
     /// Pull remote changes into the local worktree for an existing open PR
     PullPr {
-        /// Task ID to pull PR changes for
+        /// Trak ID to pull PR changes for
         id: String,
     },
-    /// Retry a failed or blocked task (recovers to Idle phase)
+    /// Retry a failed or blocked Trak (recovers to Idle phase)
     Retry {
-        /// Task ID
+        /// Trak ID
         id: String,
         /// Optional instructions for the agent
         #[arg(short, long)]
@@ -191,7 +192,7 @@ enum TaskAction {
     },
     /// Address failing CI checks and/or request changes
     AddressFeedback {
-        /// Task ID
+        /// Trak ID
         id: String,
         /// Optional guidance for the agent
         #[arg(long)]
@@ -199,26 +200,26 @@ enum TaskAction {
     },
     /// Skip the current stage, advancing to the next stage
     Skip {
-        /// Task ID
+        /// Trak ID
         id: String,
         /// Message explaining why the stage is being skipped
         #[arg(short, long)]
         message: String,
     },
-    /// Send a task to a specific stage
+    /// Send a Trak to a specific stage
     SendToStage {
-        /// Task ID
+        /// Trak ID
         id: String,
         /// Target stage name
         #[arg(short, long)]
         stage: String,
-        /// Message explaining why the task is being redirected
+        /// Message explaining why the Trak is being redirected
         #[arg(short, long)]
         message: String,
     },
     /// Restart the current stage with a fresh agent
     Restart {
-        /// Task ID
+        /// Trak ID
         id: String,
         /// Message explaining why the stage is being restarted
         #[arg(short, long)]
@@ -230,7 +231,7 @@ enum TaskAction {
 enum UtilityAction {
     /// Run a utility task
     Run {
-        /// Task name (e.g., "`generate_title`")
+        /// Task name (e.g., `generate_title`)
         name: String,
         /// Context as JSON (e.g., '{"description": "Fix the login bug"}')
         #[arg(short, long)]
@@ -396,7 +397,7 @@ fn handle_logs(
             }
         };
         if stages.is_empty() {
-            eprintln!("No stages with logs found for task {task_id}");
+            eprintln!("No stages with logs found for trak {task_id}");
         } else {
             eprintln!("Error: --stage is required. Available stages with logs:");
             for s in &stages {
@@ -433,7 +434,7 @@ fn handle_logs(
     // Output
     if pretty {
         println!(
-            "Logs for task {} stage {} ({} of {} entries)",
+            "Logs for trak {} stage {} ({} of {} entries)",
             task_id,
             stage_name,
             logs.len(),
@@ -505,13 +506,13 @@ fn handle_create_task(
     ) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error creating task: {e}");
+            eprintln!("Error creating trak: {e}");
             std::process::exit(1);
         }
     };
 
     if pretty {
-        println!("Created task: {}", task.id);
+        println!("Created trak: {}", task.id);
         println!("Title: {}", task.title);
         println!("Stage: {}", task.current_stage().unwrap_or("-"));
         if let Some(branch) = &task.branch_name {
@@ -529,13 +530,13 @@ fn handle_approve_task(api: &WorkflowApi, id: &str, pretty: bool) {
     let task = match api.approve(id) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error approving task: {e}");
+            eprintln!("Error approving trak: {e}");
             std::process::exit(1);
         }
     };
 
     if pretty {
-        println!("Approved task: {}", task.id);
+        println!("Approved trak: {}", task.id);
         if task.is_done() {
             println!("Status: Done");
         } else {
@@ -550,13 +551,13 @@ fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str, pretty: bool)
     let task = match api.reject(id, feedback) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error rejecting task: {e}");
+            eprintln!("Error rejecting trak: {e}");
             std::process::exit(1);
         }
     };
 
     if pretty {
-        println!("Rejected task: {}", task.id);
+        println!("Rejected trak: {}", task.id);
         println!(
             "Stage: {} (new iteration)",
             task.current_stage().unwrap_or("-")
@@ -576,7 +577,7 @@ fn handle_skip_stage(api: &WorkflowApi, id: &str, message: &str, pretty: bool) {
     };
 
     if pretty {
-        println!("Skipped stage for task: {}", task.id);
+        println!("Skipped stage for trak: {}", task.id);
         if task.is_done() {
             println!("Status: Done");
         } else {
@@ -597,7 +598,7 @@ fn handle_send_to_stage(api: &WorkflowApi, id: &str, stage: &str, message: &str,
     };
 
     if pretty {
-        println!("Sent task {} to stage: {}", task.id, stage);
+        println!("Sent trak {} to stage: {}", task.id, stage);
         println!("Current stage: {}", task.current_stage().unwrap_or("-"));
     } else {
         output_json(&task);
@@ -614,7 +615,7 @@ fn handle_restart_stage(api: &WorkflowApi, id: &str, message: &str, pretty: bool
     };
 
     if pretty {
-        println!("Restarted stage for task: {}", task.id);
+        println!("Restarted stage for trak: {}", task.id);
         println!("Current stage: {}", task.current_stage().unwrap_or("-"));
     } else {
         output_json(&task);
@@ -652,7 +653,7 @@ fn handle_list_subtasks(
     let subtasks = match api.list_subtask_views(parent_id) {
         Ok(views) => views,
         Err(e) => {
-            eprintln!("Error listing subtasks: {e}");
+            eprintln!("Error listing subtraks: {e}");
             std::process::exit(1);
         }
     };
@@ -681,7 +682,7 @@ fn handle_list_dependents(
     let all_tasks = match api.list_tasks() {
         Ok(tasks) => tasks,
         Err(e) => {
-            eprintln!("Error listing tasks: {e}");
+            eprintln!("Error listing traks: {e}");
             std::process::exit(1);
         }
     };
@@ -700,7 +701,7 @@ fn handle_list_dependents(
     };
 
     if pretty {
-        print_tasks_table(&dependents, "No dependent tasks found.");
+        print_tasks_table(&dependents, "No dependent traks found.");
     } else {
         output_json(&dependents);
     }
@@ -710,7 +711,7 @@ fn handle_list_all_tasks(api: &WorkflowApi, status_filter: Option<&StatusFilter>
     let tasks = match api.list_tasks() {
         Ok(tasks) => tasks,
         Err(e) => {
-            eprintln!("Error listing tasks: {e}");
+            eprintln!("Error listing traks: {e}");
             std::process::exit(1);
         }
     };
@@ -724,7 +725,7 @@ fn handle_list_all_tasks(api: &WorkflowApi, status_filter: Option<&StatusFilter>
     };
 
     if pretty {
-        print_tasks_table(&tasks, "No tasks found.");
+        print_tasks_table(&tasks, "No traks found.");
     } else {
         output_json(&tasks);
     }
@@ -732,7 +733,7 @@ fn handle_list_all_tasks(api: &WorkflowApi, status_filter: Option<&StatusFilter>
 
 fn print_subtasks_table(subtasks: &[TaskView]) {
     if subtasks.is_empty() {
-        println!("No subtasks found.");
+        println!("No subtraks found.");
         return;
     }
 
@@ -811,13 +812,13 @@ fn handle_show_task_full(api: &WorkflowApi, id: &str, pretty: bool) {
     let task = match api.get_task(id) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error getting task: {e}");
+            eprintln!("Error getting trak: {e}");
             std::process::exit(1);
         }
     };
 
     if pretty {
-        println!("Task: {}", task.id);
+        println!("Trak: {}", task.id);
         println!("Title: {}", task.title);
         println!("Description: {}", task.description);
         println!("State: {}", format_state(&task.state));
@@ -1002,20 +1003,20 @@ fn handle_utility_action(action: UtilityAction) {
 fn handle_merge_task(api: &WorkflowApi, id: &str, pretty: bool) {
     // Validate preconditions (Done + Idle + no open PR) and mark as Integrating
     if let Err(e) = api.merge_task(id) {
-        eprintln!("Error merging task: {e}");
+        eprintln!("Error merging trak: {e}");
         std::process::exit(1);
     }
     // Run the git pipeline synchronously (task is now Done + Integrating)
     let task = match api.integrate_task(id) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error merging task: {e}");
+            eprintln!("Error merging trak: {e}");
             std::process::exit(1);
         }
     };
 
     if pretty {
-        println!("Merged task {} into {}", task.id, task.base_branch);
+        println!("Merged trak {} into {}", task.id, task.base_branch);
         println!("State: {}", format_state(&task.state));
     } else {
         output_json(&task);
@@ -1035,10 +1036,10 @@ fn handle_open_pr_task(api: Arc<Mutex<WorkflowApi>>, id: &str, pretty: bool) {
 
     if pretty {
         if let Some(pr_url) = &task.pr_url {
-            println!("Created PR for task {}", task.id);
+            println!("Created PR for trak {}", task.id);
             println!("PR: {pr_url}");
         } else {
-            println!("Task {}: PR creation completed", task.id);
+            println!("Trak {}: PR creation completed", task.id);
         }
         println!("State: {}", format_state(&task.state));
     } else {
@@ -1056,7 +1057,7 @@ fn handle_retry_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
     };
 
     if pretty {
-        println!("Reset task {} to Done", task.id);
+        println!("Reset trak {} to Done", task.id);
         println!("State: {}", format_state(&task.state));
         println!("You can now retry merge or PR creation");
     } else {
@@ -1078,10 +1079,10 @@ fn handle_push_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
 
     if pretty {
         if let Some(pr_url) = &task.pr_url {
-            println!("Pushed changes for task {}", task.id);
+            println!("Pushed changes for trak {}", task.id);
             println!("PR: {pr_url}");
         } else {
-            println!("Pushed changes for task {}", task.id);
+            println!("Pushed changes for trak {}", task.id);
         }
         println!("State: {}", format_state(&task.state));
     } else {
@@ -1100,10 +1101,10 @@ fn handle_pull_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
 
     if pretty {
         if let Some(pr_url) = &task.pr_url {
-            println!("Pulled changes for task {}", task.id);
+            println!("Pulled changes for trak {}", task.id);
             println!("PR: {pr_url}");
         } else {
-            println!("Pulled changes for task {}", task.id);
+            println!("Pulled changes for trak {}", task.id);
         }
         println!("State: {}", format_state(&task.state));
     } else {
@@ -1115,13 +1116,13 @@ fn handle_retry_task(api: &WorkflowApi, id: &str, instructions: Option<&str>, pr
     let task = match api.retry(id, instructions) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error retrying task: {e}");
+            eprintln!("Error retrying trak: {e}");
             std::process::exit(1);
         }
     };
 
     if pretty {
-        println!("Retried task {}", task.id);
+        println!("Retried trak {}", task.id);
         println!("Stage: {}", task.current_stage().unwrap_or("-"));
         println!("State: {}", format_state(&task.state));
         if instructions.is_some() {
@@ -1137,7 +1138,7 @@ fn handle_address_feedback(api: &WorkflowApi, id: &str, guidance: Option<&str>, 
     let task = match api.get_task(id) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error getting task: {e}");
+            eprintln!("Error getting trak: {e}");
             std::process::exit(1);
         }
     };
@@ -1145,7 +1146,7 @@ fn handle_address_feedback(api: &WorkflowApi, id: &str, guidance: Option<&str>, 
     let pr_url = if let Some(url) = &task.pr_url {
         url.clone()
     } else {
-        eprintln!("Error: task {id} has no PR URL");
+        eprintln!("Error: trak {id} has no PR URL");
         std::process::exit(1);
     };
 
@@ -1159,7 +1160,7 @@ fn handle_address_feedback(api: &WorkflowApi, id: &str, guidance: Option<&str>, 
     };
 
     if checks.is_empty() {
-        eprintln!("No failing checks found for task {id}");
+        eprintln!("No failing checks found for trak {id}");
         std::process::exit(1);
     }
 
@@ -1172,7 +1173,7 @@ fn handle_address_feedback(api: &WorkflowApi, id: &str, guidance: Option<&str>, 
     };
 
     if pretty {
-        println!("Addressing PR feedback for task {}", task.id);
+        println!("Addressing PR feedback for trak {}", task.id);
         println!("Stage: {}", task.current_stage().unwrap_or("-"));
         println!("State: {}", format_state(&task.state));
     } else {

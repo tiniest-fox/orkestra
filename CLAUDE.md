@@ -6,6 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This project has no external users yet. Don't add backwards-compatibility shims or deprecation paths — just make the breaking change directly. Database schema changes still go through migrations (so local databases don't break), but don't worry about migrating existing data gracefully. Code quality and architectural rigor still matter; it's only the external compatibility burden that doesn't.
 
+## Naming Guide: Trak vs Task
+
+"Trak" is the user-facing name for what the codebase internally calls a "task." The CLI subcommand is `ork trak` (with `ork task` as a hidden alias). All user-visible text uses "Trak" — UI strings, help text, agent prompts, documentation. CLI output and JSON/YAML use lowercase `trak`. All code uses "task" — Rust types, database tables, API methods, variables, file paths.
+
+| Use "Trak" / "Traks" (prose) or `trak` (CLI/JSON) | Keep "task" / "tasks" |
+|---|---|
+| CLI subcommand: `ork trak list` | Rust types: `Task`, `TaskAction`, `task_id` |
+| CLI help text and output messages | Database: `workflow_tasks`, column names |
+| Frontend UI strings | API methods: `create_task`, `merge_task` |
+| Agent prompt prose | Template variables: `{{task_id}}` |
+| Documentation and headings | Git branch prefix: `task/` |
+| Section labels: "Your Current Trak" | File/module names: `task_crud.rs` |
+| | Component names: `NewTaskForm`, `TaskDrawer` |
+| | WebSocket events: `task_updated` |
+
+When adding new user-facing prose (UI strings, help text, error messages, documentation), use "Trak". Lowercase `trak` is for symbolic/structured contexts only: CLI subcommand names, JSON keys, YAML fields, and machine-readable output. When adding new code identifiers, use "task".
+
 ## Architectural Principles
 
 Listed in priority order. When principles conflict, earlier ones win.
@@ -136,9 +153,9 @@ cargo test --workspace               # Full: before declaring done
 Run `ork` commands during development using the wrapper script:
 
 ```bash
-bin/ork task list
-bin/ork task show <task-id>
-bin/ork task create -t "Title" -d "Description"
+bin/ork trak list
+bin/ork trak show <task-id>
+bin/ork trak create -t "Title" -d "Description"
 ```
 
 The `bin/ork` wrapper handles building and running the CLI automatically.
@@ -452,26 +469,26 @@ Commands in `src-tauri/src/commands/` are thin wrappers around `WorkflowApi` met
 
 ### CLI Commands (`ork`)
 
-The `ork` CLI is the primary tool for inspecting task state, investigating issues, and managing tasks outside the UI. Use it to check why a task is stuck, view iteration history, inspect artifacts, and verify git/worktree state. Agents output structured JSON instead of using CLI commands.
+The `ork` CLI is the primary tool for inspecting Trak state, investigating issues, and managing Traks outside the UI. Use it to check why a Trak is stuck, view iteration history, inspect artifacts, and verify git/worktree state. Agents output structured JSON instead of using CLI commands.
 
 **For comprehensive CLI documentation**, see [`docs/cli-guide.md`](docs/cli-guide.md) — a complete reference covering all commands, options, output formats, status values, phase descriptions, and usage patterns.
 
 **Quick reference**:
 
 ```bash
-ork task list [--status STATUS] [--parent ID] [--depends-on ID]  # List tasks with filters
-ork task show ID [--iterations] [--sessions] [--git]             # Show task details with optional deep inspection
-ork task create -t TITLE -d DESC [-b BASE_BRANCH] [--flow NAME]  # Create a new task
+ork trak list [--status STATUS] [--parent ID] [--depends-on ID]  # List Traks with filters
+ork trak show ID [--iterations] [--sessions] [--git]             # Show Trak details with optional deep inspection
+ork trak create -t TITLE -d DESC [-b BASE_BRANCH] [--flow NAME]  # Create a new Trak
 ork logs TASK_ID --stage STAGE [--type TYPE] [--limit N]         # View agent/script logs
-ork task approve ID                                              # Approve current stage artifact
-ork task reject ID --feedback MSG                                # Reject with feedback (creates new iteration)
-ork task skip ID --message MSG                                   # Skip current stage (requires paused state)
-ork task send-to-stage ID --stage STAGE --message MSG            # Send to any stage (requires paused state)
+ork trak approve ID                                              # Approve current stage artifact
+ork trak reject ID --feedback MSG                                # Reject with feedback (creates new iteration)
+ork trak skip ID --message MSG                                   # Skip current stage (requires paused state)
+ork trak send-to-stage ID --stage STAGE --message MSG            # Send to any stage (requires paused state)
 ```
 
 Add `--pretty` to any command for human-readable output instead of JSON.
 
-When investigating task issues, `ork task show ID --iterations --sessions --git` gives complete diagnostic information. Use `ork logs TASK_ID --stage STAGE` to view detailed agent session output and tool use.
+When investigating Trak issues, `ork trak show ID --iterations --sessions --git` gives complete diagnostic information. Use `ork logs TASK_ID --stage STAGE` to view detailed agent session output and tool use.
 
 ### Key Design Patterns
 

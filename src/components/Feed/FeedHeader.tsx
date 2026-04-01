@@ -104,7 +104,7 @@ export function FeedHeader({
           <div className="flex items-center gap-2">
             <HotkeyScope active={hotkeyActive}>
               <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask} onAccent>
-                New task
+                New Trak
               </Button>
               <Button
                 hotkey="shift+a"

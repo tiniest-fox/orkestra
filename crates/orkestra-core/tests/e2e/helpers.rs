@@ -705,10 +705,10 @@ impl TestEnv {
             &user_message[..user_message.len().min(100)]
         );
 
-        // User message should contain the task section
+        // User message should contain the trak section
         assert!(
-            user_message.contains("## Your Current Task"),
-            "User message should contain '## Your Current Task' section"
+            user_message.contains("## Your Current Trak"),
+            "User message should contain '## Your Current Trak' section"
         );
 
         // System prompt should contain output format sections

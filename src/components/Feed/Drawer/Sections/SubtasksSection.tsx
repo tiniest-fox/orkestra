@@ -146,7 +146,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
   return (
     <div ref={bodyRef} className="flex-1 overflow-y-auto">
       {isEmpty ? (
-        <EmptyState icon={GitBranch} message="No subtasks yet." />
+        <EmptyState icon={GitBranch} message="No Subtraks yet." />
       ) : (
         <NavigationScope activeId={focusedId} containerRef={bodyRef} scrollSeq={scrollSeq}>
           {sectionsBefore.map((section) => (

@@ -199,7 +199,7 @@ export function DrawerHeader({
       ? [
           {
             icon: <MessageSquare />,
-            label: "Chat with task assistant",
+            label: "Chat with Trak assistant",
             shortLabel: "Chat",
             hotkeyLabel: "⇧C",
             onClick: onOpenChat,
@@ -239,7 +239,7 @@ export function DrawerHeader({
     // Delete — always available
     {
       icon: <Trash2 />,
-      label: "Delete task",
+      label: "Delete Trak",
       shortLabel: "Delete",
       hotkeyLabel: "⇧D",
       onClick: () => setShowDeleteConfirm(true),
@@ -289,7 +289,7 @@ export function DrawerHeader({
       >
         <div className="bg-canvas border border-border rounded-panel shadow-lg p-5 flex flex-col gap-4">
           <div>
-            <p className="text-forge-body-md font-semibold text-text-primary">Delete task?</p>
+            <p className="text-forge-body-md font-semibold text-text-primary">Delete Trak?</p>
             <p className="mt-1 text-forge-body text-text-tertiary line-clamp-2">
               {task.title || task.description}
             </p>

@@ -148,7 +148,7 @@ mod tests {
 
         assert!(!user_message.contains("Output Format"));
         assert!(!user_message.contains("worker agent"));
-        assert!(user_message.contains("Task ID"));
+        assert!(user_message.contains("Trak ID"));
         assert!(user_message.contains("task-1"));
     }
 
@@ -183,8 +183,8 @@ mod tests {
 
         let user_message = execute(&templates, &ctx);
 
-        assert!(user_message.contains("## Sibling Subtasks"));
-        assert!(user_message.contains("This task is part of a breakdown"));
+        assert!(user_message.contains("## Sibling Subtraks"));
+        assert!(user_message.contains("This Trak is part of a breakdown"));
         assert!(user_message.contains("**bird** First subtask"));
         assert!(user_message.contains("(pending)"));
         assert!(user_message.contains("**cat** Second subtask"));
@@ -206,7 +206,7 @@ mod tests {
 
         let user_message = execute(&templates, &ctx);
 
-        assert!(!user_message.contains("## Sibling Subtasks"));
+        assert!(!user_message.contains("## Sibling Subtraks"));
     }
 
     #[test]

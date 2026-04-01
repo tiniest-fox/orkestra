@@ -1,4 +1,4 @@
-//! Run a task through all workflow stages non-interactively.
+//! Run a Trak through all workflow stages non-interactively.
 
 mod finish;
 mod run_loop;

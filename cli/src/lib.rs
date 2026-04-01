@@ -25,7 +25,7 @@ pub struct GitState {
 pub fn get_git_state(api: &WorkflowApi, id: &str) -> Result<GitState, String> {
     let task = api
         .get_task(id)
-        .map_err(|e| format!("Failed to get task: {e}"))?;
+        .map_err(|e| format!("Failed to get Trak: {e}"))?;
 
     let mut state = GitState {
         branch_name: task.branch_name.clone(),

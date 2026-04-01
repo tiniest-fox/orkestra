@@ -1,4 +1,4 @@
-//! Drive the orchestrator tick loop until the task reaches a terminal state.
+//! Drive the orchestrator tick loop until the Trak reaches a terminal state.
 
 use std::collections::HashMap;
 
@@ -32,18 +32,18 @@ pub fn execute(ctx: &mut super::PlayContext) -> Result<(), String> {
             .lock()
             .map_err(|_| "Workflow API lock poisoned".to_string())?
             .get_task(&ctx.task_id)
-            .map_err(|e| format!("Failed to get task: {e}"))?;
+            .map_err(|e| format!("Failed to get trak: {e}"))?;
         match &task.state {
             TaskState::Done | TaskState::Archived => break,
             TaskState::Failed { stage, error } => {
                 let stage = stage.as_deref().unwrap_or("unknown");
                 let error = error.as_deref().unwrap_or("unknown error");
-                return Err(format!("Task failed at stage '{stage}': {error}"));
+                return Err(format!("trak failed at stage '{stage}': {error}"));
             }
             TaskState::Blocked { stage, reason } => {
                 let stage = stage.as_deref().unwrap_or("unknown");
                 let reason = reason.as_deref().unwrap_or("unknown reason");
-                return Err(format!("Task blocked at stage '{stage}': {reason}"));
+                return Err(format!("trak blocked at stage '{stage}': {reason}"));
             }
             // Interrupted is not treated as terminal — the loop continues ticking until
             // the interruption is resolved or the task transitions to a terminal state.
@@ -67,9 +67,9 @@ fn print_event(event: &OrchestratorEvent) {
             eprintln!("  gate failed ({stage}): {error}");
         }
         OrchestratorEvent::ParentAdvanced { subtask_count, .. } => {
-            eprintln!("  all {subtask_count} subtasks complete");
+            eprintln!("  all {subtask_count} subtraks complete");
         }
-        OrchestratorEvent::IntegrationCompleted { .. } => eprintln!("  subtask integrated"),
+        OrchestratorEvent::IntegrationCompleted { .. } => eprintln!("  subtrak integrated"),
         OrchestratorEvent::Error { error, .. } => eprintln!("  warning: {error}"),
         _ => {}
     }

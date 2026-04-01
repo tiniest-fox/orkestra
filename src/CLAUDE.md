@@ -393,7 +393,7 @@ Use `confirmAction` from `src/utils/confirmAction.ts` instead — it uses `@taur
 ```ts
 import { confirmAction } from "../utils/confirmAction";
 
-const confirmed = await confirmAction("Archive this task?");
+const confirmed = await confirmAction("Archive this Trak?");
 if (!confirmed) return;
 await transport.call("archive_task", { taskId: task.id });
 ```

@@ -93,10 +93,10 @@ impl MockAgentRunner {
         self.calls.lock().unwrap().clear();
     }
 
-    /// Extract `task_id` from the prompt (looks for "Task ID: xxx" pattern).
+    /// Extract `task_id` from the prompt (looks for "Trak ID: xxx" pattern).
     fn extract_task_id(prompt: &str) -> Option<String> {
         for line in prompt.lines() {
-            if line.contains("Task ID") {
+            if line.contains("Trak ID") {
                 // Try to extract the ID after the colon
                 if let Some(id) = line.split(':').nth(1) {
                     let id = id.trim().trim_matches('*').trim();
@@ -304,7 +304,7 @@ mod tests {
             },
         );
 
-        let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo the work", TEST_SCHEMA);
+        let config = RunConfig::new("/tmp", "**Trak ID**: task-1\nDo the work", TEST_SCHEMA);
         let result = runner.run_sync(config).unwrap();
 
         assert!(matches!(result.parsed_output, StageOutput::Artifact { .. }));
@@ -321,7 +321,7 @@ mod tests {
             },
         );
 
-        let config = RunConfig::new("/tmp", "**Task ID**: task-2\nPlan this", TEST_SCHEMA);
+        let config = RunConfig::new("/tmp", "**Trak ID**: task-2\nPlan this", TEST_SCHEMA);
         let (pid, rx) = runner.run_async(config).unwrap();
 
         assert!(pid >= 10000);
@@ -381,7 +381,7 @@ mod tests {
             },
         );
 
-        let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo work", TEST_SCHEMA);
+        let config = RunConfig::new("/tmp", "**Trak ID**: task-1\nDo work", TEST_SCHEMA);
         let _ = runner.run_sync(config);
 
         let calls = runner.calls();

@@ -1,4 +1,4 @@
-Summarize this task description into a concise title (3-8 words):
+Summarize this Trak description into a concise title (3-8 words):
 
 {{description}}
 

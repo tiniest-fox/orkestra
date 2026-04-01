@@ -1,12 +1,12 @@
 # Orkestra
 
-AI-powered task orchestration for software development. Orkestra spawns AI coding agents to plan, implement, and review code changes with human oversight.
+AI-powered Trak orchestration for software development. Orkestra spawns AI coding agents to plan, implement, and review code changes with human oversight.
 
 ## Features
 
 - Configurable multi-stage workflow pipeline (plan → breakdown → implement → review)
 - Multiple AI provider support (Claude Code, OpenCode)
-- Git worktree isolation — each task gets its own branch and worktree
+- Git worktree isolation — each Trak gets its own branch and worktree
 - Subtask decomposition with dependency tracking
 - Human-in-the-loop approvals and feedback at every stage
 - Desktop app (Tauri) + CLI interface
@@ -31,7 +31,7 @@ pnpm tauri dev
 
 # Or use the CLI
 cargo build
-bin/ork task create -t "My first task" -d "Description here"
+bin/ork trak create -t "My first Trak" -d "Description here"
 ```
 
 ## Architecture Overview

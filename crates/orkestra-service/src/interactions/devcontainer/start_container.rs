@@ -165,6 +165,8 @@ fn compose_up(
     let output = Command::new("docker")
         .args([
             "compose",
+            "--progress",
+            "plain",
             "-f",
             &compose_file.display().to_string(),
             "-f",

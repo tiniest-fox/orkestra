@@ -122,7 +122,7 @@ mod detect {
         else {
             panic!("expected Compose");
         };
-        assert_eq!(compose_file, "docker-compose.yml");
+        assert_eq!(compose_file, ".devcontainer/docker-compose.yml");
         assert_eq!(service, "app");
     }
 

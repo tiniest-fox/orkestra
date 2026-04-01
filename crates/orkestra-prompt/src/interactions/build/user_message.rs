@@ -119,7 +119,7 @@ mod tests {
         // Title and description are virtualized — only the task file path is referenced
         assert!(!user_message.contains("Implement feature"));
         assert!(!user_message.contains("Add new feature"));
-        assert!(user_message.contains(".orkestra/.artifacts/task.md"));
+        assert!(user_message.contains(".orkestra/.artifacts/trak.md"));
         // Stage artifacts show file paths
         assert!(user_message.contains(".orkestra/.artifacts/plan.md"));
         assert!(user_message.contains("Input Artifacts"));

@@ -344,8 +344,16 @@ describe("ProjectRow", () => {
     expect(screen.getByRole("button", { name: "Push ↑2" })).toBeInTheDocument();
   });
 
-  it("does not show git items in overflow menu when project has no git_status", () => {
+  it("shows git items in overflow menu for running project without git_status", () => {
     renderRow(runningProject());
+    openMenu();
+    expect(screen.getByRole("button", { name: "Fetch" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Pull/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Push/ })).toBeInTheDocument();
+  });
+
+  it("does not show git items in overflow menu for cloning project", () => {
+    renderRow({ ...runningProject(), status: "cloning" as api.ProjectStatus });
     openMenu();
     expect(screen.queryByRole("button", { name: "Fetch" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Pull/ })).not.toBeInTheDocument();

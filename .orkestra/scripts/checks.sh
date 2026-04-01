@@ -465,13 +465,14 @@ fi
 if $HAS_RUST; then
     $VERBOSE && info "=== Rust Checks ==="
 
+    # Ensure pnpm dependencies are installed (needed for pnpm build and any other pnpm commands)
+    if [ ! -d "node_modules" ]; then
+        run_check "pnpm install" "pnpm install"
+    fi
+
     # Ensure frontend is built (Tauri requires dist/ to exist)
     if [ ! -d "dist" ]; then
         $VERBOSE && info "Building frontend (required for Tauri build)..."
-        # Ensure dependencies are installed first
-        if [ ! -d "node_modules" ]; then
-            run_check "pnpm install" "pnpm install"
-        fi
         run_check "Frontend build" "pnpm build"
     fi
 

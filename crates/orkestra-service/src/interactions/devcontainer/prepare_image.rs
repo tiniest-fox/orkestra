@@ -128,6 +128,7 @@ fn docker_pull(image: &str) -> Result<(), ServiceError> {
 fn docker_build(dockerfile: &Path, context: &Path, tag: &str) -> Result<(), ServiceError> {
     let output = Command::new("docker")
         .arg("build")
+        .arg("--progress=plain")
         .arg("-f")
         .arg(dockerfile)
         .arg("-t")

@@ -9,6 +9,7 @@ use crate::types::GitError;
 pub fn execute(repo_path: &Path, branch: &str) -> Result<(), GitError> {
     let output = Command::new("git")
         .args(["fetch", "origin", &format!("{branch}:{branch}")])
+        .env("GIT_LFS_SKIP_SMUDGE", "1")
         .current_dir(repo_path)
         .output()
         .map_err(|e| GitError::Other(format!("Failed to run git fetch: {e}")))?;

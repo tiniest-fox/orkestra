@@ -375,48 +375,6 @@ mod docker {
         assert!(gone.is_none(), "container should be gone after stop");
     }
 
-    /// Verify `docker_exec_git` runs a git command inside a container and captures output.
-    #[test]
-    #[ignore = "requires Docker daemon and network access to pull images"]
-    fn docker_exec_git_runs_command_in_container() {
-        use orkestra_service::devcontainer_docker_exec_git;
-
-        let repo = TempDir::new().unwrap();
-        let override_dir = TempDir::new().unwrap();
-        let project_id = "e2e-docker-exec-git-test";
-
-        let config = DevcontainerConfig::Default;
-
-        let image = devcontainer_prepare_image(&config, repo.path(), project_id)
-            .expect("docker pull should succeed");
-
-        let container_id = devcontainer_start_container(&ContainerStartParams {
-            project_id: project_id.to_string(),
-            config: config.clone(),
-            image,
-            repo_path: repo.path().to_path_buf(),
-            port: 19997,
-            override_dir: override_dir.path().to_path_buf(),
-        })
-        .expect("docker run should succeed");
-
-        // Run `git --version` inside the container — should succeed and return version string.
-        let output = devcontainer_docker_exec_git(&container_id, "/", &["--version"])
-            .expect("git --version should succeed inside container");
-        assert!(
-            output.contains("git version"),
-            "expected 'git version' in output, got: {output}"
-        );
-
-        // Verify error case: a command that fails returns an error.
-        let err = devcontainer_docker_exec_git(&container_id, "/nonexistent", &["status"]);
-        assert!(err.is_err(), "git status in nonexistent dir should fail");
-
-        // Cleanup.
-        devcontainer_stop_container(&config, &container_id, None, override_dir.path())
-            .expect("cleanup should succeed");
-    }
-
     /// Image-based devcontainer: pull a declared image, start, stop.
     #[test]
     #[ignore = "requires Docker daemon and network access to pull images"]

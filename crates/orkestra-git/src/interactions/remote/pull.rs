@@ -20,6 +20,7 @@ pub fn execute(repo_path: &Path) -> Result<(), GitError> {
 
     let output = Command::new("git")
         .args(["pull", "--rebase", "origin", &branch])
+        .env("GIT_LFS_SKIP_SMUDGE", "1")
         .current_dir(repo_path)
         .output()
         .map_err(|e| GitError::Other(format!("Failed to run git pull: {e}")))?;
@@ -28,6 +29,7 @@ pub fn execute(repo_path: &Path) -> Result<(), GitError> {
         // Check for conflict files left by a failed rebase
         let conflict_output = Command::new("git")
             .args(["diff", "--name-only", "--diff-filter=U"])
+            .env("GIT_LFS_SKIP_SMUDGE", "1")
             .current_dir(repo_path)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to check conflicts: {e}")))?;
@@ -41,6 +43,7 @@ pub fn execute(repo_path: &Path) -> Result<(), GitError> {
         // Abort the rebase to restore the working tree to a clean state
         let _ = Command::new("git")
             .args(["rebase", "--abort"])
+            .env("GIT_LFS_SKIP_SMUDGE", "1")
             .current_dir(repo_path)
             .output();
 

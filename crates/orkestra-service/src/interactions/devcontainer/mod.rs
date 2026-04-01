@@ -2,7 +2,6 @@
 
 pub mod connect_network;
 pub mod detect;
-pub mod docker_exec_git;
 pub mod ensure_toolbox_volume;
 pub mod exec_orkd;
 pub mod find_container;

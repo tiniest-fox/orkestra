@@ -102,6 +102,15 @@ pub fn devcontainer_start_container(params: &ContainerStartParams) -> Result<Str
     )
 }
 
+/// Run a git command inside a project container via docker exec.
+pub fn devcontainer_docker_exec_git(
+    container_id: &str,
+    repo_path: &str,
+    git_args: &[&str],
+) -> Result<String, ServiceError> {
+    interactions::devcontainer::docker_exec_git::execute(container_id, repo_path, git_args)
+}
+
 /// Stop and remove a project's Docker container.
 pub fn devcontainer_stop_container(
     config: &DevcontainerConfig,

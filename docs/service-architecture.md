@@ -162,6 +162,16 @@ The service container communicates with the host Docker daemon via socket mount.
 
 **Network communication uses container DNS.** When running in DooD (detected by `/.dockerenv`), the service joins project containers to its own user-defined Docker networks (`connect_network.rs`). This enables `orkestra-{project_id}:{port}` DNS resolution from the service container to reach the daemon.
 
+## Git Operations in `server.rs`
+
+The service runs git operations (fetch, pull, push) on behalf of each project. These **must run inside the project container** via `docker exec`, not directly on the host filesystem.
+
+**Why**: When a project has active worktrees, git records worktree paths like `/workspace/.orkestra/.worktrees/<id>/gitdir` in `.git/worktrees/`. On the host, `/workspace` does not exist — git validates all registered worktree paths on any fetch/pull/push and fails with `fatal: Invalid path '/workspace': No such file or directory`. Running git inside the container avoids this because the container's `/workspace` is the repo root.
+
+**How**: `git_fetch_handler`, `git_pull_handler`, and `git_push_handler` in `server.rs` call `docker_exec_git::execute()` (in `interactions/devcontainer/docker_exec_git.rs`) which runs `docker exec <container_id> git <args>` in the repo's working directory inside the container.
+
+**Known gap**: `list_projects_handler` still uses `Git2GitService` on the host for read-only operations (`current_branch`, `sync_status`). These don't currently trigger worktree validation failures, but may if git's behavior changes. If these operations start failing, apply the same `docker exec` treatment.
+
 ## Networking
 
 **Service HTTP API** (port 3847):
@@ -235,6 +245,7 @@ SQLite at `{data_dir}/service.db`. Four tables:
 | `crates/orkestra-service/src/interactions/devcontainer/exec_orkd.rs` | `docker exec -u 1000` to spawn daemon |
 | `crates/orkestra-service/src/interactions/devcontainer/inject_orkd.rs` | `docker cp` orkd binary into container + `chmod +x` |
 | `crates/orkestra-service/src/interactions/devcontainer/inject_ork.rs` | `docker cp` ork binary into container + `chmod +x` |
+| `crates/orkestra-service/src/interactions/devcontainer/docker_exec_git.rs` | Run a git command inside a project container via `docker exec` |
 | `crates/orkestra-service/src/interactions/daemon_token/get_or_create.rs` | Auto-pairing flow |
 | `crates/orkestra-service/Dockerfile.base` | Orkestra default devcontainer (ubuntu + mise) |
 | `crates/orkestra-service/Dockerfile.toolbox` | Toolbox image (Node, Claude CLI, gh, pnpm, setup.sh) |

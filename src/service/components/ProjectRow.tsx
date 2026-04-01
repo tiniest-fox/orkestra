@@ -10,6 +10,7 @@ import { useNavItem } from "../../components/ui/NavigationScope";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { categoryForStatus } from "../../utils/projectGrouping";
 import type { Project, ProjectStatus } from "../api";
+import { ProjectLatestLog } from "./ProjectLatestLog";
 import { ProjectLogsModal } from "./ProjectLogsModal";
 
 // ============================================================================
@@ -211,8 +212,8 @@ export function ProjectRow({
               </Button>
             )}
             {transitioning && (
-              <span className="font-mono text-forge-mono-label text-text-quaternary">
-                {statusLabel(effectiveStatus)}
+              <span className="font-mono text-forge-mono-label text-text-quaternary truncate min-w-0 max-w-[300px]">
+                <ProjectLatestLog projectId={project.id} fallback={statusLabel(effectiveStatus)} />
               </span>
             )}
           </div>

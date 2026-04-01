@@ -616,6 +616,9 @@ vi.mock("react-dom/client", () => ({ createRoot: mockCreateRoot }));
 
 <!-- compound: garishly-true-wren -->
 
+<!-- compound: prominently-restful-ratel -->
+- **`vi.useFakeTimers()` / `vi.useRealTimers()` cleanup**: Always restore real timers in `afterEach(() => vi.useRealTimers())` at file scope, not inline at the end of each test. If an assertion throws before the inline `vi.useRealTimers()` call, fake timers leak and affect subsequent tests. This follows the same pattern as `vi.unstubAllEnvs()` cleanup.
+
 ## Keyboard Navigation
 
 <!-- compound: beauteously-liberal-pollock -->

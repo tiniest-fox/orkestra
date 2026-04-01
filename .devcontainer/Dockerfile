@@ -21,8 +21,9 @@ RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path \
     find /usr/local/rustup /usr/local/cargo -type d -exec chmod a+rx {} \;
 ENV PATH="/usr/local/cargo/bin:$PATH"
 # Install sccache — required by .cargo/config.toml as rustc-wrapper.
-RUN cargo install sccache --locked && \
-    chmod a+rx /usr/local/cargo/bin/sccache
+# Install cargo-sweep — used by worktree_cleanup.sh to prune stale build artifacts.
+RUN cargo install sccache cargo-sweep --locked && \
+    chmod a+rx /usr/local/cargo/bin/sccache /usr/local/cargo/bin/cargo-sweep
 # Pre-fetch all cargo dependencies (including git deps like fix-path-env from
 # src-tauri) at build time, then open up permissions so any non-root user
 # (Codespaces, Orkestra, local devcontainer) can write to the cargo cache

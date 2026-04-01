@@ -12,6 +12,11 @@ set -euo pipefail
 
 git config --global user.email "${GIT_USER_EMAIL:-orkestra@localhost}"
 git config --global user.name "${GIT_USER_NAME:-Orkestra}"
+# Allow git to operate on repos with different ownership (service runs as root,
+# repos are owned by uid 1000). Wildcard is used instead of specific paths
+# because the service manages multiple projects at unknown paths at startup time.
+# (The daemon entrypoint uses path-specific entries because it knows PROJECT_ROOT.)
+git config --global --add safe.directory '*'
 
 # ============================================================================
 # GitHub CLI + HTTPS git auth

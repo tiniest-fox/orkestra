@@ -20,9 +20,8 @@ fn disable_owner_validation() {
     // The service process may run as root while repos are owned by uid 1000.
     // This is the libgit2 equivalent of `git config --global safe.directory *`.
     // Note: git CLI operations (push, pull, fetch, rebase, diff) have their own independent
-    // safe.directory check — those are handled via `docker/entrypoint.sh` for the daemon process.
-    // The ork-service binary does not go through that entrypoint; if CLI-based git operations
-    // fail with ownership errors for ork-service, add safe.directory config to toolbox setup.sh.
+    // safe.directory check — those are handled via `docker/entrypoint.sh` for the daemon process
+    // and `docker/entrypoint-service.sh` for the service process.
     // SAFETY: modifies global libgit2 state; safe to call once at startup.
     unsafe { git2::opts::set_verify_owner_validation(false) }.ok();
 }

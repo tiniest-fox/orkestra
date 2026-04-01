@@ -3074,7 +3074,7 @@ fn test_system_prompt_split() {
     // ASSERT: User message should reference the task file (title/description are virtualized)
     let user_message = &call.prompt;
     assert!(
-        user_message.contains(".orkestra/.artifacts/task.md"),
+        user_message.contains(".orkestra/.artifacts/trak.md"),
         "User message should contain task context"
     );
     assert!(
@@ -3146,7 +3146,7 @@ fn test_opencode_provider_fallback() {
 
     // Should reference the task file (title/description are virtualized)
     assert!(
-        user_message.contains(".orkestra/.artifacts/task.md"),
+        user_message.contains(".orkestra/.artifacts/trak.md"),
         "User message should contain task context"
     );
 

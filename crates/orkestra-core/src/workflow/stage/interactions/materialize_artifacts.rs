@@ -2,7 +2,7 @@
 //!
 //! Writes all task artifacts to `.orkestra/.artifacts/{name}.md` before agent
 //! spawn so agents can read them on demand instead of receiving them inline.
-//! Always writes `task.md` with task identity and description. Also writes
+//! Always writes `trak.md` with task identity and description. Also writes
 //! the activity log to `activity_log.md` when entries exist.
 
 use std::fmt::Write as _;
@@ -19,13 +19,13 @@ use crate::workflow::stage::types::ActivityLogEntry;
 /// Materialize all task artifacts and the activity log to the worktree.
 ///
 /// Creates `.orkestra/.artifacts/` directory and writes each artifact as
-/// `{name}.md`. Always writes `task.md` with task identity metadata (not
+/// `{name}.md`. Always writes `trak.md` with task identity metadata (not
 /// included in returned names). When `activity_logs` is non-empty, writes
 /// `activity_log.md` and includes `"activity_log"` in the returned names.
 /// Overwrites existing files to ensure freshness.
 ///
 /// Returns the list of materialized stage artifact names (for prompt building).
-/// `task.md` is excluded from the returned list — it is referenced directly
+/// `trak.md` is excluded from the returned list — it is referenced directly
 /// by the prompt template, not listed in the "Input Artifacts" section.
 pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Result<Vec<String>> {
     let worktree_path = if let Some(p) = &task.worktree_path {
@@ -38,16 +38,16 @@ pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Resu
         return Ok(Vec::new());
     };
 
-    // Gather all stage artifact names (task.md is NOT included)
+    // Gather all stage artifact names (trak.md is NOT included)
     let mut artifact_names: Vec<String> = task.artifacts.all().map(|a| a.name.clone()).collect();
     let has_activity_logs = !activity_logs.is_empty();
 
-    // Create artifacts directory (always needed — task.md is always written)
+    // Create artifacts directory (always needed — trak.md is always written)
     let artifacts_dir = worktree_path.join(artifacts_directory());
     fs::create_dir_all(&artifacts_dir)
         .map_err(|e| std::io::Error::other(format!("{}: {}", artifacts_dir.display(), e)))?;
 
-    // Always write task.md (not included in returned artifact_names)
+    // Always write trak.md (not included in returned artifact_names)
     let task_content = format_task_definition(task);
     let task_file_path = worktree_path.join(artifact_file_path(TASK_ARTIFACT_NAME));
     fs::write(&task_file_path, task_content)
@@ -76,7 +76,7 @@ pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Resu
 
 /// Format the task definition as a markdown file.
 ///
-/// Produces a stable, human-readable file at `.orkestra/.artifacts/task.md`
+/// Produces a stable, human-readable file at `.orkestra/.artifacts/trak.md`
 /// so agents can read task identity on demand rather than receiving it inline.
 fn format_task_definition(task: &Task) -> String {
     format!(
@@ -115,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_artifacts_writes_task_md() {
+    fn test_empty_artifacts_writes_trak_md() {
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path().to_str().unwrap();
 
@@ -123,17 +123,17 @@ mod tests {
             Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
 
         let result = execute(&task, &[]).unwrap();
-        // task.md is not included in returned names
+        // trak.md is not included in returned names
         assert!(result.is_empty());
 
-        // Directory is created and task.md is written even with no stage artifacts
+        // Directory is created and trak.md is written even with no stage artifacts
         let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
         assert!(artifacts_dir.exists());
-        assert!(artifacts_dir.join("task.md").exists());
+        assert!(artifacts_dir.join("trak.md").exists());
     }
 
     #[test]
-    fn test_task_md_content_format() {
+    fn test_trak_md_content_format() {
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path().to_str().unwrap();
 
@@ -148,16 +148,16 @@ mod tests {
 
         execute(&task, &[]).unwrap();
 
-        let task_md =
-            fs::read_to_string(temp_dir.path().join(".orkestra/.artifacts/task.md")).unwrap();
-        assert!(task_md.contains("**Trak ID**: task-abc"));
-        assert!(task_md.contains("**Title**: My Task Title"));
-        assert!(task_md.contains("### Description"));
-        assert!(task_md.contains("A detailed description of the task."));
+        let trak_md =
+            fs::read_to_string(temp_dir.path().join(".orkestra/.artifacts/trak.md")).unwrap();
+        assert!(trak_md.contains("**Trak ID**: task-abc"));
+        assert!(trak_md.contains("**Title**: My Task Title"));
+        assert!(trak_md.contains("### Description"));
+        assert!(trak_md.contains("A detailed description of the task."));
     }
 
     #[test]
-    fn test_task_md_not_in_returned_names() {
+    fn test_trak_md_not_in_returned_names() {
         let temp_dir = TempDir::new().unwrap();
         let worktree_path = temp_dir.path().to_str().unwrap();
 
@@ -168,11 +168,11 @@ mod tests {
 
         let result = execute(&task, &[]).unwrap();
         assert_eq!(result, vec!["plan"]);
-        assert!(!result.contains(&"task".to_string()));
+        assert!(!result.contains(&"trak".to_string()));
 
-        // task.md is written but not returned
+        // trak.md is written but not returned
         let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
-        assert!(artifacts_dir.join("task.md").exists());
+        assert!(artifacts_dir.join("trak.md").exists());
         assert!(artifacts_dir.join("plan.md").exists());
     }
 

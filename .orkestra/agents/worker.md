@@ -202,6 +202,9 @@ If your breakdown instructions specify tests to write, write them as part of you
 <!-- compound: frigidly-brief-archerfish -->
 **Bug fixes in pure functions always need a regression test**, even when breakdown instructions don't mention it. A pure function (no side effects, deterministic) is trivial to test — there's no excuse to skip it. Write at least one test that directly exercises the fixed code path (e.g., "hides tab when Trak has advanced past the gate stage"). This is the most common cause of rejection on small frontend/Rust fixes.
 
+<!-- compound: thermally-harmless-goose -->
+**When fixing a bug, grep for existing tests asserting the old (broken) behavior.** Bug fixes change what "correct" output looks like — existing tests may assert the pre-fix value and will silently break. Before submitting, search the affected function or field name across both inline `#[cfg(test)]` modules AND any `tests/` directory (e.g., `tests/e2e.rs`). Update tests that assert the old value to assert the new correct one. Crates with both an inline test module and a separate `tests/` file are easy to miss — check both.
+
 Key principles:
 - **Drive the orchestrator**: Use `ctx.advance()` to test behavior, not direct API calls
 - **Mock minimally**: Only mock external services (agents, LLM calls, GitHub API). Use real SQLite, git, worktrees.

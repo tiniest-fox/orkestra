@@ -118,6 +118,8 @@ async fn run(args: Args) -> Result<(), String> {
 
     let orkd_path = find_orkd_path()?;
     tracing::info!("Using orkd binary: {}", orkd_path.display());
+    let ork_path = find_ork_path()?;
+    tracing::info!("Using ork binary: {}", ork_path.display());
 
     let config = Arc::new(ServiceConfig {
         data_dir: data_dir.clone(),
@@ -128,6 +130,7 @@ async fn run(args: Args) -> Result<(), String> {
     let supervisor = Arc::new(DaemonSupervisor::new(
         conn.clone(),
         orkd_path,
+        ork_path,
         data_dir.clone(),
         (args.port_range_start, args.port_range_end),
     ));
@@ -298,4 +301,32 @@ fn find_orkd_path() -> Result<PathBuf, String> {
     }
 
     Err("Could not find orkd binary. Place it next to ork-service or add it to PATH.".to_string())
+}
+
+/// Locate the `ork` binary: first adjacent to this binary, then via PATH.
+fn find_ork_path() -> Result<PathBuf, String> {
+    // 1. Same directory as the running ork-service binary.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("ork");
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    // 2. PATH lookup via `which`.
+    let output = std::process::Command::new("which")
+        .arg("ork")
+        .output()
+        .map_err(|e| format!("Failed to run which: {e}"))?;
+
+    if output.status.success() {
+        let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path_str.is_empty() {
+            return Ok(PathBuf::from(path_str));
+        }
+    }
+
+    Err("Could not find ork binary. Place it next to ork-service or add it to PATH.".to_string())
 }

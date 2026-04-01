@@ -117,7 +117,7 @@ pub async fn start_containers_and_spawn(
 
 // -- Helpers --
 
-/// Steps 4–9: detect → prepare image → start container → inject orkd →
+/// Steps 4–9: detect → prepare image → start container → inject orkd + ork →
 /// store `container_id` → optionally run setup → spawn daemon.
 #[cfg(unix)]
 #[allow(clippy::too_many_lines)]
@@ -130,6 +130,7 @@ async fn container_and_spawn(
 ) -> Result<(), ServiceError> {
     let project_id = project.id.clone();
     let orkd_path = supervisor.orkd_path().to_path_buf();
+    let ork_path = supervisor.ork_path().to_path_buf();
     let data_dir = supervisor.data_dir().to_path_buf();
     let override_dir = data_dir.join("projects").join(&project_id);
 
@@ -194,6 +195,15 @@ async fn container_and_spawn(
         let cid = container_id.clone();
         let op = orkd_path.clone();
         move || devcontainer::inject_orkd::execute(&cid, &op)
+    })
+    .await
+    .map_err(|e| ServiceError::Other(e.to_string()))??;
+
+    // Step 6b2: Inject ork CLI binary into the container via `docker cp`.
+    tokio::task::spawn_blocking({
+        let cid = container_id.clone();
+        let op = ork_path.clone();
+        move || devcontainer::inject_ork::execute(&cid, &op)
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;

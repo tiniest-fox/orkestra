@@ -28,6 +28,7 @@ pub struct DaemonSupervisor {
     conn: Arc<Mutex<Connection>>,
     children: Arc<Mutex<HashMap<String, Child>>>,
     orkd_path: PathBuf,
+    ork_path: PathBuf,
     data_dir: PathBuf,
     /// Port range reserved for daemon assignment (stored for callers; unused
     /// internally since ports are assigned at project-add time).
@@ -44,6 +45,7 @@ impl DaemonSupervisor {
     pub fn new(
         conn: Arc<Mutex<Connection>>,
         orkd_path: PathBuf,
+        ork_path: PathBuf,
         data_dir: PathBuf,
         port_range: (u16, u16),
     ) -> Self {
@@ -51,6 +53,7 @@ impl DaemonSupervisor {
             conn,
             children: Arc::new(Mutex::new(HashMap::new())),
             orkd_path,
+            ork_path,
             data_dir,
             port_range,
             stop: Arc::new(AtomicBool::new(false)),
@@ -63,6 +66,11 @@ impl DaemonSupervisor {
     /// Path to the `orkd` binary on the host filesystem.
     pub fn orkd_path(&self) -> &Path {
         &self.orkd_path
+    }
+
+    /// Path to the `ork` CLI binary on the host filesystem.
+    pub fn ork_path(&self) -> &Path {
+        &self.ork_path
     }
 
     /// Data directory used for compose override files and project state.

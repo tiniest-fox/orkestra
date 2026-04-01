@@ -65,7 +65,7 @@ stopped → cloning → starting → running
    - Optional Claude auth bind-mount from `CLAUDE_AUTH_DIR`
    - Command: `sleep infinity`
 
-8. **Inject orkd** — `docker cp /usr/local/bin/orkd {container}:/usr/local/bin/orkd`. Avoids bind-mounting (see DooD section).
+8. **Inject orkd and ork** — `docker cp /usr/local/bin/orkd {container}:/usr/local/bin/orkd` then `docker cp /usr/local/bin/ork {container}:/usr/local/bin/ork`. Both binaries are copied from the service container filesystem and made executable. Avoids bind-mounting (see DooD section). If a third binary needs injection, extract a shared `inject_binary::execute(container_id, src_path, dest_name)` helper at that point.
 
 9. **Chown workspace** — `docker exec -u root ... chown -R 1000:1000 /workspace` so the agent user (uid 1000) can write. Best-effort (error discarded).
 
@@ -233,6 +233,8 @@ SQLite at `{data_dir}/service.db`. Four tables:
 | `crates/orkestra-service/src/interactions/devcontainer/run_toolbox_setup.rs` | Execute `setup.sh` in container |
 | `crates/orkestra-service/src/interactions/devcontainer/connect_network.rs` | Join container to service's Docker networks (DooD) |
 | `crates/orkestra-service/src/interactions/devcontainer/exec_orkd.rs` | `docker exec -u 1000` to spawn daemon |
+| `crates/orkestra-service/src/interactions/devcontainer/inject_orkd.rs` | `docker cp` orkd binary into container + `chmod +x` |
+| `crates/orkestra-service/src/interactions/devcontainer/inject_ork.rs` | `docker cp` ork binary into container + `chmod +x` |
 | `crates/orkestra-service/src/interactions/daemon_token/get_or_create.rs` | Auto-pairing flow |
 | `crates/orkestra-service/Dockerfile.base` | Orkestra default devcontainer (ubuntu + mise) |
 | `crates/orkestra-service/Dockerfile.toolbox` | Toolbox image (Node, Claude CLI, gh, pnpm, setup.sh) |

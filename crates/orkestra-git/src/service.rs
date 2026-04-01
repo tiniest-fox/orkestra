@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, Once};
 
 use git2::Repository;
 
@@ -13,6 +13,19 @@ use crate::interface::GitService;
 use crate::types::{
     CommitInfo, GitError, MergeResult, SyncStatus, TaskDiff, WorktreeCreated, WorktreeState,
 };
+
+static DISABLE_OWNER_VALIDATION: Once = Once::new();
+
+fn disable_owner_validation() {
+    // The service process may run as root while repos are owned by uid 1000.
+    // This is the libgit2 equivalent of `git config --global safe.directory *`.
+    // Note: git CLI operations (push, pull, fetch, rebase, diff) have their own independent
+    // safe.directory check — those are handled via `docker/entrypoint.sh` for the daemon process.
+    // The ork-service binary does not go through that entrypoint; if CLI-based git operations
+    // fail with ownership errors for ork-service, add safe.directory config to toolbox setup.sh.
+    // SAFETY: modifies global libgit2 state; safe to call once at startup.
+    unsafe { git2::opts::set_verify_owner_validation(false) }.ok();
+}
 
 /// Git service implementation using git2 and git CLI.
 ///
@@ -26,6 +39,7 @@ pub struct Git2GitService {
 impl Git2GitService {
     /// Create a new `Git2GitService` for the given repository path.
     pub fn new(repo_path: &Path) -> Result<Self, GitError> {
+        DISABLE_OWNER_VALIDATION.call_once(disable_owner_validation);
         let repo = Repository::open(repo_path)
             .map_err(|e| GitError::RepositoryNotFound(format!("Failed to open repository: {e}")))?;
         let worktrees_dir = repo_path.join(".orkestra/.worktrees");

@@ -27,4 +27,13 @@ if [ -L "$WORKTREE_PATH/dist" ]; then
     echo "Removed dist/ symlink"
 fi
 
+# ---------------------------------------------------------------------------
+# Sweep stale build artifacts from the shared target/ directory
+# ---------------------------------------------------------------------------
+# All worktrees share the main repo's target/ via symlink. Artifacts older
+# than 30 days are unlikely to be needed and safe to remove — sccache means
+# re-compilation is fast even after a sweep.
+
+cargo sweep --time 30 2>/dev/null || true
+
 echo "Worktree cleanup complete: $WORKTREE_PATH"

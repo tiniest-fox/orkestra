@@ -202,6 +202,17 @@ If your breakdown instructions specify tests to write, write them as part of you
 <!-- compound: frigidly-brief-archerfish -->
 **Bug fixes in pure functions always need a regression test**, even when breakdown instructions don't mention it. A pure function (no side effects, deterministic) is trivial to test — there's no excuse to skip it. Write at least one test that directly exercises the fixed code path (e.g., "hides tab when Trak has advanced past the gate stage"). This is the most common cause of rejection on small frontend/Rust fixes.
 
+<!-- compound: intensely-ethereal-bunny -->
+### `orkestra-service` Docker Exec Interactions Need `#[ignore]` Tests
+
+When adding a new interaction to `crates/orkestra-service/` that calls `docker exec`, **extend the existing Docker test scaffold** in `tests/e2e.rs` — don't skip tests or write unit tests only. The crate has an established `mod docker` block with `#[ignore]` lifecycle tests (start container → exercise → cleanup, using port 19997). New `docker exec` interactions must:
+
+1. Add a test inside the existing `mod docker` block in `tests/e2e.rs`
+2. Cover the success path (command runs, output matches expectation)
+3. Cover at least one error path (e.g., nonexistent working directory)
+
+The `#[ignore]` tag gates these on a real Docker daemon; they don't run in normal CI but verify real behavior. Missing these tests is a guaranteed MEDIUM rejection — the testing reviewer knows this pattern exists and expects it to be extended.
+
 <!-- compound: thermally-harmless-goose -->
 **When fixing a bug, grep for existing tests asserting the old (broken) behavior.** Bug fixes change what "correct" output looks like — existing tests may assert the pre-fix value and will silently break. Before submitting, search the affected function or field name across both inline `#[cfg(test)]` modules AND any `tests/` directory (e.g., `tests/e2e.rs`). Update tests that assert the old value to assert the new correct one. Crates with both an inline test module and a separate `tests/` file are easy to miss — check both.
 

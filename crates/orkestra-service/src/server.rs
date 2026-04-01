@@ -24,7 +24,7 @@ use tower_http::cors::CorsLayer;
 use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
-use crate::interactions::{daemon_token, github, port, project};
+use crate::interactions::{daemon_token, devcontainer::docker_exec_git, github, port, project};
 use crate::types::{ProjectStatus, ServiceConfig, ServiceError};
 
 // ============================================================================
@@ -769,6 +769,13 @@ async fn fetch_project(
     }
 }
 
+/// Extract `container_id` from a project, failing if the container is not running.
+fn require_container_id(proj: &crate::types::Project) -> Result<String, ServiceError> {
+    proj.container_id
+        .clone()
+        .ok_or_else(|| ServiceError::Other("Container is not running".to_string()))
+}
+
 /// `POST /api/projects/{id}/git/fetch` — fetch from origin.
 async fn git_fetch_handler(
     State(state): State<OrkServiceState>,
@@ -780,10 +787,9 @@ async fn git_fetch_handler(
     };
 
     match run_blocking(move || {
-        let git = Git2GitService::new(std::path::Path::new(&proj.path))
-            .map_err(|e| ServiceError::Other(e.to_string()))?;
-        git.fetch_origin()
-            .map_err(|e| ServiceError::Other(e.to_string()))
+        let container_id = require_container_id(&proj)?;
+        docker_exec_git::execute(&container_id, "/workspace", &["fetch", "origin"])?;
+        Ok(())
     })
     .await
     {
@@ -803,10 +809,9 @@ async fn git_pull_handler(
     };
 
     match run_blocking(move || {
-        let git = Git2GitService::new(std::path::Path::new(&proj.path))
-            .map_err(|e| ServiceError::Other(e.to_string()))?;
-        git.pull_branch()
-            .map_err(|e| ServiceError::Other(e.to_string()))
+        let container_id = require_container_id(&proj)?;
+        docker_exec_git::execute(&container_id, "/workspace", &["pull", "--rebase"])?;
+        Ok(())
     })
     .await
     {
@@ -826,13 +831,14 @@ async fn git_push_handler(
     };
 
     match run_blocking(move || {
-        let git = Git2GitService::new(std::path::Path::new(&proj.path))
-            .map_err(|e| ServiceError::Other(e.to_string()))?;
-        let branch = git
-            .current_branch()
-            .map_err(|e| ServiceError::Other(e.to_string()))?;
-        git.push_branch(&branch)
-            .map_err(|e| ServiceError::Other(e.to_string()))
+        let container_id = require_container_id(&proj)?;
+        let branch = docker_exec_git::execute(
+            &container_id,
+            "/workspace",
+            &["rev-parse", "--abbrev-ref", "HEAD"],
+        )?;
+        docker_exec_git::execute(&container_id, "/workspace", &["push", "origin", &branch])?;
+        Ok(())
     })
     .await
     {
@@ -1081,7 +1087,8 @@ where
 mod tests {
     use axum::http::HeaderMap;
 
-    use super::{validate_project_name, ws_base_from_headers};
+    use super::{require_container_id, validate_project_name, ws_base_from_headers};
+    use crate::types::{Project, ProjectStatus};
 
     // -- ws_base_from_headers --
 
@@ -1155,5 +1162,41 @@ mod tests {
         assert!(validate_project_name("null\0byte").is_err());
         assert!(validate_project_name("/absolute").is_err());
         assert!(validate_project_name("/etc/passwd").is_err());
+    }
+
+    // -- require_container_id --
+
+    fn make_project(container_id: Option<&str>) -> Project {
+        Project {
+            id: "test".to_string(),
+            name: "test".to_string(),
+            path: "/test".to_string(),
+            daemon_port: 3850,
+            shared_secret: "s".to_string(),
+            status: ProjectStatus::Running,
+            error_message: None,
+            pid: None,
+            created_at: "2024-01-01".to_string(),
+            container_id: container_id.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn require_container_id_returns_error_when_none() {
+        let proj = make_project(None);
+        let err = require_container_id(&proj);
+        assert!(err.is_err());
+        let msg = err.unwrap_err().to_string();
+        assert!(
+            msg.contains("Container is not running"),
+            "expected 'Container is not running' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn require_container_id_returns_id_when_present() {
+        let proj = make_project(Some("abc123"));
+        let id = require_container_id(&proj).unwrap();
+        assert_eq!(id, "abc123");
     }
 }

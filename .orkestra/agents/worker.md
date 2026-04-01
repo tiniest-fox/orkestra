@@ -283,6 +283,22 @@ if let Some(content) = file.diff_content.as_ref().filter(|d| !d.is_empty()) {
 
 The `filter` on `Option` combines the `Some` check with the condition check, and `if let` eliminates the `unwrap()` entirely. This is a MEDIUM-severity finding reviewers always catch.
 
+<!-- compound: verily-conclusive-phalarope -->
+## `PathBuf::join` Absolute Path Injection
+
+When user-supplied input is passed to `PathBuf::join`, a value starting with `/` **replaces** the entire base path on Unix — it does not append. This means relaxing a validation that previously blocked `/` can silently introduce a path injection vulnerability, even if internal slashes are now intentionally permitted.
+
+**Pattern to follow when allowing internal slashes in validated input:**
+
+```rust
+// Allows org/repo slugs but blocks /etc/passwd-style injection
+if name.starts_with('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+    return Err(...);
+}
+```
+
+When a plan says "remove `/` from the blocklist", check whether the validated value is later passed to any `PathBuf` method. If so, add a `starts_with('/')` guard explicitly — the plan may not mention it, but reviewers will always catch the omission. This is a HIGH-severity finding.
+
 <!-- compound: approvingly-eminent-gopher -->
 ## Rust Conventions
 

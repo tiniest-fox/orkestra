@@ -1019,14 +1019,16 @@ fn ws_base_from_headers(headers: &HeaderMap) -> String {
     format!("{ws_scheme}://{host}")
 }
 
-/// Reject project names that could enable path traversal.
+/// Reject project names that could enable path traversal or absolute path injection.
 ///
-/// Names must be non-empty and must not contain `/`, `\`, `..`, or null bytes.
+/// Names must be non-empty and must not start with `/` (absolute path injection) or contain
+/// `\`, `..`, or null bytes. Internal slashes are allowed to support GitHub org/repo slugs
+/// (e.g. `DeweyLabs/Dewey`).
 fn validate_project_name(name: &str) -> Result<(), &'static str> {
     if name.is_empty() {
         return Err("Project name cannot be empty");
     }
-    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+    if name.starts_with('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
         return Err("Project name contains invalid characters");
     }
     Ok(())
@@ -1136,6 +1138,8 @@ mod tests {
         assert!(validate_project_name("my-project").is_ok());
         assert!(validate_project_name("MyApp_v2").is_ok());
         assert!(validate_project_name("hello world").is_ok());
+        assert!(validate_project_name("foo/bar").is_ok());
+        assert!(validate_project_name("DeweyLabs/Dewey").is_ok());
     }
 
     #[test]
@@ -1147,8 +1151,9 @@ mod tests {
     fn rejects_path_traversal() {
         assert!(validate_project_name("../../etc").is_err());
         assert!(validate_project_name("../secret").is_err());
-        assert!(validate_project_name("foo/bar").is_err());
         assert!(validate_project_name("foo\\bar").is_err());
         assert!(validate_project_name("null\0byte").is_err());
+        assert!(validate_project_name("/absolute").is_err());
+        assert!(validate_project_name("/etc/passwd").is_err());
     }
 }

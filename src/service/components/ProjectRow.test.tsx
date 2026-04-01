@@ -1,6 +1,6 @@
 // Tests for ProjectRow — display-only row component with lifted action state.
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
@@ -162,6 +162,7 @@ describe("ProjectRow", () => {
   });
 
   it("shows no inline action buttons for transitioning projects", () => {
+    mockFetchLogs.mockReturnValue(new Promise(() => {})); // never resolves
     renderRow(
       { id: "p1", name: "transitioning-repo", status: "starting" },
       { effectiveStatus: "starting" },
@@ -170,6 +171,20 @@ describe("ProjectRow", () => {
     expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Starting...").length).toBeGreaterThan(0);
+  });
+
+  it("shows latest log line in Col 3 for transitioning projects after poll resolves", async () => {
+    vi.useFakeTimers();
+    mockFetchLogs.mockResolvedValue(["Fetching base image..."]);
+    renderRow(
+      { id: "p1", name: "transitioning-repo", status: "starting" },
+      { effectiveStatus: "starting" },
+    );
+
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    expect(screen.getByText("Fetching base image...")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   // -- Overflow menu --

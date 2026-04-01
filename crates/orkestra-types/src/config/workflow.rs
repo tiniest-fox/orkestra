@@ -1594,7 +1594,7 @@ integration:
 
     #[test]
     fn test_reserved_task_artifact_name_rejected() {
-        let config = WorkflowConfig::new(vec![StageConfig::new("work", "task")]);
+        let config = WorkflowConfig::new(vec![StageConfig::new("work", "trak")]);
         let errors = config.validate();
         assert!(!errors.is_empty());
         assert!(errors[0].contains("reserved artifact name"));

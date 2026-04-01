@@ -177,15 +177,16 @@ fn compose_up(
             "-d",
         ])
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()
         .map_err(|e| ServiceError::Other(format!("Failed to run `docker compose up`: {e}")))?;
 
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(ServiceError::Other(format!(
-            "`docker compose up` failed: {stderr}"
+            "`docker compose up` failed:\n{stdout}{stderr}"
         )));
     }
 

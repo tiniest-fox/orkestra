@@ -238,7 +238,7 @@ export function ProjectRow({
             </button>
           )}
         >
-          {project.git_status && (
+          {project.status !== "cloning" && (
             <>
               <Dropdown.Item
                 onClick={() => {
@@ -255,7 +255,7 @@ export function ProjectRow({
                 }}
               >
                 Pull
-                {project.git_status.sync_status && project.git_status.sync_status.behind > 0
+                {project.git_status?.sync_status && project.git_status.sync_status.behind > 0
                   ? ` ↓${project.git_status.sync_status.behind}`
                   : ""}
               </Dropdown.Item>
@@ -266,7 +266,7 @@ export function ProjectRow({
                 }}
               >
                 Push
-                {project.git_status.sync_status && project.git_status.sync_status.ahead > 0
+                {project.git_status?.sync_status && project.git_status.sync_status.ahead > 0
                   ? ` ↑${project.git_status.sync_status.ahead}`
                   : ""}
               </Dropdown.Item>

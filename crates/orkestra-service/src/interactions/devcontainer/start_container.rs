@@ -201,6 +201,7 @@ fn compose_up(
             &format!("orkestra-{project_id}"),
             "up",
             "-d",
+            "--remove-orphans",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

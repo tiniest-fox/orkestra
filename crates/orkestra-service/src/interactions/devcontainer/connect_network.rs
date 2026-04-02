@@ -11,9 +11,14 @@ use crate::types::ServiceError;
 /// host Docker daemon. Joining a shared user-defined network lets the service
 /// reach the project daemon by container name via Docker's embedded DNS.
 ///
+/// A network alias `orkestra-{project_id}` is registered on each network so
+/// the daemon is always reachable at that name regardless of whether the
+/// container was started via `docker run` (named `orkestra-{id}`) or
+/// `docker compose` (named `orkestra-{id}-app-1`).
+///
 /// This is a no-op when the service is not running inside Docker (local dev),
 /// detected by the absence of `/.dockerenv`.
-pub fn execute(container_id: &str) -> Result<(), ServiceError> {
+pub fn execute(container_id: &str, project_id: &str) -> Result<(), ServiceError> {
     // Skip entirely when not running inside Docker.
     if !std::path::Path::new("/.dockerenv").exists() {
         return Ok(());
@@ -51,8 +56,16 @@ pub fn execute(container_id: &str) -> Result<(), ServiceError> {
             continue;
         }
 
+        let alias = format!("orkestra-{project_id}");
         let connect = Command::new("docker")
-            .args(["network", "connect", network, container_id])
+            .args([
+                "network",
+                "connect",
+                "--alias",
+                &alias,
+                network,
+                container_id,
+            ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

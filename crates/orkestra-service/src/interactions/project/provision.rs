@@ -230,7 +230,8 @@ async fn container_and_spawn(
     // This allows the service to reach the daemon by container name (DooD).
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
-        move || devcontainer::connect_network::execute(&cid)
+        let id = project_id.clone();
+        move || devcontainer::connect_network::execute(&cid, &id)
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;

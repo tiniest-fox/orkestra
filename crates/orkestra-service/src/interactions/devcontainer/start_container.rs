@@ -43,7 +43,14 @@ pub fn execute(
             ..
         } => {
             let compose_path = repo_path.join(compose_file);
-            compose_up(project_id, &compose_path, service, port, override_dir, log_path)
+            compose_up(
+                project_id,
+                &compose_path,
+                service,
+                port,
+                override_dir,
+                log_path,
+            )
         }
     }
 }

@@ -1,5 +1,6 @@
 //! Start a Docker container (or Compose service) for a project.
 
+use std::fmt::Write as FmtWrite;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -170,9 +171,7 @@ fn compose_up(
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
     let override_path = override_dir.join("orkestra-override.yml");
-    let override_content = format!(
-        "services:\n  {service}:\n    ports:\n      - \"127.0.0.1:{port}:{port}\"\n    volumes:\n      - {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro\nvolumes:\n  {TOOLBOX_VOLUME_NAME}:\n    external: true\n"
-    );
+    let override_content = build_compose_override(service, port);
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 
@@ -263,6 +262,40 @@ fn compose_up(
     }
 
     Ok(container_id)
+}
+
+/// Build the Docker Compose override YAML that injects Orkestra's runtime
+/// requirements into the project's app service.
+///
+/// Mirrors the mounts and environment variables that `docker_run` sets for
+/// non-compose containers: toolbox volume, Claude auth directory, git identity,
+/// `HOME`, and `GH_TOKEN`.
+fn build_compose_override(service: &str, port: u16) -> String {
+    let git_email =
+        std::env::var("GIT_USER_EMAIL").unwrap_or_else(|_| "agent@orkestra.local".to_string());
+    let git_name = std::env::var("GIT_USER_NAME").unwrap_or_else(|_| "Orkestra Agent".to_string());
+    let claude_auth_dir = std::env::var("CLAUDE_AUTH_DIR").ok();
+    let gh_token = std::env::var("GH_TOKEN").ok();
+
+    let mut volumes = format!("      - {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro\n");
+    if let Some(ref dir) = claude_auth_dir {
+        let _ = writeln!(volumes, "      - \"{dir}:/home/orkestra/.claude\"");
+    }
+
+    let mut environment = format!(
+        "      HOME: /home/orkestra\n\
+         GIT_AUTHOR_EMAIL: \"{git_email}\"\n\
+         GIT_COMMITTER_EMAIL: \"{git_email}\"\n\
+         GIT_AUTHOR_NAME: \"{git_name}\"\n\
+         GIT_COMMITTER_NAME: \"{git_name}\"\n"
+    );
+    if let Some(ref token) = gh_token {
+        let _ = writeln!(environment, "      GH_TOKEN: \"{token}\"");
+    }
+
+    format!(
+        "services:\n  {service}:\n    ports:\n      - \"127.0.0.1:{port}:{port}\"\n    volumes:\n{volumes}    environment:\n{environment}volumes:\n  {TOOLBOX_VOLUME_NAME}:\n    external: true\n"
+    )
 }
 
 /// Drain `reader` line-by-line in a background thread.

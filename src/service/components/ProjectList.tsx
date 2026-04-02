@@ -62,6 +62,7 @@ export function ProjectList({
                 onGitFetch={actions.onGitFetch}
                 onGitPull={actions.onGitPull}
                 onGitPush={actions.onGitPush}
+                onCancel={actions.onCancel}
                 isFocused={focusedId === project.id}
                 onMouseEnter={() => onFocusRow(project.id)}
               />

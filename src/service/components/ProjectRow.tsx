@@ -29,6 +29,7 @@ export interface ProjectRowActions {
   onGitFetch: () => void;
   onGitPull: () => void;
   onGitPush: () => void;
+  onCancel: () => void;
 }
 
 export interface ProjectRowProps extends ProjectRowActions {
@@ -87,6 +88,7 @@ export function ProjectRow({
   onGitFetch,
   onGitPull,
   onGitPush,
+  onCancel,
   isFocused,
   onMouseEnter,
 }: ProjectRowProps) {
@@ -99,6 +101,10 @@ export function ProjectRow({
 
   const cat = categoryForStatus(effectiveStatus);
   const transitioning = cat === "starting" || (cat === "stopped" && effectiveStatus !== "stopped");
+  const cancellable =
+    effectiveStatus === "starting" ||
+    effectiveStatus === "rebuilding" ||
+    effectiveStatus === "cloning";
   const canStart = effectiveStatus === "stopped" || effectiveStatus === "error";
   const canRebuild =
     effectiveStatus === "running" || effectiveStatus === "error" || effectiveStatus === "stopped";
@@ -278,6 +284,16 @@ export function ProjectRow({
               }}
             >
               Rebuild
+            </Dropdown.Item>
+          )}
+          {cancellable && (
+            <Dropdown.Item
+              onClick={() => {
+                setMenuOpen(false);
+                onCancel();
+              }}
+            >
+              Cancel
             </Dropdown.Item>
           )}
           <Dropdown.Item

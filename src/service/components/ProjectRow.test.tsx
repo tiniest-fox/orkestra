@@ -36,6 +36,7 @@ function renderRow(project: api.Project, overrides?: Partial<ProjectRowProps>) {
     onGitFetch: vi.fn(),
     onGitPull: vi.fn(),
     onGitPush: vi.fn(),
+    onCancel: vi.fn(),
     isFocused: false,
     onMouseEnter: vi.fn(),
     ...overrides,
@@ -364,7 +365,7 @@ describe("ProjectRow", () => {
     expect(screen.queryByRole("button", { name: /^Push/ })).not.toBeInTheDocument();
   });
 
-  it("shows only View Logs and Remove in overflow menu for transitioning project", () => {
+  it("shows only Cancel, View Logs, and Remove in overflow menu for transitioning project", () => {
     mockFetchLogs.mockReturnValue(new Promise(() => {}));
     renderRow(
       { id: "p1", name: "transitioning-repo", status: "starting" },
@@ -380,9 +381,30 @@ describe("ProjectRow", () => {
     expect(screen.queryByRole("button", { name: /^Pull/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Push/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Rebuild" })).not.toBeInTheDocument();
-    // View Logs and Remove should be present
+    // Cancel, View Logs, and Remove should be present
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View Logs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("shows Cancel in overflow menu for starting project and calls onCancel", () => {
+    mockFetchLogs.mockReturnValue(new Promise(() => {}));
+    const onCancel = vi.fn();
+    renderRow(
+      { id: "p1", name: "starting-repo", status: "starting" },
+      { effectiveStatus: "starting", onCancel },
+    );
+    openMenu();
+    const cancelBtn = screen.getByRole("button", { name: "Cancel" });
+    expect(cancelBtn).toBeInTheDocument();
+    fireEvent.click(cancelBtn);
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not show Cancel in overflow menu for running project", () => {
+    renderRow(runningProject());
+    openMenu();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
   // -- Mobile layout --

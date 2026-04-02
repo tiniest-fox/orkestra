@@ -193,6 +193,7 @@ export function PortalPage() {
         onGitFetch: () => runAction(id, project.status, () => gitFetch(id)),
         onGitPull: () => runAction(id, project.status, () => gitPull(id)),
         onGitPush: () => runAction(id, project.status, () => gitPush(id)),
+        onCancel: () => runAction(id, "stopping", () => stopProject(id)),
       });
     }
     return map;

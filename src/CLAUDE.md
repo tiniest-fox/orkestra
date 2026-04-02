@@ -11,6 +11,10 @@ TypeScript and TSX files use a plain `//` comment for the file-level header — 
 - Nest component directories to reflect hierarchy. If `TaskDetail` contains `ArtifactsTab`, `DetailsTab`, etc., those live in `components/TaskDetail/`.
 - Import sibling components directly (`import { ArtifactsTab } from "./ArtifactsTab"`), not through barrel exports. Barrel exports (`index.ts`) are used for the `ui/` design system and component groupings with multiple related exports (e.g., `SyncStatus/`, `Kanban/`).
 
+<!-- compound: disloyally-adoring-baboon -->
+
+**`ProjectList.tsx` enumerates props explicitly**: `ProjectList.tsx` passes each `ProjectRowActions` prop to `ProjectRow` by name (`onStart={actions.onStart}`, `onStop={actions.onStop}`, etc.) rather than spreading `{...actions}`. When adding a new prop to `ProjectRowActions`, you must add a corresponding line in `ProjectList.tsx` — it won't fail at compile time if you forget because the prop is optional, but the callback will be silently undefined.
+
 ## Logic and Hooks
 
 - Keep component files focused on rendering. Extract complex logic (data fetching, form state, derived computations) into hooks.

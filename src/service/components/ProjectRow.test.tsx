@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import * as api from "../api";
 import type { ProjectRowProps } from "./ProjectRow";
 import { ProjectRow } from "./ProjectRow";
@@ -13,6 +14,10 @@ vi.mock("../api", () => ({
   rebuildProject: vi.fn(),
   removeProject: vi.fn(),
   fetchProjectLogs: vi.fn(),
+}));
+
+vi.mock("../../hooks/useIsMobile", () => ({
+  useIsMobile: vi.fn(() => false),
 }));
 
 const mockFetchLogs = vi.mocked(api.fetchProjectLogs);
@@ -99,6 +104,7 @@ describe("ProjectRow", () => {
     mockFetchLogs.mockReset();
     Element.prototype.scrollIntoView = vi.fn();
     vi.restoreAllMocks();
+    vi.mocked(useIsMobile).mockReturnValue(false); // reset to desktop default after restoreAllMocks
   });
 
   // -- Rendering --
@@ -356,5 +362,41 @@ describe("ProjectRow", () => {
     expect(screen.queryByRole("button", { name: "Fetch" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Pull/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Push/ })).not.toBeInTheDocument();
+  });
+
+  it("shows only View Logs and Remove in overflow menu for transitioning project", () => {
+    mockFetchLogs.mockReturnValue(new Promise(() => {}));
+    renderRow(
+      { id: "p1", name: "transitioning-repo", status: "starting" },
+      { effectiveStatus: "starting" },
+    );
+    // Menu trigger should be enabled (not disabled) during transitions
+    const menuButton = screen.getByRole("button", { name: "Project actions" });
+    expect(menuButton).not.toBeDisabled();
+    // Open menu
+    openMenu();
+    // Git operations and Rebuild should be hidden
+    expect(screen.queryByRole("button", { name: "Fetch" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pull/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Push/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rebuild" })).not.toBeInTheDocument();
+    // View Logs and Remove should be present
+    expect(screen.getByRole("button", { name: "View Logs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  // -- Mobile layout --
+
+  it("shows mobile log row below project info for transitioning project on mobile", () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    mockFetchLogs.mockReturnValue(new Promise(() => {}));
+    renderRow(
+      { id: "p1", name: "transitioning-repo", status: "starting" },
+      { effectiveStatus: "starting" },
+    );
+    // On mobile, the log is rendered in the mobile log row *below* the main row button,
+    // not inside the role="button" grid (which is how non-mobile renders it).
+    const startingText = screen.getByText("Starting...");
+    expect(startingText.closest('[role="button"]')).toBeNull();
   });
 });

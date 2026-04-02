@@ -176,6 +176,7 @@ async fn container_and_spawn(
         let p = path.clone();
         let id = project_id.clone();
         move || {
+            let log_path = p.join(".orkestra").join(".logs").join("debug.log");
             devcontainer::start_container::execute(
                 &id,
                 &config,
@@ -183,6 +184,7 @@ async fn container_and_spawn(
                 &p,
                 project.daemon_port,
                 &override_dir,
+                Some(&log_path),
             )
         }
     })

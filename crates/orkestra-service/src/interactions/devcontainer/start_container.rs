@@ -1,7 +1,9 @@
 //! Start a Docker container (or Compose service) for a project.
 
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 use crate::interactions::devcontainer::ensure_toolbox_volume::{
     TOOLBOX_MOUNT_PATH, TOOLBOX_VOLUME_NAME,
@@ -19,6 +21,9 @@ use crate::types::{DevcontainerConfig, ServiceError};
 ///
 /// `override_dir` — host directory used for the compose override file
 /// (created if it does not exist).
+///
+/// `log_path` — if provided, compose stdout/stderr is streamed to this file
+/// in real-time so callers can tail it while the command is running.
 pub fn execute(
     project_id: &str,
     config: &DevcontainerConfig,
@@ -26,6 +31,7 @@ pub fn execute(
     repo_path: &Path,
     port: u16,
     override_dir: &Path,
+    log_path: Option<&Path>,
 ) -> Result<String, ServiceError> {
     match config {
         DevcontainerConfig::Default
@@ -37,7 +43,7 @@ pub fn execute(
             ..
         } => {
             let compose_path = repo_path.join(compose_file);
-            compose_up(project_id, &compose_path, service, port, override_dir)
+            compose_up(project_id, &compose_path, service, port, override_dir, log_path)
         }
     }
 }
@@ -151,6 +157,7 @@ fn compose_up(
     service: &str,
     port: u16,
     override_dir: &Path,
+    log_path: Option<&Path>,
 ) -> Result<String, ServiceError> {
     std::fs::create_dir_all(override_dir)
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
@@ -162,7 +169,20 @@ fn compose_up(
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 
-    let output = Command::new("docker")
+    // Open the log file once and share it between the stdout/stderr reader threads.
+    let log_file = log_path.and_then(|p| {
+        if let Some(parent) = p.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(p)
+            .ok()
+            .map(|f| Arc::new(Mutex::new(f)))
+    });
+
+    let mut child = Command::new("docker")
         .args([
             "compose",
             "--progress",
@@ -176,17 +196,28 @@ fn compose_up(
             "up",
             "-d",
         ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| ServiceError::Other(format!("Failed to run `docker compose up`: {e}")))?;
 
-    if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let stderr = child.stderr.take().expect("stderr was piped");
+
+    let stdout_thread = pipe_to_log(stdout, log_file.clone());
+    let stderr_thread = pipe_to_log(stderr, log_file);
+
+    let status = child
+        .wait()
+        .map_err(|e| ServiceError::Other(format!("Failed to wait for `docker compose up`: {e}")))?;
+
+    let stdout_output = stdout_thread.join().unwrap_or_default();
+    let stderr_output = stderr_thread.join().unwrap_or_default();
+
+    if !status.success() {
         return Err(ServiceError::Other(format!(
-            "`docker compose up` failed:\n{stdout}{stderr}"
+            "`docker compose up` failed:\n{stdout_output}{stderr_output}"
         )));
     }
 
@@ -204,9 +235,9 @@ fn compose_up(
             "-q",
             service,
         ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .map_err(|e| ServiceError::Other(format!("Failed to run `docker compose ps`: {e}")))?;
 
@@ -225,4 +256,28 @@ fn compose_up(
     }
 
     Ok(container_id)
+}
+
+/// Drain `reader` line-by-line in a background thread.
+///
+/// Each line is written to `log` (if provided) immediately so callers can
+/// tail the file while the command runs. Returns a handle whose join value
+/// is the full output as a string, used for error messages.
+fn pipe_to_log(
+    reader: impl std::io::Read + Send + 'static,
+    log: Option<Arc<Mutex<std::fs::File>>>,
+) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut collected = String::new();
+        for line in BufReader::new(reader).lines().map_while(Result::ok) {
+            if let Some(ref f) = log {
+                if let Ok(mut guard) = f.lock() {
+                    let _ = writeln!(guard, "{line}");
+                }
+            }
+            collected.push_str(&line);
+            collected.push('\n');
+        }
+        collected
+    })
 }

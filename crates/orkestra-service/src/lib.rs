@@ -99,6 +99,7 @@ pub fn devcontainer_start_container(params: &ContainerStartParams) -> Result<Str
         &params.repo_path,
         params.port,
         &params.override_dir,
+        None,
     )
 }
 

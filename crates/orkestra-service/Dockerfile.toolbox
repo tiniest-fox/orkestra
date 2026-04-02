@@ -102,7 +102,7 @@ cat > /home/orkestra/.gitconfig << 'GITCONFIG'
 	email = agent@orkestra.local
 	name = Orkestra Agent
 [credential]
-	helper = !f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f
+	helper = gh-token
 GITCONFIG
 chown 1000:1000 /home/orkestra/.gitconfig
 

@@ -103,16 +103,14 @@ describe("ProjectRow", () => {
 
   // -- Rendering --
 
-  it("renders project name and status", () => {
+  it("renders project name", () => {
     renderRow(runningProject());
     expect(screen.getByText("my-repo")).toBeInTheDocument();
-    expect(screen.getByText("Running")).toBeInTheDocument();
   });
 
   it("shows error message when status is error", () => {
     renderRow(errorProject());
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
-    expect(screen.getByText("Error")).toBeInTheDocument();
   });
 
   it("shows focus treatment when isFocused", () => {

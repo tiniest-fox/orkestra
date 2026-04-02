@@ -141,9 +141,6 @@ export function ProjectRow({
           >
             {project.name}
           </div>
-          <div className="font-mono text-forge-mono-label text-text-quaternary">
-            {statusLabel(effectiveStatus)}
-          </div>
           {project.git_status && (
             <div className="flex items-center gap-1.5 font-mono text-forge-mono-label text-text-quaternary">
               <span
@@ -211,8 +208,8 @@ export function ProjectRow({
                 Start
               </Button>
             )}
-            {transitioning && (
-              <span className="font-mono text-forge-mono-label text-text-quaternary truncate min-w-0 max-w-[300px]">
+            {transitioning && !isMobile && (
+              <span className="font-mono text-forge-mono-label text-text-quaternary truncate min-w-0">
                 <ProjectLatestLog projectId={project.id} fallback={statusLabel(effectiveStatus)} />
               </span>
             )}
@@ -231,7 +228,7 @@ export function ProjectRow({
                 e.stopPropagation();
                 onClick();
               }}
-              disabled={busy || transitioning}
+              disabled={busy}
               aria-label="Project actions"
               className="p-2 rounded text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -239,7 +236,7 @@ export function ProjectRow({
             </button>
           )}
         >
-          {project.status !== "cloning" && (
+          {!transitioning && project.status !== "cloning" && (
             <>
               <Dropdown.Item
                 onClick={() => {
@@ -273,7 +270,7 @@ export function ProjectRow({
               </Dropdown.Item>
             </>
           )}
-          {canRebuild && (
+          {!transitioning && canRebuild && (
             <Dropdown.Item
               onClick={() => {
                 setMenuOpen(false);
@@ -302,6 +299,13 @@ export function ProjectRow({
           </Dropdown.Item>
         </Dropdown>
       </div>
+
+      {/* -- Mobile log row -- */}
+      {isMobile && transitioning && (
+        <div className="px-6 pb-1 pl-[calc(1.5rem+24px+1rem)] font-mono text-forge-mono-label text-text-quaternary truncate">
+          <ProjectLatestLog projectId={project.id} fallback={statusLabel(effectiveStatus)} />
+        </div>
+      )}
 
       {/* -- Error strip -- */}
       {(actionError || showProjectError) && (

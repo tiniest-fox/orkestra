@@ -39,6 +39,9 @@ pub(crate) struct OrkServiceState {
     config: Arc<ServiceConfig>,
     /// Per-daemon mutex to serialise concurrent auto-pairing calls.
     pairing_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+    /// Abort handles for in-flight provisioning tasks, keyed by project ID.
+    /// Used to cancel background builds when the user clicks Cancel.
+    provision_handles: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
 }
 
 impl OrkServiceState {
@@ -47,6 +50,24 @@ impl OrkServiceState {
         map.entry(project_id.to_string())
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
+    }
+
+    fn track_provision(&self, project_id: &str, handle: tokio::task::AbortHandle) {
+        self.provision_handles
+            .lock()
+            .expect("provision_handles poisoned")
+            .insert(project_id.to_string(), handle);
+    }
+
+    fn abort_provision(&self, project_id: &str) {
+        if let Some(handle) = self
+            .provision_handles
+            .lock()
+            .expect("provision_handles poisoned")
+            .remove(project_id)
+        {
+            handle.abort();
+        }
     }
 }
 
@@ -76,6 +97,7 @@ pub async fn start(
         supervisor,
         config,
         pairing_locks: Arc::new(Mutex::new(HashMap::new())),
+        provision_handles: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let auth_routes = Router::new()
@@ -507,12 +529,18 @@ async fn add_project_handler(
     let repo_url = body.repo_url.clone();
     let supervisor = Arc::clone(&state.supervisor);
     let proj_for_bg = proj.clone();
-    tokio::spawn(project::provision::execute(
-        conn,
-        supervisor,
-        proj_for_bg,
-        repo_url,
-    ));
+    {
+        let handles = Arc::clone(&state.provision_handles);
+        let bg_id = proj_for_bg.id.clone();
+        let handle = tokio::spawn(async move {
+            project::provision::execute(conn, supervisor, proj_for_bg, repo_url).await;
+            handles
+                .lock()
+                .expect("provision_handles poisoned")
+                .remove(&bg_id);
+        });
+        state.track_provision(&proj.id, handle.abort_handle());
+    }
 
     // Repository is still being cloned — devcontainer.json cannot exist yet.
     Json(ProjectResponse::from_project(
@@ -556,6 +584,9 @@ async fn remove_project_handler(
             Ok(Ok(project)) => project.path,
         }
     };
+
+    // Abort any in-flight provisioning task before stopping the daemon.
+    state.abort_provision(&id);
 
     // Stop daemon (best-effort — project may already be stopped).
     // stop_daemon acquires a std::sync::Mutex and may block for up to 5 s,
@@ -608,12 +639,21 @@ async fn start_project_handler(
     };
 
     // Container setup is async (docker pull/run may take time); run in background.
-    tokio::spawn(project::provision::start_containers_and_spawn(
-        Arc::clone(&state.conn),
-        Arc::clone(&state.supervisor),
-        proj,
-        false, // run_setup: false for restarts (repo is already set up)
-    ));
+    {
+        let handles = Arc::clone(&state.provision_handles);
+        let bg_id = proj.id.clone();
+        let track_id = proj.id.clone();
+        let conn = Arc::clone(&state.conn);
+        let supervisor = Arc::clone(&state.supervisor);
+        let handle = tokio::spawn(async move {
+            project::provision::start_containers_and_spawn(conn, supervisor, proj, false).await;
+            handles
+                .lock()
+                .expect("provision_handles poisoned")
+                .remove(&bg_id);
+        });
+        state.track_provision(&track_id, handle.abort_handle());
+    }
 
     StatusCode::ACCEPTED.into_response()
 }
@@ -649,12 +689,21 @@ async fn rebuild_project_handler(
     }
 
     // Rebuild: create new container with setup, then spawn daemon.
-    tokio::spawn(project::provision::start_containers_and_spawn(
-        Arc::clone(&state.conn),
-        Arc::clone(&state.supervisor),
-        proj,
-        true, // run_setup: true for rebuild
-    ));
+    {
+        let handles = Arc::clone(&state.provision_handles);
+        let bg_id = proj.id.clone();
+        let track_id = proj.id.clone();
+        let conn = Arc::clone(&state.conn);
+        let supervisor = Arc::clone(&state.supervisor);
+        let handle = tokio::spawn(async move {
+            project::provision::start_containers_and_spawn(conn, supervisor, proj, true).await;
+            handles
+                .lock()
+                .expect("provision_handles poisoned")
+                .remove(&bg_id);
+        });
+        state.track_provision(&track_id, handle.abort_handle());
+    }
 
     StatusCode::ACCEPTED.into_response()
 }
@@ -664,6 +713,9 @@ async fn stop_project_handler(
     State(state): State<OrkServiceState>,
     Path(id): Path<String>,
 ) -> Response<Body> {
+    // Abort any in-flight provisioning task before stopping the daemon.
+    state.abort_provision(&id);
+
     match tokio::task::spawn_blocking({
         let supervisor = Arc::clone(&state.supervisor);
         let stop_id = id.clone();

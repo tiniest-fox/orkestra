@@ -11,6 +11,10 @@ TypeScript and TSX files use a plain `//` comment for the file-level header — 
 - Nest component directories to reflect hierarchy. If `TaskDetail` contains `ArtifactsTab`, `DetailsTab`, etc., those live in `components/TaskDetail/`.
 - Import sibling components directly (`import { ArtifactsTab } from "./ArtifactsTab"`), not through barrel exports. Barrel exports (`index.ts`) are used for the `ui/` design system and component groupings with multiple related exports (e.g., `SyncStatus/`, `Kanban/`).
 
+<!-- compound: disloyally-adoring-baboon -->
+
+**`ProjectList.tsx` enumerates props explicitly**: `ProjectList.tsx` passes each `ProjectRowActions` prop to `ProjectRow` by name (`onStart={actions.onStart}`, `onStop={actions.onStop}`, etc.) rather than spreading `{...actions}`. When adding a new prop to `ProjectRowActions`, you must add a corresponding line in `ProjectList.tsx` — it won't fail at compile time if you forget because the prop is optional, but the callback will be silently undefined.
+
 ## Logic and Hooks
 
 - Keep component files focused on rendering. Extract complex logic (data fetching, form state, derived computations) into hooks.
@@ -711,6 +715,26 @@ Common mistake: Updating tests that directly interact with the changed section b
 - First iteration only updated 2 tests (direct interaction tests)
 - Second iteration updated 1 more test
 - Third iteration caught the remaining 2 tests
+
+### Mobile/Desktop Conditional Rendering Tests
+
+<!-- compound: disloyally-adoring-baboon -->
+
+When the same text appears in mutually exclusive mobile and desktop branches (e.g., `{isMobile && <Log/>}` and `{!isMobile && <Log/>}`), count-based assertions (`getAllByText(...).length >= 2`) are fragile — exactly one branch renders, always producing a count of 1 in both modes.
+
+Use **structural (DOM ancestry) assertions** instead: verify *where* in the DOM the text appears, not how many times.
+
+```tsx
+const logText = screen.getByText("Starting...");
+// Mobile: log is in a sibling div (not inside role="button" row)
+expect(logText.closest('[role="button"]')).toBeNull();
+// Desktop: log is inside the role="button" row
+expect(logText.closest('[role="button"]')).not.toBeNull();
+```
+
+This correctly distinguishes mobile vs desktop regardless of whether `useIsMobile` is mocked.
+
+**Also**: When removing a UI element (e.g., a status label div), search the test file for `getByText` calls that assert on text from that element and remove or update them — stale text assertions cause gate failures.
 
 ## Diff Search Architecture: Content-Space / HTML-Space Invariant
 

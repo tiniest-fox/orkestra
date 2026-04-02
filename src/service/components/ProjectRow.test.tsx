@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import * as api from "../api";
 import type { ProjectRowProps } from "./ProjectRow";
 import { ProjectRow } from "./ProjectRow";
@@ -13,6 +14,10 @@ vi.mock("../api", () => ({
   rebuildProject: vi.fn(),
   removeProject: vi.fn(),
   fetchProjectLogs: vi.fn(),
+}));
+
+vi.mock("../../hooks/useIsMobile", () => ({
+  useIsMobile: vi.fn(() => false),
 }));
 
 const mockFetchLogs = vi.mocked(api.fetchProjectLogs);
@@ -31,6 +36,7 @@ function renderRow(project: api.Project, overrides?: Partial<ProjectRowProps>) {
     onGitFetch: vi.fn(),
     onGitPull: vi.fn(),
     onGitPush: vi.fn(),
+    onCancel: vi.fn(),
     isFocused: false,
     onMouseEnter: vi.fn(),
     ...overrides,
@@ -99,20 +105,19 @@ describe("ProjectRow", () => {
     mockFetchLogs.mockReset();
     Element.prototype.scrollIntoView = vi.fn();
     vi.restoreAllMocks();
+    vi.mocked(useIsMobile).mockReturnValue(false); // reset to desktop default after restoreAllMocks
   });
 
   // -- Rendering --
 
-  it("renders project name and status", () => {
+  it("renders project name", () => {
     renderRow(runningProject());
     expect(screen.getByText("my-repo")).toBeInTheDocument();
-    expect(screen.getByText("Running")).toBeInTheDocument();
   });
 
   it("shows error message when status is error", () => {
     renderRow(errorProject());
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
-    expect(screen.getByText("Error")).toBeInTheDocument();
   });
 
   it("shows focus treatment when isFocused", () => {
@@ -358,5 +363,62 @@ describe("ProjectRow", () => {
     expect(screen.queryByRole("button", { name: "Fetch" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Pull/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Push/ })).not.toBeInTheDocument();
+  });
+
+  it("shows only Cancel, View Logs, and Remove in overflow menu for transitioning project", () => {
+    mockFetchLogs.mockReturnValue(new Promise(() => {}));
+    renderRow(
+      { id: "p1", name: "transitioning-repo", status: "starting" },
+      { effectiveStatus: "starting" },
+    );
+    // Menu trigger should be enabled (not disabled) during transitions
+    const menuButton = screen.getByRole("button", { name: "Project actions" });
+    expect(menuButton).not.toBeDisabled();
+    // Open menu
+    openMenu();
+    // Git operations and Rebuild should be hidden
+    expect(screen.queryByRole("button", { name: "Fetch" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pull/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Push/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rebuild" })).not.toBeInTheDocument();
+    // Cancel, View Logs, and Remove should be present
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View Logs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("shows Cancel in overflow menu for starting project and calls onCancel", () => {
+    mockFetchLogs.mockReturnValue(new Promise(() => {}));
+    const onCancel = vi.fn();
+    renderRow(
+      { id: "p1", name: "starting-repo", status: "starting" },
+      { effectiveStatus: "starting", onCancel },
+    );
+    openMenu();
+    const cancelBtn = screen.getByRole("button", { name: "Cancel" });
+    expect(cancelBtn).toBeInTheDocument();
+    fireEvent.click(cancelBtn);
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not show Cancel in overflow menu for running project", () => {
+    renderRow(runningProject());
+    openMenu();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
+  // -- Mobile layout --
+
+  it("shows mobile log row below project info for transitioning project on mobile", () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    mockFetchLogs.mockReturnValue(new Promise(() => {}));
+    renderRow(
+      { id: "p1", name: "transitioning-repo", status: "starting" },
+      { effectiveStatus: "starting" },
+    );
+    // On mobile, the log is rendered in the mobile log row *below* the main row button,
+    // not inside the role="button" grid (which is how non-mobile renders it).
+    const startingText = screen.getByText("Starting...");
+    expect(startingText.closest('[role="button"]')).toBeNull();
   });
 });

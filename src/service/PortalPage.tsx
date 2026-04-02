@@ -120,7 +120,7 @@ export function PortalPage() {
   }, [effectiveProjects, filterText]);
 
   const sections = useMemo(() => groupProjectsForService(filteredProjects), [filteredProjects]);
-  const showSectionHeaders = sections.length >= 2;
+  const showSectionHeaders = sections.length >= 1;
 
   const orderedIds = useMemo(
     () => sections.flatMap((s) => s.projects.map((p) => p.id)),
@@ -193,6 +193,7 @@ export function PortalPage() {
         onGitFetch: () => runAction(id, project.status, () => gitFetch(id)),
         onGitPull: () => runAction(id, project.status, () => gitPull(id)),
         onGitPush: () => runAction(id, project.status, () => gitPush(id)),
+        onCancel: () => runAction(id, "stopping", () => stopProject(id)),
       });
     }
     return map;

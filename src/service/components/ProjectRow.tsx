@@ -29,6 +29,7 @@ export interface ProjectRowActions {
   onGitFetch: () => void;
   onGitPull: () => void;
   onGitPush: () => void;
+  onCancel: () => void;
 }
 
 export interface ProjectRowProps extends ProjectRowActions {
@@ -87,6 +88,7 @@ export function ProjectRow({
   onGitFetch,
   onGitPull,
   onGitPush,
+  onCancel,
   isFocused,
   onMouseEnter,
 }: ProjectRowProps) {
@@ -99,6 +101,10 @@ export function ProjectRow({
 
   const cat = categoryForStatus(effectiveStatus);
   const transitioning = cat === "starting" || (cat === "stopped" && effectiveStatus !== "stopped");
+  const cancellable =
+    effectiveStatus === "starting" ||
+    effectiveStatus === "rebuilding" ||
+    effectiveStatus === "cloning";
   const canStart = effectiveStatus === "stopped" || effectiveStatus === "error";
   const canRebuild =
     effectiveStatus === "running" || effectiveStatus === "error" || effectiveStatus === "stopped";
@@ -140,9 +146,6 @@ export function ProjectRow({
             title={project.name}
           >
             {project.name}
-          </div>
-          <div className="font-mono text-forge-mono-label text-text-quaternary">
-            {statusLabel(effectiveStatus)}
           </div>
           {project.git_status && (
             <div className="flex items-center gap-1.5 font-mono text-forge-mono-label text-text-quaternary">
@@ -211,8 +214,8 @@ export function ProjectRow({
                 Start
               </Button>
             )}
-            {transitioning && (
-              <span className="font-mono text-forge-mono-label text-text-quaternary truncate min-w-0 max-w-[300px]">
+            {transitioning && !isMobile && (
+              <span className="font-mono text-forge-mono-label text-text-quaternary truncate min-w-0">
                 <ProjectLatestLog projectId={project.id} fallback={statusLabel(effectiveStatus)} />
               </span>
             )}
@@ -231,7 +234,7 @@ export function ProjectRow({
                 e.stopPropagation();
                 onClick();
               }}
-              disabled={busy || transitioning}
+              disabled={busy}
               aria-label="Project actions"
               className="p-2 rounded text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -239,7 +242,7 @@ export function ProjectRow({
             </button>
           )}
         >
-          {project.status !== "cloning" && (
+          {!transitioning && project.status !== "cloning" && (
             <>
               <Dropdown.Item
                 onClick={() => {
@@ -273,7 +276,7 @@ export function ProjectRow({
               </Dropdown.Item>
             </>
           )}
-          {canRebuild && (
+          {!transitioning && canRebuild && (
             <Dropdown.Item
               onClick={() => {
                 setMenuOpen(false);
@@ -281,6 +284,16 @@ export function ProjectRow({
               }}
             >
               Rebuild
+            </Dropdown.Item>
+          )}
+          {cancellable && (
+            <Dropdown.Item
+              onClick={() => {
+                setMenuOpen(false);
+                onCancel();
+              }}
+            >
+              Cancel
             </Dropdown.Item>
           )}
           <Dropdown.Item
@@ -302,6 +315,13 @@ export function ProjectRow({
           </Dropdown.Item>
         </Dropdown>
       </div>
+
+      {/* -- Mobile log row -- */}
+      {isMobile && transitioning && (
+        <div className="px-6 pb-1 pl-[calc(1.5rem+24px+1rem)] font-mono text-forge-mono-label text-text-quaternary truncate">
+          <ProjectLatestLog projectId={project.id} fallback={statusLabel(effectiveStatus)} />
+        </div>
+      )}
 
       {/* -- Error strip -- */}
       {(actionError || showProjectError) && (

@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::interactions::devcontainer::ensure_toolbox_volume::{
     TOOLBOX_MOUNT_PATH, TOOLBOX_VOLUME_NAME,
@@ -167,6 +168,9 @@ fn compose_up(
     override_dir: &Path,
     log_path: Option<&Path>,
 ) -> Result<String, ServiceError> {
+    // 10 minutes is generous for even the heaviest healthcheck chains.
+    const TIMEOUT: Duration = Duration::from_secs(600);
+
     std::fs::create_dir_all(override_dir)
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
@@ -215,9 +219,27 @@ fn compose_up(
     let stdout_thread = pipe_to_log(stdout, log_file.clone());
     let stderr_thread = pipe_to_log(stderr, log_file);
 
-    let status = child
-        .wait()
-        .map_err(|e| ServiceError::Other(format!("Failed to wait for `docker compose up`: {e}")))?;
+    // Poll with a timeout rather than blocking indefinitely on wait().
+    // docker compose up -d occasionally hangs after all containers are started
+    // (a DooD socket round-trip that never completes).
+    let deadline = Instant::now() + TIMEOUT;
+
+    let status = loop {
+        let maybe = child
+            .try_wait()
+            .map_err(|e| ServiceError::Other(format!("Failed to poll `docker compose up`: {e}")))?;
+        if let Some(s) = maybe {
+            break s;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            return Err(ServiceError::Other(format!(
+                "`docker compose up` did not exit after {} minutes — killed",
+                TIMEOUT.as_secs() / 60
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    };
 
     let stdout_output = stdout_thread.join().unwrap_or_default();
     let stderr_output = stderr_thread.join().unwrap_or_default();

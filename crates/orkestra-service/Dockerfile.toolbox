@@ -90,12 +90,21 @@ chown 1000:1000 /home/orkestra
 # Allow uid 1000 to access bind-mounted auth dirs under /root (e.g. /root/.claude).
 chmod 755 /root
 
-# -- Configure git for the uid 1000 user --
+# -- Configure git --
+#
+# Write .gitconfig to /home/orkestra directly, because HOME=/home/orkestra is
+# set at runtime regardless of which uid 1000 user the image provides.
+# Using `su -` would write to the user's real home (e.g. /home/rails in a
+# Compose image), which git ignores when HOME points elsewhere.
 
-su - "$USERNAME" -c 'git config --global user.email "agent@orkestra.local"'
-su - "$USERNAME" -c 'git config --global user.name "Orkestra Agent"'
-# Inline credential helper reads GH_TOKEN at push time — no PATH dependency.
-su - "$USERNAME" -c 'git config --global credential.helper "!f() { echo username=x-access-token; echo password=\$GH_TOKEN; }; f"'
+cat > /home/orkestra/.gitconfig << 'GITCONFIG'
+[user]
+	email = agent@orkestra.local
+	name = Orkestra Agent
+[credential]
+	helper = !f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f
+GITCONFIG
+chown 1000:1000 /home/orkestra/.gitconfig
 
 # -- Configure pnpm store for the uid 1000 user --
 # Point pnpm at /opt/pnpm-store so it never falls back to creating a store

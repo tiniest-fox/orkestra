@@ -271,26 +271,31 @@ fn compose_up(
 /// non-compose containers: toolbox volume, Claude auth directory, git identity,
 /// `HOME`, and `GH_TOKEN`.
 fn build_compose_override(service: &str, port: u16) -> String {
+    const I: &str = "      "; // 6-space indent for items under a 4-space key
+
     let git_email =
         std::env::var("GIT_USER_EMAIL").unwrap_or_else(|_| "agent@orkestra.local".to_string());
     let git_name = std::env::var("GIT_USER_NAME").unwrap_or_else(|_| "Orkestra Agent".to_string());
     let claude_auth_dir = std::env::var("CLAUDE_AUTH_DIR").ok();
     let gh_token = std::env::var("GH_TOKEN").ok();
 
-    let mut volumes = format!("      - {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro\n");
+    let mut volumes = String::new();
+    let _ = writeln!(
+        volumes,
+        "{I}- {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro"
+    );
     if let Some(ref dir) = claude_auth_dir {
-        let _ = writeln!(volumes, "      - \"{dir}:/home/orkestra/.claude\"");
+        let _ = writeln!(volumes, "{I}- \"{dir}:/home/orkestra/.claude\"");
     }
 
-    let mut environment = format!(
-        "      HOME: /home/orkestra\n\
-         GIT_AUTHOR_EMAIL: \"{git_email}\"\n\
-         GIT_COMMITTER_EMAIL: \"{git_email}\"\n\
-         GIT_AUTHOR_NAME: \"{git_name}\"\n\
-         GIT_COMMITTER_NAME: \"{git_name}\"\n"
-    );
+    let mut environment = String::new();
+    let _ = writeln!(environment, "{I}HOME: /home/orkestra");
+    let _ = writeln!(environment, "{I}GIT_AUTHOR_EMAIL: \"{git_email}\"");
+    let _ = writeln!(environment, "{I}GIT_COMMITTER_EMAIL: \"{git_email}\"");
+    let _ = writeln!(environment, "{I}GIT_AUTHOR_NAME: \"{git_name}\"");
+    let _ = writeln!(environment, "{I}GIT_COMMITTER_NAME: \"{git_name}\"");
     if let Some(ref token) = gh_token {
-        let _ = writeln!(environment, "      GH_TOKEN: \"{token}\"");
+        let _ = writeln!(environment, "{I}GH_TOKEN: \"{token}\"");
     }
 
     format!(

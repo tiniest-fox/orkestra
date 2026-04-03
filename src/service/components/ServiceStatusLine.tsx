@@ -68,6 +68,12 @@ export function ServiceStatusLine({ projects, modalOpen }: ServiceStatusLineProp
             </span>
           </>
         )}
+        <span className="text-text-quaternary">·</span>
+        <span className="text-text-quaternary shrink-0">
+          {(import.meta.env.VITE_RELEASE_VERSION as string) ||
+            (import.meta.env.VITE_COMMIT_HASH as string) ||
+            "dev"}
+        </span>
       </div>
     </div>
   );

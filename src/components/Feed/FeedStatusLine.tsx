@@ -95,7 +95,10 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
   const hasGitInfo = currentBranch !== null;
   const latestCommit = commits[0]?.message ?? null;
   const hasSyncActions = canPush || canPull;
-  const commitHash = (import.meta.env.VITE_COMMIT_HASH as string) ?? "dev";
+  const versionLabel =
+    (import.meta.env.VITE_RELEASE_VERSION as string) ||
+    (import.meta.env.VITE_COMMIT_HASH as string) ||
+    "dev";
 
   return (
     <div className="flex items-center justify-between px-6 min-h-7 pt-1 pb-[max(4px,env(safe-area-inset-bottom))] border-t border-border bg-surface shrink-0 font-mono text-[11px] text-text-tertiary">
@@ -285,7 +288,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             </>
           )}
           <span className="text-text-quaternary">·</span>
-          <span className="text-text-quaternary shrink-0">{commitHash}</span>
+          <span className="text-text-quaternary shrink-0">{versionLabel}</span>
         </div>
       )}
     </div>

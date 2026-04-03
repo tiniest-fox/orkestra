@@ -91,6 +91,17 @@ useEffect(() => {
 
 **Example:** See `useAutoScroll.ts` for the canonical implementation
 
+<!-- compound: distractedly-warranted-ridgeback -->
+**Testing components that use `useAutoScroll`**: `useAutoScroll` internally creates a `ResizeObserver`, which is not defined in jsdom. Any test file that renders a component using `useAutoScroll` (directly or transitively) must mock the hook:
+
+```ts
+vi.mock("../../hooks/useAutoScroll", () => ({
+  useAutoScroll: () => ({ containerRef: vi.fn(), handleScroll: vi.fn() }),
+}));
+```
+
+Adjust the import path as needed. Missing this mock causes `ResizeObserver is not defined` errors that surface at gate time, not at the component's own test file.
+
 ## Provider Remount via `key` Prop
 
 <!-- compound: saucily-sanctified-curlew -->
@@ -265,6 +276,9 @@ See `ProjectRow.tsx` and `MobileTabBar.tsx` for canonical usage.
 
 - Use the existing design system in `components/ui/` — `Panel`, `Button`, `IconButton`, `ModalPanel`, `Drawer`, `Dropdown`, etc.
 - The `Panel` component uses compound subcomponents: `Panel.Header`, `Panel.Body`, `Panel.Footer`, etc.
+
+<!-- compound: distractedly-warranted-ridgeback -->
+**`Panel.Body` does not forward refs or `onScroll`**: if a scroll container needs `useAutoScroll` (which requires a `ref` and `onScroll` on the element), replace `Panel.Body scrollable` with a plain `<div className="p-4 flex-1 overflow-auto max-h-[60vh]">` — those are the equivalent Tailwind classes. A future improvement would be adding ref forwarding to `PanelBody`, but until then drop to a raw div.
 - For modal/overlay UI (dialogs, palettes, popovers anchored to the viewport), use `ModalPanel`. It renders via `createPortal` to `document.body` with backdrop, animations, and escape-to-close built in. Don't introduce competing portal or overlay patterns.
 - Icons come from `lucide-react`. Animations use `framer-motion`.
 

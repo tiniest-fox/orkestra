@@ -31,6 +31,7 @@ use crate::types::{DevcontainerConfig, ServiceError};
 /// image build even when the cached image is up-to-date. Only effective for
 /// `Compose` configs; silently ignored for `Default`/`Image`/`Build` configs
 /// (those use `docker run` which has no build step).
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     project_id: &str,
     config: &DevcontainerConfig,

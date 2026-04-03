@@ -245,6 +245,8 @@ PWA installability is provided by a static `public/manifest.json` linked from `i
 
 This mirrors `FeedLoadingSkeleton.tsx`'s two-div pattern (outer `pb-safe` wrapper + inner `h-[49px]` div) and keeps the total height additive: `49px + safe-area-inset`.
 
+**`FeedLoadingSkeleton` header uses `<a href="/">`, not `<Link>`.** The skeleton renders in multiple contexts: inside a `BrowserRouter` (service/PWA mode) and outside one (Tauri's `main.tsx`). `<Link>` crashes when rendered outside a Router. Using `<a href="/">` causes a full page reload in service mode, but that's acceptable — the skeleton is a loading screen with no app state to lose. Do not change this to `<Link>`.
+
 The skeleton also has a `statusText` element (`.loading-status-text`) that shows a loading message. Always populate it when adding new skeleton states so the UI doesn't jump between "has status" and "no status" variants.
 
 ## Forge Design System
@@ -614,6 +616,7 @@ it("behaves correctly in Tauri mode", async () => {
 
 Each test gets a fresh module evaluation. Always pair with `vi.unstubAllEnvs()` cleanup.
 - **`vi.runAllTimersAsync()` with `setInterval` causes infinite loop**: `vi.runAllTimersAsync()` repeatedly fires all pending timers including `setInterval`, triggering indefinitely until Vitest aborts at 10000 iterations. Use `vi.advanceTimersByTimeAsync(N)` instead — it only fires timers that would trigger within N milliseconds, so it's bounded and safe with intervals.
+- **Mocking `../transport` requires all four exports**: `vi.mock("../transport", ...)` replaces the entire module, so every hook must be present: `useConnectionState`, `useHasConnected`, `useTransport`, and `useTransportListener`. When a test sets `useHasConnected: () => true`, the app tree mounts `AppProviders` (WorkflowConfigProvider, TasksProvider, PrStatusProvider, GitHistoryProvider) — all of which call `useTransport()`. A missing export causes a runtime error. Use a never-resolving promise for `useTransport.call` to keep providers in their loading state without errors: `useTransport: () => ({ call: () => new Promise(() => {}) })`.
 
 <!-- compound: sketchily-soaring-tick -->
 - **`vi.mock` factory cannot reference `const` variables**: `vi.mock(...)` is hoisted to the top of the file by Vitest's transformer, but `const`/`let` declarations are not — they stay in place. Any `const mockFn = vi.fn()` referenced inside a `vi.mock(...)` factory will be `undefined` at runtime. Use `vi.hoisted()` to declare mocks that factories need:

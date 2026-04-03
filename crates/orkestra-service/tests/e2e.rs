@@ -355,6 +355,7 @@ mod docker {
             repo_path: repo.path().to_path_buf(),
             port: 19999, // use a high port to avoid conflicts
             override_dir: override_dir.path().to_path_buf(),
+            force_build: false,
         })
         .expect("docker run should succeed");
 
@@ -406,6 +407,7 @@ mod docker {
             repo_path: repo.path().to_path_buf(),
             port: 19998,
             override_dir: override_dir.path().to_path_buf(),
+            force_build: false,
         })
         .expect("docker run should succeed");
 

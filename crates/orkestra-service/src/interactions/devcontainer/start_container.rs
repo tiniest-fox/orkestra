@@ -34,6 +34,7 @@ pub fn execute(
     port: u16,
     override_dir: &Path,
     log_path: Option<&Path>,
+    force_build: bool,
 ) -> Result<String, ServiceError> {
     match config {
         DevcontainerConfig::Default
@@ -52,6 +53,7 @@ pub fn execute(
                 port,
                 override_dir,
                 log_path,
+                force_build,
             )
         }
     }
@@ -160,6 +162,7 @@ fn docker_run(
     Ok(container_id)
 }
 
+#[allow(clippy::too_many_lines)]
 fn compose_up(
     project_id: &str,
     compose_file: &Path,
@@ -167,6 +170,7 @@ fn compose_up(
     port: u16,
     override_dir: &Path,
     log_path: Option<&Path>,
+    force_build: bool,
 ) -> Result<String, ServiceError> {
     // 10 minutes is generous for even the heaviest healthcheck chains.
     const TIMEOUT: Duration = Duration::from_secs(600);
@@ -192,21 +196,29 @@ fn compose_up(
             .map(|f| Arc::new(Mutex::new(f)))
     });
 
+    let compose_file_str = compose_file.display().to_string();
+    let override_path_str = override_path.display().to_string();
+    let project_name = format!("orkestra-{project_id}");
+    let mut args = vec![
+        "compose",
+        "--progress",
+        "plain",
+        "-f",
+        &compose_file_str,
+        "-f",
+        &override_path_str,
+        "--project-name",
+        &project_name,
+        "up",
+        "-d",
+    ];
+    if force_build {
+        args.push("--build");
+    }
+    args.push("--remove-orphans");
+
     let mut child = Command::new("docker")
-        .args([
-            "compose",
-            "--progress",
-            "plain",
-            "-f",
-            &compose_file.display().to_string(),
-            "-f",
-            &override_path.display().to_string(),
-            "--project-name",
-            &format!("orkestra-{project_id}"),
-            "up",
-            "-d",
-            "--remove-orphans",
-        ])
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

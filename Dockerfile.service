@@ -95,6 +95,8 @@ RUN pnpm install --frozen-lockfile
 # Placed after dependency layers so changing the hash doesn't bust the cargo/pnpm caches.
 ARG COMMIT_HASH=dev
 ENV VITE_COMMIT_HASH=${COMMIT_HASH}
+ARG RELEASE_VERSION=
+ENV VITE_RELEASE_VERSION=${RELEASE_VERSION}
 
 # -- Build ork-service + orkd --
 COPY . .

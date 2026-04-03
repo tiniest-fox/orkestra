@@ -162,6 +162,31 @@ The service container communicates with the host Docker daemon via socket mount.
 
 **Network communication uses container DNS.** When running in DooD (detected by `/.dockerenv`), the service joins project containers to its own user-defined Docker networks (`connect_network.rs`). This enables `orkestra-{project_id}:{port}` DNS resolution from the service container to reach the daemon.
 
+## Subprocess Management
+
+Several interactions use `Command::spawn()` + `try_wait()` polling for timeout control (e.g., `start_container.rs`, `run_setup.rs`). Two non-obvious rules apply to this pattern:
+
+**Drain stderr on a background thread immediately after spawn.** Taking `child.stderr` and reading it on a thread must happen *before* the polling loop, not after the process exits. If stderr is left connected and the child writes more than the OS pipe buffer (~64KB), the child blocks on the write and never exits — defeating the timeout.
+
+```rust
+let stderr_handle = child.stderr.take().expect("stderr was piped");
+let stderr_thread = std::thread::spawn(move || {
+    let mut buf = Vec::new();
+    handle.read_to_end(&mut buf);
+    buf
+});
+// polling loop follows...
+```
+
+**Call `wait()` after `kill()` to reap the zombie.** A killed process stays as a zombie until its parent calls `wait()`. Always pair:
+
+```rust
+let _ = child.kill();
+let _ = child.wait();
+```
+
+Note: `start_container.rs` (the `docker compose up` timeout path) currently calls `kill()` without `wait()`. This is a pre-existing issue worth fixing if zombie accumulation becomes a concern.
+
 ## Git Operations in `server.rs`
 
 The service runs git operations (fetch, pull, push) on behalf of each project directly on the **host filesystem** via `Git2GitService` (for status/branch queries) and `Command::new("git")` (for fetch/pull/push). All git `Command` builders set `GIT_LFS_SKIP_SMUDGE=1`.

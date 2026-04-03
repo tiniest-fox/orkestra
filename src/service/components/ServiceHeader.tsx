@@ -24,6 +24,13 @@ export function ServiceHeader({
           ORKESTRA
         </span>
       </div>
+      {isMobile && (
+        <span className="font-mono text-forge-mono-sm text-text-quaternary">
+          {(import.meta.env.VITE_RELEASE_VERSION as string) ||
+            (import.meta.env.VITE_COMMIT_HASH as string) ||
+            "dev"}
+        </span>
+      )}
       {!isMobile && (
         <HotkeyScope active={hotkeyActive}>
           <div className="flex items-center gap-2">

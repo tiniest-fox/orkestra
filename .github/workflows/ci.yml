@@ -257,5 +257,6 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.SERVICE_IMAGE }}:${{ needs.resolve-tag.outputs.tag }}
           build-args: |
             COMMIT_HASH=${{ env.COMMIT_SHORT }}
+            RELEASE_VERSION=${{ needs.resolve-tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

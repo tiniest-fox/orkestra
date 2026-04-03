@@ -166,13 +166,13 @@ await transport.call("my_action", { taskId: task.id });
 
 Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvider`) use module-level variables for cross-mount caching — data survives component unmounts and is available immediately on remount without a loading flash.
 
-**Shape**: `{ projectUrl: string; data: T } | null` — always keyed by project URL to prevent cross-project stale data.
+**Shape**: `Map<string, T>` keyed by project URL. Initialize as `new Map<string, T>()`. Reads use `.get(projectUrl) ?? null`, writes use `.set(projectUrl, data)`, clears use `.delete(projectUrl)`. The Map handles per-project isolation inherently — no equality check needed.
 
 **Rules:**
 - Use **separate variables** for logically distinct datasets (e.g., `tasksCacheEntry` and `archivedTasksCacheEntry` are independent). Never merge them into one object with spread — concurrent async fetches clobber each other's data via the read-then-write pattern.
 - Polled providers (tasks, git history) self-heal after reconnect via natural polling resumption — **do not add explicit reconnect invalidation** to them.
 - One-shot providers (workflow config) **must** explicitly clear their cache and re-fetch on reconnect; polling won't do it for them.
-- Always check `cachedEntry?.projectUrl === projectUrl` before using cached data — this is the only cross-project isolation mechanism.
+- Maps accumulate entries for every project URL visited during the session (no implicit eviction). This is fine in practice — sessions visit few projects — but worth noting if memory becomes a concern.
 
 ## Styling
 
@@ -244,6 +244,8 @@ PWA installability is provided by a static `public/manifest.json` linked from `i
 ```
 
 This mirrors `FeedLoadingSkeleton.tsx`'s two-div pattern (outer `pb-safe` wrapper + inner `h-[49px]` div) and keeps the total height additive: `49px + safe-area-inset`.
+
+**`FeedLoadingSkeleton` header uses `<a href="/">`, not `<Link>`.** The skeleton renders in multiple contexts: inside a `BrowserRouter` (service/PWA mode) and outside one (Tauri's `main.tsx`). `<Link>` crashes when rendered outside a Router. Using `<a href="/">` causes a full page reload in service mode, but that's acceptable — the skeleton is a loading screen with no app state to lose. Do not change this to `<Link>`.
 
 The skeleton also has a `statusText` element (`.loading-status-text`) that shows a loading message. Always populate it when adding new skeleton states so the UI doesn't jump between "has status" and "no status" variants.
 
@@ -614,6 +616,7 @@ it("behaves correctly in Tauri mode", async () => {
 
 Each test gets a fresh module evaluation. Always pair with `vi.unstubAllEnvs()` cleanup.
 - **`vi.runAllTimersAsync()` with `setInterval` causes infinite loop**: `vi.runAllTimersAsync()` repeatedly fires all pending timers including `setInterval`, triggering indefinitely until Vitest aborts at 10000 iterations. Use `vi.advanceTimersByTimeAsync(N)` instead — it only fires timers that would trigger within N milliseconds, so it's bounded and safe with intervals.
+- **Mocking `../transport` requires all four exports**: `vi.mock("../transport", ...)` replaces the entire module, so every hook must be present: `useConnectionState`, `useHasConnected`, `useTransport`, and `useTransportListener`. When a test sets `useHasConnected: () => true`, the app tree mounts `AppProviders` (WorkflowConfigProvider, TasksProvider, PrStatusProvider, GitHistoryProvider) — all of which call `useTransport()`. A missing export causes a runtime error. Use a never-resolving promise for `useTransport.call` to keep providers in their loading state without errors: `useTransport: () => ({ call: () => new Promise(() => {}) })`.
 
 <!-- compound: sketchily-soaring-tick -->
 - **`vi.mock` factory cannot reference `const` variables**: `vi.mock(...)` is hoisted to the top of the file by Vitest's transformer, but `const`/`let` declarations are not — they stay in place. Any `const mockFn = vi.fn()` referenced inside a `vi.mock(...)` factory will be `undefined` at runtime. Use `vi.hoisted()` to declare mocks that factories need:
@@ -766,3 +769,40 @@ The diff viewer's find feature separates search from highlighting across two spa
 - If you modify `highlightSearchInHtml`, maintain entity-awareness in the walker — HTML entity sequences must advance `textPos` by 1, not by their raw HTML length.
 
 `SearchRange[]` per line are computed in `FileSection.tsx` (`HunkLines`) and `CollapsedSection.tsx` from `fileMatches + currentMatch`. `DiffLine.tsx` renders them via `highlightSearchInHtml`. `searchQuery` is never passed below `DiffContent.tsx` — ranges are the single source of truth at the render layer.
+
+## Interactive Mode Entry Point
+
+**"Enter interactive mode" belongs in `DrawerHeader` overflow menu only, never in `FeedRowActions`.** `FeedRowActions.tsx` renders quick inline actions for the feed list row. The interactive mode entry point is intentionally placed only in the `DrawerHeader` overflow menu (visible when the drawer is open) — it is not a row-level action. When enabling "Enter interactive mode" for a new Trak state, update `DrawerHeader.tsx`'s condition, not `FeedRowActions.tsx`.
+
+## Keep TypeScript Unions in Sync with Rust Enum Variants
+
+When you add new variants to Rust enums that are serialized and sent to the frontend (`TaskState`, `IterationTrigger`, `Phase`, etc.), you **must** also add the corresponding TypeScript discriminated union members in `src/types/workflow.ts`. Serde serializes Rust enum variants as `{ "type": "variant_name", ... }` — if the TypeScript union doesn't include the new member, the frontend silently treats the state as `unknown` or breaks type narrowing.
+
+Checklist before submitting any Rust enum variant addition:
+1. Search `src/types/workflow.ts` for the TypeScript type that mirrors the Rust enum
+2. Add the new member using the same `{ type: "variant_name"; field: type }` pattern as existing members
+3. Verify any `switch` statements or type guards in the frontend still handle all cases
+
+This is a MEDIUM-severity finding reviewers always catch. Missing frontend type updates don't cause compile errors — they only surface at runtime or in type-checking.
+
+## Remove Duplicate Definitions When Extracting to a New Module
+
+When you extract a type, interface, or constant to a new canonical file (e.g., moving `StartupData` from `main.tsx` to `startup.ts`), you must also remove any duplicate local definitions from all consumers:
+
+1. After creating the canonical file, grep for the type/interface name across the codebase
+2. Check every consumer file for a local redefinition of the same type
+3. Replace local redefinitions with an `import type { X }` from the canonical source
+
+Failing to remove the duplicate definition is a Single Source of Truth violation and is a guaranteed rejection. This step is easy to miss because the code compiles fine with both definitions in scope — TypeScript structural typing means the duplicate is silently compatible.
+
+## Extract Shared Logic to Hooks Before Implementing in Multiple Providers
+
+When the breakdown asks you to add the same state/logic to multiple providers or components (e.g., a staleness timer, a polling flag, a cache invalidation trigger), **extract to a shared hook first** — don't implement inline in each consumer. Duplicate `useState`/`useEffect` blocks across multiple files violate Single Source of Truth and are a guaranteed HIGH-severity rejection.
+
+Pattern:
+1. Create `src/hooks/useSharedConcept.ts` with the canonical logic
+2. Import and use `const result = useSharedConcept(input)` in each consumer
+3. Export any pure utility functions from the same hook file (not a separate file)
+4. **If the hook exports a pure utility function** (e.g., a CSS class helper), add a `useSharedConcept.test.ts` unit test alongside it — this file requires unit tests for pure utility modules.
+
+Reference: `src/hooks/useStalenessTimer.ts` exports both `useStalenessTimer` (hook) and `stalenessClass` (pure utility).

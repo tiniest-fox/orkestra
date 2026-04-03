@@ -287,8 +287,10 @@ describe("WebSocketTransport", () => {
   // -- Reconnection with exponential backoff --
 
   describe("reconnection — exponential backoff", () => {
-    it("first reconnect attempt is instant (0ms delay)", () => {
+    it("first reconnect after a stable connection is instant (0ms delay)", () => {
       const t = makeConnectedTransport();
+      // Advance past the stability threshold so the disconnect is treated as stable.
+      vi.advanceTimersByTime(5_000);
       latestSocket().simulateClose();
 
       expect(t.connectionState).toBe("disconnected");
@@ -299,83 +301,97 @@ describe("WebSocketTransport", () => {
       expect(MockWebSocket.instances).toHaveLength(2);
     });
 
-    it("uses exponential backoff after first instant attempt fails", () => {
+    it("unstable connection (< 5s) uses 1s backoff before reconnecting", () => {
       makeConnectedTransport();
 
-      // First disconnect → instant reconnect (0ms).
-      latestSocket().simulateClose();
-      vi.advanceTimersByTime(0);
-      expect(MockWebSocket.instances).toHaveLength(2);
-
-      // Second disconnect (instant attempt failed) → schedules reconnect after 1s.
+      // Disconnect immediately — not stable, so backoff (1s) applies.
       latestSocket().simulateClose();
 
       vi.advanceTimersByTime(999);
-      expect(MockWebSocket.instances).toHaveLength(2); // Not yet
+      expect(MockWebSocket.instances).toHaveLength(1); // Not yet
 
       vi.advanceTimersByTime(1);
-      expect(MockWebSocket.instances).toHaveLength(3); // Reconnected
+      expect(MockWebSocket.instances).toHaveLength(2); // Reconnected after 1s
     });
 
-    it("doubles the backoff delay on repeated failed reconnects", () => {
+    it("repeated unstable disconnects each wait 1s (capped at max)", () => {
       makeConnectedTransport();
 
-      // First disconnect → instant (0ms).
+      // Stable connection → first disconnect is instant.
+      vi.advanceTimersByTime(5_000);
       latestSocket().simulateClose();
-      vi.advanceTimersByTime(0);
+      vi.advanceTimersByTime(0); // instant reconnect fires
 
-      // Second disconnect (first backoff attempt, 1s) → delay doubles to 2s.
-      latestSocket().simulateClose();
-      vi.advanceTimersByTime(1_000);
-      // A new socket is created but we do NOT call simulateOpen() — opening
-      // would reset the delay, which is NOT what this test is verifying.
-
-      // Third disconnect → should use 2s.
-      latestSocket().simulateClose();
-      expect(MockWebSocket.instances).toHaveLength(3);
-
-      vi.advanceTimersByTime(1_999);
-      expect(MockWebSocket.instances).toHaveLength(3); // Not yet
-
-      vi.advanceTimersByTime(1);
-      expect(MockWebSocket.instances).toHaveLength(4); // Reconnected
-    });
-
-    it("caps reconnect delay at 30s", () => {
-      makeConnectedTransport();
-
-      // Exhaust the instant-reconnect flag, then drive the backoff past 30s
-      // without opening (so the flag is never reset).
-      latestSocket().simulateClose(); // instant (0ms)
-      vi.advanceTimersByTime(0);
-
-      for (let i = 0; i < 10; i++) {
+      // Each subsequent unstable disconnect waits 1s.
+      for (let i = 0; i < 3; i++) {
         latestSocket().simulateClose();
-        vi.advanceTimersByTime(60_000); // advance more than max
+        vi.advanceTimersByTime(999);
+        const countBefore = MockWebSocket.instances.length;
+        vi.advanceTimersByTime(1);
+        expect(MockWebSocket.instances).toHaveLength(countBefore + 1);
+      }
+    });
+
+    it("caps reconnect delay at 1s", () => {
+      makeConnectedTransport();
+
+      // Stable connection → first disconnect is instant.
+      vi.advanceTimersByTime(5_000);
+      latestSocket().simulateClose();
+      vi.advanceTimersByTime(0);
+
+      // Drive backoff through multiple unstable disconnects — all capped at 1s.
+      for (let i = 0; i < 5; i++) {
+        latestSocket().simulateClose();
+        vi.advanceTimersByTime(5_000); // advance past max each time
       }
 
       const instancesBefore = MockWebSocket.instances.length;
       latestSocket().simulateClose();
 
-      // Capped at 30s — advancing 30s should trigger the next reconnect.
-      vi.advanceTimersByTime(30_000);
+      // Capped at 1s — advancing 1s should trigger the next reconnect.
+      vi.advanceTimersByTime(1_000);
       expect(MockWebSocket.instances.length).toBe(instancesBefore + 1);
     });
 
-    it("resets instant reconnect flag after successful connection", () => {
+    it("instant reconnect resets after each stable connection", () => {
       makeConnectedTransport();
 
-      // First disconnect → instant reconnect.
+      // First stable connection → instant reconnect.
+      vi.advanceTimersByTime(5_000);
       latestSocket().simulateClose();
       vi.advanceTimersByTime(0);
-      latestSocket().simulateOpen(); // Successful connection → flag resets.
+      latestSocket().simulateOpen(); // Second connection established.
 
-      // Second disconnect — instant again because flag was reset.
+      // Second stable connection → instant reconnect again.
+      vi.advanceTimersByTime(5_000);
       latestSocket().simulateClose();
       const countBefore = MockWebSocket.instances.length;
 
       vi.advanceTimersByTime(0);
       expect(MockWebSocket.instances.length).toBe(countBefore + 1);
+    });
+
+    it("instant reconnect resets after unstable period followed by stable connection", () => {
+      makeConnectedTransport();
+
+      // Unstable disconnect (immediate close, no 5s stable period).
+      latestSocket().simulateClose();
+      // Backoff applies — wait 1s for reconnect.
+      vi.advanceTimersByTime(1_000);
+      const countAfterBackoff = MockWebSocket.instances.length;
+      expect(countAfterBackoff).toBe(2);
+
+      // New connection opens — simulate it becoming stable (5s+).
+      latestSocket().simulateOpen();
+      vi.advanceTimersByTime(5_000);
+
+      // Disconnect from the now-stable connection.
+      latestSocket().simulateClose();
+
+      // Should get instant reconnect (0ms) since the last connection was stable.
+      vi.advanceTimersByTime(0);
+      expect(MockWebSocket.instances.length).toBe(countAfterBackoff + 1);
     });
 
     it("transitions through disconnected → connecting → connected on reconnect", () => {
@@ -384,10 +400,12 @@ describe("WebSocketTransport", () => {
 
       t.onConnectionStateChange((s) => states.push(s));
 
+      // Stable connection, then disconnect → instant reconnect.
+      vi.advanceTimersByTime(5_000);
       latestSocket().simulateClose();
       expect(states).toContain("disconnected");
 
-      // First reconnect is instant — advancing 0ms triggers it.
+      // First reconnect is instant after a stable connection.
       vi.advanceTimersByTime(0);
       expect(states).toContain("connecting");
 

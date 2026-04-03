@@ -646,7 +646,8 @@ async fn start_project_handler(
         let conn = Arc::clone(&state.conn);
         let supervisor = Arc::clone(&state.supervisor);
         let handle = tokio::spawn(async move {
-            project::provision::start_containers_and_spawn(conn, supervisor, proj, false).await;
+            project::provision::start_containers_and_spawn(conn, supervisor, proj, false, false)
+                .await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")
@@ -696,7 +697,8 @@ async fn rebuild_project_handler(
         let conn = Arc::clone(&state.conn);
         let supervisor = Arc::clone(&state.supervisor);
         let handle = tokio::spawn(async move {
-            project::provision::start_containers_and_spawn(conn, supervisor, proj, true).await;
+            project::provision::start_containers_and_spawn(conn, supervisor, proj, true, true)
+                .await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")

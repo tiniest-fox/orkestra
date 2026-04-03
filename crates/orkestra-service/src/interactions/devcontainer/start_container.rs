@@ -26,6 +26,12 @@ use crate::types::{DevcontainerConfig, ServiceError};
 ///
 /// `log_path` — if provided, compose stdout/stderr is streamed to this file
 /// in real-time so callers can tail it while the command is running.
+///
+/// `force_build` — passes `--build` to `docker compose up`, forcing a fresh
+/// image build even when the cached image is up-to-date. Only effective for
+/// `Compose` configs; silently ignored for `Default`/`Image`/`Build` configs
+/// (those use `docker run` which has no build step).
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     project_id: &str,
     config: &DevcontainerConfig,
@@ -34,6 +40,7 @@ pub fn execute(
     port: u16,
     override_dir: &Path,
     log_path: Option<&Path>,
+    force_build: bool,
 ) -> Result<String, ServiceError> {
     match config {
         DevcontainerConfig::Default
@@ -52,6 +59,7 @@ pub fn execute(
                 port,
                 override_dir,
                 log_path,
+                force_build,
             )
         }
     }
@@ -167,6 +175,7 @@ fn compose_up(
     port: u16,
     override_dir: &Path,
     log_path: Option<&Path>,
+    force_build: bool,
 ) -> Result<String, ServiceError> {
     // 10 minutes is generous for even the heaviest healthcheck chains.
     const TIMEOUT: Duration = Duration::from_secs(600);
@@ -192,21 +201,29 @@ fn compose_up(
             .map(|f| Arc::new(Mutex::new(f)))
     });
 
+    let compose_file_str = compose_file.display().to_string();
+    let override_path_str = override_path.display().to_string();
+    let project_name = format!("orkestra-{project_id}");
+    let mut args = vec![
+        "compose",
+        "--progress",
+        "plain",
+        "-f",
+        &compose_file_str,
+        "-f",
+        &override_path_str,
+        "--project-name",
+        &project_name,
+        "up",
+        "-d",
+    ];
+    if force_build {
+        args.push("--build");
+    }
+    args.push("--remove-orphans");
+
     let mut child = Command::new("docker")
-        .args([
-            "compose",
-            "--progress",
-            "plain",
-            "-f",
-            &compose_file.display().to_string(),
-            "-f",
-            &override_path.display().to_string(),
-            "--project-name",
-            &format!("orkestra-{project_id}"),
-            "up",
-            "-d",
-            "--remove-orphans",
-        ])
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -250,6 +267,16 @@ fn compose_up(
         )));
     }
 
+    resolve_compose_container_id(compose_file, &override_path, project_id, service)
+}
+
+/// Query Docker Compose for the container ID of a named service.
+fn resolve_compose_container_id(
+    compose_file: &Path,
+    override_path: &Path,
+    project_id: &str,
+    service: &str,
+) -> Result<String, ServiceError> {
     // Get the container ID for the named service.
     let output = Command::new("docker")
         .args([

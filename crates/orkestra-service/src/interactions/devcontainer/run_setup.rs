@@ -1,7 +1,10 @@
 //! Run post-creation setup inside a container.
 
+use std::io::Read;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::types::{DevcontainerConfig, ServiceError};
 
@@ -49,21 +52,55 @@ pub fn execute(
 
 // -- Helpers --
 
+const TIMEOUT: Duration = Duration::from_secs(1800);
+
 fn docker_exec(container_id: &str, cmd: &str) -> Result<(), ServiceError> {
-    let output = Command::new("docker")
+    let mut child = Command::new("docker")
         .args(["exec", container_id, "sh", "-c", cmd])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| ServiceError::Other(format!("Failed to run `docker exec`: {e}")))?;
 
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(ServiceError::Other(format!(
-            "Container setup command failed: {stderr}"
-        )))
+    let stderr_handle = child.stderr.take().expect("stderr was piped");
+    let stderr_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let mut handle = stderr_handle;
+        let _ = handle.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = Instant::now() + TIMEOUT;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stderr_bytes = stderr_thread.join().unwrap_or_default();
+                if status.success() {
+                    return Ok(());
+                }
+                let stderr = String::from_utf8_lossy(&stderr_bytes);
+                return Err(ServiceError::Other(format!(
+                    "Container setup command failed: {stderr}"
+                )));
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(ServiceError::Other(format!(
+                        "Container setup command timed out after {} minutes: {cmd}",
+                        TIMEOUT.as_secs() / 60
+                    )));
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
+            Err(e) => {
+                return Err(ServiceError::Other(format!(
+                    "Failed to wait on docker exec: {e}"
+                )))
+            }
+        }
     }
 }

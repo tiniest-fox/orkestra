@@ -164,6 +164,7 @@ async fn run(args: Args) -> Result<(), String> {
                 Arc::clone(&supervisor),
                 proj,
                 false, // run_setup: false — repo is already set up
+                false, // force_build: false — no image rebuild on restart
             ));
         }
     }

@@ -4,8 +4,9 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { FeedLoadingSkeleton } from "../components/Feed/FeedLoadingSkeleton";
 import { Orkestra } from "../components/Orkestra";
+import { ReconnectingBanner } from "../components/ReconnectingBanner";
 import { AppProviders, ProjectDetailProvider } from "../providers";
-import { TransportProvider, useConnectionState } from "../transport";
+import { TransportProvider, useConnectionState, useHasConnected } from "../transport";
 import { WebSocketTransport } from "../transport/WebSocketTransport";
 import type { Project } from "./api";
 import { fetchProjects } from "./api";
@@ -23,16 +24,22 @@ function ProjectConnectionGate({
   children: ReactNode;
 }) {
   const connectionState = useConnectionState();
+  const hasConnected = useHasConnected();
 
-  if (connectionState === "connecting") {
-    return <FeedLoadingSkeleton statusText="Connecting to daemon…" projectName={projectName} />;
+  // Before first successful connection, show skeleton.
+  if (!hasConnected) {
+    const statusText =
+      connectionState === "disconnected" ? "Reconnecting to daemon…" : "Connecting to daemon…";
+    return <FeedLoadingSkeleton statusText={statusText} projectName={projectName} />;
   }
 
-  if (connectionState === "disconnected") {
-    return <FeedLoadingSkeleton statusText="Reconnecting to daemon…" projectName={projectName} />;
-  }
-
-  return <>{children}</>;
+  // After first connection, keep app mounted. ReconnectingBanner handles visual feedback.
+  return (
+    <>
+      <ReconnectingBanner />
+      {children}
+    </>
+  );
 }
 
 // ============================================================================

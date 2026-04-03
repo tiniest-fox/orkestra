@@ -26,9 +26,12 @@ export function FeedLoadingSkeleton({
       {/* Header — same structure as FeedHeader, no metrics */}
       <div className="flex items-center justify-between px-6 h-11 border-b border-border bg-surface shrink-0">
         <div className="flex items-center gap-2">
-          <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
+          <a
+            href="/"
+            className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none hover:text-text-secondary transition-colors"
+          >
             Orkestra
-          </span>
+          </a>
           {projectName && (
             <>
               <span className="text-text-quaternary select-none">·</span>

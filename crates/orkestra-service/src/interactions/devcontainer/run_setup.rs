@@ -52,6 +52,8 @@ pub fn execute(
 
 // -- Helpers --
 
+const TIMEOUT: Duration = Duration::from_secs(600);
+
 fn docker_exec(container_id: &str, cmd: &str) -> Result<(), ServiceError> {
     let mut child = Command::new("docker")
         .args(["exec", container_id, "sh", "-c", cmd])
@@ -61,18 +63,24 @@ fn docker_exec(container_id: &str, cmd: &str) -> Result<(), ServiceError> {
         .spawn()
         .map_err(|e| ServiceError::Other(format!("Failed to run `docker exec`: {e}")))?;
 
-    let deadline = Instant::now() + Duration::from_secs(600);
+    let stderr_handle = child.stderr.take().expect("stderr was piped");
+    let stderr_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let mut handle = stderr_handle;
+        let _ = handle.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = Instant::now() + TIMEOUT;
 
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
+                let stderr_bytes = stderr_thread.join().unwrap_or_default();
                 if status.success() {
                     return Ok(());
                 }
-                let mut stderr = String::new();
-                if let Some(mut handle) = child.stderr.take() {
-                    let _ = handle.read_to_string(&mut stderr);
-                }
+                let stderr = String::from_utf8_lossy(&stderr_bytes);
                 return Err(ServiceError::Other(format!(
                     "Container setup command failed: {stderr}"
                 )));
@@ -82,7 +90,8 @@ fn docker_exec(container_id: &str, cmd: &str) -> Result<(), ServiceError> {
                     let _ = child.kill();
                     let _ = child.wait();
                     return Err(ServiceError::Other(format!(
-                        "Container setup command timed out after 10 minutes: {cmd}"
+                        "Container setup command timed out after {} minutes: {cmd}",
+                        TIMEOUT.as_secs() / 60
                     )));
                 }
                 thread::sleep(Duration::from_secs(1));

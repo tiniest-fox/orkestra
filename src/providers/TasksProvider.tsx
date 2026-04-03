@@ -28,12 +28,8 @@ import { applyOptimisticTransition } from "../utils/optimisticTransitions";
 import { isDisconnectError } from "../utils/transportErrors";
 import { useWorkflowConfigState } from "./WorkflowConfigProvider";
 
-interface TasksCacheEntry<T> {
-  projectUrl: string;
-  data: T;
-}
-let tasksCacheEntry: TasksCacheEntry<WorkflowTaskView[]> | null = null;
-let archivedTasksCacheEntry: TasksCacheEntry<WorkflowTaskView[]> | null = null;
+const tasksCache = new Map<string, WorkflowTaskView[]>();
+const archivedTasksCache = new Map<string, WorkflowTaskView[]>();
 
 // Tracks a pre-action snapshot of updated_at plus when the entry was added,
 // so fetchTasks can hold the optimistic state until the server confirms the change.
@@ -124,9 +120,8 @@ export function TasksProvider({ children }: TasksProviderProps) {
   const transport = useTransport();
   const { config } = useWorkflowConfigState();
   const projectUrl = window.location.href;
-  const cachedTasks = tasksCacheEntry?.projectUrl === projectUrl ? tasksCacheEntry.data : null;
-  const cachedArchived =
-    archivedTasksCacheEntry?.projectUrl === projectUrl ? archivedTasksCacheEntry.data : null;
+  const cachedTasks = tasksCache.get(projectUrl) ?? null;
+  const cachedArchived = archivedTasksCache.get(projectUrl) ?? null;
   const [tasks, setTasks] = useState<WorkflowTaskView[]>(() => cachedTasks ?? []);
   const [archivedTasks, setArchivedTasks] = useState<WorkflowTaskView[]>(
     () => cachedArchived ?? [],
@@ -178,10 +173,10 @@ export function TasksProvider({ children }: TasksProviderProps) {
           }
         }
         setTasks(fetched);
-        tasksCacheEntry = { projectUrl, data: fetched };
+        tasksCache.set(projectUrl, fetched);
       } else {
         setTasks(result);
-        tasksCacheEntry = { projectUrl, data: result };
+        tasksCache.set(projectUrl, result);
       }
       setLastFetchedAt(Date.now());
       setError(null);
@@ -198,7 +193,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
     try {
       const result = await transport.call<WorkflowTaskView[]>("get_archived_tasks");
       setArchivedTasks(result);
-      archivedTasksCacheEntry = { projectUrl, data: result };
+      archivedTasksCache.set(projectUrl, result);
     } catch (err) {
       if (!isDisconnectError(err)) {
         console.error("[fetchArchivedTasks] Error:", err);

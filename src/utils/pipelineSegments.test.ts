@@ -6,7 +6,7 @@ import { computePipelineSegments } from "./pipelineSegments";
 
 describe("computePipelineSegments", () => {
   const config = createMockWorkflowConfig();
-  // config has stages: ["planning", "work"]
+  // config has default flow stages: ["planning", "work"]
 
   describe("normal progression", () => {
     it("marks stages before current as done, current as active, after as pending", () => {
@@ -95,9 +95,20 @@ describe("computePipelineSegments", () => {
       const configWithFlow = {
         ...config,
         flows: {
+          ...config.flows,
           quick: {
             description: "Quick flow",
-            stages: ["work"],
+            stages: [
+              {
+                name: "work",
+                artifact: "summary",
+                inputs: [],
+                is_automated: true,
+                is_optional: false,
+                capabilities: { ask_questions: false },
+              },
+            ],
+            integration: { on_failure: "work" },
           },
         },
       };
@@ -110,13 +121,13 @@ describe("computePipelineSegments", () => {
       expect(segments[0]).toEqual({ stageName: "work", state: "active" });
     });
 
-    it("falls back to global stages when flow does not exist in config", () => {
+    it("returns no segments when flow does not exist in config", () => {
       const task = createMockWorkflowTaskView({
         flow: "nonexistent",
         state: { type: "agent_working", stage: "work" },
       });
       const segments = computePipelineSegments(task, config);
-      expect(segments).toHaveLength(2);
+      expect(segments).toHaveLength(0);
     });
   });
 });

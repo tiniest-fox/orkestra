@@ -1,27 +1,45 @@
 import { describe, expect, it } from "vitest";
-import { createMockWorkflowConfig, createMockWorkflowTaskView } from "../test/mocks/fixtures";
+import { createMockWorkflowTaskView } from "../test/mocks/fixtures";
 import type { WorkflowConfig } from "../types/workflow";
 import { applyOptimisticTransition } from "./optimisticTransitions";
 
 function createConfig(): WorkflowConfig {
-  const base = createMockWorkflowConfig();
+  const reviewStage = {
+    name: "review",
+    artifact: "verdict",
+    inputs: ["summary"],
+    is_automated: false,
+    is_optional: false,
+    capabilities: { ask_questions: false, approval: {} },
+  };
+  const workStage = {
+    name: "work",
+    artifact: "summary",
+    inputs: ["plan"],
+    is_automated: true,
+    is_optional: false,
+    capabilities: { ask_questions: true },
+  };
+  const planningStage = {
+    name: "planning",
+    artifact: "plan",
+    inputs: [],
+    is_automated: true,
+    is_optional: false,
+    capabilities: { ask_questions: true },
+  };
   return {
-    ...base,
-    stages: [
-      ...base.stages,
-      {
-        name: "review",
-        artifact: "verdict",
-        inputs: ["summary"],
-        is_automated: false,
-        is_optional: false,
-        capabilities: { ask_questions: false, approval: {} },
-      },
-    ],
+    version: 2,
     flows: {
+      default: {
+        description: "Default pipeline",
+        stages: [planningStage, workStage, reviewStage],
+        integration: { on_failure: "work" },
+      },
       quick: {
         description: "Skip planning",
-        stages: ["work", "review"],
+        stages: [workStage, reviewStage],
+        integration: { on_failure: "work" },
       },
     },
   };

@@ -140,7 +140,7 @@ Mutation operations (approve, reject, answer question, etc.) apply an optimistic
 
 **Key files:**
 - `src/utils/optimisticTransitions.ts` — pure function `applyOptimisticTransition(task, action, config)` mapping (current state, action) → next `WorkflowTaskView` using a **shallow merge** (spread existing derived, only override relevant fields). Centralizes all transition logic for auditability.
-- `src/utils/workflowNavigation.ts` — `resolveFlowStageNames(config, flow?)` provides flow-aware stage name resolution; consumed by both `pipelineSegments.ts` and `optimisticTransitions.ts` as the single source of truth.
+- `src/utils/workflowNavigation.ts` — `resolveFlowStageNames(flow, config)` provides flow-aware stage name resolution; consumed by both `pipelineSegments.ts` and `optimisticTransitions.ts` as the single source of truth.
 - `TasksProvider.tsx` — holds the `pendingOptimisticUpdates: Map<taskId, PendingEntry>` ref and `applyOptimistic` callback.
 
 **Three invariants to maintain:**
@@ -386,19 +386,19 @@ See `submitLineCommentsForReview` / `submitLineCommentsForDoneTask` in `useTaskD
 
 <!-- compound: urgently-welcome-katydid -->
 
-When displaying a list of stages the user can navigate to (e.g., a "send to stage" dropdown), **always filter to the task's current flow** using `resolveFlowStageNames` from `src/utils/workflowNavigation.ts`. Showing all global stages for a task that has a flow assigned will include stages not in the flow — the backend will reject those selections.
+When displaying a list of stages the user can navigate to (e.g., a "send to stage" dropdown), **always use the task's current flow** to get the valid stage list. Since `WorkflowConfig` has no top-level `stages` array, all stage lookups go through `config.flows[task.flow]`.
 
 ```ts
 import { resolveFlowStageNames } from "../utils/workflowNavigation";
 
 // Get only stages valid for this task's flow
 const validStageNames = resolveFlowStageNames(task.flow, config);
-const otherStages = config.stages.filter(
-  s => validStageNames.includes(s.name) && s.name !== task.derived.current_stage
-);
+// Or directly for full StageConfig objects:
+const flowStages = config.flows[task.flow]?.stages ?? [];
+const otherStages = flowStages.filter(s => s.name !== task.derived.current_stage);
 ```
 
-`resolveFlowStageNames` is also used by `optimisticTransitions.ts` and `pipelineSegments.ts` as the single source of truth for flow-aware stage lists.
+`resolveFlowStageNames` is also used by `optimisticTransitions.ts` and `pipelineSegments.ts` as the single source of truth for flow-aware stage name lists.
 
 ## Tauri Dialog Gotcha: `window.confirm()` is Non-Blocking
 

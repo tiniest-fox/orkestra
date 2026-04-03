@@ -47,9 +47,15 @@ function configWithGate() {
   const config = createMockWorkflowConfig();
   return {
     ...config,
-    stages: config.stages.map((s) =>
-      s.name === "work" ? { ...s, gate: { command: "cargo test", timeout_seconds: 60 } } : s,
-    ),
+    flows: {
+      ...config.flows,
+      default: {
+        ...config.flows.default,
+        stages: config.flows.default.stages.map((s) =>
+          s.name === "work" ? { ...s, gate: { command: "cargo test", timeout_seconds: 60 } } : s,
+        ),
+      },
+    },
   };
 }
 

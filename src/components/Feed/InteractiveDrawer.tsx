@@ -65,7 +65,7 @@ function DoneMenu({ task, onExit, onClose }: DoneMenuProps) {
   const config = useWorkflowConfig();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const stageNames = resolveFlowStageNames(task.flow ?? undefined, config);
+  const stageNames = resolveFlowStageNames(task.flow, config);
   const currentStage = task.derived.current_stage;
 
   // Close on outside click

@@ -52,7 +52,7 @@ pub fn execute(
 
 // -- Helpers --
 
-const TIMEOUT: Duration = Duration::from_secs(600);
+const TIMEOUT: Duration = Duration::from_secs(1800);
 
 fn docker_exec(container_id: &str, cmd: &str) -> Result<(), ServiceError> {
     let mut child = Command::new("docker")

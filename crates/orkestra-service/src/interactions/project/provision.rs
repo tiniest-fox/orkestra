@@ -66,8 +66,15 @@ pub async fn execute(
     }
 
     // Steps 4–9: Container setup and daemon spawn.
-    if let Err(e) =
-        container_and_spawn(&conn, &supervisor, project, path, true /* run_setup */).await
+    if let Err(e) = container_and_spawn(
+        &conn,
+        &supervisor,
+        project,
+        path,
+        true,  /* run_setup */
+        false, /* force_build */
+    )
+    .await
     {
         tracing::error!("Container setup failed for {project_id}: {e}");
         set_error(&conn, &project_id, &e.to_string()).await;
@@ -85,6 +92,7 @@ pub async fn start_containers_and_spawn(
     supervisor: Arc<DaemonSupervisor>,
     project: Project,
     run_setup: bool,
+    force_build: bool,
 ) {
     let project_id = project.id.clone();
     let path = PathBuf::from(&project.path);
@@ -109,7 +117,9 @@ pub async fn start_containers_and_spawn(
     })
     .await;
 
-    if let Err(e) = container_and_spawn(&conn, &supervisor, project, path, run_setup).await {
+    if let Err(e) =
+        container_and_spawn(&conn, &supervisor, project, path, run_setup, force_build).await
+    {
         tracing::error!("Container setup failed for {project_id}: {e}");
         set_error(&conn, &project_id, &e.to_string()).await;
     }
@@ -127,6 +137,7 @@ async fn container_and_spawn(
     project: Project,
     path: PathBuf,
     run_setup: bool,
+    force_build: bool,
 ) -> Result<(), ServiceError> {
     let project_id = project.id.clone();
     let orkd_path = supervisor.orkd_path().to_path_buf();
@@ -185,6 +196,7 @@ async fn container_and_spawn(
                 project.daemon_port,
                 &override_dir,
                 Some(&log_path),
+                force_build,
             )
         }
     })
@@ -193,6 +205,7 @@ async fn container_and_spawn(
 
     // Step 6b: Inject orkd binary into the container via `docker cp`.
     // This avoids bind-mounting a host path (which doesn't exist in DooD setups).
+    tracing::info!(project_id = %project_id, "Injecting orkd binary into container");
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
         let op = orkd_path.clone();
@@ -202,6 +215,7 @@ async fn container_and_spawn(
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
     // Step 6b2: Inject ork CLI binary into the container via `docker cp`.
+    tracing::info!(project_id = %project_id, "Injecting ork CLI binary into container");
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
         let op = ork_path.clone();
@@ -212,6 +226,7 @@ async fn container_and_spawn(
 
     // Step 6c: Give the non-root container user (uid 1000) write access to the
     // workspace. The repo was cloned as root; files are owned by uid 0.
+    tracing::info!(project_id = %project_id, "Setting workspace ownership");
     let _ = tokio::task::spawn_blocking({
         let cid = container_id.clone();
         move || chown_workspace(&cid)
@@ -219,6 +234,7 @@ async fn container_and_spawn(
     .await;
 
     // Step 6d: Run toolbox setup (symlinks, user creation, git config).
+    tracing::info!(project_id = %project_id, "Running toolbox setup");
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
         move || devcontainer::run_toolbox_setup::execute(&cid)
@@ -228,6 +244,7 @@ async fn container_and_spawn(
 
     // Step 6e: Connect project container to service container's Docker networks.
     // This allows the service to reach the daemon by container name (DooD).
+    tracing::info!(project_id = %project_id, "Connecting container to Docker networks");
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
         let id = project_id.clone();
@@ -254,6 +271,7 @@ async fn container_and_spawn(
 
     // Step 8: Run setup (optional).
     if run_setup {
+        tracing::info!(project_id = %project_id, "Running setup commands");
         let cid = container_id.clone();
         let config = config.clone();
         let p = path.clone();
@@ -269,6 +287,7 @@ async fn container_and_spawn(
         // Step 8b: Re-run toolbox setup to reclaim ownership of any files that
         // run_setup created as root (e.g. pnpm store directories). setup.sh is
         // idempotent so running it twice is safe.
+        tracing::info!(project_id = %project_id, "Re-running toolbox setup after setup commands");
         tokio::task::spawn_blocking({
             let cid = container_id.clone();
             move || devcontainer::run_toolbox_setup::execute(&cid)

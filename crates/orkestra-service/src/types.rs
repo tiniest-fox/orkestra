@@ -105,6 +105,7 @@ pub struct ContainerStartParams {
     pub repo_path: std::path::PathBuf,
     pub port: u16,
     pub override_dir: std::path::PathBuf,
+    pub force_build: bool,
 }
 
 /// Configuration for the service.

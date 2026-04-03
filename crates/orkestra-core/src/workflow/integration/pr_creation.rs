@@ -151,8 +151,7 @@ fn prepare_pr_creation(api: &Mutex<WorkflowApi>, task_id: &str) -> WorkflowResul
     let pr_description_generator = Arc::clone(&api.pr_description_generator);
 
     // Collect model names for attribution footer
-    let model_names =
-        crate::commit_message::collect_model_names(&api.workflow, task.flow.as_deref());
+    let model_names = crate::commit_message::collect_model_names(&api.workflow, &task.flow);
 
     // Collect artifacts with descriptions while holding the lock (workflow is available here).
     let artifacts = super::interactions::collect_pr_artifacts::execute(&api.workflow, &task);

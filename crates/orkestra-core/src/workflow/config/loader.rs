@@ -73,14 +73,15 @@ mod tests {
         let path = dir.path().join("workflow.yaml");
 
         let yaml = r"
-version: 1
-stages:
-  - name: planning
-    artifact: plan
-  - name: work
-    artifact: summary
-integration:
-  on_failure: work
+flows:
+  default:
+    stages:
+      - name: planning
+        artifact: plan
+      - name: work
+        artifact: summary
+    integration:
+      on_failure: work
 ";
         std::fs::write(&path, yaml).unwrap();
 
@@ -88,8 +89,11 @@ integration:
         assert!(result.is_ok());
 
         let config = result.unwrap();
-        assert_eq!(config.stages.len(), 2);
-        assert_eq!(config.stage("planning").unwrap().artifact_name(), "plan");
+        assert_eq!(config.stages_in_flow("default").len(), 2);
+        assert_eq!(
+            config.stage("default", "planning").unwrap().artifact_name(),
+            "plan"
+        );
     }
 
     #[test]
@@ -110,12 +114,15 @@ integration:
 
         // Duplicate stage names - should fail validation
         let yaml = r"
-version: 1
-stages:
-  - name: planning
-    artifact: plan
-  - name: planning
-    artifact: other
+flows:
+  default:
+    stages:
+      - name: planning
+        artifact: plan
+      - name: planning
+        artifact: other
+    integration:
+      on_failure: planning
 ";
         std::fs::write(&path, yaml).unwrap();
 
@@ -131,12 +138,13 @@ stages:
 
         let workflow_path = orkestra_dir.join("workflow.yaml");
         let yaml = r"
-version: 1
-stages:
-  - name: custom_stage
-    artifact: custom_output
-integration:
-  on_failure: custom_stage
+flows:
+  default:
+    stages:
+      - name: custom_stage
+        artifact: custom_output
+    integration:
+      on_failure: custom_stage
 ";
         std::fs::write(&workflow_path, yaml).unwrap();
 
@@ -144,9 +152,13 @@ integration:
         assert!(result.is_ok());
 
         let config = result.unwrap();
-        assert_eq!(config.stages.len(), 1);
-        assert_eq!(config.stages[0].name, "custom_stage");
-        assert_eq!(config.integration.on_failure, "custom_stage");
+        let stages = config.stages_in_flow("default");
+        assert_eq!(stages.len(), 1);
+        assert_eq!(stages[0].name, "custom_stage");
+        assert_eq!(
+            config.flow("default").unwrap().integration.on_failure,
+            "custom_stage"
+        );
     }
 
     #[test]

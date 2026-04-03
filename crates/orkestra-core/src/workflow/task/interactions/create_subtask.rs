@@ -31,7 +31,7 @@ pub fn execute(
 
     let id = store.next_subtask_id(parent_id)?;
     let first_stage = workflow
-        .first_stage()
+        .first_stage(&parent.flow)
         .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
 
     let short_id = extract_short_id(&id);

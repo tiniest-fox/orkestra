@@ -32,7 +32,7 @@ pub fn execute(
     let now = chrono::Utc::now().to_rfc3339();
 
     if stage_has_subtask_data(workflow, &stage, &task) {
-        let artifact_name = artifact_name_for_stage(workflow, &stage, "breakdown");
+        let artifact_name = artifact_name_for_stage(workflow, &task.flow, &stage, "breakdown");
         let created = super::create_subtasks::execute(
             &task,
             workflow,
@@ -50,7 +50,7 @@ pub fn execute(
                 task.id,
                 created.len()
             );
-            let next_stage = compute_next_state_on_approve(workflow, &stage, task.flow.as_deref())
+            let next_stage = compute_next_state_on_approve(workflow, &task.flow, &stage)
                 .stage()
                 .unwrap_or(&stage)
                 .to_string();
@@ -75,7 +75,7 @@ fn advance_task(
     stage: &str,
     now: &str,
 ) -> WorkflowResult<()> {
-    let next_state = compute_next_state_on_approve(workflow, stage, task.flow.as_deref());
+    let next_state = compute_next_state_on_approve(workflow, &task.flow, stage);
 
     if let Some(new_stage) = next_state.stage() {
         iteration_service.create_iteration(&task.id, new_stage, None)?;
@@ -92,12 +92,12 @@ fn advance_task(
 /// Check if a stage has structured subtask data stored on the task.
 fn stage_has_subtask_data(workflow: &WorkflowConfig, stage: &str, task: &Task) -> bool {
     let has_capability = workflow
-        .effective_capabilities(stage, task.flow.as_deref())
-        .is_some_and(|caps| caps.produces_subtasks());
+        .stage(&task.flow, stage)
+        .is_some_and(|s| s.capabilities.produces_subtasks());
     if !has_capability {
         return false;
     }
-    let artifact_name = artifact_name_for_stage(workflow, stage, "breakdown");
+    let artifact_name = artifact_name_for_stage(workflow, &task.flow, stage, "breakdown");
     let structured_key = format!("{artifact_name}_structured");
     task.artifacts.content(&structured_key).is_some()
 }
@@ -105,21 +105,22 @@ fn stage_has_subtask_data(workflow: &WorkflowConfig, stage: &str, task: &Task) -
 /// Get artifact name for a stage, with fallback default.
 pub(crate) fn artifact_name_for_stage(
     workflow: &WorkflowConfig,
+    flow: &str,
     stage: &str,
     default: &str,
 ) -> String {
     workflow
-        .stage(stage)
+        .stage(flow, stage)
         .map_or_else(|| default.to_string(), |s| s.artifact_name().to_string())
 }
 
 /// Compute the next state after approving the current stage.
 pub(crate) fn compute_next_state_on_approve(
     workflow: &WorkflowConfig,
+    flow: &str,
     current_stage: &str,
-    flow: Option<&str>,
 ) -> TaskState {
-    match workflow.next_stage_in_flow(current_stage, flow) {
+    match workflow.next_stage(flow, current_stage) {
         Some(stage) => TaskState::queued(&stage.name),
         None => TaskState::Done,
     }

@@ -34,20 +34,21 @@ pub fn execute(
 pub fn resolve_rejection_target(
     workflow: &WorkflowConfig,
     current_stage: &str,
-    flow: Option<&str>,
+    flow: &str,
 ) -> WorkflowResult<String> {
-    let effective_caps = workflow
-        .effective_capabilities(current_stage, flow)
+    let caps = workflow
+        .stage(flow, current_stage)
+        .map(|s| s.capabilities.clone())
         .ok_or_else(|| {
             WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
         })?;
 
-    if let Some(target) = effective_caps.rejection_stage() {
+    if let Some(target) = caps.rejection_stage() {
         return Ok(target.to_string());
     }
 
     workflow
-        .previous_stage_in_flow(current_stage, flow)
+        .previous_stage(flow, current_stage)
         .map(|s| s.name.clone())
         .ok_or_else(|| {
             WorkflowError::InvalidTransition(format!(

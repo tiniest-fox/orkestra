@@ -192,7 +192,7 @@ pub fn format_commit_message(title: &str, body: &str, model_names: &[String]) ->
 /// Always appends "Claude Haiku 4.5" (the commit message generator itself) if not present.
 ///
 /// Returns a deduplicated list in first-occurrence order.
-pub fn collect_model_names(workflow: &WorkflowConfig, task_flow: Option<&str>) -> Vec<String> {
+pub fn collect_model_names(workflow: &WorkflowConfig, task_flow: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut names = Vec::new();
 
@@ -230,7 +230,7 @@ pub fn fallback_commit_message(task_title: &str, task_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orkestra_types::config::{IntegrationConfig, StageConfig};
+    use orkestra_types::config::{FlowConfig, IntegrationConfig, StageConfig};
 
     #[test]
     fn test_format_commit_message() {
@@ -260,14 +260,10 @@ mod tests {
         let mut work = StageConfig::new("work", "summary");
         work.model = Some("sonnet".to_string()); // duplicate
 
-        let workflow = WorkflowConfig {
-            version: 1,
-            stages: vec![planning, work],
-            integration: IntegrationConfig::new("work"),
-            flows: indexmap::IndexMap::default(),
-        };
+        let workflow = WorkflowConfig::new(vec![planning, work])
+            .with_integration(IntegrationConfig::new("work"));
 
-        let names = collect_model_names(&workflow, None);
+        let names = collect_model_names(&workflow, "default");
         assert_eq!(names.len(), 2); // "Claude Sonnet 4" (once) + "Claude Haiku 4.5"
         assert_eq!(names[0], "Claude Sonnet 4");
         assert_eq!(names[1], "Claude Haiku 4.5");
@@ -293,8 +289,6 @@ mod tests {
 
     #[test]
     fn test_collect_model_names_flow_aware() {
-        use orkestra_types::config::{FlowConfig, FlowStageEntry};
-
         let mut planning = StageConfig::new("planning", "plan");
         planning.model = Some("sonnet".to_string());
 
@@ -312,37 +306,24 @@ mod tests {
             "hotfix".to_string(),
             FlowConfig {
                 description: "Hotfix flow".to_string(),
-                icon: None,
-                stages: vec![
-                    FlowStageEntry {
-                        stage_name: "work".to_string(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "review".to_string(),
-                        overrides: None,
-                    },
-                ],
-                integration: None,
+                stages: vec![work.clone(), review.clone()],
+                integration: IntegrationConfig::new("work"),
             },
         );
 
-        let workflow = WorkflowConfig {
-            version: 1,
-            stages: vec![planning, breakdown, work, review],
-            integration: IntegrationConfig::new("work"),
-            flows,
-        };
+        let workflow = WorkflowConfig::new(vec![planning, breakdown, work, review])
+            .with_integration(IntegrationConfig::new("work"))
+            .with_flows(flows);
 
         // Default flow includes all stages
-        let names_default = collect_model_names(&workflow, None);
+        let names_default = collect_model_names(&workflow, "default");
         assert!(names_default.contains(&"Claude Sonnet 4".to_string())); // planning + breakdown
         assert!(names_default.contains(&"Claude Opus 4".to_string())); // work
         assert!(names_default.contains(&"Claude Haiku 4.5".to_string())); // review + utility
         assert_eq!(names_default.len(), 3); // sonnet + opus + haiku (deduplicated)
 
         // Hotfix flow only includes work and review (excludes planning and breakdown)
-        let names_hotfix = collect_model_names(&workflow, Some("hotfix"));
+        let names_hotfix = collect_model_names(&workflow, "hotfix");
         assert!(!names_hotfix.contains(&"Claude Sonnet 4".to_string())); // planning/breakdown excluded
         assert!(names_hotfix.contains(&"Claude Opus 4".to_string())); // work included
         assert!(names_hotfix.contains(&"Claude Haiku 4.5".to_string())); // review + utility (deduplicated)

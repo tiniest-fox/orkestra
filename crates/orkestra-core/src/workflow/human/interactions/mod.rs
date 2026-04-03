@@ -43,7 +43,7 @@ pub(super) fn resolve_current_stage(
     Ok(iterations.last().map_or_else(
         || {
             workflow
-                .first_stage_in_flow(task.flow.as_deref())
+                .first_stage(&task.flow)
                 .map_or_else(|| "planning".to_string(), |s| s.name.clone())
         },
         |i| i.stage.clone(),

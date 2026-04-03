@@ -27,7 +27,7 @@ pub fn execute(
         )));
     }
 
-    if !workflow.stage_in_flow(target_stage, task.flow.as_deref()) {
+    if !workflow.stage_in_flow(&task.flow, target_stage) {
         return Err(WorkflowError::InvalidTransition(format!(
             "Stage '{target_stage}' is not in the task's flow"
         )));
@@ -41,7 +41,7 @@ pub fn execute(
         iterations.last().map_or_else(
             || {
                 workflow
-                    .first_stage_in_flow(task.flow.as_deref())
+                    .first_stage(&task.flow)
                     .map_or_else(|| "planning".to_string(), |s| s.name.clone())
             },
             |i| i.stage.clone(),

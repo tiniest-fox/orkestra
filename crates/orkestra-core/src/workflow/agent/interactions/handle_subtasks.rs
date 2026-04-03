@@ -17,8 +17,12 @@ pub fn execute(
     stage_name: &str,
     now: &str,
 ) -> WorkflowResult<()> {
-    let artifact_name =
-        stage::finalize_advancement::artifact_name_for_stage(workflow, stage_name, "breakdown");
+    let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+        workflow,
+        &task.flow,
+        stage_name,
+        "breakdown",
+    );
 
     if subtasks.len() == 1 {
         // Single subtask: inline on parent. Combine design + instructions as artifact.

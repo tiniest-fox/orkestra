@@ -222,7 +222,7 @@ fn test_breakdown_approval_creates_subtasks() {
 
     // Check flow assignment
     for subtask in &subtasks {
-        assert_eq!(subtask.flow, Some("subtask".to_string()));
+        assert_eq!(subtask.flow, "subtask");
         assert_eq!(subtask.parent_id, Some(parent.id.clone()));
     }
 

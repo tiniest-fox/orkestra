@@ -140,7 +140,7 @@ mod tests {
     }
 
     fn config_with_quick_flow() -> WorkflowConfig {
-        use crate::workflow::config::{FlowConfig, FlowStageEntry, StageConfig};
+        use crate::workflow::config::{FlowConfig, IntegrationConfig, StageConfig};
         use indexmap::IndexMap;
 
         let mut flows = IndexMap::new();
@@ -148,12 +148,8 @@ mod tests {
             "quick".to_string(),
             FlowConfig {
                 description: "Quick flow".to_string(),
-                icon: None,
-                stages: vec![FlowStageEntry {
-                    stage_name: "work".to_string(),
-                    overrides: None,
-                }],
-                integration: None,
+                stages: vec![StageConfig::new("work", "summary")],
+                integration: IntegrationConfig::new("work"),
             },
         );
 

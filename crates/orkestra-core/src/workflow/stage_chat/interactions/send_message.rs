@@ -82,7 +82,7 @@ pub fn execute(
         store,
         registry,
         workflow,
-        task.flow.as_deref(),
+        &task.flow,
         &mut session,
         &stage,
         &worktree_path,
@@ -138,7 +138,7 @@ fn spawn_chat_agent(
     store: Arc<dyn WorkflowStore>,
     registry: &ProviderRegistry,
     workflow: &WorkflowConfig,
-    task_flow: Option<&str>,
+    task_flow: &str,
     session: &mut crate::workflow::domain::StageSession,
     stage: &str,
     worktree_path: &Path,
@@ -162,7 +162,9 @@ fn spawn_chat_agent(
     }
 
     // Resolve the provider for this stage
-    let model_spec = workflow.effective_model(stage, task_flow);
+    let model_spec = workflow
+        .stage(task_flow, stage)
+        .and_then(|s| s.model.clone());
     let resolved = registry
         .resolve(model_spec.as_deref())
         .map_err(|e| WorkflowError::Storage(format!("Provider resolution failed: {e}")))?;
@@ -170,8 +172,9 @@ fn spawn_chat_agent(
     // Compute stage schema for structured output detection in the background thread.
     // Uses the canonical get_agent_schema() which respects custom schema_file configs.
     let effective_stage = workflow
-        .effective_stage_config(stage, task_flow)
-        .ok_or_else(|| WorkflowError::InvalidState(format!("Unknown stage: {stage}")))?;
+        .stage(task_flow, stage)
+        .ok_or_else(|| WorkflowError::InvalidState(format!("Unknown stage: {stage}")))?
+        .clone();
     let schema_str = get_agent_schema(&effective_stage, Some(project_root))
         .ok_or_else(|| WorkflowError::InvalidState(format!("No schema for stage: {stage}")))?;
     let schema: serde_json::Value = serde_json::from_str(&schema_str).map_err(|e| {

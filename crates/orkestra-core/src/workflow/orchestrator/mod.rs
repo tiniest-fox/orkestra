@@ -325,7 +325,9 @@ impl OrchestratorLoop {
         // Integrate next done task (one at a time)
         let auto_merge = {
             let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-            api.workflow.integration.auto_merge
+            api.workflow
+                .flow(api.workflow.first_flow_name().unwrap_or("default"))
+                .is_some_and(|f| f.integration.auto_merge)
         };
         if let Some(candidate) =
             integration_interactions::find_next_candidate::execute(&snapshot, auto_merge)
@@ -519,8 +521,8 @@ impl OrchestratorLoop {
             let gate_config = {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                 api.workflow
-                    .effective_gate_config(&stage, task.flow.as_deref())
-                    .cloned()
+                    .stage(&task.flow, &stage)
+                    .and_then(|s| s.gate.clone())
             };
             let Some(gate_config) = gate_config else {
                 // Stage no longer has a gate (config changed?) — skip

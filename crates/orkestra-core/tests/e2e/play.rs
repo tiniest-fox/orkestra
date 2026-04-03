@@ -9,8 +9,7 @@ use std::time::Duration;
 
 use orkestra_core::workflow::{
     config::{
-        FlowConfig, FlowStageEntry, GateConfig, IntegrationConfig, StageCapabilities, StageConfig,
-        WorkflowConfig,
+        FlowConfig, GateConfig, IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
     },
     create_pr_sync,
     domain::{IterationTrigger, Question, TaskCreationMode},
@@ -635,12 +634,8 @@ fn test_play_with_flow() {
         "quick".to_string(),
         FlowConfig {
             description: "Skip planning, go straight to work".to_string(),
-            icon: None,
-            stages: vec![FlowStageEntry {
-                stage_name: "work".to_string(),
-                overrides: None,
-            }],
-            integration: None,
+            stages: vec![StageConfig::new("work", "summary").with_prompt("worker.md")],
+            integration: IntegrationConfig::new("work"),
         },
     );
     let workflow = base_workflow.with_flows(flows);

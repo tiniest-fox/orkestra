@@ -88,8 +88,7 @@ pub use adapters::InMemoryWorkflowStore;
 pub use adapters::{Git2GitService, SqliteWorkflowStore};
 pub use config::{
     load_auto_task_templates, load_workflow, load_workflow_for_project, AutoTaskTemplate,
-    FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, LoadError, StageCapabilities,
-    StageConfig, WorkflowConfig,
+    FlowConfig, IntegrationConfig, LoadError, StageCapabilities, StageConfig, WorkflowConfig,
 };
 pub use domain::{
     AssistantSession, DerivedTaskState, Iteration, LogEntry, OrkAction, PrCheckData, PrCommentData,

@@ -100,7 +100,9 @@ fn auto_merge_disabled_pauses_done_tasks() {
 #[test]
 fn auto_merge_enabled_integrates_normally() {
     let mut workflow = test_default_workflow();
-    workflow.integration.auto_merge = true; // Explicitly enable auto_merge
+    if let Some(flow) = workflow.flow_mut("default") {
+        flow.integration.auto_merge = true; // Explicitly enable auto_merge
+    }
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     let task = ctx.create_task("Test task", "Description", None);

@@ -26,17 +26,18 @@ pub fn execute(
     let breakdown_stage = find_breakdown_stage(workflow, &parent);
 
     if let Some(stage) = breakdown_stage {
-        let effective_caps = workflow
-            .effective_capabilities(&stage, parent.flow.as_deref())
+        let caps = workflow
+            .stage(&parent.flow, &stage)
+            .map(|s| s.capabilities.clone())
             .unwrap_or_default();
 
-        let next_state = if let Some(target) = effective_caps.completion_stage() {
+        let next_state = if let Some(target) = caps.completion_stage() {
             TaskState::queued(target)
         } else {
             super::finalize_advancement::compute_next_state_on_approve(
                 workflow,
+                &parent.flow,
                 &stage,
-                parent.flow.as_deref(),
             )
         };
         let now = chrono::Utc::now().to_rfc3339();
@@ -66,13 +67,9 @@ pub fn execute(
 
 /// Find the name of the breakdown stage (the stage with subtask capabilities).
 pub(crate) fn find_breakdown_stage(workflow: &WorkflowConfig, task: &Task) -> Option<String> {
-    for stage in &workflow.stages {
-        let effective_caps = workflow
-            .effective_capabilities(&stage.name, task.flow.as_deref())
-            .unwrap_or_default();
-        if effective_caps.produces_subtasks() {
-            return Some(stage.name.clone());
-        }
-    }
-    None
+    workflow
+        .stages_in_flow(&task.flow)
+        .into_iter()
+        .find(|s| s.capabilities.produces_subtasks())
+        .map(|s| s.name.clone())
 }

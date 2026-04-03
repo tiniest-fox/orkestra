@@ -201,6 +201,8 @@ const commitHash = (() => {
   }
 })();
 
+const releaseVersion = process.env.VITE_RELEASE_VERSION ?? '';
+
 // https://vitejs.dev/config/
 export default defineConfig(async ({ mode, command }) => {
   if (mode === "service") {
@@ -208,6 +210,7 @@ export default defineConfig(async ({ mode, command }) => {
       plugins: [react(), ...(command === "serve" ? [serviceMockPlugin()] : [])],
       define: {
         'import.meta.env.VITE_COMMIT_HASH': JSON.stringify(commitHash),
+        'import.meta.env.VITE_RELEASE_VERSION': JSON.stringify(releaseVersion),
       },
       base: "/",
       server: {
@@ -290,6 +293,7 @@ export default defineConfig(async ({ mode, command }) => {
     plugins,
     define: {
       'import.meta.env.VITE_COMMIT_HASH': JSON.stringify(commitHash),
+      'import.meta.env.VITE_RELEASE_VERSION': JSON.stringify(releaseVersion),
     },
     base: "/",
     envPrefix: ["VITE_", "TAURI_ENV_"],

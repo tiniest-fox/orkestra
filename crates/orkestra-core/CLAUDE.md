@@ -152,6 +152,65 @@ Read these before modifying cross-cutting flows:
 - **Don't put business logic in orchestrator** — It's a thin sequencer; logic goes in interactions
 - **Don't mix concerns in interactions** — One `execute()` per file, single responsibility
 
+## Rust Anti-Patterns to Avoid
+
+### `is_some_and()` + `unwrap()` is a double-traversal
+
+It traverses the `Option` twice and introduces a panic site. Use `if let Some(x) = opt.filter(...)` instead:
+
+```rust
+// Bad — two traversals, unwrap panic risk
+if file.diff_content.is_some_and(|d| !d.is_empty()) {
+    let content = file.diff_content.unwrap();
+}
+
+// Good — single traversal, no unwrap
+if let Some(content) = file.diff_content.as_ref().filter(|d| !d.is_empty()) {
+}
+```
+
+### `ok_or_else()` not `unwrap_or_default()` on required Optional fields
+
+Domain model fields like `branch_name: Option<String>` that represent required state at a given phase must fail fast with an actionable error when `None`. Use `ok_or_else(|| WorkflowError::Internal("branch_name missing".into()))?` rather than `.unwrap_or_default()`. `unwrap_or_default()` silently converts `None` to empty string, masking bugs and violating Fail Fast. This is a HIGH-severity pattern violation.
+
+### `Instant::elapsed()` over `checked_sub()`
+
+`Instant::now().checked_sub(duration).unwrap()` panics on recently-booted macOS (uptime < `duration`) because `Instant` is anchored to boot time. Use `last_used.elapsed() < duration` instead — semantically identical, always safe.
+
+### Use canonical `get_agent_schema` — never duplicate
+
+When any new code path needs to build an agent JSON schema, always use the canonical two-step pattern:
+
+```rust
+let stage_config = config.effective_stage_config(stage_name, task_flow)?;
+let schema = get_agent_schema(project_root, &stage_config, config)?;
+```
+
+Never build a `SchemaConfig` inline or compute a schema independently — it diverges silently (e.g., skipping `schema_file` lookup breaks per-project schema overrides). This is a HIGH-severity duplication that reviewers always catch.
+
+### `PathBuf::join` absolute path injection
+
+When user-supplied input is passed to `PathBuf::join`, a value starting with `/` **replaces** the entire base path on Unix — it does not append. When allowing internal slashes in validated input (e.g., org/repo slugs), explicitly guard against leading slashes:
+
+```rust
+// Allows org/repo slugs but blocks /etc/passwd-style injection
+if name.starts_with('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+    return Err(...);
+}
+```
+
+This is a HIGH-severity security finding.
+
+### Trace all downstream requirements when enabling a new state
+
+When a Trak says "enable operation X from state Y (it's just a gating change)", trace the full execution path of X — not just the gate. Even when the gate change is one line, the operation itself may read fields from the task object (e.g., `task.current_stage()`, `task.branch_name()`) that are `Option<T>` and return `None` for the new state.
+
+Before submitting:
+1. Find the gate (e.g., `can_bypass()`)
+2. Find every operation that goes through this gate
+3. For each operation, trace what it reads from the task object
+4. Verify those fields are populated for every state you're adding to the gate
+
 ## Test Infrastructure
 
 The crate has extensive e2e tests in `tests/e2e/`:

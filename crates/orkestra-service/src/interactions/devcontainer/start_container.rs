@@ -162,7 +162,6 @@ fn docker_run(
     Ok(container_id)
 }
 
-#[allow(clippy::too_many_lines)]
 fn compose_up(
     project_id: &str,
     compose_file: &Path,
@@ -262,6 +261,16 @@ fn compose_up(
         )));
     }
 
+    resolve_compose_container_id(compose_file, &override_path, project_id, service)
+}
+
+/// Query Docker Compose for the container ID of a named service.
+fn resolve_compose_container_id(
+    compose_file: &Path,
+    override_path: &Path,
+    project_id: &str,
+    service: &str,
+) -> Result<String, ServiceError> {
     // Get the container ID for the named service.
     let output = Command::new("docker")
         .args([

@@ -27,6 +27,7 @@ vi.mock("../transport/WebSocketTransport", () => {
 vi.mock("../transport", () => ({
   TransportProvider: ({ children }: { children: ReactNode }) => children,
   useConnectionState: () => "connecting",
+  useHasConnected: () => false,
 }));
 
 // WorkflowConfigProvider and TasksProvider import src/startup.ts — mock to

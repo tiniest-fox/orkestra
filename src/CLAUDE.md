@@ -766,3 +766,40 @@ The diff viewer's find feature separates search from highlighting across two spa
 - If you modify `highlightSearchInHtml`, maintain entity-awareness in the walker — HTML entity sequences must advance `textPos` by 1, not by their raw HTML length.
 
 `SearchRange[]` per line are computed in `FileSection.tsx` (`HunkLines`) and `CollapsedSection.tsx` from `fileMatches + currentMatch`. `DiffLine.tsx` renders them via `highlightSearchInHtml`. `searchQuery` is never passed below `DiffContent.tsx` — ranges are the single source of truth at the render layer.
+
+## Interactive Mode Entry Point
+
+**"Enter interactive mode" belongs in `DrawerHeader` overflow menu only, never in `FeedRowActions`.** `FeedRowActions.tsx` renders quick inline actions for the feed list row. The interactive mode entry point is intentionally placed only in the `DrawerHeader` overflow menu (visible when the drawer is open) — it is not a row-level action. When enabling "Enter interactive mode" for a new Trak state, update `DrawerHeader.tsx`'s condition, not `FeedRowActions.tsx`.
+
+## Keep TypeScript Unions in Sync with Rust Enum Variants
+
+When you add new variants to Rust enums that are serialized and sent to the frontend (`TaskState`, `IterationTrigger`, `Phase`, etc.), you **must** also add the corresponding TypeScript discriminated union members in `src/types/workflow.ts`. Serde serializes Rust enum variants as `{ "type": "variant_name", ... }` — if the TypeScript union doesn't include the new member, the frontend silently treats the state as `unknown` or breaks type narrowing.
+
+Checklist before submitting any Rust enum variant addition:
+1. Search `src/types/workflow.ts` for the TypeScript type that mirrors the Rust enum
+2. Add the new member using the same `{ type: "variant_name"; field: type }` pattern as existing members
+3. Verify any `switch` statements or type guards in the frontend still handle all cases
+
+This is a MEDIUM-severity finding reviewers always catch. Missing frontend type updates don't cause compile errors — they only surface at runtime or in type-checking.
+
+## Remove Duplicate Definitions When Extracting to a New Module
+
+When you extract a type, interface, or constant to a new canonical file (e.g., moving `StartupData` from `main.tsx` to `startup.ts`), you must also remove any duplicate local definitions from all consumers:
+
+1. After creating the canonical file, grep for the type/interface name across the codebase
+2. Check every consumer file for a local redefinition of the same type
+3. Replace local redefinitions with an `import type { X }` from the canonical source
+
+Failing to remove the duplicate definition is a Single Source of Truth violation and is a guaranteed rejection. This step is easy to miss because the code compiles fine with both definitions in scope — TypeScript structural typing means the duplicate is silently compatible.
+
+## Extract Shared Logic to Hooks Before Implementing in Multiple Providers
+
+When the breakdown asks you to add the same state/logic to multiple providers or components (e.g., a staleness timer, a polling flag, a cache invalidation trigger), **extract to a shared hook first** — don't implement inline in each consumer. Duplicate `useState`/`useEffect` blocks across multiple files violate Single Source of Truth and are a guaranteed HIGH-severity rejection.
+
+Pattern:
+1. Create `src/hooks/useSharedConcept.ts` with the canonical logic
+2. Import and use `const result = useSharedConcept(input)` in each consumer
+3. Export any pure utility functions from the same hook file (not a separate file)
+4. **If the hook exports a pure utility function** (e.g., a CSS class helper), add a `useSharedConcept.test.ts` unit test alongside it — this file requires unit tests for pure utility modules.
+
+Reference: `src/hooks/useStalenessTimer.ts` exports both `useStalenessTimer` (hook) and `stalenessClass` (pure utility).

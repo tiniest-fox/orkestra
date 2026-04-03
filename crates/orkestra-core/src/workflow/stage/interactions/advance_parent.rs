@@ -26,6 +26,8 @@ pub fn execute(
     let breakdown_stage = find_breakdown_stage(workflow, &parent);
 
     if let Some(stage) = breakdown_stage {
+        // `find_breakdown_stage` found this stage via `stages_in_flow`, so `workflow.stage()`
+        // will always return `Some` here. `default_caps` is an unreachable fallback.
         let default_caps = Default::default();
         let caps = workflow
             .stage(&parent.flow, &stage)

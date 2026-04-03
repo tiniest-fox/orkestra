@@ -151,6 +151,7 @@ Read these before modifying cross-cutting flows:
 - **Don't hold locks during async/background ops** — Causes deadlocks
 - **Don't put business logic in orchestrator** — It's a thin sequencer; logic goes in interactions
 - **Don't mix concerns in interactions** — One `execute()` per file, single responsibility
+- **Don't hardcode stage names** — Stage names are user-defined in `workflow.yaml`. Never write `"planning"` or any other stage name as a hardcoded fallback. Use `workflow.first_stage_in_flow(&flow).ok_or_else(...)` or return `WorkflowError::InvalidTransition` instead. Hardcoded names silently route tasks to the wrong pipeline when a project uses custom stage names.
 
 ## Test Infrastructure
 

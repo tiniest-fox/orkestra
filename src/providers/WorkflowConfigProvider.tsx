@@ -56,13 +56,13 @@ function getProjectPath(): string {
   return new URLSearchParams(window.location.search).get("project") ?? "";
 }
 
-let cachedConfig: { projectUrl: string; config: WorkflowConfig } | null = null;
+const configCache = new Map<string, WorkflowConfig>();
 
 export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps) {
   const transport = useTransport();
   const connectionState = useConnectionState();
   const projectUrl = window.location.href;
-  const initialConfig = cachedConfig?.projectUrl === projectUrl ? cachedConfig.config : null;
+  const initialConfig = configCache.get(projectUrl) ?? null;
   const [config, setConfig] = useState<WorkflowConfig | null>(initialConfig);
   const [loading, setLoading] = useState(!initialConfig);
   const [error, setError] = useState<unknown>(null);
@@ -79,13 +79,13 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
     const prev = prevConnectionStateRef.current;
     prevConnectionStateRef.current = connectionState;
     if (prev === "disconnected" && connectionState === "connected") {
-      cachedConfig = null;
+      configCache.delete(projectUrl);
       setConfig(null);
       setLoading(true);
       setError(null);
       setRetryKey((k) => k + 1);
     }
-  }, [connectionState]);
+  }, [connectionState, projectUrl]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: retryKey triggers effect re-run on retry
   useEffect(() => {
@@ -116,9 +116,11 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
         const data = await transport.call<StartupData | null>("get_startup_data");
         if (cancelled) return;
         if (data) {
-          startupData.value = data;
+          if (transport.supportsLocalOperations) {
+            startupData.value = data;
+          }
           console.timeEnd("[startup] config");
-          cachedConfig = { projectUrl, config: data.config };
+          configCache.set(projectUrl, data.config);
           setConfig(data.config);
           setLoading(false);
         } else if (transport.supportsLocalOperations) {
@@ -165,7 +167,7 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
     const path = getProjectPath();
     startupError.value = null;
     startupData.value = null;
-    cachedConfig = null;
+    configCache.delete(window.location.href);
     setError(null);
     setConfig(null);
     setLoading(true);

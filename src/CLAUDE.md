@@ -166,13 +166,13 @@ await transport.call("my_action", { taskId: task.id });
 
 Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvider`) use module-level variables for cross-mount caching — data survives component unmounts and is available immediately on remount without a loading flash.
 
-**Shape**: `{ projectUrl: string; data: T } | null` — always keyed by project URL to prevent cross-project stale data.
+**Shape**: `Map<string, T>` keyed by project URL. Initialize as `new Map<string, T>()`. Reads use `.get(projectUrl) ?? null`, writes use `.set(projectUrl, data)`, clears use `.delete(projectUrl)`. The Map handles per-project isolation inherently — no equality check needed.
 
 **Rules:**
 - Use **separate variables** for logically distinct datasets (e.g., `tasksCacheEntry` and `archivedTasksCacheEntry` are independent). Never merge them into one object with spread — concurrent async fetches clobber each other's data via the read-then-write pattern.
 - Polled providers (tasks, git history) self-heal after reconnect via natural polling resumption — **do not add explicit reconnect invalidation** to them.
 - One-shot providers (workflow config) **must** explicitly clear their cache and re-fetch on reconnect; polling won't do it for them.
-- Always check `cachedEntry?.projectUrl === projectUrl` before using cached data — this is the only cross-project isolation mechanism.
+- Maps accumulate entries for every project URL visited during the session (no implicit eviction). This is fine in practice — sessions visit few projects — but worth noting if memory becomes a concern.
 
 ## Styling
 

@@ -24,13 +24,12 @@ import { extractErrorMessage } from "../utils/errors";
 import { isDisconnectError } from "../utils/transportErrors";
 
 interface GitCache {
-  projectUrl: string;
   commits: CommitInfo[];
   currentBranch: string | null;
   branches: string[];
   syncStatus: SyncStatus | null;
 }
-let gitCache: GitCache | null = null;
+const gitCacheMap = new Map<string, GitCache>();
 
 interface OperationError {
   type: "push" | "pull";
@@ -82,7 +81,7 @@ interface GitHistoryProviderProps {
 export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const transport = useTransport();
   const projectUrl = window.location.href;
-  const cached = gitCache?.projectUrl === projectUrl ? gitCache : null;
+  const cached = gitCacheMap.get(projectUrl) ?? null;
   const [commits, setCommits] = useState<CommitInfo[]>(() => cached?.commits ?? []);
   const [fileCounts, setFileCounts] = useState<Map<string, number>>(new Map());
   const [currentBranch, setCurrentBranch] = useState<string | null>(
@@ -111,13 +110,12 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
       setCurrentBranch(branchResult.current);
       setBranches(branchResult.branches);
       setSyncStatus(syncResult);
-      gitCache = {
-        projectUrl,
+      gitCacheMap.set(projectUrl, {
         commits: commitResult,
         currentBranch: branchResult.current,
         branches: branchResult.branches,
         syncStatus: syncResult,
-      };
+      });
       setLastFetchedAt(Date.now());
       setError(null);
     } catch (err) {

@@ -68,7 +68,7 @@ Flows are the primary unit of workflow configuration — every pipeline is a nam
 
 Key behaviors:
 - Each flow contains complete `StageConfig` definitions (not references to global stages)
-- Stage navigation (`first_stage_in_flow`, `next_stage_in_flow`) respects each flow's stage list
+- Stage navigation (`first_stage(flow)`, `next_stage(flow, current)`) respects each flow's stage list
 - Approval `rejection_stage` targets and script `on_failure` targets must be within the flow's stage list
 - YAML anchors (`&anchor`/`*alias`) can share identical stage blocks across flows without duplication
 
@@ -107,7 +107,7 @@ Note: Title generation and commit message generation use separate internal templ
 
 **Querying workflow configuration for flow-aware logic:**
 
-When you need to iterate agent stages while respecting flow overrides, use `WorkflowConfig::agent_model_specs(task_flow)` rather than directly accessing flow stages. This method encapsulates the flow-aware traversal logic (iterating flow stages, filtering scripts). Example use case: collecting model names for commit attribution — see `commit_message.rs::collect_model_names()`.
+When you need model specs for all agent stages in a flow, use `WorkflowConfig::agent_model_specs(task_flow)` rather than directly accessing flow stages. This method encapsulates the flow-aware traversal logic (iterating flow stages, filtering scripts). Example use case: collecting model names for commit attribution — see `commit_message.rs::collect_model_names()`.
 
 ### Disallowed Tools
 

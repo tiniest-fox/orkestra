@@ -183,8 +183,9 @@ Domain model fields like `branch_name: Option<String>` that represent required s
 When any new code path needs to build an agent JSON schema, always use the canonical two-step pattern:
 
 ```rust
-let stage_config = config.effective_stage_config(stage_name, task_flow)?;
-let schema = get_agent_schema(project_root, &stage_config, config)?;
+let stage = workflow.stage(&task.flow, stage_name)
+    .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
+let schema = get_agent_schema(stage, project_root)?;
 ```
 
 Never build a `SchemaConfig` inline or compute a schema independently — it diverges silently (e.g., skipping `schema_file` lookup breaks per-project schema overrides). This is a HIGH-severity duplication that reviewers always catch.

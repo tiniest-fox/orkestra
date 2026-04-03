@@ -34,10 +34,10 @@ src/
 ## Type Categories
 
 ### Config Types (from YAML)
-- **WorkflowConfig**: Ordered stages, integration config, named flows
+- **WorkflowConfig**: Map of named flows (each flow owns its stages and integration config)
 - **StageConfig**: Stage definition (name, artifact, capabilities, prompt/script)
 - **StageCapabilities**: Feature flags (ask_questions, subtasks, approval)
-- **FlowConfig**: Alternate pipeline with stage subset and overrides
+- **FlowConfig**: Named pipeline with its own stages and integration config
 
 ### Domain Types (runtime entities)
 - **Task**: Main entity — identity, state, artifacts, git info, hierarchy

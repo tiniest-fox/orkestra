@@ -23,6 +23,7 @@ function createMockTask(id: string, prUrl?: string): WorkflowTaskView {
     base_branch: "main",
     base_commit: "",
     auto_mode: false,
+    flow: "default",
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
     pr_url: prUrl,

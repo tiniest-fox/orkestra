@@ -1,148 +1,181 @@
 # Custom workflow for Orkestra development
 #
-# 5-stage pipeline: plan → task → work (with gate) → review → compound
-# The gate on work runs linting, tests, and type checks automatically
-# after the agent completes, before sending the task to review.
+# Flows define complete pipelines. YAML anchors (&name / *name)
+# share identical stages across flows without duplication.
 
-version: 1
-
-stages:
-  # Planning: Creates implementation plan, can ask clarifying questions
-  - name: plan
-    display_name: Plan
-    icon: file-text
-    description: Create an implementation plan
-    artifact:
-      name: plan
-      description: Implementation plan and approach for this task
-    prompt: planner.md
-    model: opus
-    capabilities:
-      ask_questions: true
-
-  # Breakdown: Decomposes complex tasks into subtasks with dependencies
-  - name: task
-    display_name: Task
-    icon: list-tree
-    description: Break down the plan into subtasks and provide technical and implementation guidance
-    artifact:
-      name: breakdown
-      description: Subtask breakdown with dependencies
-    prompt: breakdown.md
-    model: opus
-    capabilities:
-      ask_questions: true
-      subtasks:
-        flow: hotfix
-        completion_stage: work
-
-  # Work: Implements the breakdown
-  - name: work
-    display_name: Work
-    icon: code
-    description: Implement the approved plan
-    artifact:
-      name: summary
-      description: Summary of changes made and implementation notes
-    prompt: worker.md
-    model: sonnet
-    gate:
-      command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
-      timeout_seconds: 1200
-    disallowed_tools:
-      - pattern: "Bash(*cargo test*)"
-        message: "Testing runs automatically in the gate after you complete your work"
-      - pattern: "Bash(*cargo build*)"
-        message: "Building is handled by the gate that runs after you complete your work"
-      - pattern: "Bash(*cargo clippy*)"
-        message: "Linting runs automatically in the gate after you complete your work"
-      - pattern: "Bash(*cargo fmt*)"
-        message: "Formatting runs automatically in the gate after you complete your work"
-      - pattern: "Bash(pnpm tauri*)"
-        message: "Never run the app — it spawns nested agent processes and causes errors"
-      - pattern: "Bash(pnpm dev*)"
-        message: "Never run the app dev server — it's not needed for implementation"
-      - pattern: "Bash(*cargo run*)"
-        message: "Never run the app binary — it spawns nested agent processes and causes errors"
-
-  # Review: Automated review that can send back to work if needed
-  - name: review
-    display_name: Review
-    icon: eye
-    description: Review completed work for correctness
-    artifact:
-      name: verdict
-      description: Review verdict and feedback
-    prompt: reviewer.md
-    model: opus
-    disallowed_tools:
-      - pattern: "Bash(*cargo *)"
-        message: "All automated checks have passed and all tests pass as-is — focus on code review, not re-running checks"
-    capabilities:
-      approval:
-        rejection_stage: task
-
-  # Compound: Captures learnings and updates documentation
-  # Reviews worker notes and reviewer observations, documents anything useful
-  - name: compound
-    display_name: Compound
-    icon: book-open
-    description: Capture learnings and update documentation
-    artifact:
-      name: learnings
-      description: Captured learnings and documentation updates
-    prompt: compound.md
-    model: sonnet
-    is_automated: true
+version: 2
 
 flows:
-  # Quick flow: Skip breakdown and compound stages for smaller tasks
+  default:
+    description: Full pipeline — plan, task, work, review, compound
+    stages:
+      - name: plan
+        display_name: Plan
+        description: Create an implementation plan
+        artifact:
+          name: plan
+          description: Implementation plan and approach for this task
+        prompt: planner.md
+        model: opus
+        capabilities:
+          ask_questions: true
+
+      - name: task
+        display_name: Task
+        description: Break down the plan into subtasks and provide technical and implementation guidance
+        artifact:
+          name: breakdown
+          description: Subtask breakdown with dependencies
+        prompt: breakdown.md
+        model: opus
+        capabilities:
+          ask_questions: true
+          subtasks:
+            flow: hotfix
+            completion_stage: work
+
+      - &work_stage
+        name: work
+        display_name: Work
+        description: Implement the approved plan
+        artifact:
+          name: summary
+          description: Summary of changes made and implementation notes
+        prompt: worker.md
+        model: sonnet
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 1200
+        disallowed_tools:
+          - pattern: "Bash(*cargo test*)"
+            message: "Testing runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo build*)"
+            message: "Building is handled by the gate that runs after you complete your work"
+          - pattern: "Bash(*cargo clippy*)"
+            message: "Linting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo fmt*)"
+            message: "Formatting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(pnpm tauri*)"
+            message: "Never run the app — it spawns nested agent processes and causes errors"
+          - pattern: "Bash(pnpm dev*)"
+            message: "Never run the app dev server — it's not needed for implementation"
+          - pattern: "Bash(*cargo run*)"
+            message: "Never run the app binary — it spawns nested agent processes and causes errors"
+
+      - name: review
+        display_name: Review
+        description: Review completed work for correctness
+        artifact:
+          name: verdict
+          description: Review verdict and feedback
+        prompt: reviewer.md
+        model: opus
+        disallowed_tools:
+          - pattern: "Bash(*cargo *)"
+            message: "All automated checks have passed and all tests pass as-is — focus on code review, not re-running checks"
+        capabilities:
+          approval:
+            rejection_stage: task
+
+      - &compound_stage
+        name: compound
+        display_name: Compound
+        description: Capture learnings and update documentation
+        artifact:
+          name: learnings
+          description: Captured learnings and documentation updates
+        prompt: compound.md
+        model: sonnet
+        is_automated: true
+
+    integration:
+      on_failure: task
+
   quick:
     description: Skip planning breakdown for simple, well-defined tasks
-    icon: zap
     stages:
-      - plan:
-          prompt: quick_planner.md
-      - work
-      - review:
-          capabilities:
-            approval:
-              rejection_stage: work
-      - compound
+      - name: plan
+        display_name: Plan
+        description: Create an implementation plan
+        artifact:
+          name: plan
+          description: Implementation plan and approach for this task
+        prompt: quick_planner.md
+        model: opus
+        capabilities:
+          ask_questions: true
+      - *work_stage
+      - name: review
+        display_name: Review
+        description: Review completed work for correctness
+        artifact:
+          name: verdict
+          description: Review verdict and feedback
+        prompt: reviewer.md
+        model: opus
+        capabilities:
+          approval:
+            rejection_stage: work
+      - *compound_stage
     integration:
       on_failure: work
 
-  # Hotfix flow: Straight to work, minimal overhead
-  # Uses checks-lite.sh — scoped checks without reverse deps or workspace build.
-  # The parent task's full gate handles integration verification.
   hotfix:
     description: Emergency fix — skip straight to implementation
-    icon: rocket
     stages:
-      - work:
-          gate:
-            command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
-            timeout_seconds: 1200
-      - review:
-          prompt: subtask-reviewer.md
-          capabilities:
-            approval:
-              rejection_stage: work
+      - name: work
+        display_name: Work
+        description: Implement the approved plan
+        artifact:
+          name: summary
+          description: Summary of changes made and implementation notes
+        prompt: worker.md
+        model: sonnet
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
+          timeout_seconds: 1200
+        disallowed_tools:
+          - pattern: "Bash(*cargo test*)"
+            message: "Testing runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo build*)"
+            message: "Building is handled by the gate that runs after you complete your work"
+          - pattern: "Bash(*cargo clippy*)"
+            message: "Linting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo fmt*)"
+            message: "Formatting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(pnpm tauri*)"
+            message: "Never run the app — it spawns nested agent processes and causes errors"
+          - pattern: "Bash(pnpm dev*)"
+            message: "Never run the app dev server — it's not needed for implementation"
+          - pattern: "Bash(*cargo run*)"
+            message: "Never run the app binary — it spawns nested agent processes and causes errors"
+      - name: review
+        display_name: Review
+        description: Review completed work for correctness
+        artifact:
+          name: verdict
+          description: Review verdict and feedback
+        prompt: subtask-reviewer.md
+        model: opus
+        capabilities:
+          approval:
+            rejection_stage: work
     integration:
       on_failure: work
 
-  # Micro flow: Single work stage using lightweight model for extremely targeted changes
   micro:
     description: Simple work without any need for review
-    icon: flask
     stages:
-      - work:
-          model: sonnet
-          gate:
-            command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
-            timeout_seconds: 1200
+      - name: work
+        display_name: Work
+        description: Implement the approved plan
+        artifact:
+          name: summary
+          description: Summary of changes made and implementation notes
+        prompt: worker.md
+        model: sonnet
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
+          timeout_seconds: 1200
     integration:
       on_failure: work
-
-integration:
-  on_failure: task

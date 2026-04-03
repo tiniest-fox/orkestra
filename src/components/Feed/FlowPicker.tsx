@@ -1,48 +1,30 @@
-//! Flow card grid for selecting an alternate workflow pipeline during task creation.
+//! Flow card grid for selecting a workflow pipeline during task creation.
 
 import { useEffect, useState } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { FlowConfig, FlowStageEntry, StageConfig } from "../../types/workflow";
+import type { FlowConfig } from "../../types/workflow";
 
 interface FlowPickerProps {
   flows: Record<string, FlowConfig>;
-  stages: StageConfig[];
   selected: string | null;
-  onChange: (flowId: string | null) => void;
+  onChange: (flowId: string) => void;
 }
 
 interface FlowCard {
-  id: string | null;
+  id: string;
   name: string;
   stageNames: string[];
 }
 
-function stageNameFromEntry(entry: FlowStageEntry): string {
-  if (typeof entry === "string") return entry;
-  return Object.keys(entry)[0];
-}
-
-export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProps) {
+export function FlowPicker({ flows, selected, onChange }: FlowPickerProps) {
   const isMobile = useIsMobile();
   const flowEntries = Object.entries(flows);
-  const allStageNames = stages.map((s) => s.display_name ?? s.name);
 
-  const cards: FlowCard[] = [
-    {
-      id: null,
-      name: "Default",
-      stageNames: allStageNames,
-    },
-    ...flowEntries.map(([id, flow]) => ({
-      id,
-      name: id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, " "),
-      stageNames: flow.stages.map((entry) => {
-        const stageName = stageNameFromEntry(entry);
-        const config = stages.find((s) => s.name === stageName);
-        return config?.display_name ?? stageName;
-      }),
-    })),
-  ];
+  const cards: FlowCard[] = flowEntries.map(([id, flow]) => ({
+    id,
+    name: id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, " "),
+    stageNames: flow.stages.map((s) => s.display_name ?? s.name),
+  }));
 
   const selectedIndex = cards.findIndex((c) => c.id === selected);
   const [focusedIndex, setFocusedIndex] = useState(Math.max(0, selectedIndex));
@@ -92,7 +74,7 @@ export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProp
           return (
             // biome-ignore lint/a11y/useSemanticElements: custom styled radio card; button with role="radio" inside radiogroup is valid ARIA
             <button
-              key={card.id ?? "__default__"}
+              key={card.id}
               type="button"
               role="radio"
               aria-checked={isSelected}

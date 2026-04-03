@@ -16,7 +16,7 @@ interface DrawerGateTabProps {
 }
 
 export function DrawerGateTab({ task, config }: DrawerGateTabProps) {
-  const gateStage = findGateStage(config);
+  const gateStage = findGateStage(config, task.flow);
   if (!gateStage) return null;
 
   // Most recent work iteration that has a gate_result

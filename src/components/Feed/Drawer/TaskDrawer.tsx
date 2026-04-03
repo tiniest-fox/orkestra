@@ -132,8 +132,8 @@ function TaskDrawerBody({
 
   const breakdownStageName = task.state.type === "waiting_on_children" ? task.state.stage : null;
   const completionStage = breakdownStageName
-    ? config.stages.find((s) => s.name === breakdownStageName)?.capabilities.subtasks
-        ?.completion_stage
+    ? config.flows[task.flow]?.stages.find((s) => s.name === breakdownStageName)?.capabilities
+        .subtasks?.completion_stage
     : null;
 
   const onProgressClick =

@@ -111,11 +111,6 @@ format!("{}", TaskState::agent_working("work")) // "agent_working (work)"
 ### ArtifactStore is HashMap-Backed
 `ArtifactStore` serializes as a flat map (via `#[serde(transparent)]`). Don't rely on insertion order.
 
-### FlowStageEntry Custom Serde
-`FlowStageEntry` has custom serialize/deserialize to support YAML shorthand:
-- Simple: `"work"` → `FlowStageEntry { stage_name: "work", overrides: None }`
-- With overrides: `{ work: { prompt: "worker_quick.md" } }` → entry with overrides
-
 ### Validation is Optional
 `WorkflowConfig::validate()` returns errors but doesn't prevent construction. Always call `is_valid()` or `validate()` after loading from YAML.
 

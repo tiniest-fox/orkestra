@@ -17,6 +17,7 @@ export function createMockWorkflowTask(overrides?: Partial<WorkflowTask>): Workf
     base_branch: "main",
     base_commit: "",
     auto_mode: false,
+    flow: "default",
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
     ...overrides,
@@ -143,32 +144,31 @@ export function createMockWorkflowTaskView(
 
 export function createMockWorkflowConfig(): WorkflowConfig {
   return {
-    version: 1,
-    stages: [
-      {
-        name: "planning",
-        artifact: "plan",
-        inputs: [],
-        is_automated: true,
-        is_optional: false,
-        capabilities: {
-          ask_questions: true,
-        },
+    version: 2,
+    flows: {
+      default: {
+        description: "Default pipeline",
+        stages: [
+          {
+            name: "planning",
+            artifact: "plan",
+            inputs: [],
+            is_automated: true,
+            is_optional: false,
+            capabilities: { ask_questions: true },
+          },
+          {
+            name: "work",
+            artifact: "summary",
+            inputs: ["plan"],
+            is_automated: true,
+            is_optional: false,
+            capabilities: { ask_questions: true, subtasks: {} },
+          },
+        ],
+        integration: { on_failure: "work" },
       },
-      {
-        name: "work",
-        artifact: "summary",
-        inputs: ["plan"],
-        is_automated: true,
-        is_optional: false,
-        capabilities: {
-          ask_questions: true,
-          subtasks: {},
-        },
-      },
-    ],
-    integration: { on_failure: "work" },
-    flows: {},
+    },
   };
 }
 

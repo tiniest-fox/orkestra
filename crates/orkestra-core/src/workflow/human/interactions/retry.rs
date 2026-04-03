@@ -36,14 +36,18 @@ pub fn execute(
 
     // Get the last stage from the most recent iteration
     let iterations = store.get_iterations(&task.id)?;
-    let last_stage = iterations.last().map_or_else(
-        || {
-            workflow
-                .first_stage(&task.flow)
-                .map_or_else(|| "planning".to_string(), |s| s.name.clone())
-        },
-        |i| i.stage.clone(),
-    );
+    let last_stage = match iterations.last() {
+        Some(i) => i.stage.clone(),
+        None => workflow
+            .first_stage(&task.flow)
+            .map(|s| s.name.clone())
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition(format!(
+                    "Flow '{}' not found or has no stages",
+                    task.flow
+                ))
+            })?,
+    };
 
     let now = chrono::Utc::now().to_rfc3339();
 

@@ -20,14 +20,24 @@ vi.mock("../transport/WebSocketTransport", () => {
   return { WebSocketTransport: MockWebSocketTransport };
 });
 
+// Hoisted mock controls so individual tests can override connection state.
+const { mockConnectionState, mockHasConnected } = vi.hoisted(() => ({
+  mockConnectionState: { current: "connecting" as string },
+  mockHasConnected: { current: false },
+}));
+
 // Mock the transport module so TransportProvider doesn't try to wire a real
 // WebSocket connection and useConnectionState doesn't need a real context.
-// TransportProvider is a passthrough; "connecting" keeps ProjectConnectionGate
-// in the loading-skeleton path so deeper providers never mount.
 vi.mock("../transport", () => ({
   TransportProvider: ({ children }: { children: ReactNode }) => children,
-  useConnectionState: () => "connecting",
-  useHasConnected: () => false,
+  useConnectionState: () => mockConnectionState.current,
+  useHasConnected: () => mockHasConnected.current,
+  useTransport: () => ({ call: () => new Promise(() => {}) }),
+  useTransportListener: () => {},
+}));
+
+vi.mock("../components/ReconnectingBanner", () => ({
+  ReconnectingBanner: () => <div data-testid="reconnecting-banner" />,
 }));
 
 // WorkflowConfigProvider and TasksProvider import src/startup.ts — mock to
@@ -53,6 +63,8 @@ function renderProjectPage(id = "test-id") {
 describe("ProjectPage", () => {
   beforeEach(() => {
     mockFetchProjects.mockReset();
+    mockConnectionState.current = "connecting";
+    mockHasConnected.current = false;
   });
 
   afterEach(() => {
@@ -146,5 +158,36 @@ describe("ProjectPage", () => {
     });
     unmount();
     expect(document.title).toBe("Orkestra | Service");
+  });
+
+  it("renders children when hasConnected is true and connected", async () => {
+    mockHasConnected.current = true;
+    mockConnectionState.current = "connected";
+    mockFetchProjects.mockResolvedValue([
+      { id: "test-id", name: "MyProject", status: "running", token: "tok" },
+    ]);
+    renderProjectPage();
+    await waitFor(() => {
+      expect(document.title).toBe("Orkestra | MyProject");
+    });
+    // Skeleton should NOT be showing
+    expect(screen.queryByText("Connecting to daemon…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reconnecting to daemon…")).not.toBeInTheDocument();
+  });
+
+  it("keeps children mounted during disconnect when hasConnected is true", async () => {
+    mockHasConnected.current = true;
+    mockConnectionState.current = "disconnected";
+    mockFetchProjects.mockResolvedValue([
+      { id: "test-id", name: "MyProject", status: "running", token: "tok" },
+    ]);
+    renderProjectPage();
+    await waitFor(() => {
+      expect(document.title).toBe("Orkestra | MyProject");
+    });
+    // App stays mounted — no full skeleton shown
+    expect(screen.queryByText("Connecting to daemon…")).not.toBeInTheDocument();
+    // ReconnectingBanner renders (mocked to avoid framer-motion issues)
+    expect(screen.getByTestId("reconnecting-banner")).toBeInTheDocument();
   });
 });

@@ -372,6 +372,28 @@ describe("WebSocketTransport", () => {
       expect(MockWebSocket.instances.length).toBe(countBefore + 1);
     });
 
+    it("instant reconnect resets after unstable period followed by stable connection", () => {
+      makeConnectedTransport();
+
+      // Unstable disconnect (immediate close, no 5s stable period).
+      latestSocket().simulateClose();
+      // Backoff applies — wait 1s for reconnect.
+      vi.advanceTimersByTime(1_000);
+      const countAfterBackoff = MockWebSocket.instances.length;
+      expect(countAfterBackoff).toBe(2);
+
+      // New connection opens — simulate it becoming stable (5s+).
+      latestSocket().simulateOpen();
+      vi.advanceTimersByTime(5_000);
+
+      // Disconnect from the now-stable connection.
+      latestSocket().simulateClose();
+
+      // Should get instant reconnect (0ms) since the last connection was stable.
+      vi.advanceTimersByTime(0);
+      expect(MockWebSocket.instances.length).toBe(countAfterBackoff + 1);
+    });
+
     it("transitions through disconnected → connecting → connected on reconnect", () => {
       const states: string[] = [];
       const t = makeConnectedTransport();

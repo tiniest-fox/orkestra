@@ -18,7 +18,8 @@ pub fn execute(
 ) -> WorkflowResult<()> {
     // Verify stage has approval capability
     let effective_caps = workflow
-        .effective_capabilities(current_stage, task.flow.as_deref())
+        .stage(&task.flow, current_stage)
+        .map(|s| s.capabilities.clone())
         .ok_or_else(|| {
             WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
         })?;
@@ -45,6 +46,7 @@ pub fn execute(
             // Store rejection content as artifact (same name as approvals, overwrite semantics)
             let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
                 workflow,
+                &task.flow,
                 current_stage,
                 "artifact",
             );
@@ -55,12 +57,12 @@ pub fn execute(
             let target = stage::execute_rejection::resolve_rejection_target(
                 workflow,
                 current_stage,
-                task.flow.as_deref(),
+                &task.flow,
             )?;
 
             if task.auto_mode
                 || workflow
-                    .stage(current_stage)
+                    .stage(&task.flow, current_stage)
                     .is_some_and(|s| s.is_automated)
             {
                 // Auto-advance: execute rejection immediately (existing behavior)

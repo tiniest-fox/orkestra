@@ -14,7 +14,9 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let artifacts_json: String = row.get(4)?;
     let depends_json: String = row.get(6)?;
     let auto_mode: bool = row.get::<_, i32>(9).unwrap_or(0) != 0;
-    let flow: Option<String> = row.get(14).unwrap_or(None);
+    let flow: String = row
+        .get::<_, Option<String>>(14)?
+        .unwrap_or_else(|| "default".to_string());
     let pr_url: Option<String> = row.get(17).unwrap_or(None);
     let created_interactive: bool = row.get::<_, i32>(18).unwrap_or(0) != 0;
 
@@ -51,7 +53,9 @@ pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
     let state_json: String = row.get(3)?;
     let depends_json: String = row.get(5)?;
     let auto_mode: bool = row.get::<_, i32>(8).unwrap_or(0) != 0;
-    let flow: Option<String> = row.get(13).unwrap_or(None);
+    let flow: String = row
+        .get::<_, Option<String>>(13)?
+        .unwrap_or_else(|| "default".to_string());
     let pr_url: Option<String> = row.get(16).unwrap_or(None);
     let created_interactive: bool = row.get::<_, i32>(17).unwrap_or(0) != 0;
 

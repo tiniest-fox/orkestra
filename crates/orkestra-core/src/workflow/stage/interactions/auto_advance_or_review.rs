@@ -26,7 +26,7 @@ pub fn execute(
 // -- Helpers --
 
 fn should_auto_advance(task: &Task, stage: &str, workflow: &WorkflowConfig) -> bool {
-    let is_automated = if let Some(s) = workflow.stage(stage) {
+    let is_automated = if let Some(s) = workflow.stage(&task.flow, stage) {
         s.is_automated
     } else {
         orkestra_debug!(

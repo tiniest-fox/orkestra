@@ -13,16 +13,16 @@ use crate::types::WorkflowStageEntry;
 
 /// Build workflow stage entries for prompt rendering.
 ///
-/// Returns a list of all stages in the given flow (or default flow if None),
-/// with their names, descriptions, a flag indicating the current stage, and
-/// artifact paths for stages that have already produced materialized artifacts.
+/// Returns a list of all stages in the given flow, with their names, descriptions,
+/// a flag indicating the current stage, and artifact paths for stages that have
+/// already produced materialized artifacts.
 ///
 /// `artifact_names` — set of artifact names that have been materialized to the worktree.
 /// `worktree_path` — absolute path to the task's worktree; used to compute absolute artifact paths.
 pub fn execute(
     workflow: &WorkflowConfig,
     current_stage: &str,
-    flow: Option<&str>,
+    flow: &str,
     artifact_names: &[String],
     worktree_path: Option<&str>,
 ) -> Vec<WorkflowStageEntry> {
@@ -63,7 +63,7 @@ pub fn execute(
 mod tests {
     use super::*;
     use indexmap::IndexMap;
-    use orkestra_types::config::{FlowConfig, FlowStageEntry, StageConfig, WorkflowConfig};
+    use orkestra_types::config::{FlowConfig, IntegrationConfig, StageConfig, WorkflowConfig};
 
     #[test]
     fn test_default_flow() {
@@ -73,7 +73,7 @@ mod tests {
             StageConfig::new("review", "verdict"),
         ]);
 
-        let entries = execute(&workflow, "work", None, &[], None);
+        let entries = execute(&workflow, "work", "default", &[], None);
         assert_eq!(entries.len(), 3);
 
         assert_eq!(entries[0].name, "plan");
@@ -96,18 +96,11 @@ mod tests {
             "quick".into(),
             FlowConfig {
                 description: "Skip breakdown".into(),
-                icon: Some("zap".into()),
                 stages: vec![
-                    FlowStageEntry {
-                        stage_name: "plan".into(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "work".into(),
-                        overrides: None,
-                    },
+                    StageConfig::new("plan", "plan").with_description("Create a plan"),
+                    StageConfig::new("work", "summary").with_description("Implement the plan"),
                 ],
-                integration: None,
+                integration: IntegrationConfig::new("plan"),
             },
         );
 
@@ -119,7 +112,7 @@ mod tests {
         ])
         .with_flows(flows);
 
-        let entries = execute(&workflow, "work", Some("quick"), &[], None);
+        let entries = execute(&workflow, "work", "quick", &[], None);
         assert_eq!(entries.len(), 2);
 
         assert_eq!(entries[0].name, "plan");
@@ -133,7 +126,7 @@ mod tests {
     fn test_nonexistent_flow() {
         let workflow = WorkflowConfig::new(vec![StageConfig::new("plan", "plan")]);
 
-        let entries = execute(&workflow, "plan", Some("nonexistent"), &[], None);
+        let entries = execute(&workflow, "plan", "nonexistent", &[], None);
         assert!(entries.is_empty());
     }
 
@@ -144,7 +137,7 @@ mod tests {
             StageConfig::new("work", "summary").with_display_name("Work Stage"),
         ]);
 
-        let entries = execute(&workflow, "work", None, &[], None);
+        let entries = execute(&workflow, "work", "default", &[], None);
         assert_eq!(entries[0].description, "Planning");
         assert_eq!(entries[1].description, "Work Stage");
     }
@@ -163,7 +156,7 @@ mod tests {
         let entries = execute(
             &workflow,
             "work",
-            None,
+            "default",
             &artifact_names,
             Some("/worktrees/my-task"),
         );
@@ -196,7 +189,7 @@ mod tests {
             "summary".to_string(),
             "verdict".to_string(),
         ];
-        let entries = execute(&workflow, "work", None, &artifact_names, None);
+        let entries = execute(&workflow, "work", "default", &artifact_names, None);
 
         // plan: before current, materialized → path present
         assert!(entries[0].artifact_path.is_some());

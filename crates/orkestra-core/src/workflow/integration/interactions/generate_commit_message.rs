@@ -62,7 +62,7 @@ fn generate_with_fallback(
     diff_summary: &str,
     recent_commits: &[String],
 ) -> String {
-    let model_names = collect_model_names(workflow, task.flow.as_deref());
+    let model_names = collect_model_names(workflow, &task.flow);
 
     match commit_gen.generate_commit_message(
         &task.title,

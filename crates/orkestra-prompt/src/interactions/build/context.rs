@@ -48,7 +48,7 @@ impl<'a> PromptBuilder<'a> {
         show_direct_structured_output_hint: bool,
         sibling_tasks: &[SiblingTaskContext],
     ) -> Option<StagePromptContext<'a>> {
-        let stage = self.workflow.stage(stage_name)?;
+        let stage = self.workflow.stage(&task.flow, stage_name)?;
         Some(build_context_from_stage(
             self.workflow,
             stage,
@@ -112,7 +112,9 @@ fn build_context_from_stage<'a>(
     let artifacts: Vec<ArtifactContext> = artifact_names
         .iter()
         .map(|name| {
-            let description = workflow.artifact_description(name).map(str::to_owned);
+            let description = workflow
+                .artifact_description(&task.flow, name)
+                .map(str::to_owned);
             let file_path = resolve_artifact_path(task.worktree_path.as_deref(), name);
             ArtifactContext {
                 name: name.clone(),
@@ -129,7 +131,7 @@ fn build_context_from_stage<'a>(
     let workflow_stages = workflow_overview::execute(
         workflow,
         &stage.name,
-        task.flow.as_deref(),
+        &task.flow,
         artifact_names,
         task.worktree_path.as_deref(),
     );

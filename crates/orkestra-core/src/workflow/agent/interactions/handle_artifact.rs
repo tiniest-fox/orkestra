@@ -15,8 +15,9 @@ pub fn execute(
     stage_name: &str,
     now: &str,
 ) -> WorkflowResult<()> {
-    let artifact_name =
-        stage::finalize_advancement::artifact_name_for_stage(workflow, stage_name, "artifact");
+    let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+        workflow, &task.flow, stage_name, "artifact",
+    );
     task.artifacts
         .set(Artifact::new(&artifact_name, content, stage_name, now));
 
@@ -24,7 +25,8 @@ pub fn execute(
     // entering the commit pipeline or awaiting review. The orchestrator will spawn
     // the gate script and handle the pass/fail outcome.
     if workflow
-        .effective_gate_config(stage_name, task.flow.as_deref())
+        .stage(&task.flow, stage_name)
+        .and_then(|s| s.gate.as_ref())
         .is_some()
     {
         task.state = TaskState::awaiting_gate(stage_name);

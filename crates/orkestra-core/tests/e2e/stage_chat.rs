@@ -631,7 +631,7 @@ fn test_chat_structured_output_completes_stage() {
     // Simulate the detection path: valid JSON in accumulated chat text
     let detected = ctx
         .api()
-        .detect_chat_completion(&task_id, "work", None, VALID_APPROVAL_JSON)
+        .detect_chat_completion(&task_id, "work", "default", VALID_APPROVAL_JSON)
         .expect("detection should not error");
 
     assert!(detected, "Valid approval JSON should be detected");
@@ -686,7 +686,7 @@ fn test_chat_invalid_json_silently_ignored() {
 
     let detected = ctx
         .api()
-        .detect_chat_completion(&task_id, "work", None, "this is not json at all")
+        .detect_chat_completion(&task_id, "work", "default", "this is not json at all")
         .expect("detection should not error");
 
     assert!(
@@ -726,7 +726,7 @@ fn test_chat_wrong_schema_json_silently_ignored() {
         .detect_chat_completion(
             &task_id,
             "work",
-            None,
+            "default",
             r#"{"type":"unknown_type","content":"something"}"#,
         )
         .expect("detection should not error");
@@ -762,7 +762,7 @@ fn test_chat_structured_output_during_interrupted() {
     // Detection should work from Interrupted state (can_chat() returns true)
     let detected = ctx
         .api()
-        .detect_chat_completion(&task_id, "work", None, VALID_APPROVAL_JSON)
+        .detect_chat_completion(&task_id, "work", "default", VALID_APPROVAL_JSON)
         .expect("detection should not error");
 
     assert!(
@@ -813,7 +813,7 @@ fn test_chat_detection_skipped_if_already_approved() {
     // Detection should return Ok(false) silently
     let detected = ctx
         .api()
-        .detect_chat_completion(&task_id, "work", None, VALID_APPROVAL_JSON)
+        .detect_chat_completion(&task_id, "work", "default", VALID_APPROVAL_JSON)
         .expect("detection should not error");
 
     assert!(
@@ -842,7 +842,7 @@ fn test_chat_structured_output_failed() {
 
     let detected = ctx
         .api()
-        .detect_chat_completion(&task_id, "work", None, VALID_FAILED_JSON)
+        .detect_chat_completion(&task_id, "work", "default", VALID_FAILED_JSON)
         .expect("detection should not error");
 
     assert!(detected, "Failed JSON should be detected and processed");
@@ -878,7 +878,7 @@ fn test_chat_markdown_fenced_json_detected() {
 
     let detected = ctx
         .api()
-        .detect_chat_completion(&task_id, "work", None, &fenced)
+        .detect_chat_completion(&task_id, "work", "default", &fenced)
         .expect("detection should not error");
 
     assert!(detected, "Markdown-fenced JSON should be detected");
@@ -909,7 +909,7 @@ fn test_chat_prose_with_fenced_json_detected() {
 
     let detected = ctx
         .api()
-        .detect_chat_completion(&task_id, "work", None, &mixed)
+        .detect_chat_completion(&task_id, "work", "default", &mixed)
         .expect("detection should not error");
 
     assert!(detected, "JSON embedded in prose should be detected");
@@ -939,7 +939,7 @@ fn test_chat_structured_output_activity_log_on_correct_iteration() {
         .detect_chat_completion(
             &task_id,
             "work",
-            None,
+            "default",
             VALID_APPROVAL_WITH_ACTIVITY_LOG_JSON,
         )
         .expect("detection should not error");

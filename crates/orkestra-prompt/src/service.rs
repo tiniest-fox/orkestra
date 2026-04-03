@@ -10,8 +10,8 @@ use orkestra_types::domain::{QuestionAnswer, Task};
 
 use crate::interactions;
 use crate::types::{
-    AgentConfigError, FlowOverrides, IntegrationErrorContext, ResolvedAgentConfig, ResumeType,
-    SiblingTaskContext, StagePromptContext,
+    AgentConfigError, IntegrationErrorContext, ResolvedAgentConfig, ResumeType, SiblingTaskContext,
+    StagePromptContext,
 };
 
 // ============================================================================
@@ -66,7 +66,6 @@ impl PromptService {
         json_schema: &str,
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
-        flow_overrides: &FlowOverrides<'_>,
         show_direct_structured_output_hint: bool,
         sibling_tasks: &[SiblingTaskContext],
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
@@ -80,7 +79,6 @@ impl PromptService {
             json_schema,
             feedback,
             integration_error,
-            flow_overrides,
             show_direct_structured_output_hint,
             sibling_tasks,
         )

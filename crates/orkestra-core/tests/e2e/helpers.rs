@@ -104,7 +104,7 @@ impl TestEnv {
         // DefinitionNotFound and tasks never reach AwaitingGate.
         let agents_dir = orkestra_dir.join("agents");
         std::fs::create_dir_all(&agents_dir).unwrap();
-        for stage in &workflow.stages {
+        for stage in workflow.all_unique_stages() {
             let filename = stage
                 .prompt_path()
                 .unwrap_or_else(|| format!("{}.md", stage.name));
@@ -837,13 +837,9 @@ pub mod workflows {
     /// agent completes. Tests must pre-load mock output via `set_output()` and
     /// advance three ticks before the gate PID is recorded in the session.
     pub fn sleep_script() -> WorkflowConfig {
-        WorkflowConfig {
-            version: 1,
-            stages: vec![StageConfig::new("work", "output")
-                .with_gate(GateConfig::new("sleep 60").with_timeout(120))],
-            integration: IntegrationConfig::new("work"),
-            flows: indexmap::IndexMap::new(),
-        }
+        WorkflowConfig::new(vec![StageConfig::new("work", "output")
+            .with_gate(GateConfig::new("sleep 60").with_timeout(120))])
+        .with_integration(IntegrationConfig::new("work"))
     }
 
     /// Full workflow with breakdown that produces subtasks.
@@ -851,65 +847,51 @@ pub mod workflows {
     /// planning → breakdown → work → review
     /// Plus a "subtask" flow: work → review
     pub fn with_subtasks() -> WorkflowConfig {
-        use orkestra_core::workflow::config::{
-            FlowConfig, FlowStageEntry, FlowStageOverride, StageCapabilities,
-        };
+        use orkestra_core::workflow::config::{FlowConfig, StageCapabilities};
 
         let mut flows = indexmap::IndexMap::new();
         flows.insert(
             "subtask".to_string(),
             FlowConfig {
                 description: "Simplified pipeline for subtasks".to_string(),
-                icon: None,
                 stages: vec![
-                    FlowStageEntry {
-                        stage_name: "work".to_string(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "review".to_string(),
-                        overrides: Some(FlowStageOverride {
-                            capabilities: Some(StageCapabilities::with_approval(Some(
-                                "work".into(),
-                            ))),
-                            ..Default::default()
-                        }),
-                    },
+                    StageConfig::new("work", "summary").with_prompt("worker.md"),
+                    StageConfig::new("review", "verdict")
+                        .with_prompt("reviewer.md")
+                        .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+                        .automated(),
                 ],
-                integration: None,
+                integration: IntegrationConfig::new("work"),
             },
         );
 
-        WorkflowConfig {
-            version: 1,
-            stages: vec![
-                StageConfig::new("planning", "plan")
-                    .with_prompt("planner.md")
-                    .with_capabilities(
-                        orkestra_core::workflow::config::StageCapabilities::with_questions(),
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan")
+                .with_prompt("planner.md")
+                .with_capabilities(
+                    orkestra_core::workflow::config::StageCapabilities::with_questions(),
+                ),
+            StageConfig::new("breakdown", "breakdown")
+                .with_prompt("breakdown.md")
+                .with_capabilities(orkestra_core::workflow::config::StageCapabilities {
+                    subtasks: Some(
+                        orkestra_core::workflow::config::SubtaskCapabilities::default()
+                            .with_flow("subtask"),
                     ),
-                StageConfig::new("breakdown", "breakdown")
-                    .with_prompt("breakdown.md")
-                    .with_capabilities(orkestra_core::workflow::config::StageCapabilities {
-                        subtasks: Some(
-                            orkestra_core::workflow::config::SubtaskCapabilities::default()
-                                .with_flow("subtask"),
-                        ),
-                        ..Default::default()
-                    }),
-                StageConfig::new("work", "summary").with_prompt("worker.md"),
-                StageConfig::new("review", "verdict")
-                    .with_prompt("reviewer.md")
-                    .with_capabilities(
-                        orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
-                            "work".into(),
-                        )),
-                    )
-                    .automated(),
-            ],
-            integration: IntegrationConfig::new("work"),
-            flows,
-        }
+                    ..Default::default()
+                }),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
+            StageConfig::new("review", "verdict")
+                .with_prompt("reviewer.md")
+                .with_capabilities(
+                    orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
+                        "work".into(),
+                    )),
+                )
+                .automated(),
+        ])
+        .with_integration(IntegrationConfig::new("work"))
+        .with_flows(flows)
     }
 
     /// Agent stage with an `echo hello` gate. Gate exits immediately.
@@ -918,25 +900,32 @@ pub mod workflows {
     /// the PID is still recorded in the session (simulating crash before completion).
     /// Tests must pre-load mock output via `set_output()` before advancing.
     pub fn instant_script() -> WorkflowConfig {
-        WorkflowConfig {
-            version: 1,
-            stages: vec![StageConfig::new("work", "output")
-                .with_gate(GateConfig::new("echo hello").with_timeout(10))],
-            integration: IntegrationConfig::new("work"),
-            flows: indexmap::IndexMap::new(),
-        }
+        WorkflowConfig::new(vec![StageConfig::new("work", "output")
+            .with_gate(GateConfig::new("echo hello").with_timeout(10))])
+        .with_integration(IntegrationConfig::new("work"))
     }
 }
 
 /// Disable `auto_merge` on a workflow config.
 pub fn disable_auto_merge(mut workflow: WorkflowConfig) -> WorkflowConfig {
-    workflow.integration.auto_merge = false;
+    if let Some(flow) = workflow.flow_mut("default") {
+        flow.integration.auto_merge = false;
+    }
     workflow
 }
 
 /// Enable `auto_merge` on a workflow config.
 pub fn enable_auto_merge(mut workflow: WorkflowConfig) -> WorkflowConfig {
-    workflow.integration.auto_merge = true;
+    let names: Vec<String> = workflow
+        .flow_names()
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+    for name in names {
+        if let Some(flow) = workflow.flow_mut(&name) {
+            flow.integration.auto_merge = true;
+        }
+    }
     workflow
 }
 

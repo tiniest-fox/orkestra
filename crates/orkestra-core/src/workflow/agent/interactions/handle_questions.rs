@@ -21,8 +21,9 @@ pub fn execute(
     now: &str,
 ) -> WorkflowResult<()> {
     // Store questions as a markdown artifact for reference
-    let artifact_name =
-        stage::finalize_advancement::artifact_name_for_stage(workflow, stage_name, "artifact");
+    let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+        workflow, &task.flow, stage_name, "artifact",
+    );
     let content = format_questions_as_markdown(questions);
     task.artifacts
         .set(Artifact::new(&artifact_name, &content, stage_name, now));

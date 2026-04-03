@@ -13,10 +13,10 @@ use crate::workflow::domain::Task;
 
 // Re-export everything from orkestra-prompt for backward compatibility.
 pub use orkestra_prompt::{
-    sibling_status_display, AgentConfigError, ArtifactContext, FlowOverrides,
-    IntegrationErrorContext, PrCheckContext, PrComment, PromptBuilder,
-    PromptService as PromptRenderer, QuestionAnswerContext, ResolvedAgentConfig,
-    ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
+    sibling_status_display, AgentConfigError, ArtifactContext, IntegrationErrorContext,
+    PrCheckContext, PrComment, PromptBuilder, PromptService as PromptRenderer,
+    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
+    SiblingTaskContext, StagePromptContext,
 };
 /// Lazy-initialized prompt renderer (owns pre-compiled Handlebars templates).
 static RENDERER: LazyLock<PromptRenderer> = LazyLock::new(PromptRenderer::new);
@@ -110,7 +110,7 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
 // Agent Configuration Resolution (I/O wrappers)
 // ============================================================================
 
-/// Resolve agent configuration for a specific stage with optional overrides.
+/// Resolve agent configuration for a specific stage.
 ///
 /// Loads the agent definition and JSON schema from disk, then delegates
 /// to orkestra-prompt for pure assembly.
@@ -127,38 +127,23 @@ pub fn resolve_stage_agent_config_for(
     project_root: Option<&Path>,
     feedback: Option<&str>,
     integration_error: Option<IntegrationErrorContext<'_>>,
-    flow_overrides: &FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
-        .stage(stage_name)
+        .stage(&task.flow, stage_name)
         .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
 
-    // Resolve effective stage for schema generation (apply flow overrides)
-    // Only capabilities need overriding — artifact handling is now done at materialization time.
-    let effective_stage = if flow_overrides.capabilities.is_some() {
-        let mut s = stage.clone();
-        if let Some(caps) = flow_overrides.capabilities {
-            s.capabilities = caps.clone();
-        }
-        s
-    } else {
-        stage.clone()
-    };
-
     // I/O: Load agent definition from disk
-    let definition_path = flow_overrides
-        .prompt
-        .map(String::from)
-        .or_else(|| stage.prompt_path())
+    let definition_path = stage
+        .prompt_path()
         .unwrap_or_else(|| format!("{stage_name}.md"));
 
     let agent_def = load_agent_definition(project_root, &definition_path)
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
 
     // I/O: Get JSON schema (may load custom schema from disk)
-    let json_schema = get_agent_schema(&effective_stage, project_root).ok_or_else(|| {
+    let json_schema = get_agent_schema(stage, project_root).ok_or_else(|| {
         AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
     })?;
 
@@ -172,7 +157,6 @@ pub fn resolve_stage_agent_config_for(
         &json_schema,
         feedback,
         integration_error,
-        flow_overrides,
         show_direct_structured_output_hint,
         sibling_tasks,
     )
@@ -217,7 +201,7 @@ pub fn determine_resume_type(
 mod tests {
     use super::*;
     use crate::workflow::config::{
-        FlowConfig, FlowStageEntry, StageCapabilities, StageConfig, WorkflowConfig,
+        FlowConfig, IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
     };
     use crate::workflow::stage::types::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
     use indexmap::IndexMap;
@@ -729,7 +713,6 @@ mod tests {
             Some(temp_dir.path()),
             None,
             None,
-            &FlowOverrides::default(),
             false,
             &[],
         )
@@ -851,18 +834,11 @@ mod tests {
             "quick".into(),
             FlowConfig {
                 description: "Quick flow".into(),
-                icon: Some("zap".into()),
                 stages: vec![
-                    FlowStageEntry {
-                        stage_name: "plan".into(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "work".into(),
-                        overrides: None,
-                    },
+                    StageConfig::new("plan", "plan").with_description("Create a plan"),
+                    StageConfig::new("work", "summary").with_description("Implement the plan"),
                 ],
-                integration: None,
+                integration: IntegrationConfig::new("plan"),
             },
         );
 
@@ -876,7 +852,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let mut task = Task::new("task-1", "Test", "Description", "work", "now");
-        task.flow = Some("quick".into());
+        task.flow = "quick".into();
 
         let ctx = builder
             .build_context("work", &task, &[], None, None, false, &[])

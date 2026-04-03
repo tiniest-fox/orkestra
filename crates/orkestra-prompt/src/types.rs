@@ -118,18 +118,6 @@ pub struct WorkflowStageEntry {
     pub artifact_path: Option<String>,
 }
 
-/// Flow-specific overrides for agent configuration.
-///
-/// When a task uses a named flow, the flow may override the prompt path,
-/// capabilities for specific stages.
-#[derive(Debug, Default, Clone)]
-pub struct FlowOverrides<'a> {
-    /// Override the prompt template path.
-    pub prompt: Option<&'a str>,
-    /// Override the stage capabilities.
-    pub capabilities: Option<&'a orkestra_types::config::StageCapabilities>,
-}
-
 // ============================================================================
 // Agent Config Types
 // ============================================================================

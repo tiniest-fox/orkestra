@@ -28,9 +28,10 @@ pub fn execute(
     }
 
     let subtask_flow = find_subtask_flow(parent, workflow);
+    let subtask_flow_name = subtask_flow.as_deref().unwrap_or("default");
 
     let first_stage = workflow
-        .first_stage_in_flow(subtask_flow.as_deref())
+        .first_stage(subtask_flow_name)
         .ok_or_else(|| WorkflowError::InvalidTransition("No stages in subtask flow".to_string()))?;
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -53,7 +54,7 @@ pub fn execute(
         );
         task.parent_id = Some(parent.id.clone());
         task.short_id = Some(short_id);
-        task.flow.clone_from(&subtask_flow);
+        task.flow = subtask_flow_name.to_string();
         task.auto_mode = parent.auto_mode;
 
         // Subtasks branch from parent's branch (worktree created during setup)
@@ -101,12 +102,9 @@ pub fn execute(
 
 /// Find the subtask flow for a parent task based on its current stage's capabilities.
 fn find_subtask_flow(parent: &Task, workflow: &WorkflowConfig) -> Option<String> {
-    for stage in &workflow.stages {
-        let effective_caps = workflow
-            .effective_capabilities(&stage.name, parent.flow.as_deref())
-            .unwrap_or_default();
-        if effective_caps.produces_subtasks() {
-            return effective_caps.subtask_flow().map(String::from);
+    for stage in workflow.stages_in_flow(&parent.flow) {
+        if stage.capabilities.produces_subtasks() {
+            return stage.capabilities.subtask_flow().map(String::from);
         }
     }
     None

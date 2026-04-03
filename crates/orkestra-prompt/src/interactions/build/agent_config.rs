@@ -6,12 +6,11 @@
 
 use handlebars::Handlebars;
 
-use orkestra_types::config::{StageConfig, WorkflowConfig};
+use orkestra_types::config::WorkflowConfig;
 use orkestra_types::domain::Task;
 
 use crate::types::{
-    AgentConfigError, FlowOverrides, IntegrationErrorContext, ResolvedAgentConfig,
-    SiblingTaskContext,
+    AgentConfigError, IntegrationErrorContext, ResolvedAgentConfig, SiblingTaskContext,
 };
 
 use super::context::PromptBuilder;
@@ -39,23 +38,18 @@ pub fn execute(
     json_schema: &str,
     feedback: Option<&str>,
     integration_error: Option<IntegrationErrorContext<'_>>,
-    flow_overrides: &FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
-        .stage(stage_name)
+        .stage(&task.flow, stage_name)
         .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
-
-    // Build effective stage config (with capability overrides for flows)
-    let overridden_stage = apply_overrides(stage, flow_overrides);
-    let effective_stage = overridden_stage.as_ref().unwrap_or(stage);
 
     // Build prompt context
     let builder = PromptBuilder::new(workflow);
     let ctx = builder
         .build_context_with_stage(
-            effective_stage,
+            stage,
             task,
             artifact_names,
             feedback,
@@ -77,20 +71,4 @@ pub fn execute(
         json_schema: json_schema.to_string(),
         session_type: stage_name.to_string(),
     })
-}
-
-// -- Helpers --
-
-/// Apply flow overrides to a stage config, returning Some if overrides were applied.
-fn apply_overrides(stage: &StageConfig, flow_overrides: &FlowOverrides<'_>) -> Option<StageConfig> {
-    // Only capabilities need overriding for prompt building.
-    if flow_overrides.capabilities.is_some() {
-        let mut s = stage.clone();
-        if let Some(caps) = flow_overrides.capabilities {
-            s.capabilities = caps.clone();
-        }
-        Some(s)
-    } else {
-        None
-    }
 }

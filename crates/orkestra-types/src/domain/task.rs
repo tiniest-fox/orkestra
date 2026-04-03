@@ -93,9 +93,9 @@ pub struct Task {
     #[serde(default, rename = "interactive")]
     pub created_interactive: bool,
 
-    /// Named flow for this task (e.g., "`quick_fix`"). None = default (full pipeline).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub flow: Option<String>,
+    /// Named flow for this task (e.g., "quick"). Defaults to "default" (full pipeline).
+    #[serde(default = "default_flow_name")]
+    pub flow: String,
 
     // === Tracking ===
     /// When the task was created (RFC3339).
@@ -107,6 +107,10 @@ pub struct Task {
     /// When the task was completed (RFC3339), if done.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<String>,
+}
+
+fn default_flow_name() -> String {
+    "default".to_string()
 }
 
 impl Task {
@@ -135,7 +139,7 @@ impl Task {
             pr_url: None,
             auto_mode: false,
             created_interactive: false,
-            flow: None,
+            flow: "default".to_string(),
             created_at: created.clone(),
             updated_at: created,
             completed_at: None,
@@ -316,7 +320,7 @@ pub struct TaskHeader {
     pub pr_url: Option<String>,
     pub auto_mode: bool,
     pub created_interactive: bool,
-    pub flow: Option<String>,
+    pub flow: String,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -695,7 +699,7 @@ mod tests {
             pr_url: None,
             auto_mode: false,
             created_interactive: false,
-            flow: None,
+            flow: "default".to_string(),
             created_at: String::new(),
             updated_at: String::new(),
             completed_at: None,
@@ -734,7 +738,7 @@ mod tests {
             pr_url: None,
             auto_mode: false,
             created_interactive: false,
-            flow: None,
+            flow: "default".to_string(),
             created_at: String::new(),
             updated_at: String::new(),
             completed_at: None,

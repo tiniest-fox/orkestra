@@ -1148,3 +1148,135 @@ fn force_push_pr_changes_propagates_git_error() {
         "force_push_pr_changes should return GitError when force push fails, got: {result:?}"
     );
 }
+
+// =============================================================================
+// Per-flow auto_merge resolution
+// =============================================================================
+
+/// `auto_merge` is resolved per-candidate from the task's own flow.
+///
+/// This is a regression test for the bug where `auto_merge` was read from the
+/// first flow only and applied globally. A task on "hotfix" with `auto_merge: true`
+/// would be governed by "default" flow's `auto_merge: false` setting, silently
+/// preventing integration.
+///
+/// Test structure:
+/// - "default" flow: work stage, `auto_merge: false` — done tasks pause at Done
+/// - "hotfix" flow: work stage, `auto_merge: true` — done tasks auto-integrate
+/// - Both tasks are driven to Done; only the hotfix task should auto-integrate.
+#[test]
+fn per_flow_auto_merge_resolved_per_candidate() {
+    use indexmap::IndexMap;
+    use orkestra_core::workflow::config::{
+        FlowConfig, IntegrationConfig, StageConfig, WorkflowConfig,
+    };
+    use orkestra_core::workflow::TaskCreationMode;
+
+    // Build a workflow: "default" (auto_merge: false) and "hotfix" (auto_merge: true)
+    // Both flows have a single automated "work" stage — no human approval required,
+    // so tasks advance straight to Done when the agent outputs its artifact.
+    let work_stage = || {
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .automated()
+    };
+
+    let mut flows = IndexMap::new();
+    flows.insert(
+        "default".to_string(),
+        FlowConfig {
+            description: "Default flow — manual merge".to_string(),
+            stages: vec![work_stage()],
+            integration: IntegrationConfig {
+                on_failure: "work".to_string(),
+                auto_merge: false,
+            },
+        },
+    );
+    flows.insert(
+        "hotfix".to_string(),
+        FlowConfig {
+            description: "Hotfix flow — auto merge".to_string(),
+            stages: vec![work_stage()],
+            integration: IntegrationConfig {
+                on_failure: "work".to_string(),
+                auto_merge: true,
+            },
+        },
+    );
+
+    let workflow = WorkflowConfig { version: 1, flows };
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    // Create both tasks before any advance so they both get set up in the same tick.
+    // Creating tasks separately with individual setup advances causes the first task
+    // to be spawned (without mock output) during the second task's setup tick.
+    let default_id = ctx
+        .api()
+        .create_task_with_options(
+            "Default task",
+            "On default flow",
+            None,
+            TaskCreationMode::Normal,
+            Some("default"),
+        )
+        .expect("Should create default task")
+        .id;
+
+    let hotfix_id = ctx
+        .api()
+        .create_task_with_options(
+            "Hotfix task",
+            "On hotfix flow",
+            None,
+            TaskCreationMode::Normal,
+            Some("hotfix"),
+        )
+        .expect("Should create hotfix task")
+        .id;
+
+    // One advance sets up both tasks simultaneously; both are deferred from spawn this tick.
+    ctx.advance();
+
+    let default_task = ctx.api().get_task(&default_id).unwrap();
+    let hotfix_task = ctx.api().get_task(&hotfix_id).unwrap();
+    assert_eq!(default_task.flow, "default");
+    assert_eq!(hotfix_task.flow, "hotfix");
+
+    // Pre-set outputs for both workers before the spawn tick.
+    ctx.set_output(
+        &default_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Default work done".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.set_output(
+        &hotfix_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Hotfix work done".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawn both workers
+                   // With sync_background, this tick: processes both artifacts → Done, then the
+                   // orchestrator immediately finds the hotfix candidate (auto_merge=true) and
+                   // auto-integrates it. Default task (auto_merge=false) stays at Done.
+    ctx.advance();
+
+    let default_after = ctx.api().get_task(&default_id).unwrap();
+    let hotfix_after = ctx.api().get_task(&hotfix_id).unwrap();
+
+    assert!(
+        matches!(default_after.state, TaskState::Done),
+        "default task should be Done (auto_merge=false prevents integration), got: {:?}",
+        default_after.state
+    );
+    assert!(
+        !matches!(hotfix_after.state, TaskState::Done),
+        "hotfix task should have auto-integrated (auto_merge=true), but is still Done"
+    );
+}

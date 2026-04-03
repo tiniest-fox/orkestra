@@ -61,10 +61,10 @@ impl<'a> PromptBuilder<'a> {
         ))
     }
 
-    /// Build context for a stage using an explicit stage config (for flow overrides).
+    /// Build context for a stage using an explicit stage config.
     ///
     /// This is like `build_context` but accepts the stage directly instead of
-    /// looking it up by name. Used when capabilities have been overridden by a flow.
+    /// looking it up by name.
     ///
     /// # Arguments
     /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.

@@ -26,10 +26,10 @@ pub fn execute(
     let breakdown_stage = find_breakdown_stage(workflow, &parent);
 
     if let Some(stage) = breakdown_stage {
+        let default_caps = Default::default();
         let caps = workflow
             .stage(&parent.flow, &stage)
-            .map(|s| s.capabilities.clone())
-            .unwrap_or_default();
+            .map_or(&default_caps, |s| &s.capabilities);
 
         let next_state = if let Some(target) = caps.completion_stage() {
             TaskState::queued(target)

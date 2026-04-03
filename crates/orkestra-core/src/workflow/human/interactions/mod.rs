@@ -24,7 +24,7 @@ pub mod skip_stage;
 
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
-use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 
 /// Resolve the current stage name for a task, handling old data without a stage.
 ///
@@ -40,12 +40,16 @@ pub(super) fn resolve_current_stage(
     }
     // Fallback for Failed/Blocked without stage (old data)
     let iterations = store.get_iterations(&task.id)?;
-    Ok(iterations.last().map_or_else(
-        || {
-            workflow
-                .first_stage(&task.flow)
-                .map_or_else(|| "planning".to_string(), |s| s.name.clone())
-        },
-        |i| i.stage.clone(),
-    ))
+    if let Some(last) = iterations.last() {
+        return Ok(last.stage.clone());
+    }
+    workflow
+        .first_stage(&task.flow)
+        .map(|s| s.name.clone())
+        .ok_or_else(|| {
+            WorkflowError::InvalidTransition(format!(
+                "Flow '{}' not found or has no stages",
+                task.flow
+            ))
+        })
 }

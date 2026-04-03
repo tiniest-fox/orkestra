@@ -199,10 +199,24 @@ impl WorkflowConfig {
     }
 
     /// Check whether a stage name exists in the given flow.
-    pub fn stage_in_flow(&self, flow: &str, stage_name: &str) -> bool {
+    pub fn has_stage(&self, flow: &str, stage_name: &str) -> bool {
         self.flows
             .get(flow)
             .is_some_and(|f| f.stages.iter().any(|s| s.name == stage_name))
+    }
+
+    /// Get the recovery stage for integration failures in the given flow.
+    ///
+    /// Returns `on_failure` if it names a valid stage in the flow, otherwise
+    /// falls back to the first stage. Returns `None` if the flow does not exist
+    /// or has no stages.
+    pub fn recovery_stage(&self, flow: &str) -> Option<String> {
+        let flow_config = self.flows.get(flow)?;
+        let configured = &flow_config.integration.on_failure;
+        if flow_config.stages.iter().any(|s| s.name == *configured) {
+            return Some(configured.clone());
+        }
+        flow_config.stages.first().map(|s| s.name.clone())
     }
 
     /// Get the model specs for all stages in the given flow.
@@ -680,16 +694,16 @@ mod tests {
     }
 
     #[test]
-    fn test_stage_in_flow() {
+    fn test_has_stage() {
         let workflow = test_default_workflow();
 
-        assert!(workflow.stage_in_flow("default", "planning"));
-        assert!(workflow.stage_in_flow("default", "work"));
-        assert!(!workflow.stage_in_flow("default", "nonexistent"));
+        assert!(workflow.has_stage("default", "planning"));
+        assert!(workflow.has_stage("default", "work"));
+        assert!(!workflow.has_stage("default", "nonexistent"));
 
         // Subtask flow has work but not planning
-        assert!(workflow.stage_in_flow("subtask", "work"));
-        assert!(!workflow.stage_in_flow("subtask", "planning"));
+        assert!(workflow.has_stage("subtask", "work"));
+        assert!(!workflow.has_stage("subtask", "planning"));
     }
 
     #[test]

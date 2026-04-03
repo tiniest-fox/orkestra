@@ -323,14 +323,12 @@ impl OrchestratorLoop {
         self.spawn_pending_gates(&snapshot, &mut events)?;
 
         // Integrate next done task (one at a time)
-        let auto_merge = {
+        let workflow = {
             let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-            api.workflow
-                .flow(api.workflow.first_flow_name().unwrap_or("default"))
-                .is_some_and(|f| f.integration.auto_merge)
+            api.workflow.clone()
         };
         if let Some(candidate) =
-            integration_interactions::find_next_candidate::execute(&snapshot, auto_merge)
+            integration_interactions::find_next_candidate::execute(&snapshot, &workflow)
         {
             self.start_integration(candidate, &mut events)?;
         }

@@ -25,7 +25,9 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    let recovery_stage = resolve_recovery_stage(workflow, &task.flow)?;
+    let recovery_stage = workflow
+        .recovery_stage(&task.flow)
+        .ok_or_else(|| WorkflowError::InvalidTransition("No recovery stage configured".into()))?;
 
     // Validate task state
     if !task.is_done() {
@@ -61,21 +63,6 @@ pub fn execute(
 
     store.save_task(&task)?;
     Ok(task)
-}
-
-// -- Helpers --
-
-fn resolve_recovery_stage(workflow: &WorkflowConfig, flow: &str) -> WorkflowResult<String> {
-    let configured = workflow
-        .flow(flow)
-        .map_or("", |f| f.integration.on_failure.as_str());
-    if workflow.stage_in_flow(flow, configured) {
-        return Ok(configured.to_string());
-    }
-    workflow
-        .first_stage(flow)
-        .map(|s| s.name.clone())
-        .ok_or_else(|| WorkflowError::InvalidTransition("No recovery stage configured".into()))
 }
 
 // ============================================================================

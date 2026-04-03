@@ -220,16 +220,7 @@ impl WorkflowApi {
 
     /// Get the stage to return to on integration failure.
     pub fn integration_failure_stage(&self, flow: &str) -> Option<String> {
-        let on_failure = self
-            .workflow
-            .flow(flow)
-            .map(|f| f.integration.on_failure.as_str());
-        if let Some(configured) = on_failure {
-            if self.workflow.stage_in_flow(flow, configured) {
-                return Some(configured.to_string());
-            }
-        }
-        self.workflow.first_stage(flow).map(|s| s.name.clone())
+        self.workflow.recovery_stage(flow)
     }
 
     /// Mark a task as being integrated.

@@ -17,12 +17,10 @@ pub fn execute(
     now: &str,
 ) -> WorkflowResult<()> {
     // Verify stage has approval capability
-    let effective_caps = workflow
-        .stage(&task.flow, current_stage)
-        .map(|s| s.capabilities.clone())
-        .ok_or_else(|| {
-            WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
-        })?;
+    let stage_config = workflow.stage(&task.flow, current_stage).ok_or_else(|| {
+        WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
+    })?;
+    let effective_caps = &stage_config.capabilities;
 
     if !effective_caps.has_approval() {
         return Err(WorkflowError::InvalidTransition(format!(

@@ -40,6 +40,7 @@ pub fn execute(
     let mut task = Task::new(&id, title, description, &first_stage.name, &now);
     task.parent_id = Some(parent_id.to_string());
     task.short_id = Some(short_id);
+    task.flow = parent.flow.clone();
 
     // Subtasks branch from parent's branch (worktree created during setup).
     task.base_branch = parent

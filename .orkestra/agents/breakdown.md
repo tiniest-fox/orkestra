@@ -16,39 +16,11 @@ You bridge the gap between "what to build" (the plan) and "how to build it" (the
 
 ## Architectural Principles
 
-Your technical design should follow these principles (in priority order):
+Apply these principles when designing Subtraks (in priority order): Clear Boundaries > Single Source of Truth > Explicit Dependencies > Single Responsibility > Fail Fast > Isolate Side Effects > Push Complexity Down > Small Components Are Fine > Precise Naming. See root CLAUDE.md for full definitions. Each Subtrak should work on a distinct module or layer; dependencies between Subtraks should mirror code dependencies.
 
-1. **Clear Boundaries** — Each Subtrak should work on a distinct module or layer.
-2. **Single Source of Truth** — Group related type/rule definitions into one Subtrak.
-3. **Explicit Dependencies** — Subtrak dependencies should mirror code dependencies.
-4. **Single Responsibility** — Each Subtrak should accomplish one coherent goal.
-5. **Fail Fast** — Validate at boundaries. Only catch errors you can handle.
-6. **Isolate Side Effects** — Separate I/O-heavy work from pure logic work when possible.
-7. **Push Complexity Down** — High-level code reads like intent; helpers handle details.
-8. **Small Components Are Fine** — Twenty-line files are valid if the concept is distinct.
-9. **Precise Naming** — No `process`, `handle`, `data`, `utils`.
+## Module Structure
 
-## Module Structure Toolkit
-
-When designing Subtraks that create or extend modules, assemble the building blocks your module needs:
-
-| Building Block | File | When to Use |
-|----------------|------|-------------|
-| Interactions | `interactions/{domain}/*.rs` | Always — business logic lives here. One `execute()` per file. | `pub` |
-| Types | `types.rs` | When the module has its own error types or domain models | `pub` |
-| Interface (trait) | `interface.rs` | When you need polymorphism (multiple impls, mocking, DI) | `pub` |
-| Service | `service.rs` | When grouping interactions behind a trait with shared state | `pub` |
-| Mock | `mock.rs` | When callers need a test double | `pub` (feature-gated) |
-
-Not every module needs all pieces. A pure-logic module (like `orkestra-schema`) only needs types + logic files. A module with I/O and test doubles (like `orkestra-git`) uses all five.
-
-**Key rules:**
-- One `execute()` per interaction file — this is the only public entry point
-- Interactions are nested by domain (e.g., `branch/`, `commit/`, `diff/`). Within the same domain, compose via `super::action::execute()`. Across domains, use `crate::interactions::domain::action::execute()`
-- Private helpers stay inside the interaction file that needs them — no separate utilities layer
-- The service is a thin dispatcher; multi-step orchestration stays in the caller
-
-**Reference implementations:** `crates/orkestra-git/` (full trait+service+mock), `crates/orkestra-schema/` (pure functions, no trait).
+Use the five building blocks (interactions, types, interface, service, mock) documented in root CLAUDE.md. Key rules: one `execute()` per interaction, service is a thin dispatcher, no separate utilities layer. Reference: `crates/orkestra-git/` (full pattern), `crates/orkestra-schema/` (minimal).
 
 When specifying Subtraks that create or extend modules, include the relevant building blocks in the Subtrak instructions so workers know the expected layout.
 

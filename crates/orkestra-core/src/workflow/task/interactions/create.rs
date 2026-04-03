@@ -29,9 +29,13 @@ pub fn execute(
         }
     }
 
+    let flow_name = flow
+        .or_else(|| workflow.first_flow_name())
+        .unwrap_or("default");
+
     let id = store.next_task_id()?;
     let first_stage = workflow
-        .first_stage_in_flow(flow)
+        .first_stage(flow_name)
         .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
 
     // Resolve base_branch eagerly: use provided value, or current branch from git.
@@ -50,7 +54,7 @@ pub fn execute(
     task.base_branch = resolved_base_branch;
     task.auto_mode = matches!(mode, TaskCreationMode::AutoMode);
     task.created_interactive = matches!(mode, TaskCreationMode::Interactive);
-    task.flow = flow.map(String::from);
+    task.flow = flow_name.to_string();
 
     // Start in AwaitingSetup - orchestrator will pick this up and trigger setup
     task.state = TaskState::awaiting_setup(&first_stage.name);

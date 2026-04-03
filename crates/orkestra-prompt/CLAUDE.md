@@ -63,10 +63,6 @@ Variants:
 - `ManualResume { message }` — user-initiated resume
 - `PrComments { comments, guidance }` — PR review comments
 
-### FlowOverrides
-
-When a task uses a named flow, capabilities/prompt may be overridden. This struct carries those overrides.
-
 ## Patterns
 
 ### PromptBuilder is the entry point

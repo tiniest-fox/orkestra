@@ -1,6 +1,6 @@
 //! Advance a single parent task whose subtasks have all completed.
 
-use crate::workflow::config::WorkflowConfig;
+use crate::workflow::config::{StageCapabilities, WorkflowConfig};
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -26,17 +26,20 @@ pub fn execute(
     let breakdown_stage = find_breakdown_stage(workflow, &parent);
 
     if let Some(stage) = breakdown_stage {
-        let effective_caps = workflow
-            .effective_capabilities(&stage, parent.flow.as_deref())
-            .unwrap_or_default();
+        // `find_breakdown_stage` found this stage via `stages_in_flow`, so `workflow.stage()`
+        // will always return `Some` here. `default_caps` is an unreachable fallback.
+        let default_caps = StageCapabilities::default();
+        let caps = workflow
+            .stage(&parent.flow, &stage)
+            .map_or(&default_caps, |s| &s.capabilities);
 
-        let next_state = if let Some(target) = effective_caps.completion_stage() {
+        let next_state = if let Some(target) = caps.completion_stage() {
             TaskState::queued(target)
         } else {
             super::finalize_advancement::compute_next_state_on_approve(
                 workflow,
+                &parent.flow,
                 &stage,
-                parent.flow.as_deref(),
             )
         };
         let now = chrono::Utc::now().to_rfc3339();
@@ -66,13 +69,9 @@ pub fn execute(
 
 /// Find the name of the breakdown stage (the stage with subtask capabilities).
 pub(crate) fn find_breakdown_stage(workflow: &WorkflowConfig, task: &Task) -> Option<String> {
-    for stage in &workflow.stages {
-        let effective_caps = workflow
-            .effective_capabilities(&stage.name, task.flow.as_deref())
-            .unwrap_or_default();
-        if effective_caps.produces_subtasks() {
-            return Some(stage.name.clone());
-        }
-    }
-    None
+    workflow
+        .stages_in_flow(&task.flow)
+        .into_iter()
+        .find(|s| s.capabilities.produces_subtasks())
+        .map(|s| s.name.clone())
 }

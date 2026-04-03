@@ -50,13 +50,14 @@ impl WorkflowApi {
         &self,
         task_id: &str,
         stage: &str,
-        task_flow: Option<&str>,
+        task_flow: &str,
         accumulated_text: &str,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let effective_stage = self
             .workflow
-            .effective_stage_config(stage, task_flow)
-            .ok_or_else(|| format!("Unknown stage: {stage}"))?;
+            .stage(task_flow, stage)
+            .ok_or_else(|| format!("Unknown stage: {stage}"))?
+            .clone();
         let schema_str = get_agent_schema(&effective_stage, self.project_root.as_deref())
             .ok_or_else(|| format!("No schema for stage: {stage}"))?;
         let schema: serde_json::Value = serde_json::from_str(&schema_str)

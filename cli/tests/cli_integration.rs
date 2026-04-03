@@ -7,9 +7,7 @@ use orkestra_cli::get_git_state;
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::testutil::create_temp_git_repo;
 use orkestra_core::testutil::fixtures::{iterations, sessions};
-use orkestra_core::workflow::config::{
-    FlowConfig, FlowStageEntry, IntegrationConfig, StageConfig, WorkflowConfig,
-};
+use orkestra_core::workflow::config::{FlowConfig, IntegrationConfig, StageConfig, WorkflowConfig};
 use orkestra_core::workflow::domain::{LogEntry, Task};
 use orkestra_core::workflow::ports::WorkflowStore;
 use orkestra_core::workflow::runtime::{Outcome, TaskState};
@@ -28,12 +26,8 @@ fn test_workflow_with_flow() -> WorkflowConfig {
         "quick".to_string(),
         FlowConfig {
             description: "Quick flow (work only)".to_string(),
-            icon: Some("zap".to_string()),
-            stages: vec![FlowStageEntry {
-                stage_name: "work".to_string(),
-                overrides: None,
-            }],
-            integration: None,
+            stages: vec![StageConfig::new("work", "summary")],
+            integration: IntegrationConfig::new("work"),
         },
     );
 
@@ -256,7 +250,7 @@ fn test_task_create_with_flow() {
         .expect("create task with flow");
 
     // Verify task has flow set and starts at flow's first stage
-    assert_eq!(task.flow, Some("quick".to_string()));
+    assert_eq!(task.flow, "quick");
     assert_eq!(task.current_stage(), Some("work")); // "quick" flow only has work stage
     assert!(matches!(task.state, TaskState::AwaitingSetup { .. }));
 

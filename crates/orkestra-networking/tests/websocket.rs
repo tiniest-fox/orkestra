@@ -216,7 +216,9 @@ async fn test_get_config() {
 
     assert_eq!(response["id"], "cfg");
     assert!(response["result"].is_object());
-    let stages = &response["result"]["stages"];
+    let flows = &response["result"]["flows"];
+    assert!(flows.is_object());
+    let stages = &flows["default"]["stages"];
     assert!(stages.is_array());
     assert!(stages.as_array().unwrap().len() >= 2);
 }

@@ -725,19 +725,28 @@ fn test_workflow_config_from_file() {
     );
     let api = ctx.api();
 
-    assert_eq!(api.workflow().stages.len(), 4);
+    assert_eq!(api.workflow().stages_in_flow("default").len(), 4);
     assert_eq!(
-        api.workflow().stage_names(),
+        api.workflow()
+            .stages_in_flow("default")
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>(),
         vec!["planning", "breakdown", "work", "review"]
     );
 
     // Review has approval capability
-    let review = api.workflow().stage("review").unwrap();
+    let review = api.workflow().stage("default", "review").unwrap();
     assert!(review.capabilities.has_approval());
     assert!(review.is_automated);
 
     // Integration config defaults to work
-    assert_eq!(api.workflow().integration.on_failure, "work");
+    assert_eq!(
+        api.workflow()
+            .flow("default")
+            .map_or("", |f| f.integration.on_failure.as_str()),
+        "work"
+    );
 }
 
 /// Test custom `integration.on_failure` configuration
@@ -758,7 +767,12 @@ fn test_custom_integration_on_failure() {
         auto_merge: true,
     });
 
-    assert_eq!(workflow.integration.on_failure, "planning");
+    assert_eq!(
+        workflow
+            .flow("default")
+            .map_or("", |f| f.integration.on_failure.as_str()),
+        "planning"
+    );
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
     let task = ctx.create_task("Test", "Test task", None);
@@ -869,36 +883,30 @@ fn test_custom_integration_on_failure() {
 fn test_integration_failure_uses_flow_on_failure_override() {
     use indexmap::IndexMap;
     use orkestra_core::workflow::config::{
-        FlowConfig, FlowIntegrationOverride, FlowStageEntry, IntegrationConfig, StageCapabilities,
-        StageConfig,
+        FlowConfig, IntegrationConfig, StageCapabilities, StageConfig,
     };
 
     // Build workflow where:
-    // - Global integration.on_failure = "work"
+    // - Default flow integration.on_failure = "work"
     // - Flow "quick" has on_failure = "planning"
     let mut flows = IndexMap::new();
     flows.insert(
         "quick".to_string(),
         FlowConfig {
             description: "Quick flow with custom recovery".to_string(),
-            icon: None,
             stages: vec![
-                FlowStageEntry {
-                    stage_name: "planning".to_string(),
-                    overrides: None,
-                },
-                FlowStageEntry {
-                    stage_name: "work".to_string(),
-                    overrides: None,
-                },
-                FlowStageEntry {
-                    stage_name: "review".to_string(),
-                    overrides: None,
-                },
+                StageConfig::new("planning", "plan")
+                    .with_prompt("planner.md")
+                    .with_capabilities(StageCapabilities::with_questions()),
+                StageConfig::new("work", "summary").with_prompt("worker.md"),
+                StageConfig::new("review", "verdict")
+                    .with_prompt("reviewer.md")
+                    .automated(),
             ],
-            integration: Some(FlowIntegrationOverride {
-                on_failure: Some("planning".to_string()),
-            }), // Override!
+            integration: IntegrationConfig {
+                on_failure: "planning".to_string(),
+                auto_merge: true,
+            }, // Override!
         },
     );
 
@@ -3180,25 +3188,21 @@ fn test_opencode_provider_fallback() {
 #[test]
 fn test_commit_message_generation_during_integration() {
     // Create a simple 2-stage workflow: work → review (automated with approval)
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
-            StageConfig::new("review", "verdict")
-                .with_prompt("reviewer.md")
-                .with_capabilities(
-                    orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
-                        "work".into(),
-                    )),
-                )
-                .automated(),
-        ],
-        integration: orkestra_core::workflow::config::IntegrationConfig {
-            on_failure: "work".to_string(),
-            auto_merge: true, // Explicitly enable to test integration flow
-        },
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_capabilities(
+                orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
+                    "work".into(),
+                )),
+            )
+            .automated(),
+    ])
+    .with_integration(orkestra_core::workflow::config::IntegrationConfig {
+        on_failure: "work".to_string(),
+        auto_merge: true, // Explicitly enable to test integration flow
+    });
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -3626,17 +3630,12 @@ fn activity_log_stored_on_iteration() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
 
     // Create a simple workflow with planning → work
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![
-            StageConfig::new("planning", "plan")
-                .with_prompt("planner.md")
-                .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
-        ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
 
@@ -3688,17 +3687,12 @@ fn activity_log_injected_into_next_stage_prompt() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
 
     // Create workflow with planning → work stages
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![
-            StageConfig::new("planning", "plan")
-                .with_prompt("planner.md")
-                .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
-        ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
 
@@ -3767,20 +3761,15 @@ fn activity_log_accumulates_across_stages() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
 
     // Create workflow with planning → work → review stages
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![
-            StageConfig::new("planning", "plan")
-                .with_prompt("planner.md")
-                .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
-            StageConfig::new("review", "verdict")
-                .with_prompt("reviewer.md")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+    ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
 
@@ -3860,17 +3849,12 @@ fn activity_log_none_does_not_break() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
 
     // Create workflow with planning → work
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![
-            StageConfig::new("planning", "plan")
-                .with_prompt("planner.md")
-                .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
-        ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
 
@@ -3942,17 +3926,12 @@ fn activity_log_file_written_with_correct_content() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use std::fs;
 
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![
-            StageConfig::new("planning", "plan")
-                .with_prompt("planner.md")
-                .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
-        ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
     let task = ctx.create_task("Test file content", "Verify activity_log.md content", None);
@@ -4014,18 +3993,13 @@ fn activity_log_on_rejection_retry() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
 
     // Create workflow with work → review stages (review has approval capability)
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
-            StageConfig::new("review", "verdict")
-                .with_prompt("reviewer.md")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
-        ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(),
+    ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -4628,7 +4602,7 @@ fn test_disallowed_tools_injected_into_system_prompt() {
 fn test_disallowed_tools_flow_override() {
     use indexmap::IndexMap;
     use orkestra_core::workflow::config::{
-        FlowConfig, FlowStageEntry, FlowStageOverride, StageConfig, ToolRestriction, WorkflowConfig,
+        FlowConfig, IntegrationConfig, StageConfig, ToolRestriction, WorkflowConfig,
     };
 
     // Global stage has restrictions
@@ -4638,21 +4612,14 @@ fn test_disallowed_tools_flow_override() {
             message: Some("No testing".to_string()),
         }]);
 
-    // Flow overrides with no restrictions
+    // Flow defines work stage without any restrictions (explicit override with empty list)
     let mut flows = IndexMap::new();
     flows.insert(
         "hotfix".to_string(),
         FlowConfig {
             description: "Hotfix flow".to_string(),
-            icon: None,
-            stages: vec![FlowStageEntry {
-                stage_name: "work".to_string(),
-                overrides: Some(FlowStageOverride {
-                    disallowed_tools: Some(vec![]), // Explicitly no restrictions
-                    ..Default::default()
-                }),
-            }],
-            integration: None,
+            stages: vec![StageConfig::new("work", "summary")], // No disallowed_tools
+            integration: IntegrationConfig::new("work"),
         },
     );
 
@@ -6766,14 +6733,11 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
 /// to `dispatch_completion()` (after successful output processing).
 #[test]
 fn test_activity_only_persisted_on_agent_success() {
-    use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
 
-    let workflow = WorkflowConfig {
-        version: 1,
-        stages: vec![StageConfig::new("work", "summary").with_prompt("worker.md")],
-        integration: IntegrationConfig::new("work"),
-        flows: indexmap::IndexMap::new(),
-    };
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
@@ -7344,8 +7308,7 @@ fn test_interrupt_during_gate() {
 fn test_flow_gate_override_disables_gate() {
     use indexmap::IndexMap;
     use orkestra_core::workflow::config::{
-        FlowConfig, FlowStageEntry, FlowStageOverride, GateConfig, IntegrationConfig, StageConfig,
-        WorkflowConfig,
+        FlowConfig, GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
     };
 
     let mut flows = IndexMap::new();
@@ -7353,15 +7316,11 @@ fn test_flow_gate_override_disables_gate() {
         "no-gate".to_string(),
         FlowConfig {
             description: "Flow with gate disabled".to_string(),
-            icon: None,
-            stages: vec![FlowStageEntry {
-                stage_name: "work".to_string(),
-                overrides: Some(FlowStageOverride {
-                    gate: Some(None), // explicitly disable the gate
-                    ..Default::default()
-                }),
-            }],
-            integration: None,
+            // No gate in this flow's work stage — gate would fail if reached
+            stages: vec![StageConfig::new("work", "summary")
+                .with_prompt("worker.md")
+                .automated()],
+            integration: IntegrationConfig::new("work"),
         },
     );
 
@@ -8111,7 +8070,7 @@ fn test_skip_last_stage_completes_task() {
 #[test]
 fn test_send_to_stage_respects_flow() {
     use indexmap::IndexMap;
-    use orkestra_core::workflow::config::{FlowConfig, FlowStageEntry};
+    use orkestra_core::workflow::config::{FlowConfig, IntegrationConfig};
     use orkestra_core::workflow::WorkflowError;
 
     // "quick" flow: planning → work (no review)
@@ -8120,18 +8079,11 @@ fn test_send_to_stage_respects_flow() {
         "quick".to_string(),
         FlowConfig {
             description: "Quick flow without review".to_string(),
-            icon: None,
             stages: vec![
-                FlowStageEntry {
-                    stage_name: "planning".to_string(),
-                    overrides: None,
-                },
-                FlowStageEntry {
-                    stage_name: "work".to_string(),
-                    overrides: None,
-                },
+                StageConfig::new("planning", "plan").with_prompt("planner.md"),
+                StageConfig::new("work", "summary").with_prompt("worker.md"),
             ],
-            integration: None,
+            integration: IntegrationConfig::new("planning"),
         },
     );
 

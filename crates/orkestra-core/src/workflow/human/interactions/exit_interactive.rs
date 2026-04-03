@@ -102,7 +102,7 @@ pub fn execute(
 
     // Validate and transition state based on target_stage
     if let Some(stage) = target_stage {
-        if !workflow.stage_in_flow(stage, task.flow.as_deref()) {
+        if !workflow.has_stage(&task.flow, stage) {
             return Err(WorkflowError::InvalidTransition(format!(
                 "Stage '{stage}' is not in the task's flow"
             )));

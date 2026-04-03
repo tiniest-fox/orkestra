@@ -18,7 +18,6 @@ import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
-import { resolveFlowStageNames } from "../../utils/workflowNavigation";
 import { Button } from "../ui/Button";
 import { type DrawerAction, DrawerHeader as SharedDrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { useNavHandler } from "../ui/HotkeyScope";
@@ -61,7 +60,9 @@ export function drawerAccent(task: WorkflowTaskView, config: WorkflowConfig): st
   if (task.derived.is_failed) return STATUS_HEX.error;
   if (task.derived.has_questions) return STATUS_HEX.info;
   if (task.derived.needs_review) {
-    const stage = config.stages.find((s) => s.name === task.derived.current_stage);
+    const stage = config.flows[task.flow]?.stages.find(
+      (s) => s.name === task.derived.current_stage,
+    );
     return stage?.capabilities.subtasks ? STATUS_HEX.cyan : STATUS_HEX.purple;
   }
   if (task.derived.is_done) return STATUS_HEX.merge;
@@ -115,8 +116,7 @@ export function DrawerHeader({
 
   // All flow-valid stages (including the current stage) for the Change Stage modal.
   const flowStages = useMemo(() => {
-    const flowStageNames = resolveFlowStageNames(task.flow, config);
-    return config.stages.filter((s) => flowStageNames.includes(s.name));
+    return config.flows[task.flow]?.stages ?? [];
   }, [config, task.flow]);
 
   const worktreePath = task.worktree_path;

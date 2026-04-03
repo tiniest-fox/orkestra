@@ -25,8 +25,8 @@ pub const FIXTURE_TIMESTAMP: &str = "2025-01-24T10:00:00Z";
 /// "subtask" flow for child tasks.
 pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
     use crate::workflow::config::{
-        FlowConfig, FlowStageEntry, IntegrationConfig, StageCapabilities, StageConfig,
-        SubtaskCapabilities, WorkflowConfig,
+        FlowConfig, IntegrationConfig, StageCapabilities, StageConfig, SubtaskCapabilities,
+        WorkflowConfig,
     };
     use indexmap::IndexMap;
 
@@ -35,18 +35,17 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
         "subtask".to_string(),
         FlowConfig {
             description: "Simplified pipeline for subtasks (work → review)".to_string(),
-            icon: Some("git-branch".to_string()),
             stages: vec![
-                FlowStageEntry {
-                    stage_name: "work".to_string(),
-                    overrides: None,
-                },
-                FlowStageEntry {
-                    stage_name: "review".to_string(),
-                    overrides: None,
-                },
+                StageConfig::new("work", "summary")
+                    .with_display_name("Working")
+                    .with_prompt("worker.md"),
+                StageConfig::new("review", "verdict")
+                    .with_display_name("Reviewing")
+                    .with_prompt("reviewer.md")
+                    .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+                    .automated(),
             ],
-            integration: None,
+            integration: IntegrationConfig::new("work"),
         },
     );
 

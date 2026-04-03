@@ -29,7 +29,9 @@ pub fn execute(workflow: &WorkflowConfig, task: &Task) -> Vec<PrArtifact> {
         .into_iter()
         .map(|a| PrArtifact {
             name: a.name.clone(),
-            description: workflow.artifact_description(&a.name).map(str::to_owned),
+            description: workflow
+                .artifact_description(&task.flow, &a.name)
+                .map(str::to_owned),
             content: a.content.clone(),
         })
         .collect()

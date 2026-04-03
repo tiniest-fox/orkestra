@@ -34,10 +34,10 @@ src/
 ## Type Categories
 
 ### Config Types (from YAML)
-- **WorkflowConfig**: Ordered stages, integration config, named flows
+- **WorkflowConfig**: Map of named flows (each flow owns its stages and integration config)
 - **StageConfig**: Stage definition (name, artifact, capabilities, prompt/script)
 - **StageCapabilities**: Feature flags (ask_questions, subtasks, approval)
-- **FlowConfig**: Alternate pipeline with stage subset and overrides
+- **FlowConfig**: Named pipeline with its own stages and integration config
 
 ### Domain Types (runtime entities)
 - **Task**: Main entity — identity, state, artifacts, git info, hierarchy
@@ -110,11 +110,6 @@ format!("{}", TaskState::agent_working("work")) // "agent_working (work)"
 
 ### ArtifactStore is HashMap-Backed
 `ArtifactStore` serializes as a flat map (via `#[serde(transparent)]`). Don't rely on insertion order.
-
-### FlowStageEntry Custom Serde
-`FlowStageEntry` has custom serialize/deserialize to support YAML shorthand:
-- Simple: `"work"` → `FlowStageEntry { stage_name: "work", overrides: None }`
-- With overrides: `{ work: { prompt: "worker_quick.md" } }` → entry with overrides
 
 ### Validation is Optional
 `WorkflowConfig::validate()` returns errors but doesn't prevent construction. Always call `is_valid()` or `validate()` after loading from YAML.

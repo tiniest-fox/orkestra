@@ -23,12 +23,16 @@ fn create_project_with_workflow(yaml: &str) -> TempDir {
 #[test]
 fn test_startup_with_duplicate_stage_names() {
     let yaml = r"
-version: 1
-stages:
-  - name: work
-    artifact: summary1
-  - name: work
-    artifact: summary2
+version: 2
+flows:
+  default:
+    stages:
+      - name: work
+        artifact: summary1
+      - name: work
+        artifact: summary2
+    integration:
+      on_failure: work
 ";
     let _temp = create_project_with_workflow(yaml);
     let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
@@ -36,7 +40,7 @@ stages:
 
     assert!(!errors.is_empty(), "Should have validation errors");
     assert!(
-        errors.iter().any(|e| e.contains("Duplicate stage name")),
+        errors.iter().any(|e| e.contains("duplicate stage name")),
         "Should mention duplicate stage name: {errors:?}"
     );
 }
@@ -44,19 +48,23 @@ stages:
 #[test]
 fn test_startup_with_duplicate_artifact_names() {
     let yaml = r"
-version: 1
-stages:
-  - name: planning
-    artifact: output
-  - name: work
-    artifact: output
+version: 2
+flows:
+  default:
+    stages:
+      - name: planning
+        artifact: output
+      - name: work
+        artifact: output
+    integration:
+      on_failure: work
 ";
     let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
     let errors = config.validate();
 
     assert!(!errors.is_empty(), "Should have validation errors");
     assert!(
-        errors.iter().any(|e| e.contains("Duplicate artifact name")),
+        errors.iter().any(|e| e.contains("duplicate artifact name")),
         "Should mention duplicate artifact: {errors:?}"
     );
 }
@@ -77,7 +85,7 @@ fn test_startup_with_invalid_approval_rejection_stage() {
     assert!(
         errors
             .iter()
-            .any(|e| e.contains("rejection_stage") && e.contains("doesn't exist")),
+            .any(|e| e.contains("rejection_stage") && e.contains("not in flow")),
         "Should mention invalid rejection_stage: {errors:?}"
     );
 }
@@ -101,7 +109,7 @@ fn test_startup_with_invalid_integration_on_failure() {
     assert!(
         errors
             .iter()
-            .any(|e| e.contains("Integration on_failure") && e.contains("doesn't exist")),
+            .any(|e| e.contains("integration.on_failure") && e.contains("not in this flow")),
         "Should mention invalid integration on_failure: {errors:?}"
     );
 }
@@ -113,14 +121,16 @@ fn test_startup_with_invalid_integration_on_failure() {
 #[test]
 fn test_startup_with_valid_config_succeeds() {
     let yaml = r"
-version: 1
-stages:
-  - name: planning
-    artifact: plan
-  - name: work
-    artifact: summary
-integration:
-  on_failure: work
+version: 2
+flows:
+  default:
+    stages:
+      - name: planning
+        artifact: plan
+      - name: work
+        artifact: summary
+    integration:
+      on_failure: work
 ";
     let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
     let errors = config.validate();

@@ -656,7 +656,7 @@ fn test_enter_exit_interactive_from_done_returns_to_done() {
 #[test]
 fn test_exit_interactive_rejects_stage_not_in_flow() {
     use indexmap::IndexMap;
-    use orkestra_core::workflow::config::{FlowConfig, FlowStageEntry};
+    use orkestra_core::workflow::config::{FlowConfig, IntegrationConfig};
     use orkestra_core::workflow::TaskCreationMode;
 
     // Two-stage workflow with a "work-only" flow
@@ -665,12 +665,10 @@ fn test_exit_interactive_rejects_stage_not_in_flow() {
         "work-only".to_string(),
         FlowConfig {
             description: "Only the work stage".to_string(),
-            icon: None,
-            stages: vec![FlowStageEntry {
-                stage_name: "work".to_string(),
-                overrides: None,
-            }],
-            integration: None,
+            stages: vec![StageConfig::new("work", "summary")
+                .with_prompt("worker.md")
+                .with_capabilities(StageCapabilities::with_approval(None))],
+            integration: IntegrationConfig::new("work"),
         },
     );
 

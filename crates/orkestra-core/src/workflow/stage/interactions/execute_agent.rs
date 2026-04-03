@@ -26,7 +26,7 @@ use crate::workflow::stage::types::ActivityLogEntry;
 ///
 /// Resolves the provider, builds prompts, applies schema enforcement and tool
 /// restrictions, then runs the agent. Returns a handle for polling completion.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn execute(
     runner: &dyn AgentRunnerTrait,
     prompt_service: &PromptService,
@@ -69,7 +69,9 @@ pub(crate) fn execute(
     let json_schema = get_stage_schema(workflow, prompt_service, task, stage)?;
 
     // 2. Resolve the provider to check capabilities
-    let model_spec = workflow.effective_model(stage, task.flow.as_deref());
+    let model_spec = workflow
+        .stage(&task.flow, stage)
+        .and_then(|s| s.model.clone());
     let resolved = registry.resolve(model_spec.as_deref())?;
 
     // 3. Extract feedback from trigger (used by both system prompt and user message)
@@ -88,9 +90,11 @@ pub(crate) fn execute(
     )?;
 
     // 5. Apply tool restrictions (split into prompt text + CLI patterns)
-    let effective_tools = workflow.effective_disallowed_tools(stage, task.flow.as_deref());
+    let effective_tools = workflow
+        .stage(&task.flow, stage)
+        .map_or(&[] as &[ToolRestriction], |s| s.disallowed_tools.as_slice());
     let (system_prompt, disallowed_patterns) =
-        apply_tool_restrictions(system_prompt, &effective_tools)?;
+        apply_tool_restrictions(system_prompt, effective_tools)?;
 
     // 6. Build user message prompt based on whether this is a resume
     let user_prompt = build_user_prompt(
@@ -410,7 +414,7 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
 
 // -- Schema & Provider --
 
-/// Get JSON schema for the stage, applying flow overrides if applicable.
+/// Get JSON schema for the stage.
 fn get_stage_schema(
     workflow: &WorkflowConfig,
     prompt_service: &PromptService,
@@ -418,24 +422,10 @@ fn get_stage_schema(
     stage: &str,
 ) -> Result<String, ExecutionError> {
     let stage_config = workflow
-        .stage(stage)
+        .stage(&task.flow, stage)
         .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
 
-    // Use effective capabilities from flow override if applicable
-    let effective_config = if task.flow.is_some() {
-        if let Some(caps) = workflow.effective_capabilities(stage, task.flow.as_deref()) {
-            let mut overridden = stage_config.clone();
-            overridden.capabilities = caps;
-            Some(overridden)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let schema_stage = effective_config.as_ref().unwrap_or(stage_config);
-
-    crate::workflow::execution::get_agent_schema(schema_stage, Some(prompt_service.project_root()))
+    crate::workflow::execution::get_agent_schema(stage_config, Some(prompt_service.project_root()))
         .ok_or_else(|| ExecutionError::ConfigError(format!("No schema for agent stage: {stage}")))
 }
 

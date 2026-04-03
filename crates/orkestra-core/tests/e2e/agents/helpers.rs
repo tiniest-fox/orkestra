@@ -74,15 +74,11 @@ impl AgentTestEnv {
         .unwrap();
 
         // Build and save workflow config
-        let workflow = WorkflowConfig {
-            version: 1,
-            stages: vec![StageConfig::new("work", "result")
-                .with_prompt("worker.md")
-                .with_model(model)
-                .with_capabilities(capabilities)],
-            integration: IntegrationConfig::new("work"),
-            flows: indexmap::IndexMap::new(),
-        };
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "result")
+            .with_prompt("worker.md")
+            .with_model(model)
+            .with_capabilities(capabilities)])
+        .with_integration(IntegrationConfig::new("work"));
 
         let workflow_path = orkestra_dir.join("workflow.yaml");
         std::fs::write(&workflow_path, serde_yaml::to_string(&workflow).unwrap()).unwrap();

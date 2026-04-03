@@ -40,7 +40,7 @@ export function FeedRowActions({
   const btnCls = fullWidth ? "flex-1 justify-center" : undefined;
 
   const approveVariant = (() => {
-    const stage = config.stages.find((s) => s.name === derived.current_stage);
+    const stage = config.flows[task.flow]?.stages.find((s) => s.name === derived.current_stage);
     return stage?.capabilities.subtasks ? ("outline-teal" as const) : ("outline-violet" as const);
   })();
 

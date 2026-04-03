@@ -68,13 +68,18 @@ export function currentArtifact(
   const stageName =
     task.derived.current_stage ??
     (task.iterations.length > 0 ? task.iterations[task.iterations.length - 1].stage : null);
-  const stageEntry = config.stages.find((s) => s.name === stageName);
+  // Search the task's flow stages, then fall back to all flows for historical iterations.
+  const stageEntry =
+    config.flows[task.flow]?.stages.find((s) => s.name === stageName) ??
+    Object.values(config.flows)
+      .flatMap((f) => f.stages)
+      .find((s) => s.name === stageName);
   if (!stageEntry) return null;
   return task.artifacts[artifactName(stageEntry.artifact)] ?? null;
 }
 
 export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig): StageReviewType {
-  const stage = config.stages.find((s) => s.name === task.derived.current_stage);
+  const stage = config.flows[task.flow]?.stages.find((s) => s.name === task.derived.current_stage);
   return stage?.capabilities.subtasks ? "teal" : "violet";
 }
 
@@ -90,8 +95,8 @@ export function defaultTab(task: WorkflowTaskView): DrawerTabId {
   return "logs";
 }
 
-export function findGateStage(config: WorkflowConfig) {
-  return config.stages.find((s) => s.gate) ?? null;
+export function findGateStage(config: WorkflowConfig, flow: string) {
+  return (config.flows[flow]?.stages ?? []).find((s) => s.gate) ?? null;
 }
 
 export function availableTabs(
@@ -100,7 +105,7 @@ export function availableTabs(
   options?: { hasRunScript?: boolean },
 ): DrawerTab[] {
   // Show gate tab when the current stage has a gate AND gate output is available or running.
-  const gateStage = findGateStage(config);
+  const gateStage = findGateStage(config, task.flow);
   const isGateState = task.state.type === "awaiting_gate" || task.state.type === "gate_running";
   const hasGateResult = task.iterations.some((i) => i.stage === gateStage?.name && i.gate_result);
   const showGateTab =

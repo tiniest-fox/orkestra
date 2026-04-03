@@ -231,12 +231,10 @@ mod tests {
         let config: crate::workflow::config::WorkflowConfig =
             serde_yaml::from_str(DEFAULT_WORKFLOW).expect("Default workflow.yaml should parse");
 
-        // Verify gate on work stage
+        // Verify gate on work stage (check in the default flow)
         let work_stage = config
-            .stages
-            .iter()
-            .find(|s| s.name == "work")
-            .expect("Should have work stage");
+            .stage("default", "work")
+            .expect("Should have work stage in default flow");
         assert!(work_stage.gate.is_some(), "Work stage should have a gate");
         let gate = work_stage.gate.as_ref().unwrap();
         assert!(
@@ -244,8 +242,8 @@ mod tests {
             "Gate should reference checks.sh"
         );
 
-        // Verify descriptions on all stages
-        for stage in &config.stages {
+        // Verify descriptions on all unique stages
+        for stage in config.all_unique_stages() {
             assert!(
                 stage.description.is_some(),
                 "Stage '{}' should have a description",
@@ -254,7 +252,7 @@ mod tests {
         }
 
         // Verify rich artifact configs
-        for stage in &config.stages {
+        for stage in config.all_unique_stages() {
             assert!(
                 stage.artifact.description.is_some(),
                 "Stage '{}' artifact should have a description",

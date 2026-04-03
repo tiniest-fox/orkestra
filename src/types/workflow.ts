@@ -69,8 +69,6 @@ export interface StageConfig {
   name: string;
   /** Optional display name for the UI (defaults to capitalized name). */
   display_name?: string;
-  /** Optional lucide-react icon name (e.g., "pencil-ruler", "hammer"). */
-  icon?: string;
   /** Artifact config for the output this stage produces. */
   artifact: ArtifactConfig;
   /** Artifacts required as inputs from previous stages. */
@@ -94,64 +92,26 @@ export interface IntegrationConfig {
 }
 
 /**
- * Override for a stage within a flow.
- */
-export interface FlowStageOverride {
-  /** Override prompt template path. */
-  prompt?: string;
-  /** Override capabilities (full replace, not merge). */
-  capabilities?: StageCapabilities;
-  /** Override input artifacts (full replace, not merge). */
-  inputs?: string[];
-}
-
-/**
- * A stage entry in a flow definition (object form, when overrides are present).
- * Serialized as a single-key map: { [stage_name]: FlowStageOverride }.
- */
-export type FlowStageEntryObject = Record<string, FlowStageOverride>;
-
-/**
- * A stage entry in a flow definition.
- * Serialized as a plain string when there are no overrides,
- * or as a single-key map { stage_name: overrides } when overrides are present.
- */
-export type FlowStageEntry = string | FlowStageEntryObject;
-
-/**
- * Per-flow overrides for integration configuration.
- */
-export interface FlowIntegrationOverride {
-  /** Override for global integration.on_failure. */
-  on_failure?: string;
-}
-
-/**
- * Configuration for an alternate flow (shortened pipeline).
+ * Configuration for an alternate flow (complete pipeline).
  */
 export interface FlowConfig {
   /** Human-readable description of when to use this flow. */
   description: string;
-  /** Optional lucide-react icon name (e.g., "zap", "rocket"). */
-  icon?: string;
-  /** Ordered list of stages in this flow. */
-  stages: FlowStageEntry[];
-  /** Per-flow integration overrides. Unset fields inherit from global integration. */
-  integration?: FlowIntegrationOverride;
+  /** Ordered list of stages in this flow (full StageConfig objects). */
+  stages: StageConfig[];
+  /** Integration settings for this flow. */
+  integration: IntegrationConfig;
 }
 
 /**
  * Complete workflow configuration loaded from workflow.yaml.
+ * All pipelines are named flows — there is no separate global stage list.
  */
 export interface WorkflowConfig {
   /** Config file version. */
   version: number;
-  /** Ordered list of stages in the workflow. */
-  stages: StageConfig[];
-  /** Integration settings. */
-  integration: IntegrationConfig;
-  /** Named alternate flows (shortened pipelines). Omitted when empty. */
-  flows?: Record<string, FlowConfig>;
+  /** Named flows (complete pipelines). Always has at least one entry. */
+  flows: Record<string, FlowConfig>;
 }
 
 // =============================================================================
@@ -397,8 +357,8 @@ export interface WorkflowTask {
   base_commit: string;
   /** Whether the task runs autonomously through all stages. */
   auto_mode: boolean;
-  /** Named flow for this task (e.g., "quick_fix"). Null/undefined = default flow. */
-  flow?: string;
+  /** Named flow for this task (e.g., "quick", "hotfix"). Always set — "default" for the main pipeline. */
+  flow: string;
   /** When the task was created. */
   created_at: string;
   /** When the task was last updated. */

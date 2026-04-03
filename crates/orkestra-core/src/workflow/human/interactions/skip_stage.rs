@@ -28,7 +28,7 @@ pub fn execute(
 
     let current_stage = super::resolve_current_stage(&task, store, workflow)?;
 
-    let next = workflow.next_stage_in_flow(&current_stage, task.flow.as_deref());
+    let next = workflow.next_stage(&task.flow, &current_stage);
 
     match next {
         None => {

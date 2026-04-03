@@ -37,7 +37,9 @@ export function groupIterationsIntoRuns(
     if (last && last.stage === iter.stage) {
       last.iterations.push(iter);
     } else {
-      const stageConfig = config.stages.find((s) => s.name === iter.stage);
+      const stageConfig = Object.values(config.flows)
+        .flatMap((f) => f.stages)
+        .find((s) => s.name === iter.stage);
       const artKey = stageConfig ? artifactName(stageConfig.artifact) : iter.stage;
       // Use title-cased artifact key as the tab label (e.g., "plan" → "Plan", "summary" → "Summary").
       const artLabel = artKey.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());

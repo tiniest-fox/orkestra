@@ -36,12 +36,11 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 
 **Key domain types** (`workflow/config/`):
 
-- **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (unique stage/artifact names).
-- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `capabilities`, optional `model` (provider/model spec like `"claudecode/sonnet"`), optional `gate` (`GateConfig` with a `command` and optional `timeout_seconds` — runs after the agent completes; non-zero exit re-queues the agent with error output as feedback), and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set. Artifacts from earlier stages are automatically available to all later stages. Subtasks inherit the gate from the global stage config unless their flow overrides it.
+- **`WorkflowConfig`** (`workflow.rs`) — Map of named flows. Every pipeline is a flow; there is no separate global stage list. Validated on load (unique stage/artifact names per flow).
+- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `capabilities`, optional `model` (provider/model spec like `"claudecode/sonnet"`), optional `gate` (`GateConfig` with a `command` and optional `timeout_seconds` — runs after the agent completes; non-zero exit re-queues the agent with error output as feedback), and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set. Artifacts from earlier stages are automatically available to all later stages.
 - **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `subtasks: Option<SubtaskCapabilities>` (with `flow` and `completion_stage`), `approval: Option<ApprovalCapabilities>` (with optional `rejection_stage`).
 - **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
-- **`FlowConfig`** (`workflow.rs`) — Named alternate flow (shortened pipeline). Has a `description`, optional `icon`, an ordered list of `FlowStageEntry`s referencing a subset of global stages with optional overrides, and an optional `integration: FlowIntegrationOverride` for per-flow integration settings (e.g., `on_failure` override).
-- **`FlowStageEntry`** (`workflow.rs`) — A stage reference in a flow, with optional `FlowStageOverride` for `prompt` and `capabilities` (full replacement, not merge).
+- **`FlowConfig`** (`workflow.rs`) — A complete pipeline. Has a `description`, an ordered list of `StageConfig`s (full definitions, not references), and a required `integration: IntegrationConfig` for per-flow integration settings (e.g., `on_failure`).
 
 **Runtime types** (`workflow/runtime/`, `workflow/domain/`):
 
@@ -61,21 +60,17 @@ To add a stage to this project's workflow:
 2. Add the stage entry to `.orkestra/workflow.yaml`
 3. No Rust changes needed — the config loader, schema generator, and orchestrator handle it generically
 
-The standard workflow template (created by `ensure_orkestra_project()` on init) defines: `planning → breakdown → work → review`. This project's `.orkestra/workflow.yaml` extends it to: `planning → breakdown → work → checks (script) → review → compound`.
+The standard workflow template (created by `ensure_orkestra_project()` on init) defines a `default` flow: `planning → breakdown → work → review`. This project's `.orkestra/workflow.yaml` defines four flows: `default` (plan → task → work → review → compound), `quick` (plan → work → review → compound), `hotfix` (work → review), and `micro` (work only).
 
 ### Flows (Alternate Pipelines)
 
-Flows let tasks skip stages by defining a subset of the global stage list. Each flow is a named alternate pipeline declared under `flows:` in `workflow.yaml`. Tasks use the full pipeline by default; setting `flow: Some("flow_name")` on a task restricts it to that flow's stages.
+Flows are the primary unit of workflow configuration — every pipeline is a named flow with its own complete set of `StageConfig`s and `IntegrationConfig`. Tasks always have an assigned flow (`"default"` if not explicitly set).
 
 Key behaviors:
-- Flow stages must be a subset of global stages (validated on config load)
-- Flows can override `prompt` and `capabilities` per stage (full replacement, not merge)
-- Stage navigation (`first_stage_in_flow`, `next_stage_in_flow`) respects flow ordering
-- Script stages in flows cannot have overrides
-- The name "default" is reserved and cannot be used as a flow name
+- Each flow contains complete `StageConfig` definitions (not references to global stages)
+- Stage navigation (`first_stage(flow)`, `next_stage(flow, current)`) respects each flow's stage list
 - Approval `rejection_stage` targets and script `on_failure` targets must be within the flow's stage list
-
-This project defines three flows: `quick` (skips breakdown and compound), `hotfix` (skips planning, breakdown, and compound), and `opencode-test` (work stage only, using OpenCode with Kimi 2.5).
+- YAML anchors (`&anchor`/`*alias`) can share identical stage blocks across flows without duplication
 
 ### Subtask System
 
@@ -112,7 +107,7 @@ Note: Title generation and commit message generation use separate internal templ
 
 **Querying workflow configuration for flow-aware logic:**
 
-When you need to iterate agent stages while respecting flow overrides, use `WorkflowConfig::agent_model_specs(task_flow)` rather than directly accessing `.stages`. This method encapsulates the flow-aware traversal logic (checking flow overrides, filtering scripts, falling back to global config). Example use case: collecting model names for commit attribution — see `commit_message.rs::collect_model_names()`.
+When you need model specs for all agent stages in a flow, use `WorkflowConfig::agent_model_specs(task_flow)` rather than directly accessing flow stages. This method encapsulates the flow-aware traversal logic (iterating flow stages, filtering scripts). Example use case: collecting model names for commit attribution — see `commit_message.rs::collect_model_names()`.
 
 ### Disallowed Tools
 
@@ -140,18 +135,6 @@ stages:
 - **System prompt**: Restriction messages are injected into the agent's system prompt before any tool use, so the agent learns about the restrictions upfront
 - **CLI flag** (Claude Code only): Patterns are passed via `--disallowedTools "pattern1,pattern2"` for hard enforcement
 - **OpenCode**: Only system prompt injection (no native enforcement support)
-
-**Flow overrides**: Flows can override `disallowed_tools` per stage (full replacement, not merge). Example:
-
-```yaml
-flows:
-  quick:
-    stages:
-      - work:
-          disallowed_tools: []  # Explicitly allow all tools in quick flow
-```
-
-Access the effective restrictions (respecting flow overrides) via `WorkflowConfig::effective_disallowed_tools(stage, task_flow)`.
 
 **Platform-level invariants** (not user-configurable): The Claude Code spawner (`crates/orkestra-agent/src/interactions/spawner/claude.rs`) unconditionally prepends `EnterPlanMode` and `ExitPlanMode` to `--disallowedTools` for every invocation. These are hardcoded because Claude Code's built-in plan mode conflicts with Orkestra's planning pipeline — this applies to all agent stages and assistant/chat sessions. User-configured restrictions are merged on top. Note: the assistant service (`crates/orkestra-core/src/workflow/assistant/service.rs`) spawns Claude Code directly via its own `Command::new("claude")` and must maintain its own hardcoded disallowed tools string that includes these invariants — it does not go through the spawner.
 

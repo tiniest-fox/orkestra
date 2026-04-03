@@ -205,33 +205,22 @@ impl WorkflowApi {
     }
 
     /// Check if a stage is automated.
-    pub fn is_stage_automated(&self, stage: &str) -> bool {
-        self.workflow.stage(stage).is_some_and(|s| s.is_automated)
-    }
-
-    /// Get the next stage after approval from the given stage.
-    ///
-    /// Returns None if the stage is the last one or doesn't exist.
-    pub fn next_stage_after(&self, stage: &str) -> Option<&str> {
-        self.workflow.next_stage(stage).map(|s| s.name.as_str())
+    pub fn is_stage_automated(&self, flow: &str, stage: &str) -> bool {
+        self.workflow
+            .stage(flow, stage)
+            .is_some_and(|s| s.is_automated)
     }
 
     /// Get the next stage in a flow after the given stage.
-    pub fn next_stage_after_in_flow(&self, stage: &str, flow: Option<&str>) -> Option<&str> {
+    pub fn next_stage_after_in_flow(&self, flow: &str, stage: &str) -> Option<&str> {
         self.workflow
-            .next_stage_in_flow(stage, flow)
+            .next_stage(flow, stage)
             .map(|s| s.name.as_str())
     }
 
     /// Get the stage to return to on integration failure.
-    pub fn integration_failure_stage(&self, flow: Option<&str>) -> Option<String> {
-        let configured = self.workflow.effective_integration_on_failure(flow);
-        if self.workflow.stage_in_flow(configured, flow) {
-            return Some(configured.to_string());
-        }
-        self.workflow
-            .first_stage_in_flow(flow)
-            .map(|s| s.name.clone())
+    pub fn integration_failure_stage(&self, flow: &str) -> Option<String> {
+        self.workflow.recovery_stage(flow)
     }
 
     /// Mark a task as being integrated.
@@ -314,10 +303,7 @@ impl WorkflowApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::config::{
-        FlowConfig, FlowIntegrationOverride, FlowStageEntry, IntegrationConfig, StageCapabilities,
-        StageConfig,
-    };
+    use crate::workflow::config::{FlowConfig, IntegrationConfig, StageCapabilities, StageConfig};
     use crate::workflow::InMemoryWorkflowStore;
     use indexmap::IndexMap;
     use std::sync::Arc;
@@ -341,7 +327,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        assert_eq!(api.workflow().stages.len(), 4);
+        assert_eq!(api.workflow().stages_in_flow("default").len(), 4);
     }
 
     #[test]
@@ -350,23 +336,10 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        assert!(!api.is_stage_automated("planning"));
-        assert!(!api.is_stage_automated("work"));
-        assert!(api.is_stage_automated("review"));
-        assert!(!api.is_stage_automated("nonexistent"));
-    }
-
-    #[test]
-    fn test_next_stage_after() {
-        let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        assert_eq!(api.next_stage_after("planning"), Some("breakdown"));
-        assert_eq!(api.next_stage_after("breakdown"), Some("work"));
-        assert_eq!(api.next_stage_after("work"), Some("review"));
-        assert_eq!(api.next_stage_after("review"), None);
-        assert_eq!(api.next_stage_after("nonexistent"), None);
+        assert!(!api.is_stage_automated("default", "planning"));
+        assert!(!api.is_stage_automated("default", "work"));
+        assert!(api.is_stage_automated("default", "review"));
+        assert!(!api.is_stage_automated("default", "nonexistent"));
     }
 
     #[test]
@@ -376,19 +349,19 @@ mod tests {
         let workflow = test_workflow();
 
         // Planning goes to breakdown (default flow)
-        let state = compute_next_state_on_approve(&workflow, "planning", None);
+        let state = compute_next_state_on_approve(&workflow, "default", "planning");
         assert_eq!(state.stage(), Some("breakdown"));
 
         // Breakdown goes to work
-        let state = compute_next_state_on_approve(&workflow, "breakdown", None);
+        let state = compute_next_state_on_approve(&workflow, "default", "breakdown");
         assert_eq!(state.stage(), Some("work"));
 
         // Work goes to review
-        let state = compute_next_state_on_approve(&workflow, "work", None);
+        let state = compute_next_state_on_approve(&workflow, "default", "work");
         assert_eq!(state.stage(), Some("review"));
 
         // Review goes to Done
-        let state = compute_next_state_on_approve(&workflow, "review", None);
+        let state = compute_next_state_on_approve(&workflow, "default", "review");
         assert_eq!(state, crate::workflow::runtime::TaskState::Done);
     }
 
@@ -400,7 +373,7 @@ mod tests {
 
         // Default flow: "work" stage
         assert_eq!(
-            api.integration_failure_stage(None),
+            api.integration_failure_stage("default"),
             Some("work".to_string())
         );
     }
@@ -412,20 +385,12 @@ mod tests {
             "quick".to_string(),
             FlowConfig {
                 description: "Quick flow".to_string(),
-                icon: None,
                 stages: vec![
-                    FlowStageEntry {
-                        stage_name: "planning".to_string(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "work".to_string(),
-                        overrides: None,
-                    },
+                    StageConfig::new("planning", "plan")
+                        .with_capabilities(StageCapabilities::with_questions()),
+                    StageConfig::new("work", "summary"),
                 ],
-                integration: Some(FlowIntegrationOverride {
-                    on_failure: Some("planning".to_string()),
-                }),
+                integration: IntegrationConfig::new("planning"),
             },
         );
 
@@ -438,24 +403,21 @@ mod tests {
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
-        .with_integration(IntegrationConfig {
-            on_failure: "work".to_string(),
-            auto_merge: false,
-        })
+        .with_integration(IntegrationConfig::new("work"))
         .with_flows(flows);
 
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        // Default flow uses global
+        // Default flow uses default integration config
         assert_eq!(
-            api.integration_failure_stage(None),
+            api.integration_failure_stage("default"),
             Some("work".to_string())
         );
 
-        // Flow with override uses override
+        // Flow with its own integration config uses that
         assert_eq!(
-            api.integration_failure_stage(Some("quick")),
+            api.integration_failure_stage("quick"),
             Some("planning".to_string())
         );
     }

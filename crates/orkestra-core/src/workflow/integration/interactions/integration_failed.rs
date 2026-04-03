@@ -37,7 +37,8 @@ pub fn execute(
     )?;
 
     // Determine which stage to return to (flow-aware for subtasks)
-    let recovery_stage = resolve_recovery_stage(workflow, task.flow.as_deref())
+    let recovery_stage = workflow
+        .recovery_stage(&task.flow)
         .ok_or_else(|| WorkflowError::InvalidTransition("No recovery stage configured".into()))?;
 
     // Move task back to recovery stage
@@ -58,18 +59,4 @@ pub fn execute(
 
     store.save_task(&task)?;
     Ok(task)
-}
-
-// -- Helpers --
-
-fn resolve_recovery_stage(workflow: &WorkflowConfig, flow: Option<&str>) -> Option<String> {
-    let configured = workflow.effective_integration_on_failure(flow);
-
-    // Validate the configured stage exists in this task's flow
-    if workflow.stage_in_flow(configured, flow) {
-        return Some(configured.to_string());
-    }
-
-    // Fallback: use the first stage in the flow
-    workflow.first_stage_in_flow(flow).map(|s| s.name.clone())
 }

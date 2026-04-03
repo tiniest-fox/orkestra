@@ -26,7 +26,8 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
   const [autoMode, setAutoMode] = useState(false);
   const [interactive, setInteractive] = useState(false);
   const [baseBranch, setBaseBranch] = useState("");
-  const [selectedFlow, setSelectedFlow] = useState<string | null>(null);
+  const firstFlow = Object.keys(config.flows)[0] ?? "default";
+  const [selectedFlow, setSelectedFlow] = useState<string>(firstFlow);
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { currentBranch } = useGitHistory();
@@ -42,22 +43,16 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await onCreate(
-        description.trim(),
-        autoMode,
-        baseBranch,
-        selectedFlow ?? undefined,
-        interactive,
-      );
+      await onCreate(description.trim(), autoMode, baseBranch, selectedFlow, interactive);
       onClose();
     } finally {
       setSubmitting(false);
     }
   }, [canSubmit, description, autoMode, baseBranch, selectedFlow, interactive, onCreate, onClose]);
 
-  const flows = config.flows ?? {};
-  const hasFlows = Object.keys(flows).length > 0;
-  const flowKeys: (string | null)[] = useMemo(() => [null, ...Object.keys(flows)], [flows]);
+  const flows = config.flows;
+  const flowKeys: string[] = useMemo(() => Object.keys(flows), [flows]);
+  const hasFlows = flowKeys.length > 1;
 
   // Modifier-key shortcuts — safe to fire from anywhere including the textarea.
   // ⌘Enter is handled by the Button's HotkeyScope below.
@@ -121,12 +116,7 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
       {/* Flow picker */}
       {hasFlows && (
         <div className="px-4 pb-3">
-          <FlowPicker
-            flows={flows}
-            stages={config.stages}
-            selected={selectedFlow}
-            onChange={setSelectedFlow}
-          />
+          <FlowPicker flows={flows} selected={selectedFlow} onChange={setSelectedFlow} />
         </div>
       )}
 

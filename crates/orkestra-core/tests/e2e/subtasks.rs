@@ -222,7 +222,7 @@ fn test_breakdown_approval_creates_subtasks() {
 
     // Check flow assignment
     for subtask in &subtasks {
-        assert_eq!(subtask.flow, Some("subtask".to_string()));
+        assert_eq!(subtask.flow, "subtask");
         assert_eq!(subtask.parent_id, Some(parent.id.clone()));
     }
 
@@ -1471,5 +1471,80 @@ fn test_subtask_prompt_includes_sibling_context() {
     assert!(
         prompt.contains("pending"),
         "Sibling status should be displayed"
+    );
+}
+
+// =============================================================================
+// Manual Subtask Flow Inheritance
+// =============================================================================
+
+/// Manual subtasks created under a non-default flow parent inherit the parent's flow.
+///
+/// This is a regression test for the bug where `create_subtask` never set `task.flow`,
+/// causing it to default to "default" regardless of the parent's flow. The automated
+/// path (`create_subtasks.rs`) already set the flow correctly via `subtask_flow_name`.
+#[test]
+fn manual_subtask_inherits_parent_flow() {
+    use indexmap::IndexMap;
+    use orkestra_core::workflow::config::{
+        FlowConfig, IntegrationConfig, StageConfig, WorkflowConfig,
+    };
+    use orkestra_core::workflow::TaskCreationMode;
+
+    // Build a workflow with "default" (planning → work) and "hotfix" (work only)
+    let hotfix_stages = vec![StageConfig::new("work", "summary").with_prompt("worker.md")];
+    let mut flows = IndexMap::new();
+    flows.insert(
+        "hotfix".to_string(),
+        FlowConfig {
+            description: "Fast-path for hotfixes — work only".to_string(),
+            stages: hotfix_stages,
+            integration: IntegrationConfig::new("work"),
+        },
+    );
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ])
+    .with_integration(IntegrationConfig::new("planning"))
+    .with_flows(flows);
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    // Create parent on the "hotfix" flow
+    let parent = {
+        let task = ctx
+            .api()
+            .create_task_with_options(
+                "Hotfix parent",
+                "A parent task on the hotfix flow",
+                None,
+                TaskCreationMode::Normal,
+                Some("hotfix"),
+            )
+            .expect("Should create parent task");
+        let task_id = task.id.clone();
+        ctx.advance(); // trigger setup
+        ctx.api().get_task(&task_id).expect("parent should exist")
+    };
+
+    assert_eq!(parent.flow, "hotfix", "Parent should be on the hotfix flow");
+
+    // Create a manual subtask under the hotfix parent
+    let subtask = ctx.create_subtask(&parent.id, "Fix bug", "Manual subtask under hotfix parent");
+
+    // The subtask must inherit the parent's flow — NOT default to "default"
+    assert_eq!(
+        subtask.flow, "hotfix",
+        "Manual subtask should inherit parent's flow, got: {}",
+        subtask.flow
+    );
+
+    // The subtask's first stage should match the hotfix flow's first stage
+    assert_eq!(
+        subtask.current_stage(),
+        Some("work"),
+        "Subtask's first stage should be 'work' (hotfix flow's first stage)"
     );
 }

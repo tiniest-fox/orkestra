@@ -31,7 +31,7 @@ pub fn execute(
 
     let id = store.next_subtask_id(parent_id)?;
     let first_stage = workflow
-        .first_stage()
+        .first_stage(&parent.flow)
         .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
 
     let short_id = extract_short_id(&id);
@@ -40,6 +40,7 @@ pub fn execute(
     let mut task = Task::new(&id, title, description, &first_stage.name, &now);
     task.parent_id = Some(parent_id.to_string());
     task.short_id = Some(short_id);
+    task.flow.clone_from(&parent.flow);
 
     // Subtasks branch from parent's branch (worktree created during setup).
     task.base_branch = parent

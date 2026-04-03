@@ -41,7 +41,7 @@ Stores Trak definitions, workflow position, execution phase, artifacts, and git 
 | `base_commit` | TEXT | NOT NULL, DEFAULT '' | Git commit SHA of the base branch at the time the worktree was created |
 | `pr_url` | TEXT | | URL of the pull request created for this task's branch |
 | `auto_mode` | INTEGER | NOT NULL, DEFAULT 0 | Boolean: auto-approve stages without human review (1 = true, 0 = false) |
-| `flow` | TEXT | | Named flow (alternate pipeline) to use instead of default stage sequence |
+| `flow` | TEXT | NOT NULL DEFAULT 'default' | Named flow (complete pipeline) for this task. "default" for the main pipeline. |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `completed_at` | TEXT | | ISO 8601 timestamp, set when task reaches `done` status |

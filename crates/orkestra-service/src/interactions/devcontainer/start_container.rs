@@ -26,6 +26,11 @@ use crate::types::{DevcontainerConfig, ServiceError};
 ///
 /// `log_path` — if provided, compose stdout/stderr is streamed to this file
 /// in real-time so callers can tail it while the command is running.
+///
+/// `force_build` — passes `--build` to `docker compose up`, forcing a fresh
+/// image build even when the cached image is up-to-date. Only effective for
+/// `Compose` configs; silently ignored for `Default`/`Image`/`Build` configs
+/// (those use `docker run` which has no build step).
 pub fn execute(
     project_id: &str,
     config: &DevcontainerConfig,

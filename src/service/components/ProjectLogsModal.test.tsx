@@ -9,11 +9,17 @@ vi.mock("../api", () => ({
   fetchProjectLogs: vi.fn(),
 }));
 
+vi.mock("../../hooks/useAutoScroll", () => ({
+  useAutoScroll: () => ({
+    containerRef: vi.fn(),
+    handleScroll: vi.fn(),
+    resetAutoScroll: vi.fn(),
+  }),
+}));
+
 const mockFetchLogs = vi.mocked(api.fetchProjectLogs);
 
-// scrollIntoView is not implemented in jsdom; stub it out.
 beforeEach(() => {
-  Element.prototype.scrollIntoView = vi.fn();
   mockFetchLogs.mockReset();
 });
 

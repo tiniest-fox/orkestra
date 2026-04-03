@@ -20,6 +20,14 @@ vi.mock("../../hooks/useIsMobile", () => ({
   useIsMobile: vi.fn(() => false),
 }));
 
+vi.mock("../../hooks/useAutoScroll", () => ({
+  useAutoScroll: () => ({
+    containerRef: vi.fn(),
+    handleScroll: vi.fn(),
+    resetAutoScroll: vi.fn(),
+  }),
+}));
+
 const mockFetchLogs = vi.mocked(api.fetchProjectLogs);
 
 function renderRow(project: api.Project, overrides?: Partial<ProjectRowProps>) {

@@ -1,10 +1,11 @@
 // ProjectLogsModal — displays recent debug.log lines for a project,
 // polling every 3 seconds while open.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DrawerHeader } from "../../components/ui/Drawer/DrawerHeader";
 import { ModalPanel } from "../../components/ui/ModalPanel";
 import { Panel } from "../../components/ui/Panel/Panel";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { fetchProjectLogs } from "../api";
 
 interface ProjectLogsModalProps {
@@ -23,7 +24,7 @@ export function ProjectLogsModal({
   const [lines, setLines] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const bottomRef = useRef<HTMLSpanElement>(null);
+  const { containerRef, handleScroll } = useAutoScroll<HTMLDivElement>(isOpen);
 
   const loadLogs = useCallback(async () => {
     try {
@@ -48,12 +49,6 @@ export function ProjectLogsModal({
     return () => clearInterval(interval);
   }, [isOpen, loadLogs]);
 
-  // Auto-scroll to bottom when lines change
-  // biome-ignore lint/correctness/useExhaustiveDependencies: lines triggers re-scroll on new data
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines]);
-
   return (
     <ModalPanel
       isOpen={isOpen}
@@ -62,7 +57,11 @@ export function ProjectLogsModal({
     >
       <Panel autoFill={false}>
         <DrawerHeader title={`${projectName} — Logs`} onClose={onClose} />
-        <Panel.Body scrollable className="max-h-[60vh]">
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="p-4 flex-1 overflow-auto max-h-[60vh]"
+        >
           {loading && lines.length === 0 && (
             <p className="text-text-secondary text-sm p-4">Loading logs...</p>
           )}
@@ -75,10 +74,9 @@ export function ProjectLogsModal({
           {lines.length > 0 && (
             <pre className="text-xs font-mono text-text-primary whitespace-pre-wrap break-words p-3">
               {lines.join("\n")}
-              <span ref={bottomRef} />
             </pre>
           )}
-        </Panel.Body>
+        </div>
       </Panel>
     </ModalPanel>
   );

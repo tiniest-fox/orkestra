@@ -32,12 +32,10 @@ function createConfig(): WorkflowConfig {
     version: 2,
     flows: {
       default: {
-        description: "Default pipeline",
         stages: [planningStage, workStage, reviewStage],
         integration: { on_failure: "work" },
       },
       quick: {
-        description: "Skip planning",
         stages: [workStage, reviewStage],
         integration: { on_failure: "work" },
       },

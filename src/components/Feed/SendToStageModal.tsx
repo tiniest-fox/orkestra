@@ -5,6 +5,14 @@ import type { StageConfig } from "../../types/workflow";
 import { Button } from "../ui/Button";
 import { ModalPanel } from "../ui/ModalPanel";
 
+function titleCase(s: string): string {
+  return s
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 interface SendToStageModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -88,8 +96,7 @@ export function SendToStageModal({
             >
               {stages.map((stage) => (
                 <option key={stage.name} value={stage.name}>
-                  {(stage.display_name ?? stage.name) +
-                    (stage.name === currentStage ? " (restart)" : "")}
+                  {titleCase(stage.name) + (stage.name === currentStage ? " (restart)" : "")}
                 </option>
               ))}
             </select>

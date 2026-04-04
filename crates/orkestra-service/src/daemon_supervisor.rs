@@ -1,6 +1,7 @@
 //! Manages child daemon processes — spawn, monitor, restart, shutdown.
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -439,6 +440,7 @@ impl DaemonSupervisor {
 ///
 /// The project's `container_id` must be set before calling this function.
 #[cfg(unix)]
+#[allow(clippy::too_many_lines)]
 fn spawn_and_poll(
     conn: &Arc<Mutex<Connection>>,
     children: &Arc<Mutex<HashMap<String, Child>>>,
@@ -461,6 +463,10 @@ fn spawn_and_poll(
 
     let pid = child.id();
     let project_id = project.id.clone();
+    let project_log_path = std::path::PathBuf::from(&project.path)
+        .join(".orkestra")
+        .join(".logs")
+        .join("debug.log");
     let port = project.daemon_port;
     let container_id = container_id.to_string();
 
@@ -500,6 +506,10 @@ fn spawn_and_poll(
             if let Some(status) = exit_status {
                 let code = status.code().unwrap_or(-1);
                 warn!("Daemon {project_id} exited with code {code} before becoming ready");
+                // Give the stderr drainer thread time to finish reading the pipe.
+                // The process has already exited so the pipe will return EOF quickly,
+                // but there's a small window before the thread stores the result.
+                std::thread::sleep(Duration::from_millis(200));
                 let stderr_text = stderr_buffer.lock().unwrap().clone();
                 let msg = if stderr_text.trim().is_empty() {
                     format!("Daemon exited with code {code} before becoming ready")
@@ -509,6 +519,17 @@ fn spawn_and_poll(
                         stderr_text.trim()
                     )
                 };
+                // Write to debug.log so the error shows up in View Logs.
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&project_log_path)
+                {
+                    let _ = writeln!(f, "\n=== Daemon error (exit code {code}) ===");
+                    if !stderr_text.trim().is_empty() {
+                        let _ = f.write_all(stderr_text.as_bytes());
+                    }
+                }
                 if let Err(e) = project::update_status::execute(
                     &conn_poll,
                     &project_id,

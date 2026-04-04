@@ -130,10 +130,11 @@ fn main() {
         args.relay_url,
         args.relay_api_key,
     )) {
-        tracing::error!("Daemon error: {e}");
-        // Flush stderr before exit so the error reaches the supervisor's pipe reader.
-        // std::process::exit() bypasses destructors and I/O buffers.
-        let _ = std::io::Write::flush(&mut std::io::stderr());
+        // Use eprintln! (not tracing::error!) — eprintln! writes directly and
+        // synchronously to fd 2 with no buffering layer. tracing::error! routes
+        // through the subscriber's internal buffer, which process::exit(1) tears
+        // down before it can flush, causing the message to be silently dropped.
+        eprintln!("Daemon error: {e}");
         std::process::exit(1);
     }
 }

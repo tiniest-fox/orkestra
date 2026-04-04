@@ -1,6 +1,7 @@
 //! Background provisioning: clone repo, initialize .orkestra, start container, spawn daemon.
 
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
@@ -26,19 +27,32 @@ pub async fn execute(
     let project_id = project.id.clone();
     let path = PathBuf::from(&project.path);
 
+    // Create the log directory before the clone so we can log from the very start.
+    let log_path = path.join(".orkestra").join(".logs").join("debug.log");
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    append_log(&log_path, "=== Cloning repository ===");
+    append_log(&log_path, &format!("git clone {repo_url}"));
+
     // Step 1: Clone.
     let clone_result = tokio::task::spawn_blocking({
         let url = repo_url.clone();
         let p = path.clone();
-        move || github::clone_repo::execute(&url, &p)
+        let lp = log_path.clone();
+        move || github::clone_repo::execute(&url, &p, Some(&lp))
     })
     .await;
 
     if let Err(e) = flatten(clone_result) {
         tracing::error!("Clone failed for {project_id}: {e}");
+        append_log(&log_path, &format!("Clone failed: {e}"));
         set_error(&conn, &project_id, &e.to_string()).await;
         return;
     }
+
+    append_log(&log_path, "Repository cloned.");
 
     // Step 2: Update status to "starting".
     let _ = tokio::task::spawn_blocking({
@@ -61,6 +75,7 @@ pub async fn execute(
 
     if let Err(e) = flatten(init_result) {
         tracing::error!("Orkestra init failed for {project_id}: {e}");
+        append_log(&log_path, &format!("Orkestra init failed: {e}"));
         set_error(&conn, &project_id, &e.to_string()).await;
         return;
     }
@@ -73,10 +88,12 @@ pub async fn execute(
         path,
         true,  /* run_setup */
         false, /* force_build */
+        &log_path,
     )
     .await
     {
         tracing::error!("Container setup failed for {project_id}: {e}");
+        append_log(&log_path, &format!("Container setup failed: {e}"));
         set_error(&conn, &project_id, &e.to_string()).await;
     }
 }
@@ -96,6 +113,7 @@ pub async fn start_containers_and_spawn(
 ) {
     let project_id = project.id.clone();
     let path = PathBuf::from(&project.path);
+    let log_path = path.join(".orkestra").join(".logs").join("debug.log");
 
     // Update status to "starting" so the UI shows progress.
     let _ = tokio::task::spawn_blocking({
@@ -105,22 +123,45 @@ pub async fn start_containers_and_spawn(
     })
     .await;
 
+    append_log(&log_path, "\n=== Starting project ===");
+
     // Best-effort pull — skipped silently if there are local changes, the
     // remote is unreachable, or history has diverged.
+    //
+    // Stash `.git/worktrees/` before pulling. When a repo has linked worktrees
+    // pointing to `/workspace/...` (valid inside the container, absent on the
+    // host), Linux git fails early with "Invalid path '/workspace'" before it
+    // even contacts the remote. Hiding the directory lets git run normally;
+    // the RAII guard restores it on drop — even on panic.
+    append_log(&log_path, "Pulling latest code...");
     let pull_path = path.clone();
+    let pull_log = log_path.clone();
     let _ = tokio::task::spawn_blocking(move || {
+        let _guard = WorktreesGuard::new(&pull_path);
         if let Ok(git) = Git2GitService::new(&pull_path) {
             if let Err(e) = git.pull_branch() {
                 tracing::warn!(path = %pull_path.display(), error = %e, "git pull --rebase skipped");
+                append_log(&pull_log, &format!("Pull skipped: {e}"));
+            } else {
+                append_log(&pull_log, "Pull complete.");
             }
         }
     })
     .await;
 
-    if let Err(e) =
-        container_and_spawn(&conn, &supervisor, project, path, run_setup, force_build).await
+    if let Err(e) = container_and_spawn(
+        &conn,
+        &supervisor,
+        project,
+        path,
+        run_setup,
+        force_build,
+        &log_path,
+    )
+    .await
     {
         tracing::error!("Container setup failed for {project_id}: {e}");
+        append_log(&log_path, &format!("Container setup failed: {e}"));
         set_error(&conn, &project_id, &e.to_string()).await;
     }
 }
@@ -138,6 +179,7 @@ async fn container_and_spawn(
     path: PathBuf,
     run_setup: bool,
     force_build: bool,
+    log_path: &Path,
 ) -> Result<(), ServiceError> {
     let project_id = project.id.clone();
     let orkd_path = supervisor.orkd_path().to_path_buf();
@@ -154,14 +196,17 @@ async fn container_and_spawn(
     .map_err(|e| ServiceError::Other(e.to_string()))?;
 
     // Step 5: Prepare image (pull or build).
+    append_log(log_path, "\n=== Preparing Docker image ===");
     let image = tokio::task::spawn_blocking({
         let config = config.clone();
         let p = path.clone();
         let id = project_id.clone();
-        move || devcontainer::prepare_image::execute(&config, &p, &id)
+        let lp = log_path.to_path_buf();
+        move || devcontainer::prepare_image::execute(&config, &p, &id, Some(&lp))
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
+    append_log(log_path, "Image ready.");
 
     // Step 5a: Ensure the shared toolbox volume is populated (once per service lifetime).
     supervisor.ensure_toolbox_volume().await?;
@@ -182,12 +227,13 @@ async fn container_and_spawn(
     .await;
 
     // Step 6: Start container.
+    append_log(log_path, "\n=== Starting container ===");
     let container_id = tokio::task::spawn_blocking({
         let config = config.clone();
         let p = path.clone();
         let id = project_id.clone();
+        let lp = log_path.to_path_buf();
         move || {
-            let log_path = p.join(".orkestra").join(".logs").join("debug.log");
             devcontainer::start_container::execute(
                 &id,
                 &config,
@@ -195,13 +241,14 @@ async fn container_and_spawn(
                 &p,
                 project.daemon_port,
                 &override_dir,
-                Some(&log_path),
+                Some(&lp),
                 force_build,
             )
         }
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
+    append_log(log_path, &format!("Container started: {container_id}"));
 
     // Step 6b: Inject orkd binary into the container via `docker cp`.
     // This avoids bind-mounting a host path (which doesn't exist in DooD setups).
@@ -237,7 +284,8 @@ async fn container_and_spawn(
     tracing::info!(project_id = %project_id, "Running toolbox setup");
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
-        move || devcontainer::run_toolbox_setup::execute(&cid)
+        let lp = log_path.to_path_buf();
+        move || devcontainer::run_toolbox_setup::execute(&cid, Some(&lp))
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
@@ -272,16 +320,20 @@ async fn container_and_spawn(
     // Step 8: Run setup (optional).
     if run_setup {
         tracing::info!(project_id = %project_id, "Running setup commands");
+        append_log(log_path, "\n=== Running setup commands ===");
         let cid = container_id.clone();
         let config = config.clone();
         let p = path.clone();
-        if let Err(e) =
-            tokio::task::spawn_blocking(move || devcontainer::run_setup::execute(&cid, &config, &p))
-                .await
-                .map_err(|e| ServiceError::Other(e.to_string()))?
+        let lp = log_path.to_path_buf();
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            devcontainer::run_setup::execute(&cid, &config, &p, Some(&lp))
+        })
+        .await
+        .map_err(|e| ServiceError::Other(e.to_string()))?
         {
             // Setup failure is non-fatal: log a warning and continue.
             tracing::warn!("Container setup command failed for {project_id}: {e}");
+            append_log(log_path, &format!("Setup command failed (continuing): {e}"));
         }
 
         // Step 8b: Re-run toolbox setup to reclaim ownership of any files that
@@ -290,13 +342,14 @@ async fn container_and_spawn(
         tracing::info!(project_id = %project_id, "Re-running toolbox setup after setup commands");
         tokio::task::spawn_blocking({
             let cid = container_id.clone();
-            move || devcontainer::run_toolbox_setup::execute(&cid)
+            move || devcontainer::run_toolbox_setup::execute(&cid, None)
         })
         .await
         .map_err(|e| ServiceError::Other(e.to_string()))??;
     }
 
     // Step 9: Spawn daemon.
+    append_log(log_path, "\n=== Starting daemon ===");
     tokio::task::spawn_blocking({
         let supervisor = Arc::clone(supervisor);
         let p = project_with_container.clone();
@@ -306,6 +359,44 @@ async fn container_and_spawn(
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
     Ok(())
+}
+
+/// RAII guard that hides `.git/worktrees/` from git during a pull.
+///
+/// Some Linux git versions validate registered worktree paths at startup.
+/// When a repo has worktrees at `/workspace/...` (valid inside the container,
+/// absent on the host), any git command fails with
+/// "fatal: Invalid path '/workspace': No such file or directory".
+///
+/// This guard renames the directory away before the pull and restores it on
+/// drop, keeping the worktree data and registrations intact while letting git
+/// run on the host.
+struct WorktreesGuard {
+    active: PathBuf,
+    stashed: PathBuf,
+}
+
+impl WorktreesGuard {
+    fn new(repo_path: &std::path::Path) -> Self {
+        let active = repo_path.join(".git/worktrees");
+        let stashed = repo_path.join(".git/worktrees.stashed");
+        // Recover from a previous crash that left worktrees stashed.
+        if !active.exists() && stashed.exists() {
+            let _ = std::fs::rename(&stashed, &active);
+        }
+        if active.exists() {
+            let _ = std::fs::rename(&active, &stashed);
+        }
+        Self { active, stashed }
+    }
+}
+
+impl Drop for WorktreesGuard {
+    fn drop(&mut self) {
+        if self.stashed.exists() {
+            let _ = std::fs::rename(&self.stashed, &self.active);
+        }
+    }
 }
 
 /// Stop and remove any existing container for `project_id` (best-effort).
@@ -405,5 +496,18 @@ fn flatten<T>(
     match result {
         Ok(inner) => inner,
         Err(e) => Err(ServiceError::Other(e.to_string())),
+    }
+}
+
+/// Append a line to the provision log file, creating it if needed.
+///
+/// Silently ignores I/O errors — log writes must never fail the provision.
+fn append_log(log_path: &Path, line: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+    {
+        let _ = writeln!(f, "{line}");
     }
 }

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Child;
+use std::process::{Child, ChildStderr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -448,11 +448,16 @@ fn spawn_and_poll(
         ServiceError::Other(format!("No container running for project {}", project.id))
     })?;
 
-    let child = devcontainer::exec_orkd::execute(
+    let mut child = devcontainer::exec_orkd::execute(
         container_id,
         project.daemon_port,
         &project.shared_secret,
     )?;
+
+    // Drain stderr in a background thread so the buffer never fills up and
+    // blocks the daemon. We capture it to include in the error message if the
+    // daemon exits early.
+    let stderr_buffer = drain_stderr(child.stderr.take());
 
     let pid = child.id();
     let project_id = project.id.clone();
@@ -495,14 +500,21 @@ fn spawn_and_poll(
             if let Some(status) = exit_status {
                 let code = status.code().unwrap_or(-1);
                 warn!("Daemon {project_id} exited with code {code} before becoming ready");
+                let stderr_text = stderr_buffer.lock().unwrap().clone();
+                let msg = if stderr_text.trim().is_empty() {
+                    format!("Daemon exited with code {code} before becoming ready")
+                } else {
+                    format!(
+                        "Daemon exited with code {code} before becoming ready\n\n{}",
+                        stderr_text.trim()
+                    )
+                };
                 if let Err(e) = project::update_status::execute(
                     &conn_poll,
                     &project_id,
                     ProjectStatus::Error,
                     None,
-                    Some(&format!(
-                        "Daemon exited with code {code} before becoming ready"
-                    )),
+                    Some(&msg),
                 ) {
                     error!("Failed to mark daemon {project_id} as error after early exit: {e}");
                 }
@@ -536,6 +548,24 @@ fn spawn_and_poll(
     });
 
     Ok(())
+}
+
+/// Spawn a background thread that drains `stderr` into a shared buffer.
+///
+/// Returns the buffer. When the daemon exits, the thread finishes and the
+/// buffer holds all output — safe to read from the readiness-poller thread.
+fn drain_stderr(stderr: Option<ChildStderr>) -> Arc<Mutex<String>> {
+    let buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    if let Some(handle) = stderr {
+        let buf = Arc::clone(&buffer);
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut s = String::new();
+            let _ = std::io::BufReader::new(handle).read_to_string(&mut s);
+            *buf.lock().unwrap() = s;
+        });
+    }
+    buffer
 }
 
 /// Return the absolute compose file path when `config` is a Compose variant.

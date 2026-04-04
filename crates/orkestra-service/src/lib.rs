@@ -87,7 +87,7 @@ pub fn devcontainer_prepare_image(
     repo_path: &std::path::Path,
     project_id: &str,
 ) -> Result<String, ServiceError> {
-    interactions::devcontainer::prepare_image::execute(config, repo_path, project_id)
+    interactions::devcontainer::prepare_image::execute(config, repo_path, project_id, None)
 }
 
 /// Start a Docker container for a project and return its container ID.

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { Transport } from "../../transport";
 import type { StageConfig } from "../../types/workflow";
+import { titleCase } from "../../utils/titleCase";
 import { Button } from "../ui/Button";
 import { ModalPanel } from "../ui/ModalPanel";
 
@@ -88,8 +89,7 @@ export function SendToStageModal({
             >
               {stages.map((stage) => (
                 <option key={stage.name} value={stage.name}>
-                  {(stage.display_name ?? stage.name) +
-                    (stage.name === currentStage ? " (restart)" : "")}
+                  {titleCase(stage.name) + (stage.name === currentStage ? " (restart)" : "")}
                 </option>
               ))}
             </select>

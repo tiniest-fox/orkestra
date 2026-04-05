@@ -41,13 +41,19 @@ src/
 
 The primary data structure for prompt rendering. Contains:
 - `stage: &StageConfig` — stage configuration
-- `artifacts: Vec<ArtifactContext>` — input artifacts from prior stages
+- `task_id: &str` — task identifier
+- `task_file_path: String` — path to the materialized task definition file
+- `has_input_artifacts: bool` — whether any prior stage has a materialized artifact available
+- `activity_log_path: Option<String>` — path to the activity log file, if materialized
 - `question_history: Vec<QuestionAnswerContext>` — Q&A pairs
 - `feedback: Option<&str>` — rejection feedback
 - `integration_error: Option<IntegrationErrorContext>` — merge conflict info
-- `activity_logs: Vec<ActivityLogEntry>` — prior iteration logs
-- `sibling_tasks: Vec<SiblingTaskContext>` — sibling subtask context
+- `worktree_path: Option<&str>` — git worktree path for isolation
+- `base_branch: &str` — base branch this task was created from
+- `base_commit: &str` — git commit SHA of the base branch at worktree creation time
+- `show_direct_structured_output_hint: bool` — whether to show direct StructuredOutput instructions
 - `workflow_stages: Vec<WorkflowStageEntry>` — stage overview
+- `sibling_tasks: Vec<SiblingTaskContext>` — sibling subtask context
 
 ### ResumeType
 

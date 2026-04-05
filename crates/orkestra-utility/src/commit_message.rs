@@ -305,7 +305,6 @@ mod tests {
         flows.insert(
             "hotfix".to_string(),
             FlowConfig {
-                description: "Hotfix flow".to_string(),
                 stages: vec![work.clone(), review.clone()],
                 integration: IntegrationConfig::new("work"),
             },

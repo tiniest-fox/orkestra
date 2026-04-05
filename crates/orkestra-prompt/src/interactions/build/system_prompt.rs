@@ -126,7 +126,7 @@ struct AgentDefinitionContext<'a> {
     task_id: &'a str,
     feedback: Option<&'a str>,
     has_artifacts: bool,
-    artifact_names: Vec<&'a str>,
+    stage_names_with_artifacts: Vec<&'a str>,
 }
 
 /// Render an agent definition as a Handlebars template.
@@ -142,8 +142,12 @@ fn render_agent_definition(template: &str, ctx: &StagePromptContext<'_>) -> Stri
         stage_name: &ctx.stage.name,
         task_id: ctx.task_id,
         feedback: ctx.feedback,
-        has_artifacts: !ctx.artifacts.is_empty(),
-        artifact_names: ctx.artifacts.iter().map(|a| a.name.as_str()).collect(),
+        has_artifacts: ctx.has_input_artifacts,
+        stage_names_with_artifacts: ctx
+            .workflow_stages
+            .iter()
+            .filter_map(|s| s.artifact_path.as_deref().map(|_| s.name.as_str()))
+            .collect(),
     };
 
     let mut hb = Handlebars::new();
@@ -184,11 +188,9 @@ mod tests {
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
-                .with_display_name("Planning")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_display_name("Working"),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_display_name("Reviewing")
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])

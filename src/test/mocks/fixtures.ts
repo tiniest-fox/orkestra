@@ -147,7 +147,6 @@ export function createMockWorkflowConfig(): WorkflowConfig {
     version: 2,
     flows: {
       default: {
-        description: "Default pipeline",
         stages: [
           {
             name: "planning",

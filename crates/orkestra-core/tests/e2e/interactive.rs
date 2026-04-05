@@ -664,7 +664,6 @@ fn test_exit_interactive_rejects_stage_not_in_flow() {
     flows.insert(
         "work-only".to_string(),
         FlowConfig {
-            description: "Only the work stage".to_string(),
             stages: vec![StageConfig::new("work", "summary")
                 .with_prompt("worker.md")
                 .with_capabilities(StageCapabilities::with_approval(None))],

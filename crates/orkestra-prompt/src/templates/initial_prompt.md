@@ -2,14 +2,25 @@
 {{#if workflow_stages}}
 
 ## Your Workflow
+{{#if has_input_artifacts}}
+
+The following artifacts from prior stages are available in your worktree. You MUST read them before starting work.
+{{/if}}
 
 {{#each workflow_stages}}
 {{#if this.is_current}}
-[{{this.name}}] ← YOU ARE HERE — {{this.description}}
+*{{this.display_name}}* ← YOU ARE HERE
+{{#if this.description}}{{this.description}}{{/if}}
 {{else}}
-[{{this.name}}] — {{this.description}}{{#if this.artifact_path}} ({{this.artifact_path}}){{/if}}
+*{{this.display_name}}*
+{{#if this.description}}{{this.description}}{{/if}}{{#if this.artifact_path}}
+`{{this.artifact_path}}`{{/if}}
 {{/if}}
+
 {{/each}}
+{{#if activity_log_path}}
+**Activity Log** (accumulated across all prior stages): `{{activity_log_path}}`
+{{/if}}
 {{/if}}
 
 ---
@@ -20,15 +31,6 @@
 
 Your Trak definition is at `{{task_file_path}}`. Read it before starting work.
 
-{{#if artifacts}}
-## Input Artifacts
-
-The following artifacts are available in your worktree. You MUST read these artifacts before starting work:
-
-{{#each artifacts}}
-- `{{this.file_path}}`{{#if this.description}} — {{this.description}}{{/if}}
-{{/each}}
-{{/if}}
 {{#if sibling_tasks}}
 ## Sibling Subtraks
 

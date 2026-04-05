@@ -6,8 +6,8 @@ use handlebars::Handlebars;
 use serde::Serialize;
 
 use crate::types::{
-    ArtifactContext, IntegrationErrorContext, QuestionAnswerContext, SiblingTaskContext,
-    StagePromptContext, WorkflowStageEntry,
+    IntegrationErrorContext, QuestionAnswerContext, SiblingTaskContext, StagePromptContext,
+    WorkflowStageEntry,
 };
 
 // ============================================================================
@@ -23,7 +23,8 @@ pub fn execute(templates: &Handlebars<'static>, ctx: &StagePromptContext<'_>) ->
         stage_name: &ctx.stage.name,
         task_id: ctx.task_id,
         task_file_path: &ctx.task_file_path,
-        artifacts: &ctx.artifacts,
+        has_input_artifacts: ctx.has_input_artifacts,
+        activity_log_path: ctx.activity_log_path.as_deref(),
         question_history: &ctx.question_history,
         feedback: ctx.feedback,
         integration_error: ctx.integration_error.as_ref(),
@@ -47,7 +48,8 @@ struct UserMessageContext<'a> {
     stage_name: &'a str,
     task_id: &'a str,
     task_file_path: &'a str,
-    artifacts: &'a [ArtifactContext],
+    has_input_artifacts: bool,
+    activity_log_path: Option<&'a str>,
     question_history: &'a [QuestionAnswerContext<'a>],
     feedback: Option<&'a str>,
     integration_error: Option<&'a IntegrationErrorContext<'a>>,
@@ -83,11 +85,9 @@ mod tests {
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
-                .with_display_name("Planning")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_display_name("Working"),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_display_name("Reviewing")
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
@@ -120,9 +120,9 @@ mod tests {
         assert!(!user_message.contains("Implement feature"));
         assert!(!user_message.contains("Add new feature"));
         assert!(user_message.contains(".orkestra/.artifacts/trak.md"));
-        // Stage artifacts show file paths
+        // Stage artifacts show file paths in the workflow overview
         assert!(user_message.contains(".orkestra/.artifacts/plan.md"));
-        assert!(user_message.contains("Input Artifacts"));
+        assert!(user_message.contains("MUST read"));
     }
 
     #[test]
@@ -250,9 +250,12 @@ mod tests {
         let user_message = execute(&templates, &ctx);
 
         assert!(user_message.contains("## Your Workflow"));
-        assert!(user_message.contains("[plan] — Create a plan"));
-        assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
-        assert!(user_message.contains("[review] — Review the work"));
+        assert!(user_message.contains("*Plan*"));
+        assert!(user_message.contains("Create a plan"));
+        assert!(user_message.contains("*Work* ← YOU ARE HERE"));
+        assert!(user_message.contains("Implement the plan"));
+        assert!(user_message.contains("*Review*"));
+        assert!(user_message.contains("Review the work"));
     }
 
     #[test]

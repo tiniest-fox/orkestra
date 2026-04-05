@@ -893,7 +893,6 @@ fn test_integration_failure_uses_flow_on_failure_override() {
     flows.insert(
         "quick".to_string(),
         FlowConfig {
-            description: "Quick flow with custom recovery".to_string(),
             stages: vec![
                 StageConfig::new("planning", "plan")
                     .with_prompt("planner.md")
@@ -4617,7 +4616,6 @@ fn test_disallowed_tools_flow_override() {
     flows.insert(
         "hotfix".to_string(),
         FlowConfig {
-            description: "Hotfix flow".to_string(),
             stages: vec![StageConfig::new("work", "summary")], // No disallowed_tools
             integration: IntegrationConfig::new("work"),
         },
@@ -7315,7 +7313,6 @@ fn test_flow_gate_override_disables_gate() {
     flows.insert(
         "no-gate".to_string(),
         FlowConfig {
-            description: "Flow with gate disabled".to_string(),
             // No gate in this flow's work stage — gate would fail if reached
             stages: vec![StageConfig::new("work", "summary")
                 .with_prompt("worker.md")
@@ -8078,7 +8075,6 @@ fn test_send_to_stage_respects_flow() {
     flows.insert(
         "quick".to_string(),
         FlowConfig {
-            description: "Quick flow without review".to_string(),
             stages: vec![
                 StageConfig::new("planning", "plan").with_prompt("planner.md"),
                 StageConfig::new("work", "summary").with_prompt("worker.md"),

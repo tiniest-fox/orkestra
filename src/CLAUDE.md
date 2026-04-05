@@ -428,6 +428,21 @@ This applies to any destructive confirmation (archive, delete, reset). The `@tau
 
 **`useRegexLiterals` auto-converts `new RegExp()` to literal form**: Biome's `useRegexLiterals` rule automatically rewrites `new RegExp("pattern")` to `/pattern/` literal syntax. If constructor form is required (e.g., to avoid escape conflicts with another lint rule), use `// biome-ignore lint/nursery/useRegexLiterals: <reason>` on the preceding line. Without the suppression, the automated formatter reverts the constructor form on every gate run, making the fix unstable.
 
+<!-- compound: manly-fragrant-porpoise -->
+
+**`noArrayIndexKey` suppression detaches when the line exceeds 100 chars**: A `// biome-ignore lint/suspicious/noArrayIndexKey` comment must be on the line immediately before the JSX element containing `key={i}`. If adding props causes that element to exceed Biome's 100-char line limit, the formatter splits the element across lines, moving `key={i}` to a new line and leaving the suppression orphaned — which triggers a `suppressions/unused` error alongside the original `noArrayIndexKey` error. Fix by keeping the JSX element short: extract a variable for the long prop value so the element itself fits in 100 chars.
+
+```tsx
+// Before (breaks if line > 100 chars after formatting):
+// biome-ignore lint/suspicious/noArrayIndexKey: stable list
+<ToolLine key={i} summary={toolSummary(entry, projectRoot)} />
+
+// After (extract variable so element stays short):
+const summary = toolSummary(entry, projectRoot);
+// biome-ignore lint/suspicious/noArrayIndexKey: stable list
+<ToolLine key={i} summary={summary} />
+```
+
 <!-- compound: finally-idealistic-linnet -->
 
 **`useKeyWithClickEvents` on non-semantic elements**: Biome requires a `onKeyDown` handler alongside every `onClick`, even on `tabIndex={-1}` divs/spans where keyboard nav is intentionally handled elsewhere (e.g., by a parent input). Use a no-op `onKeyDown={() => {}}` to satisfy the rule — do not use `biome-ignore` (it's invalid inside JSX prop position).

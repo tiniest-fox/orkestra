@@ -32,6 +32,7 @@ Stores Trak definitions, workflow position, execution phase, artifacts, and git 
 | `status` | TEXT | NOT NULL | Workflow position as JSON. Examples: `{"type":"active","stage":"planning"}`, `{"type":"done"}`, `{"type":"blocked","reason":"..."}`, `{"type":"waiting_on_children"}` |
 | `phase` | TEXT | NOT NULL, DEFAULT 'idle' | Execution phase: `idle`, `setting_up`, `agent_working`, `awaiting_review`, `integrating` |
 | `artifacts` | TEXT | NOT NULL, DEFAULT '{}' | Stage outputs as JSON object. Keys are artifact names (e.g., `plan`, `summary`), values are artifact content |
+| `resources` | TEXT | NOT NULL, DEFAULT '{}' | External resources as JSON object. Keys are resource names, values are resource records (url, description, stage, created_at) |
 | `parent_id` | TEXT | FOREIGN KEY → workflow_tasks(id) | Parent task ID for subtasks |
 | `short_id` | TEXT | | Short identifier for subtasks (e.g., `"1.2"`) |
 | `depends_on` | TEXT | NOT NULL, DEFAULT '[]' | JSON array of task IDs this task depends on |

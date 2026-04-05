@@ -23,6 +23,9 @@ const APPROVAL_COMPONENT: &str = include_str!("schemas/components/approval.json"
 /// Terminal states schema component - failed, blocked.
 const TERMINAL_COMPONENT: &str = include_str!("schemas/components/terminal.json");
 
+/// Resources schema component - cross-stage external references.
+const RESOURCES_COMPONENT: &str = include_str!("schemas/components/resources.json");
+
 // ============================================================================
 // Schema Generation
 // ============================================================================
@@ -147,6 +150,14 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
         }
     }
 
+    // Add resources property (always available, not capability-gated)
+    let resources_component = load_component(RESOURCES_COMPONENT);
+    if let Some(r_props) = resources_component.get("properties") {
+        if let Some(resources) = r_props.get("resources") {
+            properties["resources"] = resources.clone();
+        }
+    }
+
     // Build the complete schema
     let description = if config.produces_subtasks {
         "Stage output. Use 'subtasks' with 'content' for the artifact and structured subtask data, or use terminal types (failed/blocked).".to_string()
@@ -266,6 +277,42 @@ mod tests {
         assert!(props.get("subtasks").is_some());
         assert!(props.get("skip_reason").is_none());
         assert!(props.get("content").is_some());
+    }
+
+    #[test]
+    fn test_generate_schema_includes_resources() {
+        // Resources property should be present for all stage types
+        let configs = [
+            SchemaConfig {
+                artifact_name: "plan",
+                ask_questions: false,
+                produces_subtasks: false,
+                has_approval: false,
+            },
+            SchemaConfig {
+                artifact_name: "breakdown",
+                ask_questions: false,
+                produces_subtasks: true,
+                has_approval: false,
+            },
+            SchemaConfig {
+                artifact_name: "verdict",
+                ask_questions: false,
+                produces_subtasks: false,
+                has_approval: true,
+            },
+        ];
+
+        for config in &configs {
+            let schema = execute(config);
+            let parsed: Value = serde_json::from_str(&schema).unwrap();
+            let props = parsed.get("properties").unwrap();
+            assert!(
+                props.get("resources").is_some(),
+                "resources property missing for artifact_name={}",
+                config.artifact_name
+            );
+        }
     }
 
     #[test]

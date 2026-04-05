@@ -819,7 +819,6 @@ flows:
     integration:
       on_failure: planning
   quick:
-    description: Quick flow
     stages:
       - name: work
         artifact: summary

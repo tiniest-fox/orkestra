@@ -40,11 +40,10 @@ export interface SubtaskCapabilities {
 }
 
 /**
- * Artifact config — either a plain name string (when no description/display_name)
- * or a rich object (when description or display_name are set).
+ * Artifact config — either a plain name string or a rich object with just the name.
  * Mirrors ArtifactConfig's custom serde in Rust.
  */
-export type ArtifactConfig = string | { name: string; display_name?: string; description?: string };
+export type ArtifactConfig = string | { name: string };
 
 /** Extract the artifact name string from an ArtifactConfig. */
 export function artifactName(artifact: ArtifactConfig): string {
@@ -67,8 +66,6 @@ export interface GateConfig {
 export interface StageConfig {
   /** Unique name of the stage (e.g., "planning", "work", "review"). */
   name: string;
-  /** Optional display name for the UI (defaults to capitalized name). */
-  display_name?: string;
   /** Artifact config for the output this stage produces. */
   artifact: ArtifactConfig;
   /** Artifacts required as inputs from previous stages. */
@@ -95,8 +92,6 @@ export interface IntegrationConfig {
  * Configuration for an alternate flow (complete pipeline).
  */
 export interface FlowConfig {
-  /** Human-readable description of when to use this flow. */
-  description: string;
   /** Ordered list of stages in this flow (full StageConfig objects). */
   stages: StageConfig[];
   /** Integration settings for this flow. */

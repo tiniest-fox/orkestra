@@ -7,7 +7,6 @@ function createThreeStageConfig(): WorkflowConfig {
     version: 2,
     flows: {
       default: {
-        description: "Default pipeline",
         stages: [
           {
             name: "planning",
@@ -37,7 +36,6 @@ function createThreeStageConfig(): WorkflowConfig {
         integration: { on_failure: "work" },
       },
       quick: {
-        description: "Skip planning",
         stages: [
           {
             name: "work",

@@ -53,6 +53,20 @@ src/
 
 ## Patterns
 
+### Config Structs Must Reject Unknown Fields
+
+All user-facing config structs (types deserialized from `workflow.yaml`) must include `#[serde(deny_unknown_fields)]`. This ensures that when a field is removed from the struct, stale YAML in production configs and test fixtures causes a hard parse error rather than silently being ignored.
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub struct FlowConfig { ... }
+```
+
+When adding `deny_unknown_fields` to a struct, add a regression test following the pattern of `test_artifact_config_rejects_unknown_fields` in `stage.rs`. This guards against the attribute being accidentally removed.
+
+**When removing a field:** update both production YAML files (`.orkestra/workflow.yaml` and `crates/orkestra-core/src/defaults/workflow.yaml`) and all test fixtures that use inline YAML strings (grep for the field name in both `src/config/` and `tests/`).
+
 ### Derive-Heavy Data Types
 All types derive `Serialize`, `Deserialize`, `Clone`, and usually `Debug` + `PartialEq`. Use serde attributes for clean serialization:
 

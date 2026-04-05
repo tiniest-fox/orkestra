@@ -2,16 +2,9 @@
 import { useState } from "react";
 import type { Transport } from "../../transport";
 import type { StageConfig } from "../../types/workflow";
+import { titleCase } from "../../utils/titleCase";
 import { Button } from "../ui/Button";
 import { ModalPanel } from "../ui/ModalPanel";
-
-function titleCase(s: string): string {
-  return s
-    .split(/[_-]/)
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
 
 interface SendToStageModalProps {
   isOpen: boolean;

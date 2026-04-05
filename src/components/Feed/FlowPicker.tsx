@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { FlowConfig } from "../../types/workflow";
-
-function titleCase(s: string): string {
-  return s
-    .split(/[_-]/)
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
+import { titleCase } from "../../utils/titleCase";
 
 interface FlowPickerProps {
   flows: Record<string, FlowConfig>;
@@ -30,7 +23,7 @@ export function FlowPicker({ flows, selected, onChange }: FlowPickerProps) {
 
   const cards: FlowCard[] = flowEntries.map(([id, flow]) => ({
     id,
-    name: id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, " "),
+    name: titleCase(id),
     stageNames: flow.stages.map((s) => titleCase(s.name)),
   }));
 

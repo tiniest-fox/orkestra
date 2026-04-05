@@ -3,13 +3,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::task_view::{DerivedTaskState, TaskView};
 use crate::workflow::domain::{Iteration, StageSession, Task};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 
 /// List all active top-level tasks with pre-joined data and derived state.
 #[allow(clippy::too_many_lines)]
-pub fn list_active(store: &Arc<dyn WorkflowStore>) -> WorkflowResult<Vec<TaskView>> {
+pub fn list_active(
+    store: &Arc<dyn WorkflowStore>,
+    workflow: &WorkflowConfig,
+) -> WorkflowResult<Vec<TaskView>> {
     let all_active = store.list_active_tasks()?;
 
     let mut top_level = Vec::new();
@@ -70,7 +74,8 @@ pub fn list_active(store: &Arc<dyn WorkflowStore>) -> WorkflowResult<Vec<TaskVie
                 .cloned()
                 .unwrap_or_default();
             let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
+            let derived =
+                DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
             derived_states.push(derived.clone());
             subtask_views.push(TaskView {
                 task,
@@ -92,7 +97,13 @@ pub fn list_active(store: &Arc<dyn WorkflowStore>) -> WorkflowResult<Vec<TaskVie
         let subtask_states = subtask_derived_by_parent
             .get(&task.id)
             .map_or(&[][..], Vec::as_slice);
-        let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, subtask_states);
+        let derived = DerivedTaskState::build(
+            &task,
+            &iterations,
+            &stage_sessions,
+            subtask_states,
+            workflow,
+        );
         views.push(TaskView {
             task,
             iterations,
@@ -106,7 +117,11 @@ pub fn list_active(store: &Arc<dyn WorkflowStore>) -> WorkflowResult<Vec<TaskVie
 }
 
 /// List subtasks for a parent task with pre-joined data and derived state.
-pub fn list_subtasks(store: &dyn WorkflowStore, parent_id: &str) -> WorkflowResult<Vec<TaskView>> {
+pub fn list_subtasks(
+    store: &dyn WorkflowStore,
+    parent_id: &str,
+    workflow: &WorkflowConfig,
+) -> WorkflowResult<Vec<TaskView>> {
     let subtasks = store.list_subtasks(parent_id)?;
     if subtasks.is_empty() {
         return Ok(vec![]);
@@ -118,7 +133,7 @@ pub fn list_subtasks(store: &dyn WorkflowStore, parent_id: &str) -> WorkflowResu
     for task in sorted {
         let iterations = store.get_iterations(&task.id)?;
         let stage_sessions = store.get_stage_sessions(&task.id)?;
-        let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
+        let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
         views.push(TaskView {
             task,
             iterations,
@@ -132,7 +147,10 @@ pub fn list_subtasks(store: &dyn WorkflowStore, parent_id: &str) -> WorkflowResu
 
 /// List all archived top-level tasks with pre-joined data and derived state.
 #[allow(clippy::too_many_lines)]
-pub fn list_archived(store: &Arc<dyn WorkflowStore>) -> WorkflowResult<Vec<TaskView>> {
+pub fn list_archived(
+    store: &Arc<dyn WorkflowStore>,
+    workflow: &WorkflowConfig,
+) -> WorkflowResult<Vec<TaskView>> {
     let all_archived = store.list_archived_tasks()?;
 
     let mut top_level = Vec::new();
@@ -179,7 +197,8 @@ pub fn list_archived(store: &Arc<dyn WorkflowStore>) -> WorkflowResult<Vec<TaskV
                 .cloned()
                 .unwrap_or_default();
             let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
+            let derived =
+                DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
             derived_states.push(derived.clone());
             subtask_views.push(TaskView {
                 task,
@@ -201,7 +220,13 @@ pub fn list_archived(store: &Arc<dyn WorkflowStore>) -> WorkflowResult<Vec<TaskV
         let subtask_states = subtask_derived_by_parent
             .get(&task.id)
             .map_or(&[][..], Vec::as_slice);
-        let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, subtask_states);
+        let derived = DerivedTaskState::build(
+            &task,
+            &iterations,
+            &stage_sessions,
+            subtask_states,
+            workflow,
+        );
         views.push(TaskView {
             task,
             iterations,

@@ -197,6 +197,13 @@ fn test_subtask_sees_parent_resources() {
     );
     env.advance(); // spawns subtask work agent — resources.md should be written here
 
+    // Verify the subtask prompt references resources.md (tests the {{#if resources_path}} template fix)
+    let subtask_prompt = env.last_prompt_for(&subtask_id);
+    assert!(
+        subtask_prompt.contains(".orkestra/.artifacts/resources.md"),
+        "Subtask prompt should reference resources.md even when subtask has no own resources. Got prompt:\n{subtask_prompt}"
+    );
+
     // Verify subtask's resources.md contains the parent's resource
     let resources_md_path = format!("{subtask_worktree}/.orkestra/.artifacts/resources.md");
     let resources_md = std::fs::read_to_string(&resources_md_path)

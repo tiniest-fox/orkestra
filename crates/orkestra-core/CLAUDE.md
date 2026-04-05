@@ -145,6 +145,17 @@ Read these before modifying cross-cutting flows:
 | Task integration | `docs/flows/task-integration.md` | `orchestrator.rs`, `integration.rs`, `orkestra-git` |
 | Subtask lifecycle | `docs/flows/subtask-lifecycle.md` | `workflow/agent/interactions/handle_subtasks.rs`, `workflow/stage/interactions/create_subtasks.rs`, `workflow/stage/interactions/check_parent_completions.rs` |
 
+### `DerivedTaskState::build()` — Approval vs. Rejection Detection
+
+`DerivedTaskState` detects two pending-human states asymmetrically:
+
+- **`pending_rejection`**: Detected by `Outcome::AwaitingRejectionReview` on the latest iteration. The outcome is set *before* the iteration ends, so it's a reliable signal.
+- **`pending_approval`**: There is no equivalent distinguishing outcome. When a task is `AwaitingApproval`, the current iteration stays open with `outcome = None`. Detection requires two conditions: state is `AwaitingApproval` **and** the current stage has approval capability (`WorkflowConfig::stage(&task.flow, stage_name)?.has_approval()`).
+
+The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. When a human-review gate succeeds without an approval-capable stage, the flow goes through `auto_advance_or_review` (sets state, doesn't end iteration); when it succeeds *with* an approval-capable stage, `enter_commit_pipeline` atomically sets both `Outcome::Approved` and `Finishing` state — so `AwaitingApproval + Outcome::Approved` never coexists.
+
+`DerivedTaskState::build()` requires `WorkflowConfig` as a parameter for this config lookup. When adding new call sites, ensure the workflow config is available — don't try to detect approval state without it.
+
 ## Anti-Patterns
 
 - **Don't bypass WorkflowApi** — Store access should go through API methods or interactions

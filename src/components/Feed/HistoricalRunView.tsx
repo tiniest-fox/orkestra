@@ -3,6 +3,7 @@
 import { FileText } from "lucide-react";
 import { useRef } from "react";
 import { useLogs } from "../../hooks/useLogs";
+import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import type { StageRun } from "../../utils/stageRuns";
 import { EmptyState } from "../ui/EmptyState";
@@ -22,6 +23,23 @@ interface HistoricalRunViewProps {
 export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps) {
   const artifact = task.artifacts[run.artifactKey] ?? null;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const config = useWorkflowConfig();
+
+  // Derive verdict for historical run — only show for approval-capability stages
+  const stageConfig = config.flows[task.flow]?.stages.find((s) => s.name === run.stage);
+  let verdict: "approved" | "rejected" | undefined;
+  if (stageConfig?.capabilities.approval != null) {
+    const lastOutcome = run.iterations[run.iterations.length - 1]?.outcome;
+    if (lastOutcome?.type === "approved") {
+      verdict = "approved";
+    } else if (
+      lastOutcome?.type === "rejected" ||
+      lastOutcome?.type === "rejection" ||
+      lastOutcome?.type === "awaiting_rejection_review"
+    ) {
+      verdict = "rejected";
+    }
+  }
 
   const tabs: DrawerTab[] = [
     { id: "artifact", label: run.artifactLabel, hotkey: "a" },
@@ -46,10 +64,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {activeTab === "artifact" ? (
           artifact ? (
-            <ArtifactView
-              artifact={artifact}
-              outcome={run.iterations[run.iterations.length - 1]?.outcome}
-            />
+            <ArtifactView artifact={artifact} verdict={verdict} />
           ) : (
             <EmptyState icon={FileText} message="No artifact for this stage." />
           )

@@ -11,7 +11,7 @@ import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { useChunkedHtml } from "../../hooks/useChunkedHtml";
 import { useRichCodeBlocks } from "../../hooks/useRichCodeBlocks";
-import type { WorkflowArtifact, WorkflowOutcome } from "../../types/workflow";
+import type { WorkflowArtifact } from "../../types/workflow";
 import { formatTimestamp, PROSE_CLASSES } from "../../utils";
 import { useContentSettled } from "../ui";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
@@ -19,10 +19,10 @@ import { ArtifactBadge } from "./OutcomeBadge";
 
 interface ArtifactViewProps {
   artifact: WorkflowArtifact;
-  outcome?: WorkflowOutcome;
+  verdict?: "approved" | "rejected";
 }
 
-export function ArtifactView({ artifact, outcome }: ArtifactViewProps) {
+export function ArtifactView({ artifact, verdict }: ArtifactViewProps) {
   // Defer heavy content rendering until all ancestor animations settle
   const isSettled = useContentSettled();
   const deferChunks = !isSettled;
@@ -36,7 +36,7 @@ export function ArtifactView({ artifact, outcome }: ArtifactViewProps) {
   return (
     <div className="p-4">
       <div className="flex items-center gap-2 text-xs text-text-secondary mb-2">
-        <ArtifactBadge artifactName={artifact.name} outcome={outcome} />
+        <ArtifactBadge artifactName={artifact.name} verdict={verdict} />
         <span>
           Stage: {artifact.stage} | Iteration: {artifact.iteration} |{" "}
           {formatTimestamp(artifact.created_at)}

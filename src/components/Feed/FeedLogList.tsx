@@ -6,6 +6,7 @@
 
 import { Terminal } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useProjectInfo } from "../../hooks/useProjectInfo";
 import type { LogEntry, ResumeType } from "../../types/workflow";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -27,6 +28,8 @@ interface FeedLogListProps {
 
 export function FeedLogList({ logs, error }: FeedLogListProps) {
   const grouped = useGroupedLogs(logs);
+  const projectInfo = useProjectInfo();
+  const projectRoot = projectInfo?.project_root;
 
   if (error != null) {
     return (
@@ -52,7 +55,7 @@ export function FeedLogList({ logs, error }: FeedLogListProps) {
     <div className="space-y-0">
       {grouped.map((entry, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: log entries have no stable IDs
-        <FeedEntry key={i} entry={entry} />
+        <FeedEntry key={i} entry={entry} projectRoot={projectRoot} />
       ))}
     </div>
   );
@@ -62,7 +65,7 @@ export function FeedLogList({ logs, error }: FeedLogListProps) {
 // Entry dispatcher
 // ============================================================================
 
-function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
+function FeedEntry({ entry, projectRoot }: { entry: GroupedLogEntry; projectRoot?: string }) {
   if (entry.type === "subagent_group") {
     const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
     const shown = toolCalls.slice(-2);
@@ -84,12 +87,12 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
               +{hidden} tool call{hidden !== 1 ? "s" : ""}
             </div>
           )}
-          {shown.map((sub, i) =>
-            sub.type === "subagent_tool_use" ? (
-              // biome-ignore lint/suspicious/noArrayIndexKey: no stable ID
-              <ToolLine key={i} label={sub.tool} summary={toolSummary(sub.input)} variant="tool" />
-            ) : null,
-          )}
+          {shown.map((sub, i) => {
+            if (sub.type !== "subagent_tool_use") return null;
+            const summary = toolSummary(sub.input, projectRoot);
+            // biome-ignore lint/suspicious/noArrayIndexKey: no stable ID
+            return <ToolLine key={i} label={sub.tool} summary={summary} variant="tool" />;
+          })}
         </div>
       </>
     );
@@ -103,7 +106,13 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
       return <UserBubble content={entry.content} resumeType={entry.resume_type} />;
 
     case "tool_use":
-      return <ToolLine label={entry.tool} summary={toolSummary(entry.input)} variant="tool" />;
+      return (
+        <ToolLine
+          label={entry.tool}
+          summary={toolSummary(entry.input, projectRoot)}
+          variant="tool"
+        />
+      );
 
     case "tool_result":
     case "subagent_tool_result":

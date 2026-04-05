@@ -6,16 +6,16 @@ import type { OrkAction, ToolInput } from "../types/workflow";
 import { formatPath } from "./formatters";
 
 /** One-line summary of a tool call's input for compact display. */
-export function toolSummary(input: ToolInput): string {
+export function toolSummary(input: ToolInput, projectRoot?: string): string {
   switch (input.tool) {
     case "bash":
       return input.command.slice(0, 120);
     case "read":
-      return formatPath(input.file_path);
+      return formatPath(input.file_path, projectRoot);
     case "write":
-      return formatPath(input.file_path);
+      return formatPath(input.file_path, projectRoot);
     case "edit":
-      return formatPath(input.file_path);
+      return formatPath(input.file_path, projectRoot);
     case "glob":
       return input.pattern;
     case "grep":

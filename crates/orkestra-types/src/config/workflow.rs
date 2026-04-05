@@ -36,6 +36,7 @@ pub struct WorkflowConfig {
 /// Each flow owns its full stage list and integration config independently —
 /// there is no global stage list or override layer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct FlowConfig {
     /// Ordered list of stages in this flow.
     pub stages: Vec<StageConfig>,
@@ -1186,7 +1187,6 @@ flows:
     integration:
       on_failure: work
   subtask:
-    description: Simplified pipeline for subtasks
     stages:
       - name: work
         artifact: summary

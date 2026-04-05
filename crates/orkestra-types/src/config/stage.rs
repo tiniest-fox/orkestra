@@ -80,6 +80,7 @@ pub struct ToolRestriction {
 
 /// Configuration for a single workflow stage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StageConfig {
     /// Unique identifier for this stage (e.g., "planning", "work").
     /// Used in status, transitions, and artifact references.

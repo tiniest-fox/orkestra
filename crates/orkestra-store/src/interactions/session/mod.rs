@@ -1,5 +1,6 @@
 //! Stage session persistence interactions.
 
+pub mod clear_agent_pid;
 pub mod delete;
 pub mod from_row;
 pub mod get;

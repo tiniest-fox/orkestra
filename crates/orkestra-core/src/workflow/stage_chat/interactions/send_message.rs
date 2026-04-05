@@ -370,21 +370,21 @@ fn read_chat_output(
         );
     }
 
-    // Clear PID on session (skip if detection already handled session cleanup via exit_chat)
+    // Clear PID on session (skip if detection already handled session cleanup via exit_chat).
+    //
+    // Use a targeted conditional update rather than a read-modify-write to avoid a race
+    // with `return_to_work` / `approve` / `reject`: those operations call `exit_chat` which
+    // clears BOTH `agent_pid` and `chat_active`. A full session save here would overwrite
+    // their `chat_active=false` with a stale `chat_active=true` from before they ran.
+    // The conditional update (`WHERE id = ? AND agent_pid = ?`) is a no-op when another
+    // writer has already cleared `agent_pid`, so `chat_active` is never clobbered.
     if !detection_succeeded {
-        let now = chrono::Utc::now().to_rfc3339();
-        if let Ok(Some(mut session)) = store.get_stage_session(task_id, stage) {
-            // Only clear PID if this session is the one we were reading for
-            if session.id == session_id {
-                session.agent_finished(&now);
-                if let Err(e) = store.save_stage_session(&session) {
-                    orkestra_debug!(
-                        "stage_chat",
-                        "Failed to save session after agent exit: {}",
-                        e
-                    );
-                }
-            }
+        if let Err(e) = store.clear_agent_pid_for_session(session_id, pid) {
+            orkestra_debug!(
+                "stage_chat",
+                "Failed to clear agent PID on session exit: {}",
+                e
+            );
         }
     }
 

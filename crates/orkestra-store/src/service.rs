@@ -162,6 +162,15 @@ impl WorkflowStore for SqliteWorkflowStore {
         interactions::session::save::execute(&conn, session)
     }
 
+    fn clear_agent_pid_for_session(
+        &self,
+        session_id: &str,
+        expected_pid: u32,
+    ) -> WorkflowResult<bool> {
+        let conn = self.lock_conn()?;
+        interactions::session::clear_agent_pid::execute(&conn, session_id, expected_pid)
+    }
+
     fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
         interactions::session::delete::execute(&conn, task_id)

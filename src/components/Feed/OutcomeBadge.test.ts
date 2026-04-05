@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkflowOutcome } from "../../types/workflow";
-import { badgeLabel } from "./OutcomeBadge";
+import { artifactBadgeLabel, badgeLabel } from "./OutcomeBadge";
 
 const outcome = (type: string) => ({ type }) as WorkflowOutcome;
 
@@ -48,5 +48,44 @@ describe("badgeLabel", () => {
   it("returns Unknown for unrecognized outcome type", () => {
     const result = badgeLabel({ type: "something_unknown" } as unknown as WorkflowOutcome);
     expect(result.label).toBe("Unknown");
+  });
+});
+
+describe("artifactBadgeLabel", () => {
+  it("returns Approved with success styling for approved outcome", () => {
+    const result = artifactBadgeLabel("verdict", outcome("approved"));
+    expect(result.label).toBe("Approved");
+    expect(result.classes).toContain("bg-status-success");
+    expect(result.classes).toContain("text-white");
+  });
+
+  it("returns Rejected with error styling for rejected outcome", () => {
+    const result = artifactBadgeLabel("verdict", outcome("rejected"));
+    expect(result.label).toBe("Rejected");
+    expect(result.classes).toContain("bg-status-error");
+    expect(result.classes).toContain("text-white");
+  });
+
+  it("returns Rejected with error styling for rejection outcome", () => {
+    const result = artifactBadgeLabel("verdict", outcome("rejection"));
+    expect(result.label).toBe("Rejected");
+    expect(result.classes).toContain("bg-status-error");
+  });
+
+  it("returns title-cased artifact name with neutral styling when no outcome", () => {
+    const result = artifactBadgeLabel("plan", undefined);
+    expect(result.label).toBe("Plan");
+    expect(result.classes).toContain("bg-surface-3");
+  });
+
+  it("returns title-cased artifact name for non-approval outcome", () => {
+    const result = artifactBadgeLabel("summary", outcome("completed"));
+    expect(result.label).toBe("Summary");
+    expect(result.classes).toContain("bg-surface-3");
+  });
+
+  it("handles underscored artifact names", () => {
+    const result = artifactBadgeLabel("code_review", undefined);
+    expect(result.label).toBe("Code Review");
   });
 });

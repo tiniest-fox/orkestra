@@ -8,7 +8,9 @@ use orkestra_types::runtime::{
     resolve_artifact_path, ACTIVITY_LOG_ARTIFACT_NAME, RESOURCES_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
 };
 
-use crate::types::{IntegrationErrorContext, SiblingTaskContext, StagePromptContext};
+use crate::types::{
+    IntegrationErrorContext, ResourceContext, SiblingTaskContext, StagePromptContext,
+};
 
 use super::workflow_overview;
 
@@ -128,6 +130,17 @@ fn build_context_from_stage<'a>(
         .any(|n| n == RESOURCES_ARTIFACT_NAME)
         .then(|| resolve_artifact_path(task.worktree_path.as_deref(), RESOURCES_ARTIFACT_NAME));
 
+    let mut sorted_resources: Vec<_> = task.resources.all().collect();
+    sorted_resources.sort_by_key(|r| &r.name);
+    let resources: Vec<ResourceContext> = sorted_resources
+        .into_iter()
+        .map(|r| ResourceContext {
+            name: r.name.clone(),
+            url: r.url.clone(),
+            description: r.description.clone(),
+        })
+        .collect();
+
     let has_input_artifacts = workflow_stages.iter().any(|s| s.artifact_path.is_some())
         || activity_log_path.is_some()
         || resources_path.is_some();
@@ -139,6 +152,7 @@ fn build_context_from_stage<'a>(
         has_input_artifacts,
         activity_log_path,
         resources_path,
+        resources,
         question_history,
         feedback,
         integration_error,

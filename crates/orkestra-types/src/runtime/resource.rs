@@ -10,63 +10,6 @@ use serde::{Deserialize, Serialize};
 /// The artifact name used for the materialized resources file.
 pub const RESOURCES_ARTIFACT_NAME: &str = "resources";
 
-/// Returns the relative file path for the resources artifact.
-///
-/// Resources are materialized to the worktree before agent spawn.
-/// This is the canonical definition of the resources file path.
-///
-/// # Example
-/// ```
-/// use orkestra_types::runtime::resources_file_path;
-/// assert_eq!(resources_file_path(), ".orkestra/.artifacts/resources.md");
-/// ```
-pub fn resources_file_path() -> String {
-    ".orkestra/.artifacts/resources.md".to_string()
-}
-
-/// Returns the absolute file path for the resources artifact, given the worktree path.
-///
-/// Use this when constructing resource paths for display in agent prompts.
-///
-/// # Example
-/// ```
-/// use orkestra_types::runtime::absolute_resources_file_path;
-/// assert_eq!(
-///     absolute_resources_file_path("/path/to/worktree"),
-///     "/path/to/worktree/.orkestra/.artifacts/resources.md"
-/// );
-/// ```
-pub fn absolute_resources_file_path(worktree_path: &str) -> String {
-    use std::path::Path;
-    Path::new(worktree_path)
-        .join(resources_file_path())
-        .to_string_lossy()
-        .into_owned()
-}
-
-/// Returns the resources file path, using an absolute path when `worktree_path` is provided.
-///
-/// Combines `absolute_resources_file_path` and `resources_file_path` into a single call.
-///
-/// # Example
-/// ```
-/// use orkestra_types::runtime::resolve_resources_path;
-/// assert_eq!(
-///     resolve_resources_path(Some("/worktrees/task")),
-///     "/worktrees/task/.orkestra/.artifacts/resources.md"
-/// );
-/// assert_eq!(
-///     resolve_resources_path(None),
-///     ".orkestra/.artifacts/resources.md"
-/// );
-/// ```
-pub fn resolve_resources_path(worktree_path: Option<&str>) -> String {
-    match worktree_path {
-        Some(wt) => absolute_resources_file_path(wt),
-        None => resources_file_path(),
-    }
-}
-
 /// A named external resource registered by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Resource {
@@ -368,38 +311,5 @@ mod tests {
 
         let parsed: ResourceStore = serde_json::from_str("{}").unwrap();
         assert!(parsed.is_empty());
-    }
-
-    #[test]
-    fn test_resources_file_path() {
-        assert_eq!(resources_file_path(), ".orkestra/.artifacts/resources.md");
-    }
-
-    #[test]
-    fn test_absolute_resources_file_path() {
-        assert_eq!(
-            absolute_resources_file_path("/path/to/worktree"),
-            "/path/to/worktree/.orkestra/.artifacts/resources.md"
-        );
-        assert_eq!(
-            absolute_resources_file_path("/home/user/project"),
-            "/home/user/project/.orkestra/.artifacts/resources.md"
-        );
-    }
-
-    #[test]
-    fn test_resolve_resources_path_with_worktree() {
-        assert_eq!(
-            resolve_resources_path(Some("/worktrees/my-task")),
-            "/worktrees/my-task/.orkestra/.artifacts/resources.md"
-        );
-    }
-
-    #[test]
-    fn test_resolve_resources_path_without_worktree() {
-        assert_eq!(
-            resolve_resources_path(None),
-            ".orkestra/.artifacts/resources.md"
-        );
     }
 }

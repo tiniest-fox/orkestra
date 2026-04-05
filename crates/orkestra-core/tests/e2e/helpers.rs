@@ -804,7 +804,10 @@ impl MockAgentOutput {
 impl From<MockAgentOutput> for StageOutput {
     fn from(mock: MockAgentOutput) -> Self {
         match mock {
-            MockAgentOutput::Questions(questions) => StageOutput::Questions { questions },
+            MockAgentOutput::Questions(questions) => StageOutput::Questions {
+                questions,
+                resources: vec![],
+            },
             MockAgentOutput::Artifact {
                 content,
                 activity_log,

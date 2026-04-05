@@ -57,8 +57,11 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 serde_json::from_value(value["questions"].clone())
                     .map_err(|_| StageOutputError::MissingField("questions".into()))?;
 
+            let resources = parse_resources(value)?;
+
             Ok(StageOutput::Questions {
                 questions: questions.into_iter().map(Into::into).collect(),
+                resources,
             })
         }
 
@@ -72,7 +75,7 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
             let activity_log = value["activity_log"].as_str().map(String::from);
-            let resources = parse_resources(value);
+            let resources = parse_resources(value)?;
 
             Ok(StageOutput::Subtasks {
                 content,
@@ -92,7 +95,7 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                 .to_string(),
             activity_log: value["activity_log"].as_str().map(String::from),
-            resources: parse_resources(value),
+            resources: parse_resources(value)?,
         }),
 
         // Any other type is an artifact (the schema validated the type is in the enum)
@@ -102,7 +105,7 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                 .to_string(),
             activity_log: value["activity_log"].as_str().map(String::from),
-            resources: parse_resources(value),
+            resources: parse_resources(value)?,
         }),
     }
 }
@@ -385,6 +388,35 @@ mod tests {
 
         let blocked = execute(r#"{"type": "blocked", "reason": "reason"}"#, &schema).unwrap();
         assert!(blocked.resources().is_empty());
+    }
+
+    #[test]
+    fn test_parse_questions_with_resources() {
+        let schema = test_schema("plan", false);
+        let json = r#"{
+            "type": "questions",
+            "questions": [{"question": "Which approach?", "options": []}],
+            "resources": [{"name": "spec", "url": "https://example.com/spec", "description": "API spec"}]
+        }"#;
+        let output = execute(json, &schema).unwrap();
+
+        assert!(output.is_questions());
+        let resources = output.resources();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name, "spec");
+        assert_eq!(resources[0].url, "https://example.com/spec");
+        assert_eq!(resources[0].description, Some("API spec".to_string()));
+    }
+
+    #[test]
+    fn test_parse_resources_propagates_error() {
+        use crate::types::parse_resources;
+        let value = serde_json::json!({"resources": ["not an object"]});
+        let result = parse_resources(&value);
+        assert!(
+            result.is_err(),
+            "malformed resources array should return error"
+        );
     }
 
     // Tests for parse_unvalidated (legacy compatibility)

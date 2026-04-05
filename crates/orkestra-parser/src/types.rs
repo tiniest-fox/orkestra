@@ -67,6 +67,9 @@ pub enum StageOutput {
     Questions {
         /// Questions for the user.
         questions: Vec<Question>,
+        /// Resources registered by the agent.
+        #[serde(default)]
+        resources: Vec<ResourceOutput>,
     },
 
     /// Agent produced an approval decision (approve or reject).
@@ -163,7 +166,7 @@ impl StageOutput {
     /// Get the questions if this is a questions output.
     pub fn questions(&self) -> Option<&[Question]> {
         match self {
-            StageOutput::Questions { questions } => Some(questions),
+            StageOutput::Questions { questions, .. } => Some(questions),
             _ => None,
         }
     }
@@ -183,7 +186,8 @@ impl StageOutput {
         match self {
             StageOutput::Artifact { resources, .. }
             | StageOutput::Approval { resources, .. }
-            | StageOutput::Subtasks { resources, .. } => resources,
+            | StageOutput::Subtasks { resources, .. }
+            | StageOutput::Questions { resources, .. } => resources,
             _ => &[],
         }
     }
@@ -219,8 +223,11 @@ impl StageOutput {
                     serde_json::from_value(value["questions"].clone())
                         .map_err(|_| StageOutputError::MissingField("questions".into()))?;
 
+                let resources = parse_resources(&value)?;
+
                 Ok(StageOutput::Questions {
                     questions: questions.into_iter().map(Into::into).collect(),
+                    resources,
                 })
             }
 
@@ -235,7 +242,7 @@ impl StageOutput {
                         .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
                 let activity_log = value["activity_log"].as_str().map(String::from);
-                let resources = parse_resources(&value);
+                let resources = parse_resources(&value)?;
 
                 Ok(StageOutput::Subtasks {
                     content,
@@ -255,7 +262,7 @@ impl StageOutput {
                     .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
                 activity_log: value["activity_log"].as_str().map(String::from),
-                resources: parse_resources(&value),
+                resources: parse_resources(&value)?,
             }),
 
             // Any other type with content is treated as an artifact
@@ -267,7 +274,7 @@ impl StageOutput {
                 Ok(StageOutput::Artifact {
                     content: content.to_string(),
                     activity_log: value["activity_log"].as_str().map(String::from),
-                    resources: parse_resources(&value),
+                    resources: parse_resources(&value)?,
                 })
             }
         }
@@ -361,15 +368,15 @@ pub(crate) struct OptionJson {
 
 /// Extract resources array from a parsed JSON value.
 ///
-/// Returns an empty vec if the field is absent or cannot be deserialized.
-pub(crate) fn parse_resources(value: &serde_json::Value) -> Vec<ResourceOutput> {
-    value["resources"]
-        .as_array()
-        .and_then(|arr| {
-            serde_json::from_value::<Vec<ResourceOutput>>(serde_json::Value::Array(arr.clone()))
-                .ok()
-        })
-        .unwrap_or_default()
+/// Returns an empty vec if the field is absent. Returns an error if the field
+/// is present but cannot be deserialized (fail fast — don't silently drop resources).
+pub(crate) fn parse_resources(
+    value: &serde_json::Value,
+) -> Result<Vec<ResourceOutput>, StageOutputError> {
+    match value.get("resources") {
+        None | Some(serde_json::Value::Null) => Ok(vec![]),
+        Some(v) => Ok(serde_json::from_value(v.clone())?),
+    }
 }
 
 impl From<QuestionJson> for Question {

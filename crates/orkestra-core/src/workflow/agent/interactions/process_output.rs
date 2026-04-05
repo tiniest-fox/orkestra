@@ -89,7 +89,7 @@ pub(crate) fn dispatch_output(
     let output_resources = output.resources().to_vec();
 
     match output {
-        StageOutput::Questions { questions } => {
+        StageOutput::Questions { questions, .. } => {
             super::handle_questions::execute(
                 workflow,
                 iteration_service,

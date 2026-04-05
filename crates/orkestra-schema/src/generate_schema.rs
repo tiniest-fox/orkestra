@@ -150,7 +150,12 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
         }
     }
 
-    // Add resources property (always available, not capability-gated)
+    // Add resources property for stages with non-terminal output types.
+    // Terminal states (failed, blocked) don't support resources — agents in an
+    // error state shouldn't register external references. The flat schema cannot
+    // restrict resources per discriminator value, so resources is included
+    // whenever the stage has at least one non-terminal output type.
+    // Every stage has at least one non-terminal type (artifact, subtasks, or approval).
     let resources_component = load_component(RESOURCES_COMPONENT);
     if let Some(r_props) = resources_component.get("properties") {
         if let Some(resources) = r_props.get("resources") {

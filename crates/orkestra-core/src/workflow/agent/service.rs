@@ -199,6 +199,7 @@ mod tests {
 
         let output = StageOutput::Questions {
             questions: vec![Question::new("What framework?")],
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 

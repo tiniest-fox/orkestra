@@ -47,6 +47,9 @@ pub struct DerivedTaskState {
     pub pending_questions: Vec<Question>,
     pub rejection_feedback: Option<String>,
     pub pending_rejection: Option<PendingRejection>,
+    /// Whether the current stage's agent verdict was approval.
+    /// True when `AwaitingApproval` with an Approved iteration outcome (approval-capability stage).
+    pub pending_approval: bool,
     pub stages_with_logs: Vec<StageLogInfo>,
     pub subtask_progress: Option<SubtaskProgress>,
     /// Whether chat mode is active for this task's current stage session.
@@ -129,6 +132,7 @@ impl DerivedTaskState {
         let pending_questions = extract_pending_questions(task, iterations);
         let rejection_feedback = extract_rejection_feedback(task, iterations);
         let pending_rejection = extract_pending_rejection(task, iterations);
+        let pending_approval = extract_pending_approval(task, iterations);
         let stages_with_logs = build_stages_with_logs(sessions);
         let subtask_progress = compute_subtask_progress(subtask_states);
         let (is_chatting, chat_agent_active) = compute_chat_state(task, sessions);
@@ -156,6 +160,7 @@ impl DerivedTaskState {
             pending_questions,
             rejection_feedback,
             pending_rejection,
+            pending_approval,
             stages_with_logs,
             subtask_progress,
             is_chatting,
@@ -397,6 +402,28 @@ fn extract_pending_rejection(task: &Task, iterations: &[Iteration]) -> Option<Pe
     }
 
     None
+}
+
+/// Check if the latest iteration of the current stage ended with an approval verdict.
+///
+/// Returns `true` when the task is in `AwaitingApproval` and the latest iteration
+/// has `Outcome::Approved`. This only happens at approval-capability stages where
+/// the agent's verdict was to approve the work, before the human has acted.
+fn extract_pending_approval(task: &Task, iterations: &[Iteration]) -> bool {
+    if !matches!(task.state, TaskState::AwaitingApproval { .. }) {
+        return false;
+    }
+
+    let Some(stage) = task.current_stage() else {
+        return false;
+    };
+
+    let latest = iterations
+        .iter()
+        .filter(|i| i.stage == stage)
+        .max_by_key(|i| i.iteration_number);
+
+    matches!(latest, Some(iter) if matches!(iter.outcome, Some(Outcome::Approved)))
 }
 
 #[cfg(test)]
@@ -759,6 +786,53 @@ mod tests {
         let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
 
         assert!(derived.pending_rejection.is_none());
+    }
+
+    #[test]
+    fn test_derived_state_pending_approval() {
+        let mut task = make_task("review");
+        task.state = TaskState::awaiting_approval("review");
+
+        let mut iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
+        iter.outcome = Some(Outcome::Approved);
+        iter.ended_at = Some("now".to_string());
+
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
+
+        assert!(derived.pending_approval);
+    }
+
+    #[test]
+    fn test_derived_state_no_pending_approval_for_completed_stage() {
+        let mut task = make_task("planning");
+        task.state = TaskState::awaiting_approval("planning");
+
+        // Regular stage completion — not an approval verdict
+        let mut iter = Iteration::new("iter-1", "task-1", "planning", 1, "now");
+        iter.outcome = Some(Outcome::Completed {
+            merged_at: None,
+            commit_sha: None,
+            target_branch: None,
+        });
+        iter.ended_at = Some("now".to_string());
+
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
+
+        assert!(!derived.pending_approval);
+    }
+
+    #[test]
+    fn test_derived_state_no_pending_approval_when_not_awaiting() {
+        let mut task = make_task("review");
+        task.state = TaskState::agent_working("review");
+
+        let mut iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
+        iter.outcome = Some(Outcome::Approved);
+        iter.ended_at = Some("now".to_string());
+
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
+
+        assert!(!derived.pending_approval);
     }
 
     #[test]

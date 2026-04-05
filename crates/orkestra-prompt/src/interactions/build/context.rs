@@ -5,7 +5,7 @@
 use orkestra_types::config::{StageConfig, WorkflowConfig};
 use orkestra_types::domain::Task;
 use orkestra_types::runtime::{
-    resolve_artifact_path, ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
+    resolve_artifact_path, ACTIVITY_LOG_ARTIFACT_NAME, RESOURCES_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
 };
 
 use crate::types::{IntegrationErrorContext, SiblingTaskContext, StagePromptContext};
@@ -123,8 +123,14 @@ fn build_context_from_stage<'a>(
         .any(|n| n == ACTIVITY_LOG_ARTIFACT_NAME)
         .then(|| resolve_artifact_path(task.worktree_path.as_deref(), ACTIVITY_LOG_ARTIFACT_NAME));
 
-    let has_input_artifacts =
-        workflow_stages.iter().any(|s| s.artifact_path.is_some()) || activity_log_path.is_some();
+    let resources_path = artifact_names
+        .iter()
+        .any(|n| n == RESOURCES_ARTIFACT_NAME)
+        .then(|| resolve_artifact_path(task.worktree_path.as_deref(), RESOURCES_ARTIFACT_NAME));
+
+    let has_input_artifacts = workflow_stages.iter().any(|s| s.artifact_path.is_some())
+        || activity_log_path.is_some()
+        || resources_path.is_some();
 
     StagePromptContext {
         stage,
@@ -132,6 +138,7 @@ fn build_context_from_stage<'a>(
         task_file_path: resolve_artifact_path(task.worktree_path.as_deref(), TASK_ARTIFACT_NAME),
         has_input_artifacts,
         activity_log_path,
+        resources_path,
         question_history,
         feedback,
         integration_error,

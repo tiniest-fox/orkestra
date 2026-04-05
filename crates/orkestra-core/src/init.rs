@@ -250,15 +250,6 @@ mod tests {
                 stage.name
             );
         }
-
-        // Verify rich artifact configs
-        for stage in config.all_unique_stages() {
-            assert!(
-                stage.artifact.description.is_some(),
-                "Stage '{}' artifact should have a description",
-                stage.name
-            );
-        }
     }
 
     #[test]

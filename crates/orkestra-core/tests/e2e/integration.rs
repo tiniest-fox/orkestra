@@ -1185,7 +1185,6 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     flows.insert(
         "default".to_string(),
         FlowConfig {
-            description: "Default flow — manual merge".to_string(),
             stages: vec![work_stage()],
             integration: IntegrationConfig {
                 on_failure: "work".to_string(),
@@ -1196,7 +1195,6 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     flows.insert(
         "hotfix".to_string(),
         FlowConfig {
-            description: "Hotfix flow — auto merge".to_string(),
             stages: vec![work_stage()],
             integration: IntegrationConfig {
                 on_failure: "work".to_string(),

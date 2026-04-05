@@ -11,8 +11,8 @@ use crate::pr_description::PrArtifact;
 
 /// Collect all task artifacts enriched with stage descriptions, sorted by creation time.
 ///
-/// The activity log is placed last since it spans all stages. Artifact descriptions
-/// come from `WorkflowConfig::artifact_description()` — the canonical lookup.
+/// The activity log is placed last since it spans all stages. Descriptions
+/// come from `WorkflowConfig::stage_description_for_artifact()` — the canonical lookup.
 pub fn execute(workflow: &WorkflowConfig, task: &Task) -> Vec<PrArtifact> {
     let mut artifacts: Vec<_> = task.artifacts.all().collect();
     artifacts.sort_by(|a, b| {
@@ -30,7 +30,7 @@ pub fn execute(workflow: &WorkflowConfig, task: &Task) -> Vec<PrArtifact> {
         .map(|a| PrArtifact {
             name: a.name.clone(),
             description: workflow
-                .artifact_description(&task.flow, &a.name)
+                .stage_description_for_artifact(&task.flow, &a.name)
                 .map(str::to_owned),
             content: a.content.clone(),
         })
@@ -106,8 +106,8 @@ mod tests {
 
     #[test]
     fn descriptions_are_populated_from_workflow_config() {
-        let mut stage = StageConfig::new("planning", "plan");
-        stage.artifact.description = Some("The implementation plan".into());
+        let stage =
+            StageConfig::new("planning", "plan").with_description("The implementation plan");
         let workflow = WorkflowConfig::new(vec![stage, StageConfig::new("work", "summary")]);
         let task = task_with_artifacts(vec![
             Artifact::new("plan", "plan content", "planning", "2025-01-01T00:00:00Z"),

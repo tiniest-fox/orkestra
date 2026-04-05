@@ -23,8 +23,13 @@ pub struct StagePromptContext<'a> {
     /// Absolute when `worktree_path` is available, relative otherwise.
     pub task_file_path: String,
 
-    /// Available artifacts from previous stages.
-    pub artifacts: Vec<ArtifactContext>,
+    /// Whether any prior stage has a materialized artifact available (including activity log).
+    /// Used to conditionally show "MUST read" instructions in the prompt.
+    pub has_input_artifacts: bool,
+
+    /// Path to the activity log file, if it has been materialized.
+    /// The activity log accumulates entries across all prior stages.
+    pub activity_log_path: Option<String>,
 
     /// Question history (if stage can ask questions).
     pub question_history: Vec<QuestionAnswerContext<'a>>,
@@ -52,21 +57,6 @@ pub struct StagePromptContext<'a> {
 
     /// Sibling subtasks (for subtasks only, empty for non-subtasks).
     pub sibling_tasks: Vec<SiblingTaskContext>,
-}
-
-/// Context for an artifact available to the stage.
-///
-/// Artifacts are materialized as files in the worktree before agent spawn.
-/// Agents read them on demand rather than receiving them inline in the prompt.
-#[derive(Debug, Clone, Serialize)]
-pub struct ArtifactContext {
-    /// Artifact name.
-    pub name: String,
-    /// Relative path to the artifact file (e.g., ".orkestra/.artifacts/plan.md").
-    pub file_path: String,
-    /// Optional description of what this artifact contains.
-    /// Shown to agents alongside the file path.
-    pub description: Option<String>,
 }
 
 /// Context for a question-answer pair.
@@ -109,8 +99,10 @@ pub struct SiblingTaskContext {
 pub struct WorkflowStageEntry {
     /// Stage name (e.g., "plan", "work").
     pub name: String,
+    /// Title-cased display name derived from the stage name (e.g., "Work Review").
+    pub display_name: String,
     /// Human-readable description of what this stage does.
-    pub description: String,
+    pub description: Option<String>,
     /// Whether this is the current stage being executed.
     pub is_current: bool,
     /// Path to the materialized artifact file for this stage, if it has already been produced.

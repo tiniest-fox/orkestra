@@ -633,7 +633,6 @@ fn test_play_with_flow() {
     flows.insert(
         "quick".to_string(),
         FlowConfig {
-            description: "Skip planning, go straight to work".to_string(),
             stages: vec![StageConfig::new("work", "summary").with_prompt("worker.md")],
             integration: IntegrationConfig::new("work"),
         },

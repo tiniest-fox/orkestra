@@ -47,7 +47,8 @@ pub fn execute(
 
             WorkflowStageEntry {
                 name: stage.name.clone(),
-                description: stage.description.clone().unwrap_or_else(|| stage.display()),
+                display_name: stage.display(),
+                description: stage.description.clone(),
                 is_current,
                 artifact_path,
             }
@@ -77,15 +78,21 @@ mod tests {
         assert_eq!(entries.len(), 3);
 
         assert_eq!(entries[0].name, "plan");
-        assert_eq!(entries[0].description, "Create a plan");
+        assert_eq!(entries[0].display_name, "Plan");
+        assert_eq!(entries[0].description, Some("Create a plan".to_string()));
         assert!(!entries[0].is_current);
 
         assert_eq!(entries[1].name, "work");
-        assert_eq!(entries[1].description, "Implement the plan");
+        assert_eq!(entries[1].display_name, "Work");
+        assert_eq!(
+            entries[1].description,
+            Some("Implement the plan".to_string())
+        );
         assert!(entries[1].is_current);
 
         assert_eq!(entries[2].name, "review");
-        assert_eq!(entries[2].description, "Review");
+        assert_eq!(entries[2].display_name, "Review");
+        assert_eq!(entries[2].description, None);
         assert!(!entries[2].is_current);
     }
 
@@ -95,7 +102,6 @@ mod tests {
         flows.insert(
             "quick".into(),
             FlowConfig {
-                description: "Skip breakdown".into(),
                 stages: vec![
                     StageConfig::new("plan", "plan").with_description("Create a plan"),
                     StageConfig::new("work", "summary").with_description("Implement the plan"),
@@ -131,15 +137,32 @@ mod tests {
     }
 
     #[test]
-    fn test_description_fallback() {
+    fn test_display_title_cases_name() {
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").with_display_name("Work Stage"),
+            StageConfig::new("work_review", "verdict"),
+        ]);
+
+        let entries = execute(&workflow, "planning", "default", &[], None);
+        assert_eq!(entries[0].display_name, "Planning");
+        assert_eq!(entries[0].description, None);
+        assert_eq!(entries[1].display_name, "Work Review");
+        assert_eq!(entries[1].description, None);
+    }
+
+    #[test]
+    fn test_description_field() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan").with_description("Understand the task"),
+            StageConfig::new("work", "summary"),
         ]);
 
         let entries = execute(&workflow, "work", "default", &[], None);
-        assert_eq!(entries[0].description, "Planning");
-        assert_eq!(entries[1].description, "Work Stage");
+        assert_eq!(
+            entries[0].description,
+            Some("Understand the task".to_string())
+        );
+        assert_eq!(entries[1].description, None);
     }
 
     #[test]

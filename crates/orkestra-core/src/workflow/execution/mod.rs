@@ -19,8 +19,8 @@ pub use orkestra_parser::{
 pub use prompt::{
     build_resume_prompt, build_user_message, determine_resume_type, get_agent_schema,
     load_agent_definition, resolve_stage_agent_config_for, sibling_status_display,
-    AgentConfigError, ArtifactContext, IntegrationErrorContext, PrCheckContext, PrComment,
-    PromptBuilder, QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
+    AgentConfigError, IntegrationErrorContext, PrCheckContext, PrComment, PromptBuilder,
+    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
     SiblingTaskContext, StagePromptContext,
 };
 

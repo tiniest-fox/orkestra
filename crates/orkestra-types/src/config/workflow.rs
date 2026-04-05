@@ -37,10 +37,6 @@ pub struct WorkflowConfig {
 /// there is no global stage list or override layer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FlowConfig {
-    /// Human-readable description of when to use this flow.
-    #[serde(default)]
-    pub description: String,
-
     /// Ordered list of stages in this flow.
     pub stages: Vec<StageConfig>,
 
@@ -119,7 +115,6 @@ impl WorkflowConfig {
         flows.insert(
             NEW_WORKFLOW_DEFAULT_FLOW.to_string(),
             FlowConfig {
-                description: String::new(),
                 stages,
                 integration: IntegrationConfig::new(on_failure),
             },
@@ -155,17 +150,17 @@ impl WorkflowConfig {
         self.flows.get(flow)?.stages.iter().find(|s| s.name == name)
     }
 
-    /// Get the description of the artifact with the given name in the given flow.
+    /// Get the stage description for the stage that produces the given artifact.
     ///
     /// Returns `None` if no stage in the flow produces that artifact, or the
-    /// artifact has no description configured.
-    pub fn artifact_description(&self, flow: &str, artifact_name: &str) -> Option<&str> {
+    /// stage has no description configured.
+    pub fn stage_description_for_artifact(&self, flow: &str, artifact_name: &str) -> Option<&str> {
         self.flows
             .get(flow)?
             .stages
             .iter()
             .find(|s| s.artifact_name() == artifact_name)
-            .and_then(|s| s.artifact.description.as_deref())
+            .and_then(|s| s.description.as_deref())
     }
 
     /// Get the first stage in a flow.
@@ -478,24 +473,18 @@ mod tests {
     /// Build a `FlowConfig` for the standard 4-stage pipeline (planning → breakdown → work → review).
     fn default_flow() -> FlowConfig {
         FlowConfig {
-            description: String::new(),
             stages: vec![
                 StageConfig::new("planning", "plan")
-                    .with_display_name("Planning")
                     .with_prompt("planner.md")
                     .with_capabilities(StageCapabilities::with_questions()),
                 StageConfig::new("breakdown", "breakdown")
-                    .with_display_name("Breaking Down")
                     .with_prompt("breakdown.md")
                     .with_capabilities(StageCapabilities {
                         subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
                         ..Default::default()
                     }),
-                StageConfig::new("work", "summary")
-                    .with_display_name("Working")
-                    .with_prompt("worker.md"),
+                StageConfig::new("work", "summary").with_prompt("worker.md"),
                 StageConfig::new("review", "verdict")
-                    .with_display_name("Reviewing")
                     .with_prompt("reviewer.md")
                     .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                     .automated(),
@@ -507,13 +496,9 @@ mod tests {
     /// Build a `FlowConfig` for the subtask flow (work → review).
     fn subtask_flow() -> FlowConfig {
         FlowConfig {
-            description: "Simplified pipeline for subtasks (work → review)".to_string(),
             stages: vec![
-                StageConfig::new("work", "summary")
-                    .with_display_name("Working")
-                    .with_prompt("worker.md"),
+                StageConfig::new("work", "summary").with_prompt("worker.md"),
                 StageConfig::new("review", "verdict")
-                    .with_display_name("Reviewing")
                     .with_prompt("reviewer.md")
                     .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                     .automated(),
@@ -617,7 +602,6 @@ mod tests {
             IndexMap::from([(
                 "quick".to_string(),
                 FlowConfig {
-                    description: "Quick".to_string(),
                     stages: vec![StageConfig::new("work", "summary")],
                     integration: IntegrationConfig::new("work"),
                 },
@@ -732,7 +716,6 @@ mod tests {
         flows.insert(
             "default".to_string(),
             FlowConfig {
-                description: String::new(),
                 stages: vec![
                     StageConfig::new("planning", "plan").with_model("sonnet"),
                     StageConfig::new("work", "summary").with_model("opus"),
@@ -743,7 +726,6 @@ mod tests {
         flows.insert(
             "quick".to_string(),
             FlowConfig {
-                description: "Quick flow".to_string(),
                 stages: vec![StageConfig::new("work", "summary").with_model("haiku")],
                 integration: IntegrationConfig::new("work"),
             },
@@ -761,44 +743,45 @@ mod tests {
     }
 
     // ========================================================================
-    // Artifact description
+    // Stage description for artifact
     // ========================================================================
 
     #[test]
-    fn test_artifact_description_returns_none_for_unknown_artifact() {
+    fn test_stage_description_for_artifact_returns_none_for_unknown_artifact() {
         let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")]);
         assert!(workflow
-            .artifact_description("default", "unknown")
+            .stage_description_for_artifact("default", "unknown")
             .is_none());
     }
 
     #[test]
-    fn test_artifact_description_returns_none_when_no_description_set() {
+    fn test_stage_description_for_artifact_returns_none_when_no_description_set() {
         let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")]);
-        assert!(workflow.artifact_description("default", "plan").is_none());
+        assert!(workflow
+            .stage_description_for_artifact("default", "plan")
+            .is_none());
     }
 
     #[test]
-    fn test_artifact_description_returns_description_when_present() {
-        let mut stage = StageConfig::new("planning", "plan");
-        stage.artifact.description = Some("The implementation plan".into());
+    fn test_stage_description_for_artifact_returns_description_when_present() {
+        let stage =
+            StageConfig::new("planning", "plan").with_description("The implementation plan");
         let workflow = WorkflowConfig::new(vec![stage]);
         assert_eq!(
-            workflow.artifact_description("default", "plan"),
+            workflow.stage_description_for_artifact("default", "plan"),
             Some("The implementation plan")
         );
     }
 
     #[test]
-    fn test_artifact_description_matches_by_artifact_name_not_stage_name() {
-        let mut stage = StageConfig::new("planning", "plan");
-        stage.artifact.description = Some("The plan".into());
+    fn test_stage_description_for_artifact_matches_by_artifact_name_not_stage_name() {
+        let stage = StageConfig::new("planning", "plan").with_description("The plan");
         let workflow = WorkflowConfig::new(vec![stage]);
         assert!(workflow
-            .artifact_description("default", "planning")
+            .stage_description_for_artifact("default", "planning")
             .is_none());
         assert_eq!(
-            workflow.artifact_description("default", "plan"),
+            workflow.stage_description_for_artifact("default", "plan"),
             Some("The plan")
         );
     }
@@ -1018,7 +1001,6 @@ flows:
         flows.insert(
             "default".to_string(),
             FlowConfig {
-                description: String::new(),
                 stages: vec![],
                 integration: IntegrationConfig::new("work"),
             },
@@ -1114,7 +1096,6 @@ flows:
         flows.insert(
             "default".to_string(),
             FlowConfig {
-                description: String::new(),
                 stages: vec![StageConfig::new("work", "summary")],
                 integration: IntegrationConfig::new("planning"), // "planning" not in this flow!
             },
@@ -1333,7 +1314,6 @@ flows:
         flows.insert(
             "quick".to_string(),
             FlowConfig {
-                description: "Quick flow".to_string(),
                 stages: vec![
                     // "work" has approval with rejection_stage "planning", but "planning" is not in this flow
                     StageConfig::new("work", "summary").with_capabilities(
@@ -1375,7 +1355,6 @@ flows:
             IndexMap::from([(
                 "quick".to_string(),
                 FlowConfig {
-                    description: "Quick".to_string(),
                     stages: vec![StageConfig::new("work", "summary")],
                     integration: IntegrationConfig::new("work"),
                 },

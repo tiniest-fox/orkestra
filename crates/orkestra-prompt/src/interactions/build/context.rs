@@ -4,11 +4,11 @@
 
 use orkestra_types::config::{StageConfig, WorkflowConfig};
 use orkestra_types::domain::Task;
-use orkestra_types::runtime::{resolve_artifact_path, TASK_ARTIFACT_NAME};
-
-use crate::types::{
-    ArtifactContext, IntegrationErrorContext, SiblingTaskContext, StagePromptContext,
+use orkestra_types::runtime::{
+    resolve_artifact_path, ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
 };
+
+use crate::types::{IntegrationErrorContext, SiblingTaskContext, StagePromptContext};
 
 use super::workflow_overview;
 
@@ -106,24 +106,6 @@ fn build_context_from_stage<'a>(
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
 ) -> StagePromptContext<'a> {
-    // Build artifact contexts with file paths instead of content.
-    // Artifacts are materialized to files before agent spawn.
-    // Use absolute paths when worktree_path is available to avoid ambiguity in nested worktrees.
-    let artifacts: Vec<ArtifactContext> = artifact_names
-        .iter()
-        .map(|name| {
-            let description = workflow
-                .artifact_description(&task.flow, name)
-                .map(str::to_owned);
-            let file_path = resolve_artifact_path(task.worktree_path.as_deref(), name);
-            ArtifactContext {
-                name: name.clone(),
-                file_path,
-                description,
-            }
-        })
-        .collect();
-
     // Question history is passed via resume prompts (IterationTrigger::Answers).
     // Initial prompts don't include question history since no questions have been asked yet.
     let question_history = Vec::new();
@@ -136,11 +118,20 @@ fn build_context_from_stage<'a>(
         task.worktree_path.as_deref(),
     );
 
+    let activity_log_path = artifact_names
+        .iter()
+        .any(|n| n == ACTIVITY_LOG_ARTIFACT_NAME)
+        .then(|| resolve_artifact_path(task.worktree_path.as_deref(), ACTIVITY_LOG_ARTIFACT_NAME));
+
+    let has_input_artifacts =
+        workflow_stages.iter().any(|s| s.artifact_path.is_some()) || activity_log_path.is_some();
+
     StagePromptContext {
         stage,
         task_id: &task.id,
         task_file_path: resolve_artifact_path(task.worktree_path.as_deref(), TASK_ARTIFACT_NAME),
-        artifacts,
+        has_input_artifacts,
+        activity_log_path,
         question_history,
         feedback,
         integration_error,

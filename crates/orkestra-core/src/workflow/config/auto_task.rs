@@ -147,7 +147,6 @@ mod tests {
         flows.insert(
             "quick".to_string(),
             FlowConfig {
-                description: "Quick flow".to_string(),
                 stages: vec![StageConfig::new("work", "summary")],
                 integration: IntegrationConfig::new("work"),
             },

@@ -453,6 +453,8 @@ export interface DerivedTaskState {
   pending_questions: WorkflowQuestion[];
   rejection_feedback: string | null;
   pending_rejection: PendingRejection | null;
+  /** Whether the current stage's agent verdict was approval (approval-capability stages only). */
+  pending_approval: boolean;
   stages_with_logs: StageLogInfo[];
   subtask_progress: SubtaskProgress | null;
   is_chatting: boolean;

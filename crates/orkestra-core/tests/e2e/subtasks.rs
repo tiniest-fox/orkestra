@@ -37,6 +37,7 @@ fn setup_parent_with_subtasks(
             name: "plan".into(),
             content: "Plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns planner (completion ready)
@@ -51,6 +52,7 @@ fn setup_parent_with_subtasks(
             content: "Technical design".into(),
             subtasks: subtask_outputs,
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns breakdown agent (completion ready)
@@ -91,6 +93,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
                 name: "summary".into(),
                 content: format!("Work done for {id}"),
                 activity_log: None,
+                resources: vec![],
             },
         );
     }
@@ -117,6 +120,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
                 name: "verdict".into(),
                 content: "Looks good".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
     }
@@ -154,6 +158,7 @@ fn test_breakdown_approval_creates_subtasks() {
             name: "plan".into(),
             content: "The implementation plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns planner (completion ready)
@@ -191,6 +196,7 @@ fn test_breakdown_approval_creates_subtasks() {
                 },
             ],
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns breakdown agent (completion ready)
@@ -414,6 +420,7 @@ fn test_parent_advances_when_all_subtasks_done() {
             name: "summary".into(),
             content: "Parent work".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -604,6 +611,7 @@ fn test_breakdown_single_subtask_inlines_on_parent() {
             name: "plan".into(),
             content: "Simple plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns planner (completion ready)
@@ -623,6 +631,7 @@ fn test_breakdown_single_subtask_inlines_on_parent() {
                 depends_on: vec![],
             }],
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns breakdown agent (completion ready)
@@ -920,6 +929,7 @@ fn test_subtask_integration_conflict() {
                 name: "summary".into(),
                 content: format!("Work done for {id}"),
                 activity_log: None,
+                resources: vec![],
             },
         );
     }
@@ -948,6 +958,7 @@ fn test_subtask_integration_conflict() {
                 name: "verdict".into(),
                 content: "Looks good".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
         env.set_output(
@@ -956,6 +967,7 @@ fn test_subtask_integration_conflict() {
                 name: "summary".into(),
                 content: format!("Recovery work for {id}"),
                 activity_log: None,
+                resources: vec![],
             },
         );
     }
@@ -1059,6 +1071,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
             name: "summary".into(),
             content: "Work done for A".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     env.set_output(
@@ -1067,6 +1080,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
             name: "summary".into(),
             content: "Work done for B".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     // Set a mock output for C but don't approve it, so it stays in AwaitingReview
@@ -1076,6 +1090,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
             name: "summary".into(),
             content: "Work done for C".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -1093,6 +1108,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
             name: "verdict".into(),
             content: "Looks good".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     env.set_output(
@@ -1101,6 +1117,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
             name: "verdict".into(),
             content: "Looks good".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -1180,6 +1197,7 @@ fn rerun_breakdown_with_single_subtask_clears_stale_structured_artifact() {
             name: "plan".into(),
             content: "The plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns planner
@@ -1207,6 +1225,7 @@ fn rerun_breakdown_with_single_subtask_clears_stale_structured_artifact() {
                 },
             ],
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns breakdown agent
@@ -1236,6 +1255,7 @@ fn rerun_breakdown_with_single_subtask_clears_stale_structured_artifact() {
                 depends_on: vec![],
             }],
             activity_log: None,
+            resources: vec![],
         },
     );
     env.advance(); // spawns breakdown agent (new iteration)
@@ -1296,6 +1316,7 @@ fn test_single_vs_multiple_subtask_boundary() {
                 name: "plan".into(),
                 content: "Simple plan".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
         env.advance(); // spawns planner (completion ready)
@@ -1315,6 +1336,7 @@ fn test_single_vs_multiple_subtask_boundary() {
                     depends_on: vec![],
                 }],
                 activity_log: None,
+                resources: vec![],
             },
         );
         env.advance(); // spawns breakdown agent
@@ -1426,6 +1448,7 @@ fn test_subtask_prompt_includes_sibling_context() {
             name: "summary".into(),
             content: "Work done".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 

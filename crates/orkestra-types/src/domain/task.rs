@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::{ArtifactStore, TaskState};
+use crate::runtime::{ArtifactStore, ResourceStore, TaskState};
 
 /// How a task was created — determines initial state after setup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +45,10 @@ pub struct Task {
     /// Stage outputs (plan, summary, etc.) stored by name.
     #[serde(default)]
     pub artifacts: ArtifactStore,
+
+    /// External resources (URLs, file paths) registered by agents across stages.
+    #[serde(default)]
+    pub resources: ResourceStore,
 
     // === Hierarchy ===
     /// Parent task ID (if this is a subtask).
@@ -129,6 +133,7 @@ impl Task {
             description: description.into(),
             state: TaskState::queued(first_stage),
             artifacts: ArtifactStore::new(),
+            resources: ResourceStore::new(),
             parent_id: None,
             short_id: None,
             depends_on: Vec::new(),

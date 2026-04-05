@@ -53,6 +53,7 @@ fn test_play_happy_path() {
             name: "plan".into(),
             content: "The implementation plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -61,6 +62,7 @@ fn test_play_happy_path() {
             name: "summary".into(),
             content: "Implementation complete".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -122,6 +124,7 @@ fn test_play_with_subtasks() {
             name: "plan".into(),
             content: "The plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -143,6 +146,7 @@ fn test_play_with_subtasks() {
                 },
             ],
             activity_log: None,
+            resources: vec![],
         },
     );
     // Pre-queue parent post-subtask outputs (consumed after WaitingOnChildren resolves)
@@ -152,6 +156,7 @@ fn test_play_with_subtasks() {
             name: "summary".into(),
             content: "Parent work complete".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -160,6 +165,7 @@ fn test_play_with_subtasks() {
             name: "verdict".into(),
             content: "All good".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -200,6 +206,7 @@ fn test_play_with_subtasks() {
                 name: "summary".into(),
                 content: format!("Work for {}", subtask.title),
                 activity_log: None,
+                resources: vec![],
             },
         );
         ctx.set_output(
@@ -208,6 +215,7 @@ fn test_play_with_subtasks() {
                 name: "verdict".into(),
                 content: "Subtask done".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
     }
@@ -266,6 +274,7 @@ fn test_play_questions_auto_answered() {
             name: "plan".into(),
             content: "Plan after auto-answer".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -435,6 +444,7 @@ fn test_play_gate_failure_requeues_agent() {
             name: "summary".into(),
             content: "Initial implementation".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -443,6 +453,7 @@ fn test_play_gate_failure_requeues_agent() {
             name: "summary".into(),
             content: "Fixed implementation after gate feedback".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -451,6 +462,7 @@ fn test_play_gate_failure_requeues_agent() {
             name: "verdict".into(),
             content: "Looks good".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -532,6 +544,7 @@ fn test_play_integration_after_done() {
             name: "summary".into(),
             content: "Work complete".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -587,6 +600,7 @@ fn test_play_pr_creation_after_done() {
             name: "summary".into(),
             content: "Work complete".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -661,6 +675,7 @@ fn test_play_with_flow() {
             name: "summary".into(),
             content: "Work done directly".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -712,6 +727,7 @@ fn test_play_auto_merge_completes_to_archived() {
             name: "summary".into(),
             content: "Work complete".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -766,6 +782,7 @@ fn test_play_no_integrate_stays_done() {
             name: "summary".into(),
             content: "Work complete".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 

@@ -252,7 +252,7 @@ fn output_to_json(output: &StageOutput) -> serde_json::Value {
             "type": "artifact",
             "content": content
         }),
-        StageOutput::Questions { questions } => serde_json::json!({
+        StageOutput::Questions { questions, .. } => serde_json::json!({
             "type": "questions",
             "questions": questions
         }),
@@ -301,6 +301,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Done".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 
@@ -318,6 +319,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Plan".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 
@@ -345,6 +347,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Done".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 
@@ -378,6 +381,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Done".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 

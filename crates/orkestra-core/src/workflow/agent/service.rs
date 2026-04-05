@@ -180,6 +180,7 @@ mod tests {
         let output = StageOutput::Artifact {
             content: "The plan content".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -198,6 +199,7 @@ mod tests {
 
         let output = StageOutput::Questions {
             questions: vec![Question::new("What framework?")],
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -227,6 +229,7 @@ mod tests {
             decision: "reject".to_string(),
             content: "Tests failing".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -264,6 +267,7 @@ mod tests {
             decision: "reject".to_string(),
             content: "Tests failing, please fix".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -321,6 +325,7 @@ mod tests {
             decision: "reject".to_string(),
             content: "Tests failing".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -345,6 +350,7 @@ mod tests {
             decision: "approve".to_string(),
             content: "Looks good, well implemented".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -375,6 +381,7 @@ mod tests {
             decision: "approve".to_string(),
             content: "Should fail".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let result = api.process_agent_output(&task.id, output);
 
@@ -430,6 +437,7 @@ mod tests {
         let output = StageOutput::Artifact {
             content: "Approved".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 

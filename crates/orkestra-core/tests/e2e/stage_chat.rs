@@ -73,6 +73,7 @@ fn advance_to_awaiting_approval(ctx: &TestEnv, task_id: &str) {
             name: "summary".to_string(),
             content: "Work is done.".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn agent → completion ready
@@ -265,6 +266,7 @@ fn test_orchestrator_picks_up_after_return_to_work() {
             name: "summary".to_string(),
             content: "Done after return to work.".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn work agent (with ReturnToWork resume prompt)
@@ -520,6 +522,7 @@ fn test_return_to_work_from_interrupted() {
             name: "summary".to_string(),
             content: "Completed after returning from chat.".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn agent with ReturnToWork resume prompt
@@ -583,6 +586,7 @@ fn test_return_to_work_resumes_without_has_activity() {
             name: "summary".to_string(),
             content: "Done after returning from chat.".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn agent

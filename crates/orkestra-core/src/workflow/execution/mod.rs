@@ -14,7 +14,8 @@ mod prompt;
 pub use crate::workflow::stage::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
 pub use orkestra_parser::{
     AgentParser, ClaudeParserService as ClaudeAgentParser,
-    OpenCodeParserService as OpenCodeAgentParser, StageOutput, StageOutputError, SubtaskOutput,
+    OpenCodeParserService as OpenCodeAgentParser, ResourceOutput, StageOutput, StageOutputError,
+    SubtaskOutput,
 };
 pub use prompt::{
     build_resume_prompt, build_user_message, determine_resume_type, get_agent_schema,

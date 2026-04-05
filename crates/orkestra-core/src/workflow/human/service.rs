@@ -576,6 +576,7 @@ mod tests {
             decision: "reject".to_string(),
             content: "Tests are failing, fix them".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -680,6 +681,7 @@ mod tests {
             decision: "approve".to_string(),
             content: "On re-evaluation, the implementation looks good".to_string(),
             activity_log: None,
+            resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 

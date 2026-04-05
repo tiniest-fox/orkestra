@@ -767,18 +767,21 @@ pub enum MockAgentOutput {
         name: String,
         content: String,
         activity_log: Option<String>,
+        resources: Vec<orkestra_core::workflow::execution::ResourceOutput>,
     },
     /// Agent (reviewer) is producing an approval decision.
     Approval {
         decision: String,
         content: String,
         activity_log: Option<String>,
+        resources: Vec<orkestra_core::workflow::execution::ResourceOutput>,
     },
     /// Agent produced subtasks for breakdown.
     Subtasks {
         content: String,
         subtasks: Vec<orkestra_core::workflow::execution::SubtaskOutput>,
         activity_log: Option<String>,
+        resources: Vec<orkestra_core::workflow::execution::ResourceOutput>,
     },
     /// Agent failed.
     Failed { error: String },
@@ -786,35 +789,56 @@ pub enum MockAgentOutput {
     Blocked { reason: String },
 }
 
+impl MockAgentOutput {
+    /// Create an `Artifact` output with no resources (most common case).
+    pub fn artifact(name: impl Into<String>, content: impl Into<String>) -> Self {
+        Self::Artifact {
+            name: name.into(),
+            content: content.into(),
+            activity_log: None,
+            resources: vec![],
+        }
+    }
+}
+
 impl From<MockAgentOutput> for StageOutput {
     fn from(mock: MockAgentOutput) -> Self {
         match mock {
-            MockAgentOutput::Questions(questions) => StageOutput::Questions { questions },
+            MockAgentOutput::Questions(questions) => StageOutput::Questions {
+                questions,
+                resources: vec![],
+            },
             MockAgentOutput::Artifact {
                 content,
                 activity_log,
+                resources,
                 ..
             } => StageOutput::Artifact {
                 content,
                 activity_log,
+                resources,
             },
             MockAgentOutput::Approval {
                 decision,
                 content,
                 activity_log,
+                resources,
             } => StageOutput::Approval {
                 decision,
                 content,
                 activity_log,
+                resources,
             },
             MockAgentOutput::Subtasks {
                 content,
                 subtasks,
                 activity_log,
+                resources,
             } => StageOutput::Subtasks {
                 content,
                 subtasks,
                 activity_log,
+                resources,
             },
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },
             MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },

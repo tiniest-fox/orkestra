@@ -27,6 +27,8 @@ mod multi_project;
 mod play;
 #[path = "e2e/pr_description_audit.rs"]
 mod pr_description_audit;
+#[path = "e2e/resources.rs"]
+mod resources;
 #[path = "e2e/squash_commits.rs"]
 mod squash_commits;
 #[path = "e2e/stage_chat.rs"]

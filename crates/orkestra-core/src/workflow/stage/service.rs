@@ -474,9 +474,29 @@ impl StageExecutionService {
             Vec::new()
         };
 
+        // Load parent resources for subtask materialization so the subtask's
+        // resources.md includes resources registered by the parent task's stages.
+        let parent_resources = match &task.parent_id {
+            Some(pid) => self
+                .store
+                .get_task(pid)
+                .map_err(|e| {
+                    SpawnError::AgentError(format!("Failed to load parent task {pid}: {e}"))
+                })?
+                .map(|parent| parent.resources),
+            None => None,
+        };
+
         let handle = self
             .agent_service
-            .execute_stage(task, trigger, spawn_context, &activity_logs, &sibling_tasks)
+            .execute_stage(
+                task,
+                trigger,
+                spawn_context,
+                &activity_logs,
+                &sibling_tasks,
+                parent_resources.as_ref(),
+            )
             .map_err(|e| SpawnError::AgentError(e.to_string()))?;
 
         let pid = handle.pid;

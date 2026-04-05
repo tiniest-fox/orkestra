@@ -165,6 +165,7 @@ fn test_exhaustive_workflow_flow() {
             name: "plan".to_string(),
             content: "Initial plan v1 - not detailed enough".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner agent (completion ready)
@@ -230,6 +231,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Detailed plan v2:\n1. Create module\n2. Add tests\n3. Update docs"
                 .to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner agent (completion ready)
@@ -275,6 +277,7 @@ fn test_exhaustive_workflow_flow() {
             name: "breakdown".to_string(),
             content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns breakdown agent (completion ready)
@@ -322,6 +325,7 @@ fn test_exhaustive_workflow_flow() {
             name: "summary".to_string(),
             content: "Initial implementation - tests failing".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker agent (completion ready)
@@ -350,6 +354,7 @@ fn test_exhaustive_workflow_flow() {
             name: "summary".to_string(),
             content: "Implementation complete with passing tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker agent (completion ready)
@@ -386,6 +391,7 @@ fn test_exhaustive_workflow_flow() {
             decision: "reject".to_string(),
             content: "Code style issues found - please fix formatting".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -394,6 +400,7 @@ fn test_exhaustive_workflow_flow() {
             name: "summary".to_string(),
             content: "Implementation with fixed formatting".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -493,6 +500,7 @@ fn test_exhaustive_workflow_flow() {
             name: "verdict".to_string(),
             content: "LGTM! All checks pass.".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -501,6 +509,7 @@ fn test_exhaustive_workflow_flow() {
             name: "summary".to_string(),
             content: "Resolved merge conflict".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -590,6 +599,7 @@ fn test_exhaustive_workflow_flow() {
             name: "verdict".to_string(),
             content: "Conflict resolved correctly".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -674,6 +684,7 @@ fn test_approval_validation() {
             name: "plan".to_string(),
             content: "Plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner (completion ready)
@@ -688,6 +699,7 @@ fn test_approval_validation() {
             name: "breakdown".to_string(),
             content: "Breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns breakdown agent (completion ready)
@@ -702,6 +714,7 @@ fn test_approval_validation() {
             decision: "reject".to_string(),
             content: "Should fail".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -785,6 +798,7 @@ fn test_custom_integration_on_failure() {
             name: "plan".to_string(),
             content: "Plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner (completion ready)
@@ -815,6 +829,7 @@ fn test_custom_integration_on_failure() {
             name: "summary".to_string(),
             content: "Summary".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -838,6 +853,7 @@ fn test_custom_integration_on_failure() {
             name: "verdict".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -846,6 +862,7 @@ fn test_custom_integration_on_failure() {
             name: "plan".to_string(),
             content: "Recovery plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -946,6 +963,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // setup → spawns planner
@@ -977,6 +995,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             name: "summary".to_string(),
             content: "Summary".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -1002,6 +1021,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             name: "verdict".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -1010,6 +1030,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             name: "plan".to_string(),
             content: "Recovery plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer
@@ -1088,6 +1109,7 @@ fn test_gate_script_with_recovery() {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker → drain_active → artifact processed → AwaitingGate
@@ -1109,6 +1131,7 @@ fn test_gate_script_with_recovery() {
             name: "summary".to_string(),
             content: "Fixed implementation after gate failure".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -1156,6 +1179,7 @@ fn test_gate_script_with_recovery() {
             name: "verdict".to_string(),
             content: "All checks passed, implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -1207,6 +1231,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -1221,6 +1246,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "verdict".to_string(),
             content: "Approved".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -1464,6 +1490,7 @@ fn test_opencode_no_pregenerated_session_id() {
             name: "result".to_string(),
             content: "First run output".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -1504,6 +1531,7 @@ fn test_opencode_no_pregenerated_session_id() {
             name: "result".to_string(),
             content: "Second run output".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -1586,6 +1614,7 @@ fn test_session_reset_on_cross_stage_rejection() {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -1631,6 +1660,7 @@ fn test_session_reset_on_cross_stage_rejection() {
             decision: "reject".to_string(),
             content: "Code needs refactoring — extract helper methods".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -1639,6 +1669,7 @@ fn test_session_reset_on_cross_stage_rejection() {
             name: "summary".to_string(),
             content: "Refactored implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -1829,6 +1860,7 @@ fn test_rejection_always_supersedes_session() {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -1851,6 +1883,7 @@ fn test_rejection_always_supersedes_session() {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -1859,6 +1892,7 @@ fn test_rejection_always_supersedes_session() {
             name: "summary".to_string(),
             content: "Implementation with more tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer
@@ -1993,6 +2027,7 @@ fn test_handlebars_passthrough_for_plain_definitions() {
             name: "summary".to_string(),
             content: "Done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -2059,6 +2094,7 @@ fn test_retry_failed_with_instructions_sends_resume_prompt() {
             name: "plan".into(),
             content: "Plan using v2 API".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent with retry_failed resume prompt
@@ -2113,6 +2149,7 @@ fn test_retry_blocked_with_instructions_sends_resume_prompt() {
             name: "plan".into(),
             content: "Plan with CI passing".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent with retry_blocked resume prompt
@@ -2157,6 +2194,7 @@ fn test_retry_failed_without_instructions_sends_resume_prompt() {
             name: "plan".into(),
             content: "Plan v2".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent with retry_failed resume prompt (no instructions)
@@ -2201,6 +2239,7 @@ fn test_kill_before_output_retries_without_resume() {
             name: "plan".into(),
             content: "Retry plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent for retry
@@ -2241,6 +2280,7 @@ fn test_human_rejection_resumes_session_even_with_activity() {
             name: "plan".into(),
             content: "First plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent (with activity LogLine)
@@ -2259,6 +2299,7 @@ fn test_human_rejection_resumes_session_even_with_activity() {
             name: "plan".into(),
             content: "Improved plan".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent for retry (rejection → resume, Feedback trigger)
@@ -2295,6 +2336,7 @@ fn test_human_rejection_resumes_session() {
             name: "summary".to_string(),
             content: "Initial work".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -2317,6 +2359,7 @@ fn test_human_rejection_resumes_session() {
             name: "summary".to_string(),
             content: "Work with error handling".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker (resume)
@@ -2403,6 +2446,7 @@ fn test_rejection_review_override_then_approval() {
             name: "summary".to_string(),
             content: "Initial implementation with tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -2429,6 +2473,7 @@ fn test_rejection_review_override_then_approval() {
             decision: "reject".to_string(),
             content: "Tests are incomplete — missing edge case coverage".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -2525,6 +2570,7 @@ fn test_rejection_review_override_then_approval() {
             content: "Re-evaluated: edge cases are actually covered by integration tests"
                 .to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -2602,6 +2648,7 @@ fn test_rejection_review_confirm() {
             name: "summary".to_string(),
             content: "Implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -2615,6 +2662,7 @@ fn test_rejection_review_confirm() {
             decision: "reject".to_string(),
             content: "Code quality is poor".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer
@@ -2693,6 +2741,7 @@ fn test_automated_review_rejection_skips_human_review() {
             name: "summary".to_string(),
             content: "Implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -2706,6 +2755,7 @@ fn test_automated_review_rejection_skips_human_review() {
             decision: "reject".to_string(),
             content: "Needs refactoring".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -2714,6 +2764,7 @@ fn test_automated_review_rejection_skips_human_review() {
             name: "summary".to_string(),
             content: "Refactored implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -2867,6 +2918,7 @@ fn test_artifact_generation_for_all_output_types() {
             name: "plan".to_string(),
             content: "Detailed implementation plan v1".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -2902,6 +2954,7 @@ fn test_artifact_generation_for_all_output_types() {
             name: "plan".to_string(),
             content: "Detailed plan v2 with error handling".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -2939,6 +2992,7 @@ fn test_artifact_generation_for_all_output_types() {
             name: "summary".to_string(),
             content: "Implementation complete with tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker → drain_active → artifact processed → AwaitingGate
@@ -2964,6 +3018,7 @@ fn test_artifact_generation_for_all_output_types() {
             decision: "reject".to_string(),
             content: "Missing integration tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer → drain_active → rejection processed → AwaitingApproval
@@ -3007,6 +3062,7 @@ fn test_artifact_generation_for_all_output_types() {
             decision: "approve".to_string(),
             content: "Re-evaluated: all tests adequate, implementation is solid".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer → drain_active → approval output processed → AwaitingApproval
@@ -3056,6 +3112,7 @@ fn test_system_prompt_split() {
             name: "plan".to_string(),
             content: "Implementation plan here".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3122,6 +3179,7 @@ fn test_opencode_provider_fallback() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3223,6 +3281,7 @@ fn test_commit_message_generation_during_integration() {
             name: "summary".to_string(),
             content: "Implemented feature successfully".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3249,6 +3308,7 @@ fn test_commit_message_generation_during_integration() {
             name: "verdict".to_string(),
             content: "Approved! Changes look good.".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3369,6 +3429,7 @@ fn test_interrupt_and_resume() {
             name: "summary".to_string(),
             content: "Completed work with error handling".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3477,6 +3538,7 @@ fn test_interrupt_resume_multiple_cycles() {
             name: "summary".to_string(),
             content: "Final work".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // Spawn
@@ -3516,6 +3578,7 @@ fn test_interrupt_wrong_phase() {
             name: "summary".to_string(),
             content: "Work done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3652,6 +3715,7 @@ fn activity_log_stored_on_iteration() {
                 "Analyzed requirements. Decided on JWT auth approach. Reviewed existing patterns."
                     .to_string(),
             ),
+            resources: vec![],
         },
     );
 
@@ -3713,6 +3777,7 @@ fn activity_log_injected_into_next_stage_prompt() {
                 "Researched JWT libraries. Selected jsonwebtoken crate. Planned token expiry strategy."
                     .to_string(),
             ),
+            resources: vec![],
         },
     );
 
@@ -3730,6 +3795,7 @@ fn activity_log_injected_into_next_stage_prompt() {
             name: "summary".to_string(),
             content: "Implemented JWT authentication".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3787,6 +3853,7 @@ fn activity_log_accumulates_across_stages() {
             name: "plan".to_string(),
             content: "Plan for feature X".to_string(),
             activity_log: Some("Planned architecture. Chose microservices pattern.".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planning
@@ -3802,6 +3869,7 @@ fn activity_log_accumulates_across_stages() {
             activity_log: Some(
                 "Implemented REST API. Added database migrations. Wrote unit tests.".to_string(),
             ),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn work
@@ -3815,6 +3883,7 @@ fn activity_log_accumulates_across_stages() {
             decision: "approve".to_string(),
             content: "Looks good".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     // Note: approval triggers finalize_stage_advancement which transitions to next stage
@@ -3872,6 +3941,7 @@ fn activity_log_none_does_not_break() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -3900,6 +3970,7 @@ fn activity_log_none_does_not_break() {
             name: "summary".to_string(),
             content: "Work done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn work
@@ -3943,6 +4014,7 @@ fn activity_log_file_written_with_correct_content() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: Some("- Researched the problem\n- Decided on approach".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planning
@@ -3957,6 +4029,7 @@ fn activity_log_file_written_with_correct_content() {
             name: "summary".to_string(),
             content: "Done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn work agent
@@ -4017,6 +4090,7 @@ fn activity_log_on_rejection_retry() {
             name: "summary".to_string(),
             content: "Implemented feature with bug".to_string(),
             activity_log: Some("Implemented feature X. Added tests. Found edge case.".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn work
@@ -4032,6 +4106,7 @@ fn activity_log_on_rejection_retry() {
             activity_log: Some(
                 "Reviewed implementation. Tested edge cases. Found null pointer bug.".to_string(),
             ),
+            resources: vec![],
         },
     );
     ctx.advance(); // process approval -> advance to review stage
@@ -4115,6 +4190,7 @@ fn test_reentry_spawns_fresh_session() {
             name: "summary".to_string(),
             content: "Initial work completed".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4131,6 +4207,7 @@ fn test_reentry_spawns_fresh_session() {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4141,6 +4218,7 @@ fn test_reentry_spawns_fresh_session() {
             name: "summary".to_string(),
             content: "Work with tests added".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4177,6 +4255,7 @@ fn test_reentry_spawns_fresh_session() {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4279,6 +4358,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
             name: "summary".to_string(),
             content: "Initial work completed".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4295,6 +4375,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4305,6 +4386,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
             name: "summary".to_string(),
             content: "Work with tests added".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4334,6 +4416,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4439,6 +4522,7 @@ fn test_interrupt_resume_preserves_session() {
             name: "verdict".to_string(),
             content: "Looks good".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4514,6 +4598,7 @@ fn test_disallowed_tools_threaded_to_run_config() {
             name: "summary".to_string(),
             content: "Done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4561,6 +4646,7 @@ fn test_disallowed_tools_injected_into_system_prompt() {
             name: "summary".to_string(),
             content: "Done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4646,6 +4732,7 @@ fn test_disallowed_tools_flow_override() {
             name: "summary".to_string(),
             content: "Fixed".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4686,6 +4773,7 @@ fn test_disallowed_tools_empty_no_flag() {
             name: "summary".to_string(),
             content: "Done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -4747,6 +4835,7 @@ fn test_interrupt_message_in_resume_prompt() {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // Spawns agent (with activity)
@@ -4793,6 +4882,7 @@ fn test_interrupt_message_in_resume_prompt() {
             name: "summary".to_string(),
             content: "Fixed validation with error handling".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // Spawns resumed agent
@@ -4857,6 +4947,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
             name: "summary".to_string(),
             content: "Work v1".to_string(),
             activity_log: Some("- Log A: first work attempt".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -4876,6 +4967,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
             activity_log: Some("- Log R: review feedback".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer
@@ -4908,6 +5000,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
             name: "summary".to_string(),
             content: "Work v2 - with tests".to_string(),
             activity_log: Some("- Log B: second work attempt".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -4924,6 +5017,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer
@@ -4965,6 +5059,7 @@ fn test_activity_log_keeps_different_stages() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: Some("- Log P: planning decisions".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -4980,6 +5075,7 @@ fn test_activity_log_keeps_different_stages() {
             name: "breakdown".to_string(),
             content: "No subtasks needed".to_string(),
             activity_log: Some("- Log B: breakdown analysis".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns breakdown
@@ -5003,6 +5099,7 @@ fn test_activity_log_keeps_different_stages() {
             name: "summary".to_string(),
             content: "Implementation".to_string(),
             activity_log: Some("- Log W: work done".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -5040,6 +5137,7 @@ fn test_activity_log_file_reference_in_prompt() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: Some("- Made a key decision about architecture".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -5055,6 +5153,7 @@ fn test_activity_log_file_reference_in_prompt() {
             name: "breakdown".to_string(),
             content: "Breakdown complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns breakdown
@@ -5118,6 +5217,7 @@ fn test_activity_log_with_script_and_review_rejection() {
             name: "summary".to_string(),
             content: "Work v1".to_string(),
             activity_log: Some("- Log A: first work attempt".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker → drain_active → AwaitingGate
@@ -5135,6 +5235,7 @@ fn test_activity_log_with_script_and_review_rejection() {
             decision: "reject".to_string(),
             content: "Needs more error handling".to_string(),
             activity_log: Some("- Log R: review requested changes".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer → drain_active → rejection → AwaitingReview
@@ -5152,6 +5253,7 @@ fn test_activity_log_with_script_and_review_rejection() {
             name: "summary".to_string(),
             content: "Work v2 - with error handling".to_string(),
             activity_log: Some("- Log B: second work attempt".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker → drain_active → AwaitingGate
@@ -5166,6 +5268,7 @@ fn test_activity_log_with_script_and_review_rejection() {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -5193,6 +5296,7 @@ fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
             name: "plan".to_string(),
             content: "Implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -5207,6 +5311,7 @@ fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
             name: "breakdown".to_string(),
             content: "Task breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -5221,6 +5326,7 @@ fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -5235,6 +5341,7 @@ fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -5444,6 +5551,7 @@ fn test_address_pr_feedback_returns_to_work_stage() {
             name: "summary".to_string(),
             content: "Addressed PR feedback".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -5604,6 +5712,7 @@ fn test_address_pr_feedback_with_checks() {
             name: "summary".to_string(),
             content: "Addressed PR feedback and fixed CI checks".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -5709,6 +5818,7 @@ fn test_address_pr_conflicts_returns_to_work_stage() {
             name: "summary".to_string(),
             content: "Resolved conflicts".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -5793,6 +5903,7 @@ fn test_stages_with_logs_groups_sessions_correctly() {
             name: "plan".to_string(),
             content: "Initial plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner agent (completion ready)
@@ -5827,6 +5938,7 @@ fn test_stages_with_logs_groups_sessions_correctly() {
             name: "breakdown".to_string(),
             content: "Simple task, no subtasks needed".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns breakdown agent
@@ -5840,6 +5952,7 @@ fn test_stages_with_logs_groups_sessions_correctly() {
             name: "summary".to_string(),
             content: "First work attempt".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker agent
@@ -5912,6 +6025,7 @@ fn test_human_rejection_preserves_session() {
             name: "plan".to_string(),
             content: "Plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -5924,6 +6038,7 @@ fn test_human_rejection_preserves_session() {
             name: "breakdown".to_string(),
             content: "No subtasks".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns breakdown
@@ -5938,6 +6053,7 @@ fn test_human_rejection_preserves_session() {
             name: "summary".to_string(),
             content: "First work attempt".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -5968,6 +6084,7 @@ fn test_human_rejection_preserves_session() {
             name: "summary".to_string(),
             content: "Second work attempt with error handling".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.api()
@@ -6028,6 +6145,7 @@ fn test_stages_with_logs_ordered_chronologically() {
             name: "plan".to_string(),
             content: "Plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -6040,6 +6158,7 @@ fn test_stages_with_logs_ordered_chronologically() {
             name: "breakdown".to_string(),
             content: "Breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns breakdown
@@ -6052,6 +6171,7 @@ fn test_stages_with_logs_ordered_chronologically() {
             name: "summary".to_string(),
             content: "Work".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -6131,6 +6251,7 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -6168,6 +6289,7 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
             decision: "reject".to_string(),
             content: "Needs refactoring".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -6176,6 +6298,7 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
             name: "summary".to_string(),
             content: "Refactored implementation".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer
@@ -6329,6 +6452,7 @@ fn test_request_update_on_done_task() {
             name: "summary".to_string(),
             content: "Updated work with error handling".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6391,6 +6515,7 @@ fn test_artifact_materialization() {
             name: "plan".to_string(),
             content: "Step 1: Do the thing\nStep 2: Verify it works".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6412,6 +6537,7 @@ fn test_artifact_materialization() {
             name: "summary".to_string(),
             content: "Work completed".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6501,6 +6627,7 @@ fn test_multiple_artifacts_materialized() {
             name: "plan".to_string(),
             content: "The implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6514,6 +6641,7 @@ fn test_multiple_artifacts_materialized() {
             name: "summary".to_string(),
             content: "Work completed successfully".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6529,6 +6657,7 @@ fn test_multiple_artifacts_materialized() {
             decision: "approve".to_string(),
             content: "Looks good".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6629,6 +6758,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
             name: "summary".to_string(),
             content: "Initial work done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6645,6 +6775,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6655,6 +6786,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
             name: "summary".to_string(),
             content: "Work with tests added".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6665,6 +6797,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6753,6 +6886,7 @@ fn test_activity_only_persisted_on_agent_success() {
             name: "summary".into(),
             content: "Work done successfully".into(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -6873,6 +7007,7 @@ fn test_gate_pass_enters_commit_pipeline() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     // drain_active processes agent completion within the same tick
@@ -6938,6 +7073,7 @@ fn test_gate_result_persisted() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
@@ -6996,6 +7132,7 @@ fn test_gate_fail_requeues_with_feedback() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
@@ -7113,6 +7250,7 @@ fn test_gate_pass_then_advances_to_next_stage() {
             name: "summary".to_string(),
             content: "Work done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
@@ -7131,6 +7269,7 @@ fn test_gate_pass_then_advances_to_next_stage() {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns review agent → drain_active → approval processed → Finishing/Done
@@ -7178,6 +7317,7 @@ fn test_gate_timeout_treated_as_failure() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
@@ -7362,6 +7502,7 @@ fn test_flow_gate_override_disables_gate() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent → drain_active → artifact → no gate → commit pipeline
@@ -7419,6 +7560,7 @@ fn advance_to_awaiting_approval(ctx: &TestEnv, task_id: &str) {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -7433,6 +7575,7 @@ fn advance_to_awaiting_approval(ctx: &TestEnv, task_id: &str) {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -7588,6 +7731,7 @@ fn test_reject_with_comments_pending_rejection_review() {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -7602,6 +7746,7 @@ fn test_reject_with_comments_pending_rejection_review() {
             decision: "reject".to_string(),
             content: "Tests are failing, fix them".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -7692,6 +7837,7 @@ fn test_pr_comments_context_reaches_agent_prompt() {
             name: "summary".to_string(),
             content: "Fixed".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -7740,6 +7886,7 @@ fn test_resolved_env_threaded_to_agent_runner() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();
@@ -7801,6 +7948,7 @@ fn test_gate_script_receives_orkestra_env_vars() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
@@ -7860,6 +8008,7 @@ fn test_skip_stage_advances_through_orchestrator() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -7892,6 +8041,7 @@ fn test_skip_stage_advances_through_orchestrator() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker with redirect trigger
@@ -7935,6 +8085,7 @@ fn test_send_to_stage_backward_through_orchestrator() {
             name: "plan".to_string(),
             content: "Plan complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -7951,6 +8102,7 @@ fn test_send_to_stage_backward_through_orchestrator() {
             name: "summary".to_string(),
             content: "Work done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns worker
@@ -7983,6 +8135,7 @@ fn test_send_to_stage_backward_through_orchestrator() {
             name: "plan".to_string(),
             content: "Revised plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner with redirect trigger
@@ -8025,6 +8178,7 @@ fn test_skip_last_stage_completes_task() {
             name: "plan".to_string(),
             content: "Plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();
@@ -8041,6 +8195,7 @@ fn test_skip_last_stage_completes_task() {
             name: "summary".to_string(),
             content: "Done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();
@@ -8113,6 +8268,7 @@ fn test_send_to_stage_respects_flow() {
             name: "plan".to_string(),
             content: "Plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();
@@ -8157,6 +8313,7 @@ fn test_send_to_stage_from_interrupted() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -8219,6 +8376,7 @@ fn test_send_to_stage_from_interrupted() {
             name: "plan".to_string(),
             content: "Revised plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner with Redirect trigger
@@ -8266,6 +8424,7 @@ fn test_restart_stage_creates_fresh_iteration() {
             name: "plan".to_string(),
             content: "The plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner
@@ -8315,6 +8474,7 @@ fn test_restart_stage_creates_fresh_iteration() {
             name: "plan".to_string(),
             content: "Revised plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner with Restart trigger
@@ -8391,6 +8551,7 @@ fn test_restart_stage_from_interrupted() {
             name: "plan".to_string(),
             content: "New plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns planner

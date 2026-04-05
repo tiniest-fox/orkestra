@@ -1,0 +1,19 @@
+{
+  "description": "External resources registered by the agent",
+  "properties": {
+    "resources": {
+      "type": "array",
+      "description": "Optional list of external resources (URLs, file paths) to register. Resources persist across stages and are visible to all subsequent stages. Use this to share references to Google Docs, screenshots, external tools, etc.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Unique name for this resource (used as key — re-registering the same name updates it)" },
+          "url": { "type": "string", "description": "URL or file path" },
+          "description": { "type": "string", "description": "What this resource is and why it matters" }
+        },
+        "required": ["name", "url"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

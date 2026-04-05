@@ -31,6 +31,14 @@ pub struct StagePromptContext<'a> {
     /// The activity log accumulates entries across all prior stages.
     pub activity_log_path: Option<String>,
 
+    /// Path to the resources file, if any resources exist.
+    /// Resources accumulate across all stages and are always available.
+    pub resources_path: Option<String>,
+
+    /// Inline resource details for the prompt.
+    /// Populated from the task's `ResourceStore` so agents see resources directly.
+    pub resources: Vec<ResourceContext>,
+
     /// Question history (if stage can ask questions).
     pub question_history: Vec<QuestionAnswerContext<'a>>,
 
@@ -57,6 +65,17 @@ pub struct StagePromptContext<'a> {
 
     /// Sibling subtasks (for subtasks only, empty for non-subtasks).
     pub sibling_tasks: Vec<SiblingTaskContext>,
+}
+
+/// Context for a resource in the prompt.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResourceContext {
+    /// Resource name.
+    pub name: String,
+    /// URL or file path.
+    pub url: String,
+    /// What this resource is.
+    pub description: Option<String>,
 }
 
 /// Context for a question-answer pair.

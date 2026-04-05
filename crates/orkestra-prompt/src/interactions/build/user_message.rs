@@ -6,8 +6,8 @@ use handlebars::Handlebars;
 use serde::Serialize;
 
 use crate::types::{
-    IntegrationErrorContext, QuestionAnswerContext, SiblingTaskContext, StagePromptContext,
-    WorkflowStageEntry,
+    IntegrationErrorContext, QuestionAnswerContext, ResourceContext, SiblingTaskContext,
+    StagePromptContext, WorkflowStageEntry,
 };
 
 // ============================================================================
@@ -25,6 +25,8 @@ pub fn execute(templates: &Handlebars<'static>, ctx: &StagePromptContext<'_>) ->
         task_file_path: &ctx.task_file_path,
         has_input_artifacts: ctx.has_input_artifacts,
         activity_log_path: ctx.activity_log_path.as_deref(),
+        resources_path: ctx.resources_path.as_deref(),
+        resources: &ctx.resources,
         question_history: &ctx.question_history,
         feedback: ctx.feedback,
         integration_error: ctx.integration_error.as_ref(),
@@ -50,6 +52,8 @@ struct UserMessageContext<'a> {
     task_file_path: &'a str,
     has_input_artifacts: bool,
     activity_log_path: Option<&'a str>,
+    resources_path: Option<&'a str>,
+    resources: &'a [ResourceContext],
     question_history: &'a [QuestionAnswerContext<'a>],
     feedback: Option<&'a str>,
     integration_error: Option<&'a IntegrationErrorContext<'a>>,

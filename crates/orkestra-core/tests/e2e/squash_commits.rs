@@ -143,6 +143,7 @@ fn test_per_stage_commits_use_llm_format() {
             name: "plan".to_string(),
             content: "Implementation plan".to_string(),
             activity_log: Some("- Analyzed requirements\n- Created plan".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -186,6 +187,7 @@ fn test_per_stage_commits_use_llm_format() {
             name: "breakdown".to_string(),
             content: "Task breakdown".to_string(),
             activity_log: Some("- Decomposed into subtasks\n- Defined dependencies".to_string()),
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -242,6 +244,7 @@ fn test_integration_squashes_commits_for_non_subtask() {
             name: "plan".to_string(),
             content: "Implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -261,6 +264,7 @@ fn test_integration_squashes_commits_for_non_subtask() {
             name: "breakdown".to_string(),
             content: "Task breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -280,6 +284,7 @@ fn test_integration_squashes_commits_for_non_subtask() {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -301,6 +306,7 @@ fn test_integration_squashes_commits_for_non_subtask() {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -359,6 +365,7 @@ fn test_subtask_integration_squashes_commits() {
             name: "plan".to_string(),
             content: "Parent implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -391,6 +398,7 @@ fn test_subtask_integration_squashes_commits() {
                 },
             ],
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -433,6 +441,7 @@ fn test_subtask_integration_squashes_commits() {
             name: "summary".to_string(),
             content: "Subtask work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -456,6 +465,7 @@ fn test_subtask_integration_squashes_commits() {
             decision: "approve".to_string(),
             content: "Subtask looks good".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -570,6 +580,7 @@ fn test_conflict_recovery_squashes_all_commits() {
             name: "plan".to_string(),
             content: "Implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -585,6 +596,7 @@ fn test_conflict_recovery_squashes_all_commits() {
             name: "breakdown".to_string(),
             content: "Task breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -600,6 +612,7 @@ fn test_conflict_recovery_squashes_all_commits() {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -630,6 +643,7 @@ fn test_conflict_recovery_squashes_all_commits() {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -641,6 +655,7 @@ fn test_conflict_recovery_squashes_all_commits() {
             name: "summary".to_string(),
             content: "Resolved conflict".to_string(),
             activity_log: Some("- Fixed merge conflict in conflict.txt".to_string()),
+            resources: vec![],
         },
     );
 
@@ -709,6 +724,7 @@ fn test_conflict_recovery_squashes_all_commits() {
             decision: "approve".to_string(),
             content: "Conflict resolved".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -756,6 +772,7 @@ fn test_integration_with_no_commits_succeeds() {
             name: "plan".to_string(),
             content: "Plan that makes no file changes".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -770,6 +787,7 @@ fn test_integration_with_no_commits_succeeds() {
             name: "breakdown".to_string(),
             content: "Breakdown with no file changes".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -784,6 +802,7 @@ fn test_integration_with_no_commits_succeeds() {
             name: "summary".to_string(),
             content: "Implementation complete with no changes".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -805,6 +824,7 @@ fn test_integration_with_no_commits_succeeds() {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -853,6 +873,7 @@ fn test_merge_task_squashes_commits() {
             name: "plan".to_string(),
             content: "Implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -872,6 +893,7 @@ fn test_merge_task_squashes_commits() {
             name: "breakdown".to_string(),
             content: "Task breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -891,6 +913,7 @@ fn test_merge_task_squashes_commits() {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -912,6 +935,7 @@ fn test_merge_task_squashes_commits() {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer

@@ -16,6 +16,7 @@ import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffFindBar } from "../Diff/DiffFindBar";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import { MobileDiffFileListOverlay } from "../Diff/MobileDiffFileListOverlay";
+import { MobileSlidePanel } from "../Diff/MobileSlidePanel";
 import type { DraftComment } from "../Diff/types";
 import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
 import { useDiffFindNavigation } from "../Diff/useDiffFindNavigation";
@@ -76,7 +77,7 @@ export function DrawerDiffTab({
     }
   }, [hasDrafts, liveDiff]);
 
-  const { commits, fileCounts } = useGitHistory();
+  const { commits } = useGitHistory();
   const { diff: commitDiff, loading: commitDiffLoading } = useCommitDiff(selectedCommitHash);
 
   // Per-commit mode: use commit diff directly (immutable, no snapshot needed).
@@ -128,7 +129,7 @@ export function DrawerDiffTab({
   }, [selectedCommitHash, commits]);
 
   // Reset per-commit state when selection changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedCommitHash is the intentional trigger
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedCommitHash is the intentional trigger; closeFindBar and resetInteraction are stable useCallback references that never change identity
   useEffect(() => {
     setActivePath(null);
     setActiveCommentLine(null);
@@ -259,39 +260,30 @@ export function DrawerDiffTab({
             }
           />
           {/* Mobile commit overlay */}
-          {isMobile && commitOverlayOpen && (
-            <>
-              <button
-                type="button"
-                aria-label="Close commit list"
-                className="absolute inset-0 z-20"
-                onClick={() => setCommitOverlayOpen(false)}
-                onKeyDown={() => {}}
+          {isMobile && (
+            <MobileSlidePanel
+              open={commitOverlayOpen}
+              onClose={() => setCommitOverlayOpen(false)}
+              ariaLabel="Close commit list"
+            >
+              <DiffCommitPanel
+                commits={commits}
+                selectedHash={selectedCommitHash}
+                onSelectHash={(hash) => {
+                  setSelectedCommitHash(hash);
+                  setCommitOverlayOpen(false);
+                }}
+                onSelectAll={() => {
+                  setSelectedCommitHash(null);
+                  setCommitOverlayOpen(false);
+                }}
               />
-              <div className="absolute top-0 left-0 bottom-0 w-64 z-30 bg-surface border-r border-border shadow-xl overflow-y-auto">
-                <DiffCommitPanel
-                  commits={commits}
-                  fileCounts={fileCounts}
-                  selectedHash={selectedCommitHash}
-                  onSelectHash={(hash) => {
-                    setSelectedCommitHash(hash);
-                    setCommitOverlayOpen(false);
-                  }}
-                  onSelectAll={() => {
-                    setSelectedCommitHash(null);
-                    setCommitOverlayOpen(false);
-                  }}
-                  collapsed={false}
-                  onToggleCollapsed={() => {}}
-                />
-              </div>
-            </>
+            </MobileSlidePanel>
           )}
           {/* Desktop commit panel */}
           {!isMobile && (
             <DiffCommitPanel
               commits={commits}
-              fileCounts={fileCounts}
               selectedHash={selectedCommitHash}
               onSelectHash={setSelectedCommitHash}
               onSelectAll={() => setSelectedCommitHash(null)}

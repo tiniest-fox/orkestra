@@ -7,6 +7,7 @@ import type React from "react";
 import type { HighlightedFileDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { DiffFileList } from "./DiffFileList";
+import { MobileSlidePanel } from "./MobileSlidePanel";
 
 interface MobileDiffFileListOverlayProps {
   files: HighlightedFileDiff[];
@@ -45,27 +46,16 @@ export function MobileDiffFileListOverlay({
         </button>
         {extraControls}
       </div>
-      {fileListOpen && (
-        <>
-          <button
-            type="button"
-            aria-label="Close file list"
-            className="absolute inset-0 z-20"
-            onClick={onToggle}
-            onKeyDown={() => {}}
-          />
-          <div className="absolute top-0 left-0 bottom-0 w-64 z-30 bg-surface border-r border-border shadow-xl overflow-y-auto">
-            <DiffFileList
-              files={files}
-              activePath={activePath}
-              onJumpTo={(path) => {
-                onJumpTo(path);
-                onToggle();
-              }}
-            />
-          </div>
-        </>
-      )}
+      <MobileSlidePanel open={fileListOpen} onClose={onToggle} ariaLabel="Close file list">
+        <DiffFileList
+          files={files}
+          activePath={activePath}
+          onJumpTo={(path) => {
+            onJumpTo(path);
+            onToggle();
+          }}
+        />
+      </MobileSlidePanel>
     </>
   );
 }

@@ -29,6 +29,21 @@ pub enum StageOutputError {
     MissingField(String),
 }
 
+/// A resource registered in agent output.
+///
+/// `name`, `url`, and optional `description` come from the agent JSON.
+/// The `stage` and `created_at` fields are added by the system during persistence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResourceOutput {
+    /// Unique name for this resource (used as key).
+    pub name: String,
+    /// URL or file path.
+    pub url: String,
+    /// What this resource is and why it matters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 /// Parsed output from a stage agent.
 ///
 /// This is stage-agnostic - any stage can produce these outputs
@@ -42,6 +57,9 @@ pub enum StageOutput {
         content: String,
         /// Optional activity log.
         activity_log: Option<String>,
+        /// Resources registered by the agent.
+        #[serde(default)]
+        resources: Vec<ResourceOutput>,
     },
 
     /// Agent is asking clarifying questions.
@@ -60,6 +78,9 @@ pub enum StageOutput {
         content: String,
         /// Optional activity log.
         activity_log: Option<String>,
+        /// Resources registered by the agent.
+        #[serde(default)]
+        resources: Vec<ResourceOutput>,
     },
 
     /// Agent produced subtasks for breakdown.
@@ -71,6 +92,9 @@ pub enum StageOutput {
         subtasks: Vec<SubtaskOutput>,
         /// Optional activity log.
         activity_log: Option<String>,
+        /// Resources registered by the agent.
+        #[serde(default)]
+        resources: Vec<ResourceOutput>,
     },
 
     /// Agent failed to complete.
@@ -154,6 +178,16 @@ impl StageOutput {
         }
     }
 
+    /// Get the resources registered by the agent, if any.
+    pub fn resources(&self) -> &[ResourceOutput] {
+        match self {
+            StageOutput::Artifact { resources, .. }
+            | StageOutput::Approval { resources, .. }
+            | StageOutput::Subtasks { resources, .. } => resources,
+            _ => &[],
+        }
+    }
+
     /// Parse stage output without schema validation (legacy/testing).
     ///
     /// Production code should use `interactions::output::parse_stage_output::execute()`
@@ -201,11 +235,13 @@ impl StageOutput {
                         .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
                 let activity_log = value["activity_log"].as_str().map(String::from);
+                let resources = parse_resources(&value);
 
                 Ok(StageOutput::Subtasks {
                     content,
                     subtasks,
                     activity_log,
+                    resources,
                 })
             }
 
@@ -219,6 +255,7 @@ impl StageOutput {
                     .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
                 activity_log: value["activity_log"].as_str().map(String::from),
+                resources: parse_resources(&value),
             }),
 
             // Any other type with content is treated as an artifact
@@ -230,6 +267,7 @@ impl StageOutput {
                 Ok(StageOutput::Artifact {
                     content: content.to_string(),
                     activity_log: value["activity_log"].as_str().map(String::from),
+                    resources: parse_resources(&value),
                 })
             }
         }
@@ -319,6 +357,19 @@ pub(crate) struct QuestionJson {
 pub(crate) struct OptionJson {
     label: String,
     description: Option<String>,
+}
+
+/// Extract resources array from a parsed JSON value.
+///
+/// Returns an empty vec if the field is absent or cannot be deserialized.
+pub(crate) fn parse_resources(value: &serde_json::Value) -> Vec<ResourceOutput> {
+    value["resources"]
+        .as_array()
+        .and_then(|arr| {
+            serde_json::from_value::<Vec<ResourceOutput>>(serde_json::Value::Array(arr.clone()))
+                .ok()
+        })
+        .unwrap_or_default()
 }
 
 impl From<QuestionJson> for Question {

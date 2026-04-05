@@ -797,6 +797,7 @@ impl From<MockAgentOutput> for StageOutput {
             } => StageOutput::Artifact {
                 content,
                 activity_log,
+                resources: vec![],
             },
             MockAgentOutput::Approval {
                 decision,
@@ -806,6 +807,7 @@ impl From<MockAgentOutput> for StageOutput {
                 decision,
                 content,
                 activity_log,
+                resources: vec![],
             },
             MockAgentOutput::Subtasks {
                 content,
@@ -815,6 +817,7 @@ impl From<MockAgentOutput> for StageOutput {
                 content,
                 subtasks,
                 activity_log,
+                resources: vec![],
             },
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },
             MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },

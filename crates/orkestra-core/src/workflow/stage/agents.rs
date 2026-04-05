@@ -15,6 +15,7 @@ use crate::workflow::execution::{
     SiblingTaskContext,
 };
 use crate::workflow::prompt::PromptService;
+use orkestra_types::runtime::ResourceStore;
 
 use super::session::SessionSpawnContext;
 
@@ -112,7 +113,8 @@ impl AgentExecutionService {
 
     /// Execute a stage for a task (async with events).
     ///
-    /// Delegates to the `execute_agent` interaction.
+    /// Delegates to the `execute_agent` interaction. `parent_resources` is passed
+    /// through to materialization so subtasks can discover parent-registered resources.
     pub fn execute_stage(
         &self,
         task: &Task,
@@ -120,6 +122,7 @@ impl AgentExecutionService {
         spawn_context: &SessionSpawnContext,
         activity_logs: &[ActivityLogEntry],
         sibling_tasks: &[SiblingTaskContext],
+        parent_resources: Option<&ResourceStore>,
     ) -> Result<ExecutionHandle, ExecutionError> {
         super::interactions::execute_agent::execute(
             self.runner.as_ref(),
@@ -131,6 +134,7 @@ impl AgentExecutionService {
             spawn_context,
             activity_logs,
             sibling_tasks,
+            parent_resources,
         )
     }
 }

@@ -15,6 +15,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "plan".to_string(),
             content: "Implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();
@@ -28,6 +29,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "breakdown".to_string(),
             content: "Task breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();
@@ -41,6 +43,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();
@@ -54,6 +57,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance();

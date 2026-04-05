@@ -24,6 +24,7 @@ fn simple_artifact() -> MockAgentOutput {
         name: "output".to_string(),
         content: "done".to_string(),
         activity_log: None,
+        resources: vec![],
     }
 }
 

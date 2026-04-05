@@ -3,31 +3,39 @@
 //! Writes all task artifacts to `.orkestra/.artifacts/{name}.md` before agent
 //! spawn so agents can read them on demand instead of receiving them inline.
 //! Always writes `trak.md` with task identity and description. Also writes
-//! the activity log to `activity_log.md` when entries exist.
+//! the activity log to `activity_log.md` when entries exist. When resources
+//! exist (own or inherited from parent), writes `resources.md`.
 
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
 use orkestra_types::runtime::{
-    artifact_file_path, artifacts_directory, ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
+    artifact_file_path, artifacts_directory, ResourceStore, ACTIVITY_LOG_ARTIFACT_NAME,
+    RESOURCES_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
 };
 
 use crate::workflow::domain::Task;
 use crate::workflow::stage::types::ActivityLogEntry;
 
-/// Materialize all task artifacts and the activity log to the worktree.
+/// Materialize all task artifacts, the activity log, and resources to the worktree.
 ///
 /// Creates `.orkestra/.artifacts/` directory and writes each artifact as
 /// `{name}.md`. Always writes `trak.md` with task identity metadata (not
 /// included in returned names). When `activity_logs` is non-empty, writes
 /// `activity_log.md` and includes `"activity_log"` in the returned names.
+/// When resources exist (task's own or parent's), writes `resources.md` and
+/// includes `"resources"` in the returned names.
 /// Overwrites existing files to ensure freshness.
 ///
 /// Returns the list of materialized stage artifact names (for prompt building).
 /// `trak.md` is excluded from the returned list — it is referenced directly
 /// by the prompt template, not listed in the "Input Artifacts" section.
-pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Result<Vec<String>> {
+pub fn execute(
+    task: &Task,
+    activity_logs: &[ActivityLogEntry],
+    parent_resources: Option<&ResourceStore>,
+) -> std::io::Result<Vec<String>> {
     let worktree_path = if let Some(p) = &task.worktree_path {
         Path::new(p)
     } else {
@@ -69,6 +77,25 @@ pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Resu
         artifact_names.push(ACTIVITY_LOG_ARTIFACT_NAME.to_string());
     }
 
+    // Write resources file (merged: parent + task's own, task overrides parent on collision)
+    let has_resources =
+        !task.resources.is_empty() || parent_resources.is_some_and(|pr| !pr.is_empty());
+    if has_resources {
+        let mut merged = ResourceStore::new();
+        if let Some(parent) = parent_resources {
+            merged.merge_from(parent);
+        }
+        merged.merge_from(&task.resources);
+
+        if !merged.is_empty() {
+            let content = format_resources(&merged);
+            let file_path = worktree_path.join(artifact_file_path(RESOURCES_ARTIFACT_NAME));
+            fs::write(&file_path, content)
+                .map_err(|e| std::io::Error::other(format!("{}: {}", file_path.display(), e)))?;
+            artifact_names.push(RESOURCES_ARTIFACT_NAME.to_string());
+        }
+    }
+
     Ok(artifact_names)
 }
 
@@ -83,6 +110,26 @@ fn format_task_definition(task: &Task) -> String {
         "**Trak ID**: {}\n**Title**: {}\n\n### Description\n{}",
         task.id, task.title, task.description
     )
+}
+
+/// Format resources into markdown content.
+///
+/// Renders each resource as a heading with URL and optional description.
+/// Resources are sorted by name for deterministic output.
+fn format_resources(resources: &ResourceStore) -> String {
+    let mut content = String::from("# Resources\n\n");
+    let mut sorted: Vec<_> = resources.all().collect();
+    sorted.sort_by_key(|r| &r.name);
+    for resource in sorted {
+        writeln!(content, "## {}", resource.name).expect("write to String is infallible");
+        writeln!(content, "**URL**: {}", resource.url).expect("write to String is infallible");
+        if let Some(desc) = &resource.description {
+            writeln!(content, "{desc}").expect("write to String is infallible");
+        }
+        write!(content, "*Registered by stage: {}*\n\n", resource.stage)
+            .expect("write to String is infallible");
+    }
+    content
 }
 
 /// Format activity log entries into markdown content.
@@ -103,14 +150,14 @@ fn format_activity_log(logs: &[ActivityLogEntry]) -> String {
 mod tests {
     use super::*;
     use crate::workflow::domain::Task;
-    use orkestra_types::runtime::{Artifact, ACTIVITY_LOG_ARTIFACT_NAME};
+    use orkestra_types::runtime::{Artifact, ResourceStore, ACTIVITY_LOG_ARTIFACT_NAME};
     use tempfile::TempDir;
 
     #[test]
     fn test_no_worktree_returns_empty() {
         let task = Task::new("task-1", "Title", "Description", "work", "now");
 
-        let result = execute(&task, &[]).unwrap();
+        let result = execute(&task, &[], None).unwrap();
         assert!(result.is_empty());
     }
 
@@ -122,7 +169,7 @@ mod tests {
         let task =
             Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
 
-        let result = execute(&task, &[]).unwrap();
+        let result = execute(&task, &[], None).unwrap();
         // trak.md is not included in returned names
         assert!(result.is_empty());
 
@@ -146,7 +193,7 @@ mod tests {
         )
         .with_worktree(worktree_path);
 
-        execute(&task, &[]).unwrap();
+        execute(&task, &[], None).unwrap();
 
         let trak_md =
             fs::read_to_string(temp_dir.path().join(".orkestra/.artifacts/trak.md")).unwrap();
@@ -166,7 +213,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "Plan content", "planning", "now"));
 
-        let result = execute(&task, &[]).unwrap();
+        let result = execute(&task, &[], None).unwrap();
         assert_eq!(result, vec!["plan"]);
         assert!(!result.contains(&"trak".to_string()));
 
@@ -186,7 +233,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "The plan content", "planning", "now"));
 
-        let result = execute(&task, &[]).unwrap();
+        let result = execute(&task, &[], None).unwrap();
         assert_eq!(result, vec!["plan"]);
 
         // Verify file was created with correct content
@@ -213,7 +260,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("summary", "Summary content", "work", "now"));
 
-        let result = execute(&task, &[]).unwrap();
+        let result = execute(&task, &[], None).unwrap();
         assert_eq!(result.len(), 3);
         assert!(result.contains(&"plan".to_string()));
         assert!(result.contains(&"breakdown".to_string()));
@@ -251,7 +298,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "New content", "planning", "now"));
 
-        let result = execute(&task, &[]).unwrap();
+        let result = execute(&task, &[], None).unwrap();
         assert_eq!(result, vec!["plan"]);
 
         // Verify file was overwritten
@@ -272,7 +319,7 @@ mod tests {
         let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
         assert!(!artifacts_dir.exists());
 
-        execute(&task, &[]).unwrap();
+        execute(&task, &[], None).unwrap();
 
         // Directory should now exist
         assert!(artifacts_dir.exists());
@@ -287,7 +334,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "content", "planning", "now"));
 
-        let result = execute(&task, &[]);
+        let result = execute(&task, &[], None);
         assert!(result.is_err());
     }
 
@@ -305,7 +352,7 @@ mod tests {
             content: "- Implemented the feature".to_string(),
         }];
 
-        let result = execute(&task, &logs).unwrap();
+        let result = execute(&task, &logs, None).unwrap();
         assert_eq!(result, vec![ACTIVITY_LOG_ARTIFACT_NAME]);
 
         // Directory should be created
@@ -337,7 +384,7 @@ mod tests {
             content: "- Did the work".to_string(),
         }];
 
-        let result = execute(&task, &logs).unwrap();
+        let result = execute(&task, &logs, None).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result.contains(&"plan".to_string()));
         assert!(result.contains(&ACTIVITY_LOG_ARTIFACT_NAME.to_string()));
@@ -357,7 +404,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "Plan content", "planning", "now"));
 
-        let result = execute(&task, &[]).unwrap();
+        let result = execute(&task, &[], None).unwrap();
         assert_eq!(result, vec!["plan"]);
 
         let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
@@ -383,5 +430,137 @@ mod tests {
 
         let formatted = format_activity_log(&logs);
         assert_eq!(formatted, "[work]\n- Line one\n\n[review]\n- Line two\n\n");
+    }
+
+    // =========================================================================
+    // Resources tests
+    // =========================================================================
+
+    #[test]
+    fn test_no_resources_no_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().to_str().unwrap();
+
+        let task =
+            Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
+
+        let result = execute(&task, &[], None).unwrap();
+
+        let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
+        assert!(!artifacts_dir.join("resources.md").exists());
+        assert!(!result.contains(&"resources".to_string()));
+    }
+
+    #[test]
+    fn test_task_resources_written() {
+        use orkestra_types::runtime::Resource;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().to_str().unwrap();
+
+        let mut task =
+            Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
+        task.resources.set(Resource::new(
+            "blog-doc",
+            "https://docs.google.com/blog",
+            Some("Draft blog post"),
+            "planning",
+            "now",
+        ));
+
+        let result = execute(&task, &[], None).unwrap();
+
+        assert!(result.contains(&"resources".to_string()));
+        let content =
+            fs::read_to_string(temp_dir.path().join(".orkestra/.artifacts/resources.md")).unwrap();
+        assert!(content.contains("## blog-doc"));
+        assert!(content.contains("https://docs.google.com/blog"));
+        assert!(content.contains("Draft blog post"));
+        assert!(content.contains("*Registered by stage: planning*"));
+    }
+
+    #[test]
+    fn test_parent_resources_included_for_subtask() {
+        use orkestra_types::runtime::Resource;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().to_str().unwrap();
+
+        // Subtask has no own resources, but parent does
+        let task = Task::new("subtask-1", "Title", "Description", "work", "now")
+            .with_worktree(worktree_path);
+
+        let mut parent_resources = ResourceStore::new();
+        parent_resources.set(Resource::new(
+            "parent-doc",
+            "https://parent.example.com",
+            None::<String>,
+            "planning",
+            "now",
+        ));
+
+        let result = execute(&task, &[], Some(&parent_resources)).unwrap();
+
+        assert!(result.contains(&"resources".to_string()));
+        let content =
+            fs::read_to_string(temp_dir.path().join(".orkestra/.artifacts/resources.md")).unwrap();
+        assert!(content.contains("## parent-doc"));
+        assert!(content.contains("https://parent.example.com"));
+    }
+
+    #[test]
+    fn test_task_resources_override_parent_on_collision() {
+        use orkestra_types::runtime::Resource;
+
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().to_str().unwrap();
+
+        let mut task = Task::new("subtask-1", "Title", "Description", "work", "now")
+            .with_worktree(worktree_path);
+        task.resources.set(Resource::new(
+            "shared-doc",
+            "https://task-version.example.com",
+            None::<String>,
+            "work",
+            "now",
+        ));
+
+        let mut parent_resources = ResourceStore::new();
+        parent_resources.set(Resource::new(
+            "shared-doc",
+            "https://parent-version.example.com",
+            None::<String>,
+            "planning",
+            "now",
+        ));
+
+        execute(&task, &[], Some(&parent_resources)).unwrap();
+
+        let content =
+            fs::read_to_string(temp_dir.path().join(".orkestra/.artifacts/resources.md")).unwrap();
+        // Task's version should win over parent's
+        assert!(content.contains("https://task-version.example.com"));
+        assert!(!content.contains("https://parent-version.example.com"));
+    }
+
+    #[test]
+    fn test_resources_format() {
+        use orkestra_types::runtime::Resource;
+
+        let mut resources = ResourceStore::new();
+        resources.set(Resource::new(
+            "my-doc",
+            "https://example.com/doc",
+            Some("A useful document"),
+            "planning",
+            "2025-01-01",
+        ));
+
+        let formatted = format_resources(&resources);
+        assert!(formatted.starts_with("# Resources\n\n"));
+        assert!(formatted.contains("## my-doc\n"));
+        assert!(formatted.contains("**URL**: https://example.com/doc\n"));
+        assert!(formatted.contains("A useful document\n"));
+        assert!(formatted.contains("*Registered by stage: planning*\n\n"));
     }
 }

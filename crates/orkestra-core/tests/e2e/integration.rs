@@ -16,6 +16,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "plan".to_string(),
             content: "Implementation plan".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn planner
@@ -30,6 +31,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "breakdown".to_string(),
             content: "Task breakdown".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown
@@ -44,6 +46,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn worker
@@ -58,6 +61,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
@@ -600,6 +604,7 @@ fn advance_both_through_stage(
                 decision: "approve".to_string(),
                 content: "LGTM".to_string(),
                 activity_log: None,
+                resources: vec![],
             },
         );
         ctx.set_output(
@@ -608,6 +613,7 @@ fn advance_both_through_stage(
                 decision: "approve".to_string(),
                 content: "LGTM".to_string(),
                 activity_log: None,
+                resources: vec![],
             },
         );
     } else {
@@ -617,6 +623,7 @@ fn advance_both_through_stage(
                 name: artifact_name.to_string(),
                 content: format!("Content for {artifact_name}"),
                 activity_log: None,
+                resources: vec![],
             },
         );
         ctx.set_output(
@@ -625,6 +632,7 @@ fn advance_both_through_stage(
                 name: artifact_name.to_string(),
                 content: format!("Content for {artifact_name}"),
                 activity_log: None,
+                resources: vec![],
             },
         );
     }
@@ -1248,6 +1256,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
             name: "summary".to_string(),
             content: "Default work done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.set_output(
@@ -1256,6 +1265,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
             name: "summary".to_string(),
             content: "Hotfix work done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 

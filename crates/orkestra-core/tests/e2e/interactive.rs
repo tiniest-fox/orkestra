@@ -140,6 +140,7 @@ fn test_enter_interactive_mode_rejects_agent_working_state() {
             name: "summary".to_string(),
             content: "done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawns agent
@@ -262,6 +263,7 @@ fn test_orchestrator_advances_task_after_exit_interactive() {
             name: "summary".to_string(),
             content: "Work done after interactive session.".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
 
@@ -501,6 +503,7 @@ fn test_enter_interactive_mode_from_awaiting_approval() {
             name: "summary".to_string(),
             content: "done".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn agent
@@ -572,6 +575,7 @@ fn test_enter_interactive_mode_from_done() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn agent
@@ -613,6 +617,7 @@ fn test_enter_exit_interactive_from_done_returns_to_done() {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
             activity_log: None,
+            resources: vec![],
         },
     );
     ctx.advance(); // spawn agent

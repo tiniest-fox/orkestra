@@ -17,6 +17,7 @@ use crate::workflow::prompt::PromptService;
 use crate::workflow::stage::agents::{ExecutionError, ExecutionHandle};
 use crate::workflow::stage::session::SessionSpawnContext;
 use crate::workflow::stage::types::ActivityLogEntry;
+use orkestra_types::runtime::ResourceStore;
 
 // ============================================================================
 // Entry Point
@@ -26,6 +27,8 @@ use crate::workflow::stage::types::ActivityLogEntry;
 ///
 /// Resolves the provider, builds prompts, applies schema enforcement and tool
 /// restrictions, then runs the agent. Returns a handle for polling completion.
+/// `parent_resources` is `Some` for subtasks and is merged into the materialized
+/// resources file so the agent can discover the parent's registered resources.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn execute(
     runner: &dyn AgentRunnerTrait,
@@ -37,6 +40,7 @@ pub(crate) fn execute(
     spawn_context: &SessionSpawnContext,
     activity_logs: &[ActivityLogEntry],
     sibling_tasks: &[SiblingTaskContext],
+    parent_resources: Option<&ResourceStore>,
 ) -> Result<ExecutionHandle, ExecutionError> {
     let stage = task
         .current_stage()
@@ -53,9 +57,9 @@ pub(crate) fn execute(
 
     // 0. Materialize artifacts to worktree files before building prompts
     let artifact_names =
-        super::materialize_artifacts::execute(task, activity_logs).map_err(|e| {
-            ExecutionError::ConfigError(format!("Failed to materialize artifacts: {e}"))
-        })?;
+        super::materialize_artifacts::execute(task, activity_logs, parent_resources).map_err(
+            |e| ExecutionError::ConfigError(format!("Failed to materialize artifacts: {e}")),
+        )?;
 
     orkestra_debug!(
         "exec",

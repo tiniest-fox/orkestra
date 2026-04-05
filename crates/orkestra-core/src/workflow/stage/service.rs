@@ -476,13 +476,16 @@ impl StageExecutionService {
 
         // Load parent resources for subtask materialization so the subtask's
         // resources.md includes resources registered by the parent task's stages.
-        let parent_resources = task.parent_id.as_ref().and_then(|pid| {
-            self.store
+        let parent_resources = match &task.parent_id {
+            Some(pid) => self
+                .store
                 .get_task(pid)
-                .ok()
-                .flatten()
-                .map(|parent| parent.resources)
-        });
+                .map_err(|e| {
+                    SpawnError::AgentError(format!("Failed to load parent task {pid}: {e}"))
+                })?
+                .map(|parent| parent.resources),
+            None => None,
+        };
 
         let handle = self
             .agent_service

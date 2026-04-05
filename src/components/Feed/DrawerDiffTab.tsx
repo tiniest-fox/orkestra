@@ -2,11 +2,13 @@
 //! Handles all scroll tracking, file jumping, and collapse state internally.
 //! Registers c / ] / [ / j·k hotkeys when active.
 
-import { GitCompare } from "lucide-react";
+import { GitCommit, GitCompare } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useCommitDiff } from "../../hooks/useCommitDiff";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
+import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
 import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
@@ -21,6 +23,7 @@ import { useDiffSearch } from "../Diff/useDiffSearch";
 import { EmptyState } from "../ui/EmptyState";
 import { useNavHandler } from "../ui/HotkeyScope";
 import type { ExpandPosition } from "./applySplice";
+import { DiffCommitPanel } from "./DiffCommitPanel";
 import { useDrawerDiff } from "./DrawerTaskProvider";
 
 interface DrawerDiffTabProps {
@@ -49,6 +52,9 @@ export function DrawerDiffTab({
   const [fileListOpen, setFileListOpen] = useState(false);
   const diffContentRef = useRef<DiffContentHandle>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
+  const [commitPanelCollapsed, setCommitPanelCollapsed] = useState(false);
+  const [commitOverlayOpen, setCommitOverlayOpen] = useState(false);
 
   // -- Active comment line (local state) --
   const [activeCommentLine, setActiveCommentLine] = useState<{
@@ -70,7 +76,15 @@ export function DrawerDiffTab({
     }
   }, [hasDrafts, liveDiff]);
 
-  const rawDiff = hasDrafts ? diffSnapshotRef.current : liveDiff;
+  const { commits, fileCounts } = useGitHistory();
+  const { diff: commitDiff, loading: commitDiffLoading } = useCommitDiff(selectedCommitHash);
+
+  // Per-commit mode: use commit diff directly (immutable, no snapshot needed).
+  // All-changes mode: use frozen snapshot if drafts exist (preserves line refs).
+  const isPerCommitMode = selectedCommitHash !== null;
+  const rawDiff = isPerCommitMode ? commitDiff : hasDrafts ? diffSnapshotRef.current : liveDiff;
+  const activeDiffLoading = isPerCommitMode ? commitDiffLoading : diffLoading;
+
   // Memoize sorted files so useAutoCollapsePaths doesn't re-run on every render.
   const diff = useMemo(
     () =>
@@ -80,7 +94,8 @@ export function DrawerDiffTab({
     [rawDiff],
   );
 
-  const { collapsedPaths, toggleCollapsed, expandForSearch } = useAutoCollapsePaths(diff?.files);
+  const { collapsedPaths, toggleCollapsed, expandForSearch, resetInteraction } =
+    useAutoCollapsePaths(diff?.files);
 
   const search = useDiffSearch(diff?.files ?? []);
 
@@ -100,6 +115,28 @@ export function DrawerDiffTab({
       setActivePath(diff.files[0].path);
     }
   }, [diff, activePath]);
+
+  // If selected commit disappears from list (rebase), reset to all-changes.
+  useEffect(() => {
+    if (
+      selectedCommitHash &&
+      commits.length > 0 &&
+      !commits.some((c) => c.hash === selectedCommitHash)
+    ) {
+      setSelectedCommitHash(null);
+    }
+  }, [selectedCommitHash, commits]);
+
+  // Reset per-commit state when selection changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedCommitHash is the intentional trigger
+  useEffect(() => {
+    setActivePath(null);
+    setActiveCommentLine(null);
+    setDraftBody("");
+    setCommitOverlayOpen(false);
+    closeFindBar();
+    resetInteraction();
+  }, [selectedCommitHash]);
 
   function handleToggleCollapsed(path: string) {
     toggleCollapsed(path);
@@ -192,7 +229,7 @@ export function DrawerDiffTab({
           }}
         />
       )}
-      {diffLoading && !diff ? (
+      {activeDiffLoading && !diff ? (
         <div className="flex-1 overflow-auto p-4">
           <DiffSkeleton />
         </div>
@@ -204,7 +241,64 @@ export function DrawerDiffTab({
             onJumpTo={handleJumpTo}
             fileListOpen={fileListOpen}
             onToggle={() => setFileListOpen((o) => !o)}
+            extraControls={
+              isMobile ? (
+                <button
+                  type="button"
+                  onClick={() => setCommitOverlayOpen((o) => !o)}
+                  onKeyDown={() => {}}
+                  aria-label={`${commits.length} commits`}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-panel-sm text-text-tertiary hover:text-text-primary hover:bg-canvas transition-colors"
+                >
+                  <GitCommit size={14} />
+                  <span className="font-mono text-forge-mono-label px-1 py-0.5 rounded bg-canvas text-text-secondary font-semibold">
+                    {commits.length}
+                  </span>
+                </button>
+              ) : undefined
+            }
           />
+          {/* Mobile commit overlay */}
+          {isMobile && commitOverlayOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Close commit list"
+                className="absolute inset-0 z-20"
+                onClick={() => setCommitOverlayOpen(false)}
+                onKeyDown={() => {}}
+              />
+              <div className="absolute top-0 left-0 bottom-0 w-64 z-30 bg-surface border-r border-border shadow-xl overflow-y-auto">
+                <DiffCommitPanel
+                  commits={commits}
+                  fileCounts={fileCounts}
+                  selectedHash={selectedCommitHash}
+                  onSelectHash={(hash) => {
+                    setSelectedCommitHash(hash);
+                    setCommitOverlayOpen(false);
+                  }}
+                  onSelectAll={() => {
+                    setSelectedCommitHash(null);
+                    setCommitOverlayOpen(false);
+                  }}
+                  collapsed={false}
+                  onToggleCollapsed={() => {}}
+                />
+              </div>
+            </>
+          )}
+          {/* Desktop commit panel */}
+          {!isMobile && (
+            <DiffCommitPanel
+              commits={commits}
+              fileCounts={fileCounts}
+              selectedHash={selectedCommitHash}
+              onSelectHash={setSelectedCommitHash}
+              onSelectAll={() => setSelectedCommitHash(null)}
+              collapsed={commitPanelCollapsed}
+              onToggleCollapsed={() => setCommitPanelCollapsed((c) => !c)}
+            />
+          )}
           <div className="flex flex-1 overflow-hidden">
             {!isMobile && (
               <div className="w-56 shrink-0 overflow-y-auto border-r border-border">
@@ -232,18 +326,20 @@ export function DrawerDiffTab({
                 scrollRef={scrollRef}
                 onActivePathChange={setActivePath}
                 onToggleCollapsed={handleToggleCollapsed}
-                onLineClick={isCommentingEnabled ? handleLineClick : undefined}
-                draftComments={draftComments}
-                activeCommentLine={activeCommentLine}
-                onSaveDraft={isCommentingEnabled ? handleSaveDraft : undefined}
-                onCancelDraft={isCommentingEnabled ? handleDismissCommentInput : undefined}
-                onDeleteDraft={onRemoveDraftComment}
+                onLineClick={isCommentingEnabled && !isPerCommitMode ? handleLineClick : undefined}
+                draftComments={isPerCommitMode ? undefined : draftComments}
+                activeCommentLine={isPerCommitMode ? null : activeCommentLine}
+                onSaveDraft={isCommentingEnabled && !isPerCommitMode ? handleSaveDraft : undefined}
+                onCancelDraft={
+                  isCommentingEnabled && !isPerCommitMode ? handleDismissCommentInput : undefined
+                }
+                onDeleteDraft={isPerCommitMode ? undefined : onRemoveDraftComment}
                 draftBody={draftBody}
                 onDraftBodyChange={setDraftBody}
                 matches={search.matches}
                 currentMatch={search.currentMatch}
-                onExpandContext={handleExpandContext}
-                fileContextLines={fileContextLines}
+                onExpandContext={isPerCommitMode ? undefined : handleExpandContext}
+                fileContextLines={isPerCommitMode ? new Map() : fileContextLines}
               />
             </div>
           </div>

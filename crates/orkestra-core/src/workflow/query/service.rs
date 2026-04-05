@@ -234,6 +234,7 @@ mod tests {
                 StageOutput::Artifact {
                     content: "The plan".to_string(),
                     activity_log: None,
+                    resources: vec![],
                 },
             )
             .unwrap();
@@ -295,6 +296,7 @@ mod tests {
                 StageOutput::Artifact {
                     content: "Plan v1".to_string(),
                     activity_log: None,
+                    resources: vec![],
                 },
             )
             .unwrap();

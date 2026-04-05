@@ -2,7 +2,7 @@
 
 use jsonschema::Validator;
 
-use crate::types::{QuestionJson, StageOutput, StageOutputError, SubtaskOutput};
+use crate::types::{parse_resources, QuestionJson, StageOutput, StageOutputError, SubtaskOutput};
 
 /// Parse and validate stage output against a JSON schema.
 ///
@@ -72,11 +72,13 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
             let activity_log = value["activity_log"].as_str().map(String::from);
+            let resources = parse_resources(value);
 
             Ok(StageOutput::Subtasks {
                 content,
                 subtasks,
                 activity_log,
+                resources,
             })
         }
 
@@ -90,6 +92,7 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                 .to_string(),
             activity_log: value["activity_log"].as_str().map(String::from),
+            resources: parse_resources(value),
         }),
 
         // Any other type is an artifact (the schema validated the type is in the enum)
@@ -99,6 +102,7 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                 .to_string(),
             activity_log: value["activity_log"].as_str().map(String::from),
+            resources: parse_resources(value),
         }),
     }
 }
@@ -300,6 +304,89 @@ mod tests {
         assert!(matches!(result, Err(StageOutputError::JsonParse(_))));
     }
 
+    #[test]
+    fn test_parse_artifact_with_resources() {
+        let schema = test_schema("plan", false);
+        let json = r#"{
+            "type": "plan",
+            "content": "The plan",
+            "resources": [
+                {"name": "design-doc", "url": "https://docs.example.com", "description": "Architecture doc"},
+                {"name": "screenshot", "url": "/tmp/img.png"}
+            ]
+        }"#;
+        let output = execute(json, &schema).unwrap();
+
+        assert!(output.is_artifact());
+        let resources = output.resources();
+        assert_eq!(resources.len(), 2);
+        assert_eq!(resources[0].name, "design-doc");
+        assert_eq!(resources[0].url, "https://docs.example.com");
+        assert_eq!(
+            resources[0].description,
+            Some("Architecture doc".to_string())
+        );
+        assert_eq!(resources[1].name, "screenshot");
+        assert_eq!(resources[1].url, "/tmp/img.png");
+        assert!(resources[1].description.is_none());
+    }
+
+    #[test]
+    fn test_parse_artifact_without_resources() {
+        let schema = test_schema("plan", false);
+        let json = r#"{"type": "plan", "content": "The plan"}"#;
+        let output = execute(json, &schema).unwrap();
+
+        assert!(output.is_artifact());
+        assert!(output.resources().is_empty());
+    }
+
+    #[test]
+    fn test_parse_approval_with_resources() {
+        let schema = test_schema("plan", false);
+        let json = r#"{
+            "type": "approval",
+            "decision": "approve",
+            "content": "Looks good",
+            "resources": [{"name": "pr", "url": "https://github.com/org/repo/pull/1"}]
+        }"#;
+        let output = execute(json, &schema).unwrap();
+
+        assert!(output.is_approval());
+        let resources = output.resources();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name, "pr");
+    }
+
+    #[test]
+    fn test_parse_subtasks_with_resources() {
+        let schema = test_schema("breakdown", true);
+        let json = r#"{
+            "type": "subtasks",
+            "content": "Design doc",
+            "subtasks": [
+                {"title": "T1", "description": "Do it", "detailed_instructions": "Instructions"}
+            ],
+            "resources": [{"name": "ref", "url": "https://example.com"}]
+        }"#;
+        let output = execute(json, &schema).unwrap();
+
+        let resources = output.resources();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name, "ref");
+    }
+
+    #[test]
+    fn test_failed_and_blocked_have_no_resources() {
+        let schema = test_schema("plan", false);
+
+        let failed = execute(r#"{"type": "failed", "error": "err"}"#, &schema).unwrap();
+        assert!(failed.resources().is_empty());
+
+        let blocked = execute(r#"{"type": "blocked", "reason": "reason"}"#, &schema).unwrap();
+        assert!(blocked.resources().is_empty());
+    }
+
     // Tests for parse_unvalidated (legacy compatibility)
     #[test]
     fn test_parse_unvalidated_artifact() {
@@ -308,5 +395,22 @@ mod tests {
 
         assert!(output.is_artifact());
         assert_eq!(output.artifact_content(), Some("The content"));
+    }
+
+    #[test]
+    fn test_parse_unvalidated_artifact_with_resources() {
+        let json = r#"{
+            "type": "myartifact",
+            "content": "The content",
+            "resources": [{"name": "doc", "url": "https://example.com", "description": "A doc"}]
+        }"#;
+        let output = StageOutput::parse_unvalidated(json).unwrap();
+
+        assert!(output.is_artifact());
+        let resources = output.resources();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name, "doc");
+        assert_eq!(resources[0].url, "https://example.com");
+        assert_eq!(resources[0].description, Some("A doc".to_string()));
     }
 }

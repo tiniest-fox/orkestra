@@ -301,6 +301,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Done".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 
@@ -318,6 +319,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Plan".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 
@@ -345,6 +347,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Done".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 
@@ -378,6 +381,7 @@ mod tests {
             StageOutput::Artifact {
                 content: "Done".into(),
                 activity_log: None,
+                resources: vec![],
             },
         );
 

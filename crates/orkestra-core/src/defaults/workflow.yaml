@@ -16,16 +16,12 @@ version: 2
 flows:
   # Default pipeline: planning → breakdown → work → review.
   default:
-    description: Full pipeline with planning, breakdown, implementation, and review.
     stages:
       # Planning: understand what to build, ask clarifying questions.
       # Produces a requirements-level plan (not implementation details).
       - name: planning
-        display_name: Planning
         description: Understand what to build, ask clarifying questions
-        artifact:
-          name: plan
-          description: Implementation plan and approach for this task
+        artifact: plan
         prompt: planner.md
         capabilities:
           ask_questions: true
@@ -33,11 +29,8 @@ flows:
       # Breakdown: research the codebase and split the plan into subtasks.
       # Subtasks are assigned to the "subtask" flow (work → review only).
       - name: breakdown
-        display_name: Breaking Down
         description: Research the codebase and split the plan into subtasks and provide technical and implementation guidance
-        artifact:
-          name: breakdown
-          description: Subtask breakdown with dependencies
+        artifact: breakdown
         prompt: breakdown.md
         capabilities:
           subtasks:
@@ -47,11 +40,8 @@ flows:
       # The gate runs checks.sh after the agent completes. On failure, the agent retries.
       - &work_stage
         name: work
-        display_name: Working
         description: Implement the code changes described by the plan
-        artifact:
-          name: summary
-          description: Summary of changes made and implementation notes
+        artifact: summary
         prompt: worker.md
         gate:
           command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
@@ -61,11 +51,8 @@ flows:
       # On rejection, sends the task back to the work stage.
       - &review_stage
         name: review
-        display_name: Reviewing
         description: Check completed work, approve or reject with feedback
-        artifact:
-          name: verdict
-          description: Review verdict and feedback
+        artifact: verdict
         prompt: reviewer.md
         capabilities:
           approval:
@@ -77,7 +64,6 @@ flows:
 
   # Subtask pipeline: work → review only (no planning or breakdown).
   subtask:
-    description: Simplified pipeline for subtasks (work → review)
     stages:
       - *work_stage
       - *review_stage

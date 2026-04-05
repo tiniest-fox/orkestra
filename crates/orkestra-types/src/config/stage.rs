@@ -5,7 +5,6 @@
 //! - Produces an artifact (e.g., "plan", "summary")
 //! - Has capabilities that define what it can do
 
-use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 // ============================================================================
@@ -14,35 +13,27 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Configuration for an artifact produced by a stage.
 ///
-/// Accepts both a plain string (just the name) and a rich struct:
+/// Accepts both a plain string (just the name) and a map with a `name` key.
+/// Unknown fields in the map form cause a deserialization error — old YAML with
+/// `display_name` or `description` on the artifact will fail:
 ///
 /// ```yaml
-/// # Simple form
+/// # Simple form (preferred)
 /// artifact: plan
 ///
-/// # Rich form
+/// # Map form (same result)
 /// artifact:
 ///   name: plan
-///   display_name: PRD
-///   description: High-level product plan for this task
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArtifactConfig {
     /// Artifact key used for file paths and storage (e.g., "plan", "summary").
     pub name: String,
-    /// Human-readable display name (e.g., "PRD"). Defaults to `name` if not set.
-    pub display_name: Option<String>,
-    /// Short description shown to agents alongside the file path.
-    pub description: Option<String>,
 }
 
 impl ArtifactConfig {
     fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            display_name: None,
-            description: None,
-        }
+        Self { name: name.into() }
     }
 }
 
@@ -52,48 +43,24 @@ impl<'de> Deserialize<'de> for ArtifactConfig {
         #[serde(untagged)]
         enum Helper {
             Simple(String),
-            Full {
-                name: String,
-                #[serde(default)]
-                display_name: Option<String>,
-                #[serde(default)]
-                description: Option<String>,
-            },
+            Full(FullHelper),
         }
+
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct FullHelper {
+            name: String,
+        }
+
         Ok(match Helper::deserialize(deserializer)? {
-            Helper::Simple(name) => ArtifactConfig {
-                name,
-                display_name: None,
-                description: None,
-            },
-            Helper::Full {
-                name,
-                display_name,
-                description,
-            } => ArtifactConfig {
-                name,
-                display_name,
-                description,
-            },
+            Helper::Simple(name) | Helper::Full(FullHelper { name }) => ArtifactConfig { name },
         })
     }
 }
 
 impl Serialize for ArtifactConfig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if self.display_name.is_none() && self.description.is_none() {
-            serializer.serialize_str(&self.name)
-        } else {
-            let mut map = serializer.serialize_map(None)?;
-            map.serialize_entry("name", &self.name)?;
-            if let Some(ref dn) = self.display_name {
-                map.serialize_entry("display_name", dn)?;
-            }
-            if let Some(ref desc) = self.description {
-                map.serialize_entry("description", desc)?;
-            }
-            map.end()
-        }
+        serializer.serialize_str(&self.name)
     }
 }
 
@@ -117,11 +84,6 @@ pub struct StageConfig {
     /// Unique identifier for this stage (e.g., "planning", "work").
     /// Used in status, transitions, and artifact references.
     pub name: String,
-
-    /// Human-readable display name (e.g., "Planning", "Working").
-    /// Defaults to capitalized `name` if not specified.
-    #[serde(default)]
-    pub display_name: Option<String>,
 
     /// Human-readable description of what this stage does.
     /// Used in the workflow overview to help agents understand their position.
@@ -171,7 +133,6 @@ impl StageConfig {
     pub fn new(name: impl Into<String>, artifact: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            display_name: None,
             description: None,
             artifact: ArtifactConfig::new(artifact),
             capabilities: StageCapabilities::default(),
@@ -182,13 +143,6 @@ impl StageConfig {
             disallowed_tools: Vec::new(),
             gate: None,
         }
-    }
-
-    /// Builder: set display name.
-    #[must_use]
-    pub fn with_display_name(mut self, name: impl Into<String>) -> Self {
-        self.display_name = Some(name.into());
-        self
     }
 
     /// Builder: set description.
@@ -247,11 +201,9 @@ impl StageConfig {
         self
     }
 
-    /// Get the display name, falling back to capitalized name.
+    /// Get the title-cased display name derived from the stage name.
     pub fn display(&self) -> String {
-        self.display_name
-            .clone()
-            .unwrap_or_else(|| capitalize(&self.name))
+        title_case(&self.name)
     }
 
     /// Get the artifact name (key used for file paths and storage).
@@ -432,13 +384,19 @@ impl GateConfig {
     }
 }
 
-/// Capitalize the first letter of a string.
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-    }
+/// Convert a `snake_case` or kebab-case name to Title Case.
+fn title_case(s: &str) -> String {
+    s.split(['_', '-'])
+        .filter(|w| !w.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -455,15 +413,18 @@ mod tests {
 
     #[test]
     fn test_stage_config_builder() {
-        let stage = StageConfig::new("work", "summary").with_display_name("Working");
-
-        assert_eq!(stage.display(), "Working");
+        let stage = StageConfig::new("work", "summary").with_description("Do the work");
+        assert_eq!(stage.description, Some("Do the work".to_string()));
     }
 
     #[test]
-    fn test_display_name_fallback() {
-        let stage = StageConfig::new("planning", "plan");
-        assert_eq!(stage.display(), "Planning");
+    fn test_display_title_cases_name() {
+        assert_eq!(StageConfig::new("planning", "plan").display(), "Planning");
+        assert_eq!(
+            StageConfig::new("work_review", "verdict").display(),
+            "Work Review"
+        );
+        assert_eq!(StageConfig::new("hot-fix", "patch").display(), "Hot Fix");
     }
 
     #[test]
@@ -747,51 +708,35 @@ artifact: plan
 ";
         let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(stage.artifact_name(), "plan");
-        assert!(stage.artifact.description.is_none());
-        assert!(stage.artifact.display_name.is_none());
     }
 
     #[test]
-    fn test_artifact_config_rich_description_only() {
+    fn test_artifact_config_map_form_deserialization() {
+        let yaml = "name: planning
+artifact:
+  name: plan
+";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(stage.artifact_name(), "plan");
+    }
+
+    #[test]
+    fn test_artifact_config_rejects_unknown_fields() {
         let yaml = "name: planning
 artifact:
   name: plan
   description: The implementation plan
 ";
-        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(stage.artifact_name(), "plan");
-        assert_eq!(
-            stage.artifact.description.as_deref(),
-            Some("The implementation plan")
-        );
-        assert!(stage.artifact.display_name.is_none());
-    }
-
-    #[test]
-    fn test_artifact_config_rich_all_fields() {
-        let yaml = "name: planning
-artifact:
-  name: plan
-  display_name: PRD
-  description: High-level plan
-";
-        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(stage.artifact_name(), "plan");
-        assert_eq!(stage.artifact.display_name.as_deref(), Some("PRD"));
-        assert_eq!(
-            stage.artifact.description.as_deref(),
-            Some("High-level plan")
+        let result: Result<StageConfig, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "Expected error when deserializing artifact with unknown field 'description'"
         );
     }
 
     #[test]
-    fn test_artifact_config_rich_roundtrip() {
-        let yaml = "name: planning
-artifact:
-  name: plan
-  description: The implementation plan
-";
-        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+    fn test_artifact_config_roundtrip() {
+        let stage = StageConfig::new("planning", "plan");
         let out = serde_yaml::to_string(&stage).unwrap();
         let reparsed: StageConfig = serde_yaml::from_str(&out).unwrap();
         assert_eq!(stage, reparsed);
@@ -851,22 +796,12 @@ artifact:
     }
 
     #[test]
-    fn test_artifact_config_simple_serializes_as_string() {
+    fn test_artifact_config_always_serializes_as_string() {
         let stage = StageConfig::new("planning", "plan");
         let yaml = serde_yaml::to_string(&stage).unwrap();
-        // Simple artifact (no optional fields) must serialize as plain string "plan",
+        // Artifact must always serialize as plain string "plan",
         // not as a map with a "name" key.
         assert!(yaml.contains("artifact: plan"));
-        // Ensure artifact is not serialized as a map (which would produce "artifact:\n  name: ...")
         assert!(!yaml.contains("artifact:\n"));
-    }
-
-    #[test]
-    fn test_artifact_config_rich_serializes_as_map() {
-        let mut stage = StageConfig::new("planning", "plan");
-        stage.artifact.description = Some("The implementation plan".to_string());
-        let yaml = serde_yaml::to_string(&stage).unwrap();
-        assert!(yaml.contains("description: The implementation plan"));
-        assert!(yaml.contains("name: plan"));
     }
 }

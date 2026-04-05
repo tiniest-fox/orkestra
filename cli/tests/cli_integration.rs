@@ -25,7 +25,6 @@ fn test_workflow_with_flow() -> WorkflowConfig {
     flows.insert(
         "quick".to_string(),
         FlowConfig {
-            description: "Quick flow (work only)".to_string(),
             stages: vec![StageConfig::new("work", "summary")],
             integration: IntegrationConfig::new("work"),
         },

@@ -384,7 +384,6 @@ mod tests {
         flows.insert(
             "quick".to_string(),
             FlowConfig {
-                description: "Quick flow".to_string(),
                 stages: vec![
                     StageConfig::new("planning", "plan")
                         .with_capabilities(StageCapabilities::with_questions()),

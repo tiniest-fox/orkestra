@@ -13,10 +13,9 @@ use crate::workflow::domain::Task;
 
 // Re-export everything from orkestra-prompt for backward compatibility.
 pub use orkestra_prompt::{
-    sibling_status_display, AgentConfigError, ArtifactContext, IntegrationErrorContext,
-    PrCheckContext, PrComment, PromptBuilder, PromptService as PromptRenderer,
-    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
-    SiblingTaskContext, StagePromptContext,
+    sibling_status_display, AgentConfigError, IntegrationErrorContext, PrCheckContext, PrComment,
+    PromptBuilder, PromptService as PromptRenderer, QuestionAnswerContext, ResolvedAgentConfig,
+    ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
 };
 /// Lazy-initialized prompt renderer (owns pre-compiled Handlebars templates).
 static RENDERER: LazyLock<PromptRenderer> = LazyLock::new(PromptRenderer::new);
@@ -209,11 +208,9 @@ mod tests {
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
-                .with_display_name("Planning")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_display_name("Working"),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_display_name("Reviewing")
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
@@ -241,7 +238,7 @@ mod tests {
         assert_eq!(ctx.stage.name, "planning");
         assert_eq!(ctx.task_id, "task-1");
         assert_eq!(ctx.task_file_path, ".orkestra/.artifacts/trak.md");
-        assert!(ctx.artifacts.is_empty());
+        assert!(!ctx.has_input_artifacts);
         assert!(ctx.feedback.is_none());
     }
 
@@ -265,7 +262,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(ctx.stage.name, "review");
-        assert_eq!(ctx.artifacts.len(), 2);
+        assert!(ctx.has_input_artifacts);
         assert!(ctx.stage.capabilities.has_approval());
         assert_eq!(ctx.stage.capabilities.rejection_stage(), Some("work"));
     }
@@ -300,10 +297,17 @@ mod tests {
             .build_context("work", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
-        // Verify context has artifact with file path (not inline content)
-        assert_eq!(ctx.artifacts.len(), 1);
-        assert_eq!(ctx.artifacts[0].name, "plan");
-        assert_eq!(ctx.artifacts[0].file_path, ".orkestra/.artifacts/plan.md");
+        // Verify context has artifact path in workflow stages (not inline content)
+        assert!(ctx.has_input_artifacts);
+        let plan_stage = ctx
+            .workflow_stages
+            .iter()
+            .find(|s| s.name == "planning")
+            .unwrap();
+        assert_eq!(
+            plan_stage.artifact_path.as_deref(),
+            Some(".orkestra/.artifacts/plan.md")
+        );
     }
 
     #[test]
@@ -325,12 +329,16 @@ mod tests {
             .build_context("work", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
-        // With worktree_path set, should use absolute paths
-        assert_eq!(ctx.artifacts.len(), 1);
-        assert_eq!(ctx.artifacts[0].name, "plan");
+        // With worktree_path set, workflow stages use absolute paths
+        assert!(ctx.has_input_artifacts);
+        let plan_stage = ctx
+            .workflow_stages
+            .iter()
+            .find(|s| s.name == "planning")
+            .unwrap();
         assert_eq!(
-            ctx.artifacts[0].file_path,
-            "/path/to/worktree/.orkestra/.artifacts/plan.md"
+            plan_stage.artifact_path.as_deref(),
+            Some("/path/to/worktree/.orkestra/.artifacts/plan.md")
         );
     }
 
@@ -362,12 +370,25 @@ mod tests {
             .unwrap();
 
         assert!(ctx.stage.capabilities.has_approval());
-        // Verify artifacts use file paths
-        assert_eq!(ctx.artifacts.len(), 2);
-        assert_eq!(ctx.artifacts[0].file_path, ".orkestra/.artifacts/plan.md");
+        // Verify prior stage artifacts appear in workflow stages
+        assert!(ctx.has_input_artifacts);
+        let plan_stage = ctx
+            .workflow_stages
+            .iter()
+            .find(|s| s.name == "planning")
+            .unwrap();
+        let work_stage = ctx
+            .workflow_stages
+            .iter()
+            .find(|s| s.name == "work")
+            .unwrap();
         assert_eq!(
-            ctx.artifacts[1].file_path,
-            ".orkestra/.artifacts/summary.md"
+            plan_stage.artifact_path.as_deref(),
+            Some(".orkestra/.artifacts/plan.md")
+        );
+        assert_eq!(
+            work_stage.artifact_path.as_deref(),
+            Some(".orkestra/.artifacts/summary.md")
         );
     }
 
@@ -789,9 +810,9 @@ mod tests {
         assert!(!user_message.contains("Implement feature"));
         assert!(!user_message.contains("Add new feature"));
         assert!(user_message.contains(".orkestra/.artifacts/trak.md"));
-        // Stage artifacts show file paths
+        // Stage artifacts show file paths in the workflow overview
         assert!(user_message.contains(".orkestra/.artifacts/plan.md"));
-        assert!(user_message.contains("Input Artifacts"));
+        assert!(user_message.contains("MUST read"));
     }
 
     #[test]
@@ -822,9 +843,12 @@ mod tests {
         let user_message = build_user_message(&ctx);
 
         assert!(user_message.contains("## Your Workflow"));
-        assert!(user_message.contains("[plan] — Create a plan"));
-        assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
-        assert!(user_message.contains("[review] — Review the work"));
+        assert!(user_message.contains("*Plan*"));
+        assert!(user_message.contains("Create a plan"));
+        assert!(user_message.contains("*Work* ← YOU ARE HERE"));
+        assert!(user_message.contains("Implement the plan"));
+        assert!(user_message.contains("*Review*"));
+        assert!(user_message.contains("Review the work"));
     }
 
     #[test]
@@ -833,7 +857,6 @@ mod tests {
         flows.insert(
             "quick".into(),
             FlowConfig {
-                description: "Quick flow".into(),
                 stages: vec![
                     StageConfig::new("plan", "plan").with_description("Create a plan"),
                     StageConfig::new("work", "summary").with_description("Implement the plan"),
@@ -861,10 +884,12 @@ mod tests {
         let user_message = build_user_message(&ctx);
 
         assert!(user_message.contains("## Your Workflow"));
-        assert!(user_message.contains("[plan] — Create a plan"));
-        assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
-        assert!(!user_message.contains("[task]"));
-        assert!(!user_message.contains("[review]"));
+        assert!(user_message.contains("*Plan*"));
+        assert!(user_message.contains("Create a plan"));
+        assert!(user_message.contains("*Work* ← YOU ARE HERE"));
+        assert!(user_message.contains("Implement the plan"));
+        assert!(!user_message.contains("*Task*"));
+        assert!(!user_message.contains("*Review*"));
     }
 
     // -- Sibling context tests --

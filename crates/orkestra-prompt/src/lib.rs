@@ -12,7 +12,7 @@ pub mod types;
 pub use interactions::build::context::PromptBuilder;
 pub use service::PromptService;
 pub use types::{
-    sibling_status_display, AgentConfigError, ArtifactContext, IntegrationErrorContext,
-    PrCheckContext, PrComment, QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer,
-    ResumeType, SiblingTaskContext, StagePromptContext, WorkflowStageEntry,
+    sibling_status_display, AgentConfigError, IntegrationErrorContext, PrCheckContext, PrComment,
+    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
+    SiblingTaskContext, StagePromptContext, WorkflowStageEntry,
 };

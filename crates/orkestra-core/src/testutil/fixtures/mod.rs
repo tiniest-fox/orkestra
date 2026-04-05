@@ -34,13 +34,9 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
     flows.insert(
         "subtask".to_string(),
         FlowConfig {
-            description: "Simplified pipeline for subtasks (work → review)".to_string(),
             stages: vec![
-                StageConfig::new("work", "summary")
-                    .with_display_name("Working")
-                    .with_prompt("worker.md"),
+                StageConfig::new("work", "summary").with_prompt("worker.md"),
                 StageConfig::new("review", "verdict")
-                    .with_display_name("Reviewing")
                     .with_prompt("reviewer.md")
                     .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                     .automated(),
@@ -51,21 +47,16 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
 
     WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
-            .with_display_name("Planning")
             .with_prompt("planner.md")
             .with_capabilities(StageCapabilities::with_questions()),
         StageConfig::new("breakdown", "breakdown")
-            .with_display_name("Breaking Down")
             .with_prompt("breakdown.md")
             .with_capabilities(StageCapabilities {
                 subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
                 ..Default::default()
             }),
-        StageConfig::new("work", "summary")
-            .with_display_name("Working")
-            .with_prompt("worker.md"),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
-            .with_display_name("Reviewing")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),

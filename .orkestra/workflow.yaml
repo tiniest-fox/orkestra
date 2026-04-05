@@ -7,25 +7,18 @@ version: 2
 
 flows:
   default:
-    description: Full pipeline — plan, task, work, review, compound
     stages:
       - name: plan
-        display_name: Plan
         description: Create an implementation plan
-        artifact:
-          name: plan
-          description: Implementation plan and approach for this task
+        artifact: plan
         prompt: planner.md
         model: opus
         capabilities:
           ask_questions: true
 
       - name: task
-        display_name: Task
         description: Break down the plan into subtasks and provide technical and implementation guidance
-        artifact:
-          name: breakdown
-          description: Subtask breakdown with dependencies
+        artifact: breakdown
         prompt: breakdown.md
         model: opus
         capabilities:
@@ -36,11 +29,8 @@ flows:
 
       - &work_stage
         name: work
-        display_name: Work
         description: Implement the approved plan
-        artifact:
-          name: summary
-          description: Summary of changes made and implementation notes
+        artifact: summary
         prompt: worker.md
         model: sonnet
         gate:
@@ -63,11 +53,8 @@ flows:
             message: "Never run the app binary — it spawns nested agent processes and causes errors"
 
       - name: review
-        display_name: Review
         description: Review completed work for correctness
-        artifact:
-          name: verdict
-          description: Review verdict and feedback
+        artifact: verdict
         prompt: reviewer.md
         model: opus
         disallowed_tools:
@@ -79,11 +66,8 @@ flows:
 
       - &compound_stage
         name: compound
-        display_name: Compound
         description: Capture learnings and update documentation
-        artifact:
-          name: learnings
-          description: Captured learnings and documentation updates
+        artifact: learnings
         prompt: compound.md
         model: sonnet
         is_automated: true
@@ -92,25 +76,18 @@ flows:
       on_failure: task
 
   quick:
-    description: Skip planning breakdown for simple, well-defined tasks
     stages:
       - name: plan
-        display_name: Plan
         description: Create an implementation plan
-        artifact:
-          name: plan
-          description: Implementation plan and approach for this task
+        artifact: plan
         prompt: quick_planner.md
         model: opus
         capabilities:
           ask_questions: true
       - *work_stage
       - name: review
-        display_name: Review
         description: Review completed work for correctness
-        artifact:
-          name: verdict
-          description: Review verdict and feedback
+        artifact: verdict
         prompt: reviewer.md
         model: opus
         capabilities:
@@ -121,14 +98,10 @@ flows:
       on_failure: work
 
   hotfix:
-    description: Emergency fix — skip straight to implementation
     stages:
       - name: work
-        display_name: Work
         description: Implement the approved plan
-        artifact:
-          name: summary
-          description: Summary of changes made and implementation notes
+        artifact: summary
         prompt: worker.md
         model: sonnet
         gate:
@@ -150,11 +123,8 @@ flows:
           - pattern: "Bash(*cargo run*)"
             message: "Never run the app binary — it spawns nested agent processes and causes errors"
       - name: review
-        display_name: Review
         description: Review completed work for correctness
-        artifact:
-          name: verdict
-          description: Review verdict and feedback
+        artifact: verdict
         prompt: subtask-reviewer.md
         model: opus
         capabilities:
@@ -164,14 +134,10 @@ flows:
       on_failure: work
 
   micro:
-    description: Simple work without any need for review
     stages:
       - name: work
-        display_name: Work
         description: Implement the approved plan
-        artifact:
-          name: summary
-          description: Summary of changes made and implementation notes
+        artifact: summary
         prompt: worker.md
         model: sonnet
         gate:

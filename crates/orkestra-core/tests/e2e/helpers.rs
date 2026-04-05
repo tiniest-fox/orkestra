@@ -853,7 +853,6 @@ pub mod workflows {
         flows.insert(
             "subtask".to_string(),
             FlowConfig {
-                description: "Simplified pipeline for subtasks".to_string(),
                 stages: vec![
                     StageConfig::new("work", "summary").with_prompt("worker.md"),
                     StageConfig::new("review", "verdict")

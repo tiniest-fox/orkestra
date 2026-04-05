@@ -1497,7 +1497,6 @@ fn manual_subtask_inherits_parent_flow() {
     flows.insert(
         "hotfix".to_string(),
         FlowConfig {
-            description: "Fast-path for hotfixes — work only".to_string(),
             stages: hotfix_stages,
             integration: IntegrationConfig::new("work"),
         },

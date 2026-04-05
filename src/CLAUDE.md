@@ -551,6 +551,27 @@ This applies to any code gated on `IS_TAURI` that needs project context. The `ge
 - Workflow domain types live in `types/workflow.ts`.
 - Don't duplicate backend types — the Tauri bindings generate TypeScript types from Rust.
 
+## Verdict Badge Derivation
+
+Verdict display is computed in two places — this is intentional, not duplication. They serve different data sources:
+
+- **`DrawerTabContent.tsx`** (live view): uses backend-computed `DerivedTaskState` (e.g., `task.derived.pending_approval`, `task.derived.pending_rejection`). No config lookup needed; the backend already has the full workflow config.
+- **`HistoricalRunView.tsx`** (past runs): computes verdict from raw iteration outcomes because historical snapshots don't carry pre-computed derived state. Requires a config lookup to distinguish approval-capability stages from regular human-review gates.
+
+**Flow-scoped stage lookup is required for correctness.** When `HistoricalRunView.tsx` queries stage config (e.g., `workflow.stage(flow, stageName).has_approval()`), always scope to `task.flow` — never flat-map across all flows. Flows may share stage names, and searching all flows silently returns the wrong config for any task not in the first matching flow.
+
+```tsx
+// Correct — scoped to this task's flow
+const stageConfig = config.flows
+  .find(f => f.name === task.flow)
+  ?.stages.find(s => s.name === stageName);
+
+// Wrong — searches all flows, returns wrong config when flows share stage names
+const stageConfig = config.flows
+  .flatMap(f => f.stages)
+  .find(s => s.name === stageName);
+```
+
 ## Artifact and Iteration Numbering
 
 <!-- compound: frivolously-memorable-spitz -->

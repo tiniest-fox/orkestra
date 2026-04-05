@@ -7,6 +7,7 @@ const DEFAULT_WORKTREE_SETUP: &str = include_str!("defaults/worktree_setup.sh");
 const DEFAULT_WORKTREE_CLEANUP: &str = include_str!("defaults/worktree_cleanup.sh");
 const DEFAULT_CHECKS: &str = include_str!("defaults/checks.sh");
 const DEFAULT_WORKFLOW: &str = include_str!("defaults/workflow.yaml");
+const DEFAULT_README: &str = include_str!("defaults/README.md");
 
 const DEFAULT_PROMPTS: &[(&str, &str)] = &[
     ("planner.md", include_str!("defaults/agents/planner.md")),
@@ -29,7 +30,7 @@ const REQUIRED_GITIGNORE_ENTRIES: &[&str] = &[
 /// Ensures `.orkestra/` has its full directory structure and default files.
 ///
 /// Creates subdirs, writes default `workflow.yaml`, agent prompts,
-/// `worktree_setup.sh`, and `checks.sh` — all skip if the file already exists.
+/// `worktree_setup.sh`, `checks.sh`, and `README.md` — all skip if the file already exists.
 /// Also ensures the project's `.gitignore` contains entries for Orkestra runtime data.
 pub fn ensure_orkestra_project(orkestra_dir: &Path) -> std::io::Result<()> {
     let first_init = !orkestra_dir.exists();
@@ -51,6 +52,7 @@ pub fn ensure_orkestra_project(orkestra_dir: &Path) -> std::io::Result<()> {
     )?;
     write_default_executable(orkestra_dir, "scripts/checks.sh", DEFAULT_CHECKS)?;
     write_default(orkestra_dir, "workflow.yaml", DEFAULT_WORKFLOW)?;
+    write_default(orkestra_dir, "README.md", DEFAULT_README)?;
 
     for (filename, content) in DEFAULT_PROMPTS {
         write_default(orkestra_dir, &format!("agents/{filename}"), content)?;
@@ -273,6 +275,9 @@ mod tests {
             worktree_cleanup_path.exists(),
             "worktree_cleanup.sh should be created"
         );
+
+        let readme_path = orkestra_dir.join("README.md");
+        assert!(readme_path.exists(), "README.md should be created");
 
         #[cfg(unix)]
         {

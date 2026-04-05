@@ -1,4 +1,4 @@
-// Outcome badge — colored label for iteration outcomes.
+// Outcome badge — colored label for iteration outcomes and artifact states.
 
 import type { WorkflowOutcome } from "../../types/workflow";
 
@@ -7,6 +7,38 @@ export function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
   const { label, color } = badgeLabel(outcome);
   return (
     <span className={`font-mono text-forge-mono-label px-1.5 py-0.5 rounded bg-canvas ${color}`}>
+      {label}
+    </span>
+  );
+}
+
+export function artifactBadgeLabel(
+  artifactName: string,
+  outcome?: WorkflowOutcome,
+): { label: string; classes: string } {
+  if (outcome?.type === "approved") {
+    return { label: "Approved", classes: "bg-status-success text-white" };
+  }
+  if (outcome?.type === "rejected" || outcome?.type === "rejection") {
+    return { label: "Rejected", classes: "bg-status-error text-white" };
+  }
+  // Non-approval artifact or no outcome yet: show title-cased artifact name
+  const label = artifactName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return { label, classes: "bg-surface-3 text-text-secondary" };
+}
+
+export function ArtifactBadge({
+  artifactName,
+  outcome,
+}: {
+  artifactName: string;
+  outcome?: WorkflowOutcome;
+}) {
+  const { label, classes } = artifactBadgeLabel(artifactName, outcome);
+  return (
+    <span
+      className={`font-mono text-forge-mono-label font-medium px-1.5 py-0.5 rounded ${classes}`}
+    >
       {label}
     </span>
   );

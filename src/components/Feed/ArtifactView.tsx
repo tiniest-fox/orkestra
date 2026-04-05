@@ -15,7 +15,7 @@ import type { WorkflowArtifact, WorkflowOutcome } from "../../types/workflow";
 import { formatTimestamp, PROSE_CLASSES } from "../../utils";
 import { useContentSettled } from "../ui";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
-import { OutcomeBadge } from "./OutcomeBadge";
+import { ArtifactBadge } from "./OutcomeBadge";
 
 interface ArtifactViewProps {
   artifact: WorkflowArtifact;
@@ -36,11 +36,11 @@ export function ArtifactView({ artifact, outcome }: ArtifactViewProps) {
   return (
     <div className="p-4">
       <div className="flex items-center gap-2 text-xs text-text-secondary mb-2">
+        <ArtifactBadge artifactName={artifact.name} outcome={outcome} />
         <span>
           Stage: {artifact.stage} | Iteration: {artifact.iteration} |{" "}
           {formatTimestamp(artifact.created_at)}
         </span>
-        <OutcomeBadge outcome={outcome} />
       </div>
       {hasPreRendered ? (
         <div

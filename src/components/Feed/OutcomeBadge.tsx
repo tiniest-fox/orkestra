@@ -14,27 +14,27 @@ export function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
 
 export function artifactBadgeLabel(
   artifactName: string,
-  outcome?: WorkflowOutcome,
+  verdict?: "approved" | "rejected",
 ): { label: string; classes: string } {
-  if (outcome?.type === "approved") {
+  if (verdict === "approved") {
     return { label: "Approved", classes: "bg-status-success text-white" };
   }
-  if (outcome?.type === "rejected" || outcome?.type === "rejection") {
+  if (verdict === "rejected") {
     return { label: "Rejected", classes: "bg-status-error text-white" };
   }
-  // Non-approval artifact or no outcome yet: show title-cased artifact name
+  // Non-approval artifact or no verdict yet: show title-cased artifact name
   const label = artifactName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   return { label, classes: "bg-surface-3 text-text-secondary" };
 }
 
 export function ArtifactBadge({
   artifactName,
-  outcome,
+  verdict,
 }: {
   artifactName: string;
-  outcome?: WorkflowOutcome;
+  verdict?: "approved" | "rejected";
 }) {
-  const { label, classes } = artifactBadgeLabel(artifactName, outcome);
+  const { label, classes } = artifactBadgeLabel(artifactName, verdict);
   return (
     <span
       className={`font-mono text-forge-mono-label font-medium px-1.5 py-0.5 rounded ${classes}`}

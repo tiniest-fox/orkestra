@@ -18,7 +18,6 @@ import { DrawerPrTab } from "../DrawerPrTab";
 import { FeedLogList } from "../FeedLogList";
 import type { DrawerTabId } from "./drawerTabs";
 import { LogsChatInput } from "./Footer/LogsChatInput";
-import { findArtifactOutcome } from "./findArtifactOutcome";
 import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
 import { RunTab } from "./Sections/RunTab";
@@ -112,11 +111,15 @@ export function DrawerTabContent({
   }
 
   if (activeTab === "artifact") {
-    const outcome = artifact ? findArtifactOutcome(task, artifact) : undefined;
+    const verdict = task.derived.pending_rejection
+      ? ("rejected" as const)
+      : task.derived.pending_approval
+        ? ("approved" as const)
+        : undefined;
     return (
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
         {artifact ? (
-          <ArtifactView artifact={artifact} outcome={outcome} />
+          <ArtifactView artifact={artifact} verdict={verdict} />
         ) : (
           <EmptyState icon={FileText} message="No artifact yet." />
         )}

@@ -45,6 +45,48 @@ describe("badgeLabel", () => {
     expect(result.label).toBe("Skipped");
   });
 
+  it("returns Pending Review for awaiting_rejection_review outcome", () => {
+    const result = badgeLabel(outcome("awaiting_rejection_review"));
+    expect(result.label).toBe("Pending Review");
+    expect(result.color).toContain("warning");
+  });
+
+  it("returns Spawn Failed for spawn_failed outcome", () => {
+    const result = badgeLabel(outcome("spawn_failed"));
+    expect(result.label).toBe("Spawn Failed");
+    expect(result.color).toContain("error");
+  });
+
+  it("returns Gate Failed for gate_failed outcome", () => {
+    const result = badgeLabel(outcome("gate_failed"));
+    expect(result.label).toBe("Gate Failed");
+    expect(result.color).toContain("error");
+  });
+
+  it("returns Commit Failed for commit_failed outcome", () => {
+    const result = badgeLabel(outcome("commit_failed"));
+    expect(result.label).toBe("Commit Failed");
+    expect(result.color).toContain("error");
+  });
+
+  it("returns Merge Failed for integration_failed outcome", () => {
+    const result = badgeLabel(outcome("integration_failed"));
+    expect(result.label).toBe("Merge Failed");
+    expect(result.color).toContain("error");
+  });
+
+  it("returns Interrupted for interrupted outcome", () => {
+    const result = badgeLabel(outcome("interrupted"));
+    expect(result.label).toBe("Interrupted");
+    expect(result.color).toContain("warning");
+  });
+
+  it("returns Waiting for awaiting_answers outcome", () => {
+    const result = badgeLabel(outcome("awaiting_answers"));
+    expect(result.label).toBe("Waiting");
+    expect(result.color).toContain("info");
+  });
+
   it("returns Unknown for unrecognized outcome type", () => {
     const result = badgeLabel({ type: "something_unknown" } as unknown as WorkflowOutcome);
     expect(result.label).toBe("Unknown");
@@ -52,36 +94,25 @@ describe("badgeLabel", () => {
 });
 
 describe("artifactBadgeLabel", () => {
-  it("returns Approved with success styling for approved outcome", () => {
-    const result = artifactBadgeLabel("verdict", outcome("approved"));
+  it("returns Approved with success styling for approved verdict", () => {
+    const result = artifactBadgeLabel("verdict", "approved");
     expect(result.label).toBe("Approved");
     expect(result.classes).toContain("bg-status-success");
     expect(result.classes).toContain("text-white");
   });
 
-  it("returns Rejected with error styling for rejected outcome", () => {
-    const result = artifactBadgeLabel("verdict", outcome("rejected"));
+  it("returns Rejected with error styling for rejected verdict", () => {
+    const result = artifactBadgeLabel("verdict", "rejected");
     expect(result.label).toBe("Rejected");
     expect(result.classes).toContain("bg-status-error");
     expect(result.classes).toContain("text-white");
   });
 
-  it("returns Rejected with error styling for rejection outcome", () => {
-    const result = artifactBadgeLabel("verdict", outcome("rejection"));
-    expect(result.label).toBe("Rejected");
-    expect(result.classes).toContain("bg-status-error");
-  });
-
-  it("returns title-cased artifact name with neutral styling when no outcome", () => {
+  it("returns title-cased artifact name with neutral styling when no verdict", () => {
     const result = artifactBadgeLabel("plan", undefined);
     expect(result.label).toBe("Plan");
     expect(result.classes).toContain("bg-surface-3");
-  });
-
-  it("returns title-cased artifact name for non-approval outcome", () => {
-    const result = artifactBadgeLabel("summary", outcome("completed"));
-    expect(result.label).toBe("Summary");
-    expect(result.classes).toContain("bg-surface-3");
+    expect(result.classes).toContain("text-text-secondary");
   });
 
   it("handles underscored artifact names", () => {

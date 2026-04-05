@@ -50,17 +50,17 @@ impl WorkflowApi {
 
     /// List all active top-level tasks with pre-joined data and derived state.
     pub fn list_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
-        query::task_views::list_active(&self.store)
+        query::task_views::list_active(&self.store, &self.workflow)
     }
 
     /// List subtasks for a parent task with pre-joined data and derived state.
     pub fn list_subtask_views(&self, parent_id: &str) -> WorkflowResult<Vec<TaskView>> {
-        query::task_views::list_subtasks(self.store.as_ref(), parent_id)
+        query::task_views::list_subtasks(self.store.as_ref(), parent_id, &self.workflow)
     }
 
     /// List all archived top-level tasks with pre-joined data and derived state.
     pub fn list_archived_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
-        query::task_views::list_archived(&self.store)
+        query::task_views::list_archived(&self.store, &self.workflow)
     }
 
     /// Get a specific stage session for a task.

@@ -9,7 +9,7 @@ flows:
   default:
     stages:
       - name: plan
-        description: Create an implementation plan
+        description: Produces a high-level implementation plan for the feature
         artifact: plan
         prompt: planner.md
         model: opus
@@ -17,7 +17,7 @@ flows:
           ask_questions: true
 
       - name: task
-        description: Break down the plan into subtasks and provide technical and implementation guidance
+        description: Breaks down the plan into actionable subtasks with technical and implementation guidance
         artifact: breakdown
         prompt: breakdown.md
         model: opus
@@ -29,7 +29,7 @@ flows:
 
       - &work_stage
         name: work
-        description: Implement the approved plan
+        description: Implements the approved plan and produces a work summary
         artifact: summary
         prompt: worker.md
         model: sonnet
@@ -53,7 +53,7 @@ flows:
             message: "Never run the app binary — it spawns nested agent processes and causes errors"
 
       - name: review
-        description: Review completed work for correctness
+        description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: reviewer.md
         model: opus
@@ -66,7 +66,7 @@ flows:
 
       - &compound_stage
         name: compound
-        description: Capture learnings and update documentation
+        description: Captures key learnings and produces updated documentation
         artifact: learnings
         prompt: compound.md
         model: sonnet
@@ -78,7 +78,7 @@ flows:
   quick:
     stages:
       - name: plan
-        description: Create an implementation plan
+        description: Produces a high-level implementation plan for the feature
         artifact: plan
         prompt: quick_planner.md
         model: opus
@@ -86,7 +86,7 @@ flows:
           ask_questions: true
       - *work_stage
       - name: review
-        description: Review completed work for correctness
+        description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: reviewer.md
         model: opus
@@ -100,7 +100,7 @@ flows:
   hotfix:
     stages:
       - name: work
-        description: Implement the approved plan
+        description: Implements the approved plan and produces a work summary
         artifact: summary
         prompt: worker.md
         model: sonnet
@@ -123,7 +123,7 @@ flows:
           - pattern: "Bash(*cargo run*)"
             message: "Never run the app binary — it spawns nested agent processes and causes errors"
       - name: review
-        description: Review completed work for correctness
+        description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: subtask-reviewer.md
         model: opus
@@ -136,7 +136,7 @@ flows:
   micro:
     stages:
       - name: work
-        description: Implement the approved plan
+        description: Implements the approved plan and produces a work summary
         artifact: summary
         prompt: worker.md
         model: sonnet

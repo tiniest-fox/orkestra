@@ -20,7 +20,7 @@ flows:
       # Planning: understand what to build, ask clarifying questions.
       # Produces a requirements-level plan (not implementation details).
       - name: planning
-        description: Understand what to build, ask clarifying questions
+        description: Produces a high-level implementation plan after clarifying requirements
         artifact: plan
         prompt: planner.md
         capabilities:
@@ -29,7 +29,7 @@ flows:
       # Breakdown: research the codebase and split the plan into subtasks.
       # Subtasks are assigned to the "subtask" flow (work → review only).
       - name: breakdown
-        description: Research the codebase and split the plan into subtasks and provide technical and implementation guidance
+        description: Breaks the plan into actionable subtasks with technical and implementation guidance
         artifact: breakdown
         prompt: breakdown.md
         capabilities:
@@ -40,7 +40,7 @@ flows:
       # The gate runs checks.sh after the agent completes. On failure, the agent retries.
       - &work_stage
         name: work
-        description: Implement the code changes described by the plan
+        description: Implements the code changes described by the plan and produces a work summary
         artifact: summary
         prompt: worker.md
         gate:
@@ -51,7 +51,7 @@ flows:
       # On rejection, sends the task back to the work stage.
       - &review_stage
         name: review
-        description: Check completed work, approve or reject with feedback
+        description: Reviews completed work and produces an approval or rejection verdict with feedback
         artifact: verdict
         prompt: reviewer.md
         capabilities:

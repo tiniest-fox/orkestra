@@ -327,6 +327,27 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(())
     }
 
+    fn clear_agent_pid_for_session(
+        &self,
+        session_id: &str,
+        expected_pid: u32,
+    ) -> WorkflowResult<bool> {
+        let mut sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        if let Some(session) = sessions
+            .iter_mut()
+            .find(|s| s.id == session_id && s.agent_pid == Some(expected_pid))
+        {
+            session.agent_pid = None;
+            session.updated_at = chrono::Utc::now().to_rfc3339();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()> {
         let mut sessions = self
             .stage_sessions

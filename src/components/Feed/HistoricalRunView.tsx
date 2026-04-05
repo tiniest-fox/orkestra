@@ -26,9 +26,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
   const config = useWorkflowConfig();
 
   // Derive verdict for historical run — only show for approval-capability stages
-  const stageConfig = Object.values(config.flows)
-    .flatMap((f) => f.stages)
-    .find((s) => s.name === run.stage);
+  const stageConfig = config.flows[task.flow]?.stages.find((s) => s.name === run.stage);
   let verdict: "approved" | "rejected" | undefined;
   if (stageConfig?.capabilities.approval != null) {
     const lastOutcome = run.iterations[run.iterations.length - 1]?.outcome;

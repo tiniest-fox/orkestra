@@ -156,6 +156,8 @@ If your breakdown instructions specify tests to write, write them as part of you
 
 **Bug fixes in pure functions always need a regression test**, even when breakdown instructions don't mention it. A pure function (no side effects, deterministic) is trivial to test — there's no excuse to skip it. Write at least one test that directly exercises the fixed code path (e.g., "hides tab when Trak has advanced past the gate stage"). This is the most common cause of rejection on small frontend/Rust fixes.
 
+**Cargo feature flags that affect runtime behavior need regression tests.** Features like `preserve_order` or `arbitrary_precision` on `serde_json` change how the library behaves globally — the only visible code change is in `Cargo.toml`. Add at least one test that would fail if the feature were removed. Without a test, the feature can be silently dropped during dependency cleanup and the regression is invisible.
+
 ### `orkestra-service` Docker Exec Interactions Need `#[ignore]` Tests
 
 When adding a new interaction to `crates/orkestra-service/` that calls `docker exec`, **extend the existing Docker test scaffold** in `tests/e2e.rs` — don't skip tests or write unit tests only. The crate has an established `mod docker` block with `#[ignore]` lifecycle tests (start container → exercise → cleanup, using port 19997). New `docker exec` interactions must:

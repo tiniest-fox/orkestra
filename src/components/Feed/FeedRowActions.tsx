@@ -18,7 +18,6 @@ interface FeedRowActionsProps {
   onMerge: () => void;
   onOpenPr: () => void;
   onArchive: () => void;
-  onInteractive?: () => void;
   fullWidth?: boolean;
 }
 
@@ -30,7 +29,6 @@ export function FeedRowActions({
   onMerge,
   onOpenPr,
   onArchive,
-  onInteractive,
   fullWidth = false,
 }: FeedRowActionsProps) {
   const config = useWorkflowConfig();
@@ -184,25 +182,6 @@ export function FeedRowActions({
 
   if (task.state.type === "integrating" || isActivelyProgressing(task)) {
     return <LatestLogSummary task={task} />;
-  }
-
-  if (derived.can_bypass && !derived.is_interactive && onInteractive) {
-    return (
-      <div className={containerCls}>
-        <Button
-          hotkey="i"
-          variant="secondary"
-          size="sm"
-          className={btnCls}
-          onClick={(e) => {
-            e.stopPropagation();
-            onInteractive();
-          }}
-        >
-          Interactive
-        </Button>
-      </div>
-    );
   }
 
   return null;

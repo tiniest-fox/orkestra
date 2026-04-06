@@ -379,7 +379,6 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                     if (!isDisconnectError(err)) showError(String(err));
                   });
                 }}
-                onInteractive={openInteractive}
                 onRowClick={onStripRowClick}
               />
             ))}

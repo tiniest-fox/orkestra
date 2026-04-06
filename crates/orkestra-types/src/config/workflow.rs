@@ -807,6 +807,45 @@ mod tests {
     }
 
     #[test]
+    fn test_json_serialization_preserves_flow_order() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "zebra".to_string(),
+            FlowConfig {
+                stages: vec![StageConfig::new("work", "summary")],
+                integration: IntegrationConfig::new("work"),
+            },
+        );
+        flows.insert(
+            "alpha".to_string(),
+            FlowConfig {
+                stages: vec![StageConfig::new("work", "summary")],
+                integration: IntegrationConfig::new("work"),
+            },
+        );
+        flows.insert(
+            "middle".to_string(),
+            FlowConfig {
+                stages: vec![StageConfig::new("work", "summary")],
+                integration: IntegrationConfig::new("work"),
+            },
+        );
+        let config = WorkflowConfig { version: 1, flows };
+        let json = serde_json::to_value(&config).unwrap();
+        let keys: Vec<&str> = json["flows"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(std::string::String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["zebra", "alpha", "middle"],
+            "flow keys must preserve insertion order (requires serde_json preserve_order feature)"
+        );
+    }
+
+    #[test]
     fn test_v2_yaml_deserialization() {
         let yaml = r"
 version: 2

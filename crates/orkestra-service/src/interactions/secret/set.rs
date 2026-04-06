@@ -5,30 +5,24 @@ use std::sync::{Arc, Mutex};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::interactions::secret::encrypt;
-use crate::types::ServiceError;
+use crate::types::{ProjectStatus, ServiceError};
 
 /// Upsert the secret `key` with `value` for `project_id`.
 ///
 /// Returns `true` if the project is currently running (`restart_required`).
 ///
 /// Validates that `key` matches `[A-Za-z_][A-Za-z0-9_]*`. Returns
-/// `ServiceError::Other("Invalid secret key name: ...")` on failure (handler
-/// maps to 400).
-///
-/// Returns `ServiceError::Other("Secrets key not configured")` if
-/// `ORKESTRA_SECRETS_KEY` is absent (handler maps to 503).
+/// `ServiceError::SecretKeyInvalid` on failure (handler maps to 400).
 pub fn execute(
     conn: &Arc<Mutex<Connection>>,
     project_id: &str,
     key: &str,
     value: &str,
+    secrets_key: &str,
 ) -> Result<bool, ServiceError> {
     validate_key(key)?;
 
-    let secrets_key = encrypt::read_secrets_key()
-        .ok_or_else(|| ServiceError::Other("Secrets key not configured".to_string()))?;
-
-    let (ciphertext, nonce) = encrypt::encrypt(value, &secrets_key)?;
+    let (ciphertext, nonce) = encrypt::encrypt(value, secrets_key)?;
 
     let guard = conn.lock().expect("db mutex poisoned");
     guard.execute(
@@ -58,8 +52,8 @@ fn validate_key(key: &str) -> Result<(), ServiceError> {
     if valid {
         Ok(())
     } else {
-        Err(ServiceError::Other(format!(
-            "Invalid secret key name: {key}. Must match [A-Za-z_][A-Za-z0-9_]*"
+        Err(ServiceError::SecretKeyInvalid(format!(
+            "{key}. Must match [A-Za-z_][A-Za-z0-9_]*"
         )))
     }
 }
@@ -72,7 +66,7 @@ fn is_running(guard: &rusqlite::Connection, project_id: &str) -> Result<bool, Se
             |row| row.get(0),
         )
         .optional()?;
-    Ok(status.as_deref() == Some("running"))
+    Ok(status.as_deref() == Some(ProjectStatus::Running.as_str()))
 }
 
 // ============================================================================
@@ -87,6 +81,8 @@ mod tests {
 
     use super::execute;
     use crate::types::ServiceError;
+
+    const VALID_KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     fn conn() -> Arc<Mutex<Connection>> {
         let c = Connection::open_in_memory().unwrap();
@@ -110,36 +106,24 @@ mod tests {
     fn rejects_invalid_key_name() {
         let conn = conn();
         insert_project(&conn, "proj1", "stopped");
-        std::env::set_var(
-            "ORKESTRA_SECRETS_KEY",
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        );
-        let err = execute(&conn, "proj1", "123INVALID", "val").unwrap_err();
-        assert!(
-            matches!(err, ServiceError::Other(ref s) if s.starts_with("Invalid secret key name"))
-        );
+        let err = execute(&conn, "proj1", "123INVALID", "val", VALID_KEY).unwrap_err();
+        assert!(matches!(err, ServiceError::SecretKeyInvalid(_)));
     }
 
     #[test]
     fn rejects_empty_key() {
         let conn = conn();
         insert_project(&conn, "proj1", "stopped");
-        let err = execute(&conn, "proj1", "", "val").unwrap_err();
-        assert!(
-            matches!(err, ServiceError::Other(ref s) if s.starts_with("Invalid secret key name"))
-        );
+        let err = execute(&conn, "proj1", "", "val", VALID_KEY).unwrap_err();
+        assert!(matches!(err, ServiceError::SecretKeyInvalid(_)));
     }
 
     #[test]
     fn accepts_valid_key_names() {
         let conn = conn();
         insert_project(&conn, "proj1", "stopped");
-        std::env::set_var(
-            "ORKESTRA_SECRETS_KEY",
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        );
-        execute(&conn, "proj1", "MY_SECRET", "val").unwrap();
-        execute(&conn, "proj1", "_UNDER", "val").unwrap();
-        execute(&conn, "proj1", "ABC123", "val").unwrap();
+        execute(&conn, "proj1", "MY_SECRET", "val", VALID_KEY).unwrap();
+        execute(&conn, "proj1", "_UNDER", "val", VALID_KEY).unwrap();
+        execute(&conn, "proj1", "ABC123", "val", VALID_KEY).unwrap();
     }
 }

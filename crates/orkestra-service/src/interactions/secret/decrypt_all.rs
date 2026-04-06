@@ -9,15 +9,16 @@ use crate::types::ServiceError;
 
 /// Return all decrypted `(key, value)` pairs for `project_id`.
 ///
-/// If `ORKESTRA_SECRETS_KEY` is not set, logs a warning and returns an empty
-/// vec — secrets injection is silently skipped rather than failing the start.
+/// If `secrets_key` is `None`, logs a warning and returns an empty vec —
+/// secrets injection is silently skipped rather than failing the start.
 ///
 /// Individual secrets that fail to decrypt are skipped with a warning log.
 pub fn execute(
     conn: &Arc<Mutex<Connection>>,
     project_id: &str,
+    secrets_key: Option<&str>,
 ) -> Result<Vec<(String, String)>, ServiceError> {
-    let Some(secrets_key) = encrypt::read_secrets_key() else {
+    let Some(secrets_key) = secrets_key else {
         tracing::warn!(
             "ORKESTRA_SECRETS_KEY not set — skipping secret injection for project {project_id}"
         );
@@ -43,7 +44,7 @@ pub fn execute(
 
     let mut pairs = Vec::with_capacity(rows.len());
     for (key, ciphertext, nonce) in rows {
-        match encrypt::decrypt(&ciphertext, &nonce, &secrets_key) {
+        match encrypt::decrypt(&ciphertext, &nonce, secrets_key) {
             Ok(value) => pairs.push((key, value)),
             Err(err) => {
                 tracing::warn!("Failed to decrypt secret '{key}' for project {project_id}: {err}");
@@ -108,8 +109,15 @@ mod tests {
     fn returns_empty_when_no_secrets() {
         let conn = conn();
         insert_project(&conn, "proj1");
-        std::env::set_var("ORKESTRA_SECRETS_KEY", VALID_KEY);
-        let result = execute(&conn, "proj1").unwrap();
+        let result = execute(&conn, "proj1", Some(VALID_KEY)).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn returns_empty_when_key_is_none() {
+        let conn = conn();
+        insert_project(&conn, "proj1");
+        let result = execute(&conn, "proj1", None).unwrap();
         assert!(result.is_empty());
     }
 
@@ -117,12 +125,11 @@ mod tests {
     fn returns_decrypted_pairs() {
         let conn = conn();
         insert_project(&conn, "proj1");
-        std::env::set_var("ORKESTRA_SECRETS_KEY", VALID_KEY);
 
         let (ct, nonce) = encrypt::encrypt("hello", VALID_KEY).unwrap();
         insert_secret_raw(&conn, "proj1", "MY_VAR", &ct, &nonce);
 
-        let result = execute(&conn, "proj1").unwrap();
+        let result = execute(&conn, "proj1", Some(VALID_KEY)).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "MY_VAR");
         assert_eq!(result[0].1, "hello");
@@ -132,7 +139,6 @@ mod tests {
     fn skips_secrets_that_fail_to_decrypt() {
         let conn = conn();
         insert_project(&conn, "proj1");
-        std::env::set_var("ORKESTRA_SECRETS_KEY", VALID_KEY);
 
         // Insert a valid secret.
         let (ct, nonce) = encrypt::encrypt("good_value", VALID_KEY).unwrap();
@@ -141,7 +147,7 @@ mod tests {
         // Insert a garbage ciphertext for the second secret.
         insert_secret_raw(&conn, "proj1", "BAD_VAR", b"garbage_ciphertext", &[0u8; 12]);
 
-        let result = execute(&conn, "proj1").unwrap();
+        let result = execute(&conn, "proj1", Some(VALID_KEY)).unwrap();
         // Only the valid secret is returned; the bad one is silently skipped.
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "GOOD_VAR");

@@ -42,6 +42,8 @@ pub(crate) struct OrkServiceState {
     /// Abort handles for in-flight provisioning tasks, keyed by project ID.
     /// Used to cancel background builds when the user clicks Cancel.
     provision_handles: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    /// AES-256-GCM encryption key for secrets, read once from `ORKESTRA_SECRETS_KEY` at startup.
+    secrets_key: Option<String>,
 }
 
 impl OrkServiceState {
@@ -98,6 +100,7 @@ pub async fn start(
         config,
         pairing_locks: Arc::new(Mutex::new(HashMap::new())),
         provision_handles: Arc::new(Mutex::new(HashMap::new())),
+        secrets_key: std::env::var("ORKESTRA_SECRETS_KEY").ok(),
     };
 
     let auth_routes = Router::new()
@@ -536,11 +539,12 @@ async fn add_project_handler(
     let repo_url = body.repo_url.clone();
     let supervisor = Arc::clone(&state.supervisor);
     let proj_for_bg = proj.clone();
+    let secrets_key = state.secrets_key.clone();
     {
         let handles = Arc::clone(&state.provision_handles);
         let bg_id = proj_for_bg.id.clone();
         let handle = tokio::spawn(async move {
-            project::provision::execute(conn, supervisor, proj_for_bg, repo_url).await;
+            project::provision::execute(conn, supervisor, proj_for_bg, repo_url, secrets_key).await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")
@@ -646,6 +650,7 @@ async fn start_project_handler(
     };
 
     // Container setup is async (docker pull/run may take time); run in background.
+    let secrets_key = state.secrets_key.clone();
     {
         let handles = Arc::clone(&state.provision_handles);
         let bg_id = proj.id.clone();
@@ -653,8 +658,15 @@ async fn start_project_handler(
         let conn = Arc::clone(&state.conn);
         let supervisor = Arc::clone(&state.supervisor);
         let handle = tokio::spawn(async move {
-            project::provision::start_containers_and_spawn(conn, supervisor, proj, false, false)
-                .await;
+            project::provision::start_containers_and_spawn(
+                conn,
+                supervisor,
+                proj,
+                false,
+                false,
+                secrets_key,
+            )
+            .await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")
@@ -697,6 +709,7 @@ async fn rebuild_project_handler(
     }
 
     // Rebuild: create new container with setup, then spawn daemon.
+    let secrets_key = state.secrets_key.clone();
     {
         let handles = Arc::clone(&state.provision_handles);
         let bg_id = proj.id.clone();
@@ -704,8 +717,15 @@ async fn rebuild_project_handler(
         let conn = Arc::clone(&state.conn);
         let supervisor = Arc::clone(&state.supervisor);
         let handle = tokio::spawn(async move {
-            project::provision::start_containers_and_spawn(conn, supervisor, proj, true, true)
-                .await;
+            project::provision::start_containers_and_spawn(
+                conn,
+                supervisor,
+                proj,
+                true,
+                true,
+                secrets_key,
+            )
+            .await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")
@@ -935,38 +955,22 @@ async fn get_secret_handler(
     State(state): State<OrkServiceState>,
     Path((id, key)): Path<(String, String)>,
 ) -> Response<Body> {
-    if std::env::var("ORKESTRA_SECRETS_KEY").is_err() {
+    let Some(ref secrets_key) = state.secrets_key else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
         )
             .into_response();
-    }
-    let conn = Arc::clone(&state.conn);
-    let result = tokio::task::spawn_blocking(move || secret::get::execute(&conn, &id, &key)).await;
-    match result {
-        Ok(Ok(entry)) => Json(entry).into_response(),
-        Ok(Err(e)) => {
-            let msg = e.to_string();
-            if msg.contains("Secret not found") {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": msg})),
-                )
-                    .into_response()
-            } else {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": msg})),
-                )
-                    .into_response()
-            }
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
-        )
-            .into_response(),
+    };
+    let sk = secrets_key.clone();
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || secret::get::execute(&conn, &id, &key, &sk)
+    })
+    .await
+    {
+        Ok(entry) => Json(entry).into_response(),
+        Err(r) => r,
     }
 }
 
@@ -976,42 +980,22 @@ async fn set_secret_handler(
     Path((id, key)): Path<(String, String)>,
     Json(body): Json<SetSecretRequest>,
 ) -> Response<Body> {
-    if std::env::var("ORKESTRA_SECRETS_KEY").is_err() {
+    let Some(ref secrets_key) = state.secrets_key else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
         )
             .into_response();
-    }
-    let conn = Arc::clone(&state.conn);
-    let result =
-        tokio::task::spawn_blocking(move || secret::set::execute(&conn, &id, &key, &body.value))
-            .await;
-    match result {
-        Ok(Ok(restart_required)) => {
-            Json(SecretMutationResponse { restart_required }).into_response()
-        }
-        Ok(Err(e)) => {
-            let msg = e.to_string();
-            if msg.starts_with("Invalid secret key name") {
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({"error": msg})),
-                )
-                    .into_response()
-            } else {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": msg})),
-                )
-                    .into_response()
-            }
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
-        )
-            .into_response(),
+    };
+    let sk = secrets_key.clone();
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || secret::set::execute(&conn, &id, &key, &body.value, &sk)
+    })
+    .await
+    {
+        Ok(restart_required) => Json(SecretMutationResponse { restart_required }).into_response(),
+        Err(r) => r,
     }
 }
 
@@ -1020,7 +1004,7 @@ async fn delete_secret_handler(
     State(state): State<OrkServiceState>,
     Path((id, key)): Path<(String, String)>,
 ) -> Response<Body> {
-    if std::env::var("ORKESTRA_SECRETS_KEY").is_err() {
+    if state.secrets_key.is_none() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
@@ -1257,11 +1241,15 @@ where
 {
     match tokio::task::spawn_blocking(f).await {
         Ok(Ok(v)) => Ok(v),
-        Ok(Err(e)) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
-        )
-            .into_response()),
+        Ok(Err(e)) => {
+            let status = match &e {
+                ServiceError::SecretNotFound(_) => StatusCode::NOT_FOUND,
+                ServiceError::SecretKeyInvalid(_) => StatusCode::BAD_REQUEST,
+                ServiceError::SecretsKeyNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            Err((status, Json(serde_json::json!({"error": e.to_string()}))).into_response())
+        }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": e.to_string()})),

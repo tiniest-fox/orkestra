@@ -156,6 +156,12 @@ pub enum ServiceError {
     NoAvailablePorts(u16, u16),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Secret not found: {0}")]
+    SecretNotFound(String),
+    #[error("Invalid secret key name: {0}")]
+    SecretKeyInvalid(String),
+    #[error("Secret management is not configured")]
+    SecretsKeyNotConfigured,
     #[error("{0}")]
     Other(String),
 }

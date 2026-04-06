@@ -68,8 +68,8 @@ export function useSecrets(projectId: string, projectStatus: ProjectStatus): Sec
     loadSecrets();
   }, [projectId]);
 
-  function markRestartIfNeeded(restartRequired: boolean) {
-    if (restartRequired && projectStatus === "running") {
+  function markRestartIfNeeded(serverRestartRequired: boolean) {
+    if (serverRestartRequired && projectStatus === "running") {
       setRestartRequired(true);
     }
   }

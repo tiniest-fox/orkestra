@@ -365,8 +365,14 @@ fn build_compose_override(service: &str, port: u16, secrets: &[(String, String)]
         let _ = writeln!(environment, "{I}GH_TOKEN: \"{token}\"");
     }
     for (key, value) in secrets {
-        // Escape for YAML double-quoted string: backslash and double-quote.
-        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+        // Escape for YAML double-quoted string: backslash first, then double-quote,
+        // then control characters that would break the single-line string.
+        let escaped = value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
         let _ = writeln!(environment, "{I}{key}: \"{escaped}\"");
     }
 
@@ -429,6 +435,19 @@ mod tests {
         assert!(yaml.contains(r#"WITH_QUOTE: "val\"ue""#));
         // Backslash must be escaped as \\.
         assert!(yaml.contains(r#"WITH_BACKSLASH: "val\\ue""#));
+    }
+
+    #[test]
+    fn build_compose_override_escapes_multiline_secrets() {
+        let secrets = vec![(
+            "PEM_KEY".to_string(),
+            "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
+        )];
+        let yaml = build_compose_override("app", 3000, &secrets);
+        // Literal newlines must be escaped as \n in the YAML double-quoted string.
+        assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
+        // The value must NOT contain unescaped literal newlines.
+        assert!(!yaml.contains("-----BEGIN KEY-----\n"));
     }
 
     #[test]

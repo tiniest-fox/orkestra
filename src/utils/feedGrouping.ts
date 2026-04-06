@@ -11,8 +11,9 @@ export type FeedSectionName =
   | "needs_review"
   | "ready_to_ship"
   | "in_progress"
-  | "merged"
-  | "closed"
+  | "open_pr"
+  | "merged_pr"
+  | "closed_pr"
   | "completed";
 
 export interface FeedSection {
@@ -34,9 +35,10 @@ export interface FeedGroupResult {
  * Classification order (first match wins):
  * - needs_review: derived.needs_review || derived.has_questions || is_blocked || is_interrupted || subtask needs review || is_chatting || chat_agent_active || is_interactive
  * - integrating: state.type === "integrating" → ready_to_ship
- * - merged: derived.is_done AND prStates entry is "merged"
- * - closed: derived.is_done AND prStates entry is "closed"
- * - ready_to_ship: derived.is_done (no PR, open PR, or unknown)
+ * - merged_pr: derived.is_done AND prStates entry is "merged"
+ * - closed_pr: derived.is_done AND prStates entry is "closed"
+ * - open_pr: derived.is_done AND task.pr_url exists (status not yet fetched or "open")
+ * - ready_to_ship: derived.is_done AND no pr_url
  * - completed: derived.is_archived
  * - in_progress: everything else
  */
@@ -72,8 +74,9 @@ export function groupTasksForFeed(
 
   const needsReview: WorkflowTaskView[] = [];
   const readyToShip: WorkflowTaskView[] = [];
-  const merged: WorkflowTaskView[] = [];
-  const closed: WorkflowTaskView[] = [];
+  const openPr: WorkflowTaskView[] = [];
+  const mergedPr: WorkflowTaskView[] = [];
+  const closedPr: WorkflowTaskView[] = [];
   const inProgress: WorkflowTaskView[] = [];
   const completed: WorkflowTaskView[] = [];
 
@@ -94,9 +97,11 @@ export function groupTasksForFeed(
     } else if (task.derived.is_done) {
       const prState = prStates?.get(task.id);
       if (prState === "merged") {
-        merged.push(task);
+        mergedPr.push(task);
       } else if (prState === "closed") {
-        closed.push(task);
+        closedPr.push(task);
+      } else if (task.pr_url) {
+        openPr.push(task);
       } else {
         readyToShip.push(task);
       }
@@ -125,14 +130,19 @@ export function groupTasksForFeed(
         tasks: readyToShip.sort(byUpdatedAt),
       },
       {
-        name: "merged",
-        label: "MERGED",
-        tasks: merged.sort(byUpdatedAt),
+        name: "open_pr",
+        label: "OPEN PR",
+        tasks: openPr.sort(byUpdatedAt),
       },
       {
-        name: "closed",
-        label: "CLOSED",
-        tasks: closed.sort(byUpdatedAt),
+        name: "merged_pr",
+        label: "MERGED PR",
+        tasks: mergedPr.sort(byUpdatedAt),
+      },
+      {
+        name: "closed_pr",
+        label: "CLOSED PR",
+        tasks: closedPr.sort(byUpdatedAt),
       },
       {
         name: "completed",

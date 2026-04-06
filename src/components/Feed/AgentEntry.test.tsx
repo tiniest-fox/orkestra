@@ -1,4 +1,4 @@
-//! Rendering tests for AgentEntry and related components.
+// Rendering tests for AgentEntry and related components.
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";

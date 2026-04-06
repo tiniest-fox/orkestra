@@ -1,6 +1,7 @@
 // Feed log list — conversation-style activity log for FocusDrawer and ReviewDrawer.
 
 import { useMemo } from "react";
+import { useProjectInfo } from "../../hooks/useProjectInfo";
 import type { LogEntry } from "../../types/workflow";
 import { ErrorState } from "../ui";
 import type { UserClassification, UserMessage } from "./MessageList";
@@ -10,7 +11,7 @@ import { buildDisplayMessages, MessageList } from "./MessageList";
 // Helpers
 // ============================================================================
 
-function classifyUser(msg: UserMessage): UserClassification {
+export function classifyUser(msg: UserMessage): UserClassification {
   const resumeType = msg.resumeType;
   if (!resumeType) return { label: "System", isHuman: false };
 
@@ -53,6 +54,7 @@ export function FeedLogList({
   onScroll,
 }: FeedLogListProps) {
   const messages = useMemo(() => buildDisplayMessages(logs), [logs]);
+  const projectInfo = useProjectInfo();
 
   if (error != null) {
     return (
@@ -66,6 +68,7 @@ export function FeedLogList({
     <MessageList
       messages={messages}
       isAgentRunning={isAgentRunning}
+      projectRoot={projectInfo?.project_root}
       emptyText="No activity yet."
       agentLabel="Agent"
       classifyUser={classifyUser}

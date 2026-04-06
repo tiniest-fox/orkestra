@@ -74,7 +74,13 @@ function AssistantTextLine({ content }: { content: string }) {
   );
 }
 
-export function AgentEntry({ entry }: { entry: GroupedLogEntry }) {
+export function AgentEntry({
+  entry,
+  projectRoot,
+}: {
+  entry: GroupedLogEntry;
+  projectRoot?: string;
+}) {
   if (entry.type === "subagent_group") {
     const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
     const shown = toolCalls.slice(-2);
@@ -96,12 +102,14 @@ export function AgentEntry({ entry }: { entry: GroupedLogEntry }) {
               +{hidden} tool call{hidden !== 1 ? "s" : ""}
             </div>
           )}
-          {shown.map((sub, i) =>
-            sub.type === "subagent_tool_use" ? (
+          {shown.map((sub, i) => {
+            if (sub.type !== "subagent_tool_use") return null;
+            const summary = toolSummary(sub.input, projectRoot);
+            return (
               // biome-ignore lint/suspicious/noArrayIndexKey: no stable ID
-              <ToolLine key={i} label={sub.tool} summary={toolSummary(sub.input)} variant="tool" />
-            ) : null,
-          )}
+              <ToolLine key={i} label={sub.tool} summary={summary} variant="tool" />
+            );
+          })}
         </div>
       </>
     );
@@ -112,7 +120,13 @@ export function AgentEntry({ entry }: { entry: GroupedLogEntry }) {
       return <AssistantTextLine content={entry.content} />;
 
     case "tool_use":
-      return <ToolLine label={entry.tool} summary={toolSummary(entry.input)} variant="tool" />;
+      return (
+        <ToolLine
+          label={entry.tool}
+          summary={toolSummary(entry.input, projectRoot)}
+          variant="tool"
+        />
+      );
 
     case "error":
       return <ErrorLine message={entry.message} />;
@@ -150,13 +164,13 @@ export function AgentEntry({ entry }: { entry: GroupedLogEntry }) {
 // AgentEntries (private)
 // ============================================================================
 
-function AgentEntries({ entries }: { entries: LogEntry[] }) {
+function AgentEntries({ entries, projectRoot }: { entries: LogEntry[]; projectRoot?: string }) {
   const grouped = useGroupedLogs(entries);
   return (
     <>
       {grouped.map((entry, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: no stable IDs on log entries
-        <AgentEntry key={i} entry={entry} />
+        <AgentEntry key={i} entry={entry} projectRoot={projectRoot} />
       ))}
     </>
   );
@@ -169,6 +183,8 @@ function AgentEntries({ entries }: { entries: LogEntry[] }) {
 export interface MessageListProps {
   messages: DisplayMessage[];
   isAgentRunning: boolean;
+  /** Absolute path to the project root — threaded to toolSummary for path relativization. */
+  projectRoot?: string;
   /** Label shown on agent message blocks. Defaults to "Agent". */
   agentLabel?: string;
   /** Label shown on user message blocks when classifyUser is not provided. Defaults to "You". */
@@ -189,6 +205,7 @@ export interface MessageListProps {
 export function MessageList({
   messages,
   isAgentRunning,
+  projectRoot,
   agentLabel = "Agent",
   userLabel = "You",
   classifyUser,
@@ -199,6 +216,15 @@ export function MessageList({
   onScroll,
 }: MessageListProps) {
   const isScrollContainer = containerRef != null;
+
+  let lastAgentIndex = -1;
+  for (let j = messages.length - 1; j >= 0; j--) {
+    if (messages[j].kind === "agent") {
+      lastAgentIndex = j;
+      break;
+    }
+  }
+
   return (
     <div
       ref={containerRef}
@@ -211,8 +237,7 @@ export function MessageList({
         </div>
       )}
       {messages.map((msg, i) => {
-        const isLastAgent =
-          msg.kind === "agent" && messages.slice(i + 1).every((m) => m.kind !== "agent");
+        const isLastAgent = i === lastAgentIndex;
 
         const classification = msg.kind === "user" && classifyUser ? classifyUser(msg) : null;
         const isHuman = classification ? classification.isHuman : true;
@@ -242,7 +267,7 @@ export function MessageList({
             </div>
             {msg.kind === "agent" ? (
               <div className="text-text-secondary">
-                <AgentEntries entries={msg.entries} />
+                <AgentEntries entries={msg.entries} projectRoot={projectRoot} />
               </div>
             ) : (
               <div className="font-sans text-forge-body text-text-secondary leading-relaxed whitespace-pre-wrap">

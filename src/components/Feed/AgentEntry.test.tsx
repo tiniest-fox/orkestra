@@ -1,10 +1,10 @@
-//! Rendering tests for AgentEntry and related components.
+// Rendering tests for AgentEntry and related components.
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "../../types/workflow";
 import type { GroupedLogEntry, SubagentGroup } from "../Logs/useGroupedLogs";
-import { AgentEntry } from "./AssistantDrawer";
+import { AgentEntry } from "./MessageList";
 
 // The closing tag that Claude uses in its XML output.
 // Written as concatenation so the file is not misread as a parameter block itself.

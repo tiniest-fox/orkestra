@@ -24,7 +24,7 @@ use tower_http::cors::CorsLayer;
 use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
-use crate::interactions::{daemon_token, github, port, project};
+use crate::interactions::{daemon_token, github, port, project, secret};
 use crate::types::{ProjectStatus, ServiceConfig, ServiceError};
 
 // ============================================================================
@@ -113,6 +113,13 @@ pub async fn start(
         .route("/api/projects/{id}/git/fetch", post(git_fetch_handler))
         .route("/api/projects/{id}/git/pull", post(git_pull_handler))
         .route("/api/projects/{id}/git/push", post(git_push_handler))
+        .route("/api/projects/{id}/secrets", get(list_secrets_handler))
+        .route(
+            "/api/projects/{id}/secrets/{key}",
+            get(get_secret_handler)
+                .put(set_secret_handler)
+                .delete(delete_secret_handler),
+        )
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -891,6 +898,142 @@ async fn git_push_handler(
     .await
     {
         Ok(()) => Json(serde_json::json!({})).into_response(),
+        Err(r) => r,
+    }
+}
+
+// -- Secrets --
+
+/// `GET /api/projects/{id}/secrets` — list secret key names for a project.
+async fn list_secrets_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || secret::list::execute(&conn, &id)
+    })
+    .await
+    {
+        Ok(entries) => Json(entries).into_response(),
+        Err(r) => r,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SetSecretRequest {
+    value: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SecretMutationResponse {
+    restart_required: bool,
+}
+
+/// `GET /api/projects/{id}/secrets/{key}` — retrieve and decrypt a single secret.
+async fn get_secret_handler(
+    State(state): State<OrkServiceState>,
+    Path((id, key)): Path<(String, String)>,
+) -> Response<Body> {
+    if std::env::var("ORKESTRA_SECRETS_KEY").is_err() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
+        )
+            .into_response();
+    }
+    let conn = Arc::clone(&state.conn);
+    let result = tokio::task::spawn_blocking(move || secret::get::execute(&conn, &id, &key)).await;
+    match result {
+        Ok(Ok(entry)) => Json(entry).into_response(),
+        Ok(Err(e)) => {
+            let msg = e.to_string();
+            if msg.contains("Secret not found") {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": msg})),
+                )
+                    .into_response()
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": msg})),
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+/// `PUT /api/projects/{id}/secrets/{key}` — create or update a secret.
+async fn set_secret_handler(
+    State(state): State<OrkServiceState>,
+    Path((id, key)): Path<(String, String)>,
+    Json(body): Json<SetSecretRequest>,
+) -> Response<Body> {
+    if std::env::var("ORKESTRA_SECRETS_KEY").is_err() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
+        )
+            .into_response();
+    }
+    let conn = Arc::clone(&state.conn);
+    let result =
+        tokio::task::spawn_blocking(move || secret::set::execute(&conn, &id, &key, &body.value))
+            .await;
+    match result {
+        Ok(Ok(restart_required)) => {
+            Json(SecretMutationResponse { restart_required }).into_response()
+        }
+        Ok(Err(e)) => {
+            let msg = e.to_string();
+            if msg.starts_with("Invalid secret key name") {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"error": msg})),
+                )
+                    .into_response()
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": msg})),
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+/// `DELETE /api/projects/{id}/secrets/{key}` — delete a secret.
+async fn delete_secret_handler(
+    State(state): State<OrkServiceState>,
+    Path((id, key)): Path<(String, String)>,
+) -> Response<Body> {
+    if std::env::var("ORKESTRA_SECRETS_KEY").is_err() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
+        )
+            .into_response();
+    }
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || secret::delete::execute(&conn, &id, &key)
+    })
+    .await
+    {
+        Ok(restart_required) => Json(SecretMutationResponse { restart_required }).into_response(),
         Err(r) => r,
     }
 }

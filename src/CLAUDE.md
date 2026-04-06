@@ -192,6 +192,7 @@ Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvide
   - `text-forge-body-md` (14px/20px) — prose headings
   The exception: `PROSE_CLASSES` from `utils/prose.ts` has its own sizing — always pair it with `text-forge-body` and never use arbitrary sizes alongside it.
 - Use `PROSE_CLASSES` from `utils/prose.ts` for markdown rendering. Always pair with `text-forge-body` for font size — never use arbitrary values like `text-[13px]` alongside `PROSE_CLASSES`.
+- **Full rich content rendering** (mermaid diagrams, wireframe blocks, syntax highlighting): use `ReactMarkdown` with `richContentPlugins` and `richContentComponents` from `utils/richContentConfig.ts`. These are configuration objects (remark/rehype plugins + component overrides), not a standalone component. See `AssistantTextLine` in `Feed/MessageList.tsx` for the pattern — all message types (user, assistant, system) should use this same config for consistent rendering.
 
 ## Android PWA Viewport
 

@@ -254,6 +254,67 @@ describe("canUseRunScript", () => {
   });
 });
 
+describe("availableTabs — resources tab visibility", () => {
+  it("includes Resources tab when task has resources", () => {
+    const config = createMockWorkflowConfig();
+    const task = {
+      ...createMockWorkflowTaskView({ state: { type: "agent_working", stage: "work" } }),
+      resources: {
+        "my-doc": {
+          name: "my-doc",
+          url: "https://example.com/doc",
+          stage: "work",
+          created_at: "2025-01-01T00:00:00Z",
+        },
+      },
+    };
+    const tabs = availableTabs(task, config);
+    expect(tabs.some((t) => t.id === "resources")).toBe(true);
+  });
+
+  it("omits Resources tab when task has no resources", () => {
+    const config = createMockWorkflowConfig();
+    const task = createMockWorkflowTaskView({ state: { type: "agent_working", stage: "work" } });
+    const tabs = availableTabs(task, config);
+    expect(tabs.some((t) => t.id === "resources")).toBe(false);
+  });
+
+  it("includes Resources tab for done task with resources", () => {
+    const config = createMockWorkflowConfig();
+    const task = {
+      ...createMockWorkflowTaskView({ state: { type: "done" } }),
+      resources: {
+        ref: {
+          name: "ref",
+          url: "https://github.com/org/repo",
+          stage: "planning",
+          created_at: "2025-01-01T00:00:00Z",
+        },
+      },
+    };
+    const tabs = availableTabs(task, config);
+    expect(tabs.some((t) => t.id === "resources")).toBe(true);
+  });
+
+  it("Resources tab has no hotkey", () => {
+    const config = createMockWorkflowConfig();
+    const task = {
+      ...createMockWorkflowTaskView({ state: { type: "agent_working", stage: "work" } }),
+      resources: {
+        ref: {
+          name: "ref",
+          url: "https://example.com",
+          stage: "work",
+          created_at: "2025-01-01T00:00:00Z",
+        },
+      },
+    };
+    const resourcesTab = availableTabs(task, config).find((t) => t.id === "resources");
+    expect(resourcesTab).toBeDefined();
+    expect(resourcesTab?.hotkey).toBeUndefined();
+  });
+});
+
 describe("currentArtifact — terminal task fallback", () => {
   it("returns artifact for active task via current_stage", () => {
     const config = createMockWorkflowConfig();

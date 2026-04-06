@@ -141,6 +141,26 @@ export type TaskState =
   | { type: "blocked"; reason?: string };
 
 // =============================================================================
+// Resources
+// =============================================================================
+
+/**
+ * An external resource registered by an agent during stage execution.
+ */
+export interface WorkflowResource {
+  /** Resource name (unique key). */
+  name: string;
+  /** URL or file path for the resource. */
+  url: string;
+  /** Optional description of what the resource is. */
+  description?: string;
+  /** Stage that registered this resource. */
+  stage: string;
+  /** When the resource was registered (RFC3339). */
+  created_at: string;
+}
+
+// =============================================================================
 // Artifacts
 // =============================================================================
 
@@ -334,6 +354,8 @@ export interface WorkflowTask {
   state: TaskState;
   /** Artifacts produced so far, keyed by artifact name. */
   artifacts: Record<string, WorkflowArtifact>;
+  /** External resources registered by agents, keyed by resource name. */
+  resources: Record<string, WorkflowResource>;
   /** Parent task ID (for subtasks). */
   parent_id?: string;
   /** Short display ID for subtasks (last word of full ID, e.g., "bird"), unique within a parent. */

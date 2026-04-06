@@ -24,7 +24,8 @@ export type DrawerTabId =
   | "pr"
   | "error"
   | "gate"
-  | "run";
+  | "run"
+  | "resources";
 
 export type StageReviewType = "violet" | "teal";
 
@@ -115,6 +116,8 @@ export function availableTabs(
   const gateTab: DrawerTab = { id: "gate" as const, label: "Gate", hotkey: "g" };
   const runTab: DrawerTab = { id: "run" as const, label: "Run", hotkey: "r" };
   const showRunTab = canUseRunScript(task, options?.hasRunScript);
+  const hasResources = Object.keys(task.resources).length > 0;
+  const resourcesTab: DrawerTab = { id: "resources" as const, label: "Resources" };
 
   if (task.derived.is_failed) {
     return [
@@ -124,6 +127,7 @@ export function availableTabs(
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
+      ...(hasResources ? [resourcesTab] : []),
     ];
   }
   if (task.derived.is_blocked) {
@@ -134,6 +138,7 @@ export function availableTabs(
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
+      ...(hasResources ? [resourcesTab] : []),
     ];
   }
   if (task.derived.has_questions) {
@@ -144,6 +149,7 @@ export function availableTabs(
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
+      ...(hasResources ? [resourcesTab] : []),
     ];
   }
   if (task.derived.is_waiting_on_children) {
@@ -153,6 +159,7 @@ export function availableTabs(
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
+      ...(hasResources ? [resourcesTab] : []),
     ];
   }
   if (task.derived.is_done) {
@@ -165,6 +172,7 @@ export function availableTabs(
         { id: "history", label: "History", hotkey: "h" },
         ...(showGateTab ? [gateTab] : []),
         ...(showRunTab ? [runTab] : []),
+        ...(hasResources ? [resourcesTab] : []),
       ];
     }
     return [
@@ -174,6 +182,7 @@ export function availableTabs(
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
+      ...(hasResources ? [resourcesTab] : []),
     ];
   }
   if (task.derived.needs_review) {
@@ -184,6 +193,7 @@ export function availableTabs(
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
+      ...(hasResources ? [resourcesTab] : []),
     ];
   }
   return [
@@ -193,5 +203,6 @@ export function availableTabs(
     { id: "history", label: "History", hotkey: "h" },
     ...(showGateTab ? [gateTab] : []),
     ...(showRunTab ? [runTab] : []),
+    ...(hasResources ? [resourcesTab] : []),
   ];
 }

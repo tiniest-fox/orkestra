@@ -7,6 +7,7 @@ import type {
   LogEntry,
   WorkflowArtifact,
   WorkflowConfig,
+  WorkflowResource,
   WorkflowTaskView,
 } from "../../../types/workflow";
 import { EmptyState } from "../../ui/EmptyState";
@@ -20,6 +21,7 @@ import type { DrawerTabId } from "./drawerTabs";
 import { LogsChatInput } from "./Footer/LogsChatInput";
 import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
+import { ResourcesTab } from "./Sections/ResourcesTab";
 import { RunTab } from "./Sections/RunTab";
 import { SubtasksSection } from "./Sections/SubtasksSection";
 import type { TaskDrawerState } from "./useTaskDrawerState";
@@ -116,10 +118,20 @@ export function DrawerTabContent({
       : task.derived.pending_approval
         ? ("approved" as const)
         : undefined;
+
+    const stageResources = artifact
+      ? Object.values(task.resources)
+          .filter((r) => r.stage === artifact.stage)
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      : [];
+
     return (
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
         {artifact ? (
-          <ArtifactView artifact={artifact} verdict={verdict} />
+          <>
+            {stageResources.length > 0 && <StageResources resources={stageResources} />}
+            <ArtifactView artifact={artifact} verdict={verdict} />
+          </>
         ) : (
           <EmptyState icon={FileText} message="No artifact yet." />
         )}
@@ -172,6 +184,10 @@ export function DrawerTabContent({
     return <DrawerGateTab task={task} config={config} />;
   }
 
+  if (activeTab === "resources") {
+    return <ResourcesTab task={task} bodyRef={bodyRef} />;
+  }
+
   if (activeTab === "run") {
     return (
       <RunTab
@@ -186,4 +202,32 @@ export function DrawerTabContent({
   }
 
   return null;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function StageResources({ resources }: { resources: WorkflowResource[] }) {
+  return (
+    <div className="px-4 pt-3 pb-1 flex flex-col gap-1">
+      <span className="text-forge-mono-label font-semibold text-text-tertiary uppercase tracking-wide">
+        Resources
+      </span>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {resources.map((r) => (
+          <a
+            key={r.name}
+            href={r.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-forge-mono-sm text-accent hover:underline truncate max-w-[300px]"
+            title={r.description ?? r.url}
+          >
+            {r.name}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
 }

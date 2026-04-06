@@ -114,7 +114,7 @@ impl AgentExecutionService {
     /// Execute a stage for a task (async with events).
     ///
     /// Delegates to the `execute_agent` interaction. `parent_resources` is passed
-    /// through to materialization so subtasks can discover parent-registered resources.
+    /// through to the prompt builder so subtask prompts include parent-registered resources.
     pub fn execute_stage(
         &self,
         task: &Task,

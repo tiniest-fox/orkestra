@@ -474,8 +474,8 @@ impl StageExecutionService {
             Vec::new()
         };
 
-        // Load parent resources for subtask materialization so the subtask's
-        // resources.md includes resources registered by the parent task's stages.
+        // Load parent resources for subtask prompts so the inline resources list
+        // includes resources registered by the parent task's stages.
         let parent_resources = match &task.parent_id {
             Some(pid) => self
                 .store

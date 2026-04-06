@@ -21,8 +21,8 @@ The following artifacts from prior stages are available in your worktree. You MU
 {{#if activity_log_path}}
 **Activity Log** (accumulated across all prior stages): `{{activity_log_path}}`
 {{/if}}
-{{#if resources_path}}
-**Resources** (external references registered by prior stages): `{{resources_path}}`
+{{#if resources}}
+**Resources** (external references registered by prior stages):
 {{#each resources}}
 - **{{this.name}}**: `{{this.url}}`{{#if this.description}} — {{this.description}}{{/if}}
 {{/each}}

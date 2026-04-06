@@ -25,7 +25,6 @@ pub fn execute(templates: &Handlebars<'static>, ctx: &StagePromptContext<'_>) ->
         task_file_path: &ctx.task_file_path,
         has_input_artifacts: ctx.has_input_artifacts,
         activity_log_path: ctx.activity_log_path.as_deref(),
-        resources_path: ctx.resources_path.as_deref(),
         resources: &ctx.resources,
         question_history: &ctx.question_history,
         feedback: ctx.feedback,
@@ -52,7 +51,6 @@ struct UserMessageContext<'a> {
     task_file_path: &'a str,
     has_input_artifacts: bool,
     activity_log_path: Option<&'a str>,
-    resources_path: Option<&'a str>,
     resources: &'a [ResourceContext],
     question_history: &'a [QuestionAnswerContext<'a>],
     feedback: Option<&'a str>,
@@ -114,7 +112,7 @@ mod tests {
         // Pass artifact names (artifacts are materialized to files before spawn)
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[], None)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -145,7 +143,7 @@ mod tests {
 
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[], None)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -182,7 +180,7 @@ mod tests {
         ];
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &siblings)
+            .build_context("planning", &task, &[], None, None, false, &siblings, None)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -205,7 +203,7 @@ mod tests {
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -225,7 +223,7 @@ mod tests {
             .with_base_commit("abc123def456");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -248,7 +246,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "work", "now");
         let ctx = builder
-            .build_context("work", &task, &[], None, None, false, &[])
+            .build_context("work", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -277,7 +275,7 @@ mod tests {
         // "plan" artifact is materialized; current stage is "work".
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[], None)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -317,6 +315,7 @@ mod tests {
                 Some(integration_error),
                 false,
                 &[],
+                None,
             )
             .unwrap();
 
@@ -355,6 +354,7 @@ mod tests {
                 Some(integration_error),
                 false,
                 &[],
+                None,
             )
             .unwrap();
 

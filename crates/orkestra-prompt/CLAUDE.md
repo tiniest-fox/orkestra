@@ -54,8 +54,7 @@ The primary data structure for prompt rendering. Contains:
 - `show_direct_structured_output_hint: bool` — whether to show direct StructuredOutput instructions
 - `workflow_stages: Vec<WorkflowStageEntry>` — stage overview
 - `sibling_tasks: Vec<SiblingTaskContext>` — sibling subtask context
-- `resources_path: Option<String>` — path to the materialized `resources.md` file, set whenever any resources exist (own or parent-inherited)
-- `resources: Vec<ResourceContext>` — inline resource list (own task resources only; empty for subtasks that only inherit parent resources)
+- `resources: Vec<ResourceContext>` — inline resource list (merged task + parent resources; includes parent-inherited resources for subtasks)
 
 ### ResumeType
 
@@ -95,7 +94,7 @@ When resuming a session, the agent already has full context from the original se
 
 3. **Question history is NOT included in initial prompts** — Initial prompts start with empty question history. Questions and answers flow through resume prompts after the agent asks and human answers.
 
-4. **Template guards: use `resources_path`, not `resources`** — In Handlebars templates, guard the resources block on `{{#if resources_path}}`, not `{{#if resources}}`. For subtasks that only inherit parent resources, `resources` (the inline array) is empty while `resources_path` is set. Guarding on the array silently hides the file path from subtask prompts. The `{{#each resources}}` loop inside can safely run against an empty array — it just produces no bullet items.
+4. **Template guards use `resources`** — In Handlebars templates, guard the resources block on `{{#if resources}}`. The `resources` array is always fully populated (merged task + parent), so this is the correct signal. The `{{#each resources}}` loop renders each inline resource entry.
 
 5. **Populate all context struct fields when templates change** — When adding a new template variable, ensure every context struct that feeds that template includes the new field. Handlebars silently treats missing fields as falsy — a missing `resources` field in `UserMessageContext` will cause the entire `{{#if resources}}` block (including other variables nested inside) to be skipped without any error.
 

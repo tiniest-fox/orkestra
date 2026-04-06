@@ -15,5 +15,5 @@ pub use artifact::{
 };
 pub use markdown::markdown_to_html;
 pub use outcome::Outcome;
-pub use resource::{Resource, ResourceStore, RESOURCES_ARTIFACT_NAME};
+pub use resource::{Resource, ResourceStore};
 pub use status::TaskState;

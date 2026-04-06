@@ -2,9 +2,8 @@
 //!
 //! Tests that resources registered by agents in one stage are:
 //! - Persisted on the task's `resources` store
-//! - Written to `.orkestra/.artifacts/resources.md` before the next stage spawns
-//! - Included in the agent prompt as the `resources_path` field
-//! - Inherited by subtasks from their parent task
+//! - Included inline in the agent prompt via the `{{#each resources}}` loop
+//! - Inherited by subtasks from their parent task (merged into inline list)
 //! - Upserted correctly when a stage re-runs (name collision → newer URL wins)
 
 use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
@@ -29,8 +28,7 @@ fn two_stage_workflow() -> WorkflowConfig {
 // Test 1: Resources persist from planning to work stage
 // =============================================================================
 
-/// Verify that resources produced by planning are written to resources.md before
-/// the work stage agent spawns, and that the work stage prompt references the file.
+/// Verify that resources produced by planning appear inline in the work stage prompt.
 #[test]
 fn test_resources_persist_across_stages() {
     let workflow = two_stage_workflow();
@@ -75,38 +73,20 @@ fn test_resources_persist_across_stages() {
 
     // Verify task is now in work stage
     assert_eq!(task.current_stage(), Some("work"));
-    let worktree_path = task.worktree_path.as_ref().expect("should have worktree");
 
     // Set work output so the spawn doesn't hang
     env.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
     env.advance(); // spawns work agent
 
-    // Verify resources.md was written to the worktree before work agent spawned
-    let resources_md_path = format!("{worktree_path}/.orkestra/.artifacts/resources.md");
-    let resources_md = std::fs::read_to_string(&resources_md_path)
-        .unwrap_or_else(|_| panic!("resources.md should exist at {resources_md_path}"));
-    assert!(
-        resources_md.contains("## blog-doc"),
-        "resources.md should contain blog-doc heading"
-    );
-    assert!(
-        resources_md.contains("https://docs.google.com/blog-draft"),
-        "resources.md should contain the URL"
-    );
-    assert!(
-        resources_md.contains("Draft blog post document"),
-        "resources.md should contain the description"
-    );
-
-    // Verify the work stage prompt references resources.md
+    // Verify the work stage prompt contains inline resource info
     let prompt = env.last_prompt_for(&task_id);
     assert!(
-        prompt.contains("resources.md"),
-        "Work stage prompt should reference resources.md. Got prompt:\n{prompt}"
+        prompt.contains("blog-doc"),
+        "Work stage prompt should contain resource name. Got prompt:\n{prompt}"
     );
     assert!(
-        prompt.contains(".orkestra/.artifacts/resources.md"),
-        "Prompt should reference the full resources.md path"
+        prompt.contains("https://docs.google.com/blog-draft"),
+        "Work stage prompt should contain resource URL. Got prompt:\n{prompt}"
     );
 }
 
@@ -114,7 +94,7 @@ fn test_resources_persist_across_stages() {
 // Test 2: Subtask sees parent resources
 // =============================================================================
 
-/// Verify that a subtask's resources.md includes resources from the parent task.
+/// Verify that a subtask's prompt includes resources from the parent task inline.
 #[test]
 fn test_subtask_sees_parent_resources() {
     let workflow = workflows::with_subtasks();
@@ -184,37 +164,22 @@ fn test_subtask_sees_parent_resources() {
     // Subtask setup: advance once to trigger setup_awaiting_tasks → worktree creation
     env.advance();
 
-    let subtask = env.api().get_task(&subtask_id).unwrap();
-    let subtask_worktree = subtask
-        .worktree_path
-        .as_ref()
-        .expect("subtask should have a worktree");
-
     // Queue subtask work output so the spawn doesn't stall
     env.set_output(
         &subtask_id,
         MockAgentOutput::artifact("summary", "Subtask work done"),
     );
-    env.advance(); // spawns subtask work agent — resources.md should be written here
+    env.advance(); // spawns subtask work agent — prompt should contain parent resources
 
-    // Verify the subtask prompt references resources.md (tests the {{#if resources_path}} template fix)
+    // Verify the subtask prompt contains the parent's resource inline
     let subtask_prompt = env.last_prompt_for(&subtask_id);
     assert!(
-        subtask_prompt.contains(".orkestra/.artifacts/resources.md"),
-        "Subtask prompt should reference resources.md even when subtask has no own resources. Got prompt:\n{subtask_prompt}"
-    );
-
-    // Verify subtask's resources.md contains the parent's resource
-    let resources_md_path = format!("{subtask_worktree}/.orkestra/.artifacts/resources.md");
-    let resources_md = std::fs::read_to_string(&resources_md_path)
-        .unwrap_or_else(|_| panic!("subtask resources.md should exist at {resources_md_path}"));
-    assert!(
-        resources_md.contains("## parent-doc"),
-        "Subtask resources.md should contain parent's resource. Got:\n{resources_md}"
+        subtask_prompt.contains("parent-doc"),
+        "Subtask prompt should contain parent's resource name. Got prompt:\n{subtask_prompt}"
     );
     assert!(
-        resources_md.contains("https://parent.example.com/doc"),
-        "Subtask resources.md should contain parent's resource URL"
+        subtask_prompt.contains("https://parent.example.com/doc"),
+        "Subtask prompt should contain parent's resource URL. Got prompt:\n{subtask_prompt}"
     );
 }
 

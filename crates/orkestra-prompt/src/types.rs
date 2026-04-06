@@ -31,12 +31,8 @@ pub struct StagePromptContext<'a> {
     /// The activity log accumulates entries across all prior stages.
     pub activity_log_path: Option<String>,
 
-    /// Path to the resources file, if any resources exist.
-    /// Resources accumulate across all stages and are always available.
-    pub resources_path: Option<String>,
-
     /// Inline resource details for the prompt.
-    /// Populated from the task's `ResourceStore` so agents see resources directly.
+    /// Populated from the merged task + parent resource stores so agents see resources directly.
     pub resources: Vec<ResourceContext>,
 
     /// Question history (if stage can ask questions).

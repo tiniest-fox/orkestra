@@ -27,8 +27,8 @@ use orkestra_types::runtime::ResourceStore;
 ///
 /// Resolves the provider, builds prompts, applies schema enforcement and tool
 /// restrictions, then runs the agent. Returns a handle for polling completion.
-/// `parent_resources` is `Some` for subtasks and is merged into the materialized
-/// resources file so the agent can discover the parent's registered resources.
+/// `parent_resources` is `Some` for subtasks and is merged into the inline
+/// resources list in the prompt so the agent can discover parent-registered resources.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn execute(
     runner: &dyn AgentRunnerTrait,
@@ -57,9 +57,9 @@ pub(crate) fn execute(
 
     // 0. Materialize artifacts to worktree files before building prompts
     let artifact_names =
-        super::materialize_artifacts::execute(task, activity_logs, parent_resources).map_err(
-            |e| ExecutionError::ConfigError(format!("Failed to materialize artifacts: {e}")),
-        )?;
+        super::materialize_artifacts::execute(task, activity_logs).map_err(|e| {
+            ExecutionError::ConfigError(format!("Failed to materialize artifacts: {e}"))
+        })?;
 
     orkestra_debug!(
         "exec",
@@ -91,6 +91,7 @@ pub(crate) fn execute(
         feedback,
         resolved.capabilities.requires_direct_structured_output,
         sibling_tasks,
+        parent_resources,
     )?;
 
     // 5. Apply tool restrictions (split into prompt text + CLI patterns)
@@ -111,6 +112,7 @@ pub(crate) fn execute(
         trigger,
         resolved.capabilities.requires_direct_structured_output,
         sibling_tasks,
+        parent_resources,
     )?;
 
     // 7. Apply provider fallbacks for system prompt and schema enforcement
@@ -201,6 +203,7 @@ fn build_system_prompt(
     feedback: Option<&str>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
+    parent_resources: Option<&ResourceStore>,
 ) -> Result<String, ExecutionError> {
     let config = prompt_service.resolve_config(
         workflow,
@@ -210,6 +213,7 @@ fn build_system_prompt(
         None, // No integration error for system prompt
         show_direct_structured_output_hint,
         sibling_tasks,
+        parent_resources,
     )?;
     Ok(config.system_prompt)
 }
@@ -230,6 +234,7 @@ fn build_user_prompt(
     trigger: Option<&IterationTrigger>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
+    parent_resources: Option<&ResourceStore>,
 ) -> Result<String, ExecutionError> {
     if is_resume {
         let resume_type = trigger_to_resume_type(trigger);
@@ -256,6 +261,7 @@ fn build_user_prompt(
             integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
+            parent_resources,
         )?;
         Ok(config.prompt)
     }

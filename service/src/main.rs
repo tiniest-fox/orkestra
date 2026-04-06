@@ -165,6 +165,7 @@ async fn run(args: Args) -> Result<(), String> {
                 proj,
                 false, // run_setup: false — repo is already set up
                 false, // force_build: false — no image rebuild on restart
+                std::env::var("ORKESTRA_SECRETS_KEY").ok(),
             ));
         }
     }

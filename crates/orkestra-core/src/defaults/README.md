@@ -28,9 +28,13 @@ The seeded `.orkestra/scripts/checks.sh` is a template — customize it with you
 
 Environment variables available to gate scripts:
 
-- `ORKESTRA_PROJECT_ROOT` — Absolute path to the project root
-- `ORKESTRA_WORKTREE_PATH` — Absolute path to the Trak's git worktree
 - `ORKESTRA_TASK_ID` — The Trak ID
+- `ORKESTRA_TASK_TITLE` — The Trak title
+- `ORKESTRA_BASE_BRANCH` — The base branch the Trak branched from
+- `ORKESTRA_PROJECT_ROOT` — Absolute path to the project root
+- `ORKESTRA_BRANCH` — The Trak's git branch name *(optional — not set before worktree creation)*
+- `ORKESTRA_WORKTREE_PATH` — Absolute path to the Trak's git worktree *(optional — not set before worktree creation)*
+- `ORKESTRA_PARENT_ID` — Parent Trak ID *(optional — only set for subtasks)*
 
 Example `checks.sh` customization:
 

@@ -86,6 +86,7 @@ export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig):
 export function defaultTab(task: WorkflowTaskView): DrawerTabId {
   if (task.derived.is_failed) return "error";
   if (task.derived.is_blocked) return "error";
+  if (task.derived.is_chatting) return "logs";
   if (task.derived.has_questions) return "questions";
   if (task.derived.needs_review) return "artifact";
   if (task.state.type === "gate_running" || task.state.type === "awaiting_gate") return "gate";

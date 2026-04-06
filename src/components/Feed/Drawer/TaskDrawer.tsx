@@ -72,7 +72,7 @@ function TaskDrawerBody({
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task state type change
   useEffect(() => {
     setActiveTab(defaultTab(task));
-  }, [task.id, task.state.type]);
+  }, [task.id, task.state.type, task.derived.is_chatting]);
 
   // -- Run history --
   const [selectedRunIdx, setSelectedRunIdx] = useState<number | null>(null);

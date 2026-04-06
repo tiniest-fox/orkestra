@@ -10,6 +10,7 @@ import type {
   WorkflowResource,
   WorkflowTaskView,
 } from "../../../types/workflow";
+import { formatTimestamp } from "../../../utils";
 import { EmptyState } from "../../ui/EmptyState";
 import { ActivityLog } from "../ActivityLog";
 import { ArtifactView } from "../ArtifactView";
@@ -129,8 +130,8 @@ export function DrawerTabContent({
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
         {artifact ? (
           <>
-            {stageResources.length > 0 && <StageResources resources={stageResources} />}
             <ArtifactView artifact={artifact} verdict={verdict} />
+            {stageResources.length > 0 && <StageResources resources={stageResources} />}
           </>
         ) : (
           <EmptyState icon={FileText} message="No artifact yet." />
@@ -210,24 +211,26 @@ export function DrawerTabContent({
 
 function StageResources({ resources }: { resources: WorkflowResource[] }) {
   return (
-    <div className="px-4 pt-3 pb-1 flex flex-col gap-1">
-      <span className="text-forge-mono-label font-semibold text-text-tertiary uppercase tracking-wide">
-        Resources
-      </span>
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {resources.map((r) => (
+    <div className="border-t border-border p-4 flex flex-col gap-3">
+      {resources.map((r) => (
+        <div key={r.name} className="flex flex-col gap-1">
+          <span className="text-forge-mono-sm font-semibold text-text-primary">{r.name}</span>
           <a
-            key={r.name}
             href={r.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-forge-mono-sm text-accent hover:underline truncate max-w-[300px]"
-            title={r.description ?? r.url}
+            className="text-forge-mono-sm text-accent truncate"
           >
-            {r.name}
+            {r.url}
           </a>
-        ))}
-      </div>
+          {r.description && (
+            <span className="text-forge-mono-sm text-text-secondary">{r.description}</span>
+          )}
+          <span className="text-forge-mono-label text-text-tertiary">
+            {r.stage} · {formatTimestamp(r.created_at)}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

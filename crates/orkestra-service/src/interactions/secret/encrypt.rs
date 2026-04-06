@@ -47,13 +47,6 @@ pub fn decrypt(ciphertext: &[u8], nonce: &[u8], key_hex: &str) -> Result<String,
         .map_err(|e| ServiceError::Other(format!("Decrypted bytes are not valid UTF-8: {e}")))
 }
 
-/// Read `ORKESTRA_SECRETS_KEY` from the environment.
-///
-/// Returns `None` if the variable is not set.
-pub fn read_secrets_key() -> Option<String> {
-    std::env::var("ORKESTRA_SECRETS_KEY").ok()
-}
-
 // -- Helpers --
 
 fn parse_key(key_hex: &str) -> Result<[u8; 32], ServiceError> {

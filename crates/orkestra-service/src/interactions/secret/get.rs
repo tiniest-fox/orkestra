@@ -9,18 +9,13 @@ use crate::types::{SecretValue, ServiceError};
 
 /// Fetch and decrypt the secret identified by `key` for `project_id`.
 ///
-/// Returns `ServiceError::Other("Secrets key not configured")` if
-/// `ORKESTRA_SECRETS_KEY` is absent (handler maps to 503).
-/// Returns `ServiceError::Other("Secret not found: {key}")` if the row does
-/// not exist (handler maps to 404).
+/// Returns `ServiceError::SecretNotFound` if the row does not exist (handler maps to 404).
 pub fn execute(
     conn: &Arc<Mutex<Connection>>,
     project_id: &str,
     key: &str,
+    secrets_key: &str,
 ) -> Result<SecretValue, ServiceError> {
-    let secrets_key = encrypt::read_secrets_key()
-        .ok_or_else(|| ServiceError::Other("Secrets key not configured".to_string()))?;
-
     let guard = conn.lock().expect("db mutex poisoned");
     let result = guard.query_row(
         "SELECT key, encrypted_value, nonce, created_at, updated_at
@@ -41,7 +36,7 @@ pub fn execute(
 
     match result {
         Ok((k, ciphertext, nonce, created_at, updated_at)) => {
-            let value = encrypt::decrypt(&ciphertext, &nonce, &secrets_key)?;
+            let value = encrypt::decrypt(&ciphertext, &nonce, secrets_key)?;
             Ok(SecretValue {
                 key: k,
                 value,
@@ -50,7 +45,7 @@ pub fn execute(
             })
         }
         Err(rusqlite::Error::QueryReturnedNoRows) => {
-            Err(ServiceError::Other(format!("Secret not found: {key}")))
+            Err(ServiceError::SecretNotFound(key.to_string()))
         }
         Err(e) => Err(ServiceError::Database(e)),
     }

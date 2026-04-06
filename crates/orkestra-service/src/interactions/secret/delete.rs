@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::types::ServiceError;
+use crate::types::{ProjectStatus, ServiceError};
 
 /// Delete the secret identified by `key` for `project_id`.
 ///
@@ -29,7 +29,7 @@ pub fn execute(
         )
         .optional()?;
 
-    Ok(status.as_deref() == Some("running"))
+    Ok(status.as_deref() == Some(ProjectStatus::Running.as_str()))
 }
 
 // ============================================================================

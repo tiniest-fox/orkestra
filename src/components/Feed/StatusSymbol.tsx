@@ -1,5 +1,6 @@
-//! Text symbol indicating task status with signal color, background chip, and optional pulse.
+// Text symbol indicating task status with signal color, background chip, and optional pulse.
 
+import { usePrStatus } from "../../providers/PrStatusProvider";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 
@@ -16,7 +17,10 @@ interface StatusColors {
 
 const TRANSPARENT = "bg-transparent";
 
-function resolveColors(task: WorkflowTaskView): {
+function resolveColors(
+  task: WorkflowTaskView,
+  prState: string | undefined,
+): {
   colors: StatusColors;
   symbol: string;
   extraClass: string;
@@ -111,19 +115,32 @@ function resolveColors(task: WorkflowTaskView): {
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "*", extraClass };
   }
   if (derived.is_done) {
-    // "⬇" means "done with a PR associated" — not necessarily merged.
-    // The Archive action in FeedRowActions further gates on merged state, but
-    // this symbol simply signals that the task has an associated PR.
-    if (task.pr_url) {
+    if (prState === "merged") {
       return {
         colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
-        symbol: "⬇",
+        symbol: "✓",
         extraClass,
       };
     }
+    if (prState === "closed") {
+      return {
+        colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
+        symbol: "✕",
+        extraClass,
+      };
+    }
+    if (task.pr_url) {
+      // PR exists but not merged/closed — it's open
+      return {
+        colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
+        symbol: "↑",
+        extraClass,
+      };
+    }
+    // No PR yet
     return {
       colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
-      symbol: "✓",
+      symbol: "○",
       extraClass,
     };
   }
@@ -138,13 +155,15 @@ function resolveColors(task: WorkflowTaskView): {
 }
 
 export function StatusSymbol({ task, waiting }: StatusSymbolProps) {
+  const { getPrStatus } = usePrStatus();
+  const prState = task.derived.is_done && task.pr_url ? getPrStatus(task.id)?.state : undefined;
   const { colors, symbol, extraClass } = waiting
     ? {
         colors: { bg: "bg-transparent", icon: "text-text-tertiary" },
         symbol: "\u25CC",
         extraClass: "",
       }
-    : resolveColors(task);
+    : resolveColors(task, prState);
 
   return (
     <span

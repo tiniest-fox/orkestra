@@ -1,4 +1,4 @@
-//! Pure function that classifies tasks into four intent-based feed sections.
+// Pure function that classifies tasks into six intent-based feed sections.
 
 import type { WorkflowTaskView } from "../types/workflow";
 
@@ -7,7 +7,13 @@ function byUpdatedAt(a: WorkflowTaskView, b: WorkflowTaskView): number {
   return a.updated_at.localeCompare(b.updated_at);
 }
 
-export type FeedSectionName = "needs_review" | "ready_to_ship" | "in_progress" | "completed";
+export type FeedSectionName =
+  | "needs_review"
+  | "ready_to_ship"
+  | "in_progress"
+  | "merged"
+  | "closed"
+  | "completed";
 
 export interface FeedSection {
   name: FeedSectionName;
@@ -22,16 +28,22 @@ export interface FeedGroupResult {
 }
 
 /**
- * Group top-level tasks into four intent-based sections and surface
+ * Group top-level tasks into six intent-based sections and surface
  * subtasks that need attention into the Needs Review section.
  *
  * Classification order (first match wins):
  * - needs_review: derived.needs_review || derived.has_questions || is_blocked || is_interrupted || subtask needs review || is_chatting || chat_agent_active || is_interactive
- * - ready_to_ship: derived.is_done (false once archived, so no extra guard needed)
+ * - integrating: state.type === "integrating" → ready_to_ship
+ * - merged: derived.is_done AND prStates entry is "merged"
+ * - closed: derived.is_done AND prStates entry is "closed"
+ * - ready_to_ship: derived.is_done (no PR, open PR, or unknown)
  * - completed: derived.is_archived
  * - in_progress: everything else
  */
-export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
+export function groupTasksForFeed(
+  tasks: WorkflowTaskView[],
+  prStates?: Map<string, string>,
+): FeedGroupResult {
   const topLevel = tasks.filter((t) => !t.parent_id);
   const allSubtasks = tasks.filter((t) => t.parent_id !== undefined);
 
@@ -60,6 +72,8 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
 
   const needsReview: WorkflowTaskView[] = [];
   const readyToShip: WorkflowTaskView[] = [];
+  const merged: WorkflowTaskView[] = [];
+  const closed: WorkflowTaskView[] = [];
   const inProgress: WorkflowTaskView[] = [];
   const completed: WorkflowTaskView[] = [];
 
@@ -75,8 +89,17 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
       task.derived.is_interactive
     ) {
       needsReview.push(task);
-    } else if (task.derived.is_done || task.state.type === "integrating") {
+    } else if (task.state.type === "integrating") {
       readyToShip.push(task);
+    } else if (task.derived.is_done) {
+      const prState = prStates?.get(task.id);
+      if (prState === "merged") {
+        merged.push(task);
+      } else if (prState === "closed") {
+        closed.push(task);
+      } else {
+        readyToShip.push(task);
+      }
     } else if (task.derived.is_archived) {
       completed.push(task);
     } else {
@@ -100,6 +123,16 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
         name: "ready_to_ship",
         label: "READY TO SHIP",
         tasks: readyToShip.sort(byUpdatedAt),
+      },
+      {
+        name: "merged",
+        label: "MERGED",
+        tasks: merged.sort(byUpdatedAt),
+      },
+      {
+        name: "closed",
+        label: "CLOSED",
+        tasks: closed.sort(byUpdatedAt),
       },
       {
         name: "completed",

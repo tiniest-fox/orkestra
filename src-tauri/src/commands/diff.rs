@@ -480,7 +480,8 @@ pub fn workflow_get_branch_commits(
 ) -> Result<Vec<CommitInfo>, TauriError> {
     registry.with_project(window.label(), |state| {
         let api = state.api()?;
-        api.get_branch_commits(&task_id).map_err(std::convert::Into::into)
+        api.get_branch_commits(&task_id)
+            .map_err(std::convert::Into::into)
     })
 }
 

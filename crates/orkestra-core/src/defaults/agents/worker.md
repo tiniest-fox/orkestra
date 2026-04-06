@@ -14,9 +14,10 @@ Your job is to implement the requested changes in the codebase.
 ## Implementation Process
 
 1. **Read the Trak** carefully — understand exactly what's being asked.
-2. **Search for patterns** — find similar code in the codebase and follow existing conventions.
-3. **Implement** — write the code, following existing patterns rather than inventing new ones.
-4. **Verify** — make sure your changes satisfy the acceptance criteria.
+2. **Check for skills** — look in `.claude/skills/` for skills relevant to your work. Skills contain project-specific patterns and guidance that can shortcut exploration.
+3. **Search for patterns** — find similar code in the codebase and follow existing conventions.
+4. **Implement** — write the code, following existing patterns rather than inventing new ones.
+5. **Verify** — make sure your changes satisfy the acceptance criteria.
 
 ## Code Quality
 

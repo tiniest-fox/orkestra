@@ -13,32 +13,15 @@ import type { AssistantSession, LogEntry, WorkflowTaskView } from "../../types/w
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { resolveFlowStageNames } from "../../utils/workflowNavigation";
-import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
-import { AgentEntry, buildDisplayMessages } from "./AssistantDrawer";
 import { ChatComposeArea } from "./ChatComposeArea";
 import { DrawerDiffTab } from "./DrawerDiffTab";
 import { drawerAccent } from "./DrawerHeader";
 import { DrawerTabBar } from "./DrawerTabBar";
 import { DrawerTaskProvider } from "./DrawerTaskProvider";
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function AgentEntries({ entries }: { entries: LogEntry[] }) {
-  const grouped = useGroupedLogs(entries);
-  return (
-    <>
-      {grouped.map((entry, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: no stable IDs on log entries
-        <AgentEntry key={i} entry={entry} />
-      ))}
-    </>
-  );
-}
+import { buildDisplayMessages, MessageList } from "./MessageList";
 
 // ============================================================================
 // Types
@@ -293,56 +276,15 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
       {/* Agent tab */}
       {activeTab === "agent" && (
         <>
-          <div
-            ref={messageListRef}
+          <MessageList
+            messages={displayMessages}
+            isAgentRunning={isAgentRunning}
+            agentLabel="Agent"
+            containerRef={messageListRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto bg-canvas"
-          >
-            {displayMessages.length === 0 && !isAgentRunning && (
-              <div className="flex items-center justify-center h-full">
-                <p className="font-mono text-forge-mono-sm text-text-quaternary">
-                  Send a message to start the interactive session.
-                </p>
-              </div>
-            )}
-            {displayMessages.map((msg, i) => (
-              <div
-                // biome-ignore lint/suspicious/noArrayIndexKey: display messages have no stable IDs
-                key={`msg-${i}`}
-                className={[
-                  "border-b border-border last:border-b-0",
-                  msg.kind === "user"
-                    ? "border-l-2 border-l-accent bg-surface px-6 py-3.5 pl-[22px]"
-                    : "bg-canvas px-6 py-3.5",
-                ].join(" ")}
-              >
-                <div
-                  className={[
-                    "font-mono text-forge-mono-label font-medium uppercase tracking-wider mb-1.5",
-                    msg.kind === "user" ? "text-accent" : "text-text-tertiary",
-                  ].join(" ")}
-                >
-                  {msg.kind === "user" ? "You" : "Agent"}
-                </div>
-                {msg.kind === "agent" ? (
-                  <div className="text-text-secondary">
-                    <AgentEntries entries={msg.entries} />
-                  </div>
-                ) : (
-                  <div className="font-sans text-forge-body text-text-secondary leading-relaxed whitespace-pre-wrap">
-                    {stripParameterBlocks(msg.content)}
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {isAgentRunning && (
-              <div className="flex items-center gap-2 px-6 py-3.5 text-text-quaternary">
-                <span className="w-3.5 h-3.5 border-2 border-border border-t-transparent rounded-full animate-spin shrink-0" />
-                <span className="font-mono text-forge-mono-sm">Working…</span>
-              </div>
-            )}
-          </div>
+            emptyText="Send a message to start the interactive session."
+            contentFilter={stripParameterBlocks}
+          />
 
           <ChatComposeArea
             value={inputValue}

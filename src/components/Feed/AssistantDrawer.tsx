@@ -2,166 +2,20 @@
 
 import { History, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import { useToast } from "../../providers/ToastProvider";
 import { useTransport } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
-import { parseAssistantQuestions, stripQuestionBlocks } from "../../utils/assistantQuestions";
-import { stripParameterBlocks } from "../../utils/feedContent";
-import { PROSE_CLASSES } from "../../utils/prose";
+import { parseAssistantQuestions } from "../../utils/assistantQuestions";
 import { relativeTime } from "../../utils/relativeTime";
-import { toolSummary } from "../../utils/toolSummary";
 import { isDisconnectError } from "../../utils/transportErrors";
-import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
-import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
-import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ChatComposeArea } from "./ChatComposeArea";
-import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
+import { buildDisplayMessages, MessageList } from "./MessageList";
 import { QuestionCard } from "./QuestionCard";
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-export interface UserMessage {
-  kind: "user";
-  content: string;
-}
-
-export interface AgentMessage {
-  kind: "agent";
-  entries: LogEntry[];
-}
-
-export type DisplayMessage = UserMessage | AgentMessage;
-
-export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
-  const messages: DisplayMessage[] = [];
-  let agentEntries: LogEntry[] = [];
-
-  for (const entry of logs) {
-    if (entry.type === "user_message") {
-      if (agentEntries.length > 0) {
-        messages.push({ kind: "agent", entries: agentEntries });
-        agentEntries = [];
-      }
-      messages.push({ kind: "user", content: entry.content });
-    } else {
-      agentEntries.push(entry);
-    }
-  }
-
-  if (agentEntries.length > 0) {
-    messages.push({ kind: "agent", entries: agentEntries });
-  }
-
-  return messages;
-}
-
-// ============================================================================
-// Entry components
-// ============================================================================
-
-function AssistantTextLine({ content }: { content: string }) {
-  const cleaned = stripQuestionBlocks(stripParameterBlocks(content));
-  if (!cleaned) return null;
-  return (
-    <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
-      <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
-        {cleaned}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-export function AgentEntry({ entry }: { entry: GroupedLogEntry }) {
-  if (entry.type === "subagent_group") {
-    const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
-    const shown = toolCalls.slice(-2);
-    const hidden = toolCalls.length - shown.length;
-    return (
-      <>
-        <ToolLine
-          label="Agent"
-          summary={
-            entry.taskEntry.input.tool === "agent"
-              ? ((entry.taskEntry.input as { description?: string }).description ?? "")
-              : ""
-          }
-          variant="task"
-        />
-        <div className="ml-[2px] pl-4 border-l border-border">
-          {hidden > 0 && (
-            <div className="font-mono text-forge-mono-sm text-text-quaternary py-[3px]">
-              +{hidden} tool call{hidden !== 1 ? "s" : ""}
-            </div>
-          )}
-          {shown.map((sub, i) =>
-            sub.type === "subagent_tool_use" ? (
-              // biome-ignore lint/suspicious/noArrayIndexKey: no stable ID
-              <ToolLine key={i} label={sub.tool} summary={toolSummary(sub.input)} variant="tool" />
-            ) : null,
-          )}
-        </div>
-      </>
-    );
-  }
-
-  switch (entry.type) {
-    case "text":
-      return <AssistantTextLine content={entry.content} />;
-
-    case "tool_use":
-      return <ToolLine label={entry.tool} summary={toolSummary(entry.input)} variant="tool" />;
-
-    case "error":
-      return <ErrorLine message={entry.message} />;
-
-    case "script_start":
-      return <ToolLine label={`sh · ${entry.stage}`} summary={entry.command} variant="script" />;
-
-    case "script_output":
-      return <ScriptOutputLine content={entry.content} />;
-
-    case "script_exit":
-      return (
-        <div
-          className={`font-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-text-quaternary" : "text-status-error"}`}
-        >
-          {entry.success
-            ? "✓ done"
-            : `✗ exit ${entry.code}${entry.timed_out ? " (timed out)" : ""}`}
-        </div>
-      );
-
-    case "user_message":
-    case "tool_result":
-    case "subagent_tool_use":
-    case "subagent_tool_result":
-    case "process_exit":
-      return null;
-
-    default:
-      return null;
-  }
-}
-
-function AgentEntries({ entries }: { entries: LogEntry[] }) {
-  const grouped = useGroupedLogs(entries);
-  return (
-    <>
-      {grouped.map((entry, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: no stable IDs on log entries
-        <AgentEntry key={i} entry={entry} />
-      ))}
-    </>
-  );
-}
 
 // ============================================================================
 // AssistantDrawer
@@ -419,98 +273,48 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
           />
 
           {/* Message List */}
-          <div
-            ref={messageListRef}
+          <MessageList
+            messages={displayMessages}
+            isAgentRunning={isAgentRunning}
+            agentLabel="Assistant"
+            containerRef={messageListRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto bg-canvas"
-          >
-            {displayMessages.length === 0 && !isAgentRunning && (
-              <div className="flex items-center justify-center h-full">
-                <p className="font-mono text-[11px] text-text-quaternary">
-                  Start a conversation with the assistant.
-                </p>
-              </div>
-            )}
-            {displayMessages.map((msg, i) => {
-              // Detect the last agent message — questions attach below it
-              const isLastAgent =
-                msg.kind === "agent" &&
-                displayMessages.slice(i + 1).every((m) => m.kind !== "agent");
-
-              return (
-                <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: display messages have no stable IDs
-                  key={`msg-${i}`}
-                  className={[
-                    "border-b border-border last:border-b-0",
-                    msg.kind === "user"
-                      ? "border-l-2 border-l-accent bg-surface px-6 py-3.5 pl-[22px]"
-                      : "bg-canvas px-6 py-3.5",
-                  ].join(" ")}
-                >
-                  <div
-                    className={[
-                      "font-mono text-[10px] font-medium uppercase tracking-wider mb-1.5",
-                      msg.kind === "user" ? "text-accent" : "text-text-tertiary",
-                    ].join(" ")}
-                  >
-                    {msg.kind === "user" ? "You" : "Assistant"}
+            emptyText="Start a conversation with the assistant."
+            lastAgentExtra={
+              questions.length > 0 ? (
+                <div className="mt-4 pt-4 border-t border-border -mx-6 px-0">
+                  {questions.map((q, qi) => (
+                    <QuestionCard
+                      // biome-ignore lint/suspicious/noArrayIndexKey: questions lack stable IDs
+                      key={`q-${qi}`}
+                      index={qi}
+                      question={q}
+                      value={answers[qi] ?? ""}
+                      onChange={(v) =>
+                        setAnswers((prev) => {
+                          const next = [...prev];
+                          next[qi] = v;
+                          return next;
+                        })
+                      }
+                      flatStartIndex={qi}
+                      keyboardFlatIdx={-1}
+                    />
+                  ))}
+                  <div className="px-6 pb-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSendAnswers}
+                      disabled={sending || answers.every((a) => !a.trim())}
+                      className="font-sans text-[12px] font-semibold px-3.5 py-1.5 bg-accent text-white rounded-md hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Send answers
+                    </button>
                   </div>
-                  {msg.kind === "agent" ? (
-                    <div className="text-text-secondary">
-                      <AgentEntries entries={msg.entries} />
-                    </div>
-                  ) : (
-                    <div className="font-sans text-[13px] text-text-secondary leading-relaxed whitespace-pre-wrap">
-                      {msg.content}
-                    </div>
-                  )}
-
-                  {/* Question cards on the last agent message */}
-                  {isLastAgent && questions.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-border -mx-6 px-0">
-                      {questions.map((q, qi) => (
-                        <QuestionCard
-                          // biome-ignore lint/suspicious/noArrayIndexKey: questions lack stable IDs
-                          key={`q-${qi}`}
-                          index={qi}
-                          question={q}
-                          value={answers[qi] ?? ""}
-                          onChange={(v) =>
-                            setAnswers((prev) => {
-                              const next = [...prev];
-                              next[qi] = v;
-                              return next;
-                            })
-                          }
-                          flatStartIndex={qi}
-                          keyboardFlatIdx={-1}
-                        />
-                      ))}
-                      <div className="px-6 pb-2 flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={handleSendAnswers}
-                          disabled={sending || answers.every((a) => !a.trim())}
-                          className="font-sans text-[12px] font-semibold px-3.5 py-1.5 bg-accent text-white rounded-md hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          Send answers
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              );
-            })}
-
-            {/* Spinner shown while agent is working */}
-            {isAgentRunning && (
-              <div className="flex items-center gap-2 px-6 py-3.5 text-text-quaternary">
-                <span className="w-3.5 h-3.5 border-2 border-border border-t-transparent rounded-full animate-spin shrink-0" />
-                <span className="font-mono text-[11px]">Working…</span>
-              </div>
-            )}
-          </div>
+              ) : undefined
+            }
+          />
 
           {/* Compose Area */}
           <ChatComposeArea

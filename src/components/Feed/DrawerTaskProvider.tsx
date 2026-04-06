@@ -5,9 +5,13 @@
 // dropped automatically when the drawer closes and the provider unmounts.
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { prefetchCommitDiff } from "../../hooks/useCommitDiff";
 import type { HighlightedLine, HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useDiff } from "../../hooks/useDiff";
+import { usePolling } from "../../hooks/usePolling";
 import { useTransport } from "../../transport";
+import type { CommitInfo } from "../../types/workflow";
+import { isDisconnectError } from "../../utils/transportErrors";
 import { applySplice, type ExpandPosition } from "./applySplice";
 
 export type { ExpandPosition } from "./applySplice";
@@ -29,6 +33,8 @@ interface DrawerTaskContextValue {
     position: ExpandPosition,
     amount: number,
   ) => Promise<void>;
+  taskId: string;
+  branchCommits: CommitInfo[];
 }
 
 const DrawerTaskContext = createContext<DrawerTaskContextValue | null>(null);
@@ -45,6 +51,25 @@ export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps
   const [localDiff, setLocalDiff] = useState<HighlightedTaskDiff | null>(null);
   const [fileContextLines, setFileContextLines] = useState<Map<string, number>>(new Map());
   const [expansionIntents, setExpansionIntents] = useState<ExpansionIntents>(new Map());
+  const [branchCommits, setBranchCommits] = useState<CommitInfo[]>([]);
+
+  const fetchBranchCommits = useCallback(async () => {
+    try {
+      const commits = await transport.call<CommitInfo[]>("get_branch_commits", {
+        task_id: taskId,
+      });
+      setBranchCommits(commits);
+      if (commits.length > 0) {
+        prefetchCommitDiff(commits[0].hash, transport);
+      }
+    } catch (err) {
+      if (!isDisconnectError(err)) {
+        console.error("Failed to fetch branch commits:", err);
+      }
+    }
+  }, [transport, taskId]);
+
+  usePolling(fetchBranchCommits, 2000);
 
   // Ref so the replay effect always reads the latest intents without being in its dep array.
   const expansionIntentsRef = useRef<ExpansionIntents>(expansionIntents);
@@ -182,7 +207,15 @@ export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps
 
   return (
     <DrawerTaskContext.Provider
-      value={{ diff: localDiff, diffLoading, diffError, fileContextLines, expandContext }}
+      value={{
+        diff: localDiff,
+        diffLoading,
+        diffError,
+        fileContextLines,
+        expandContext,
+        taskId,
+        branchCommits,
+      }}
     >
       {children}
     </DrawerTaskContext.Provider>

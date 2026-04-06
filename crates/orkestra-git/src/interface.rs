@@ -121,6 +121,17 @@ pub trait GitService: Send + Sync {
     /// instead of the main repository HEAD.
     fn commit_log_at(&self, path: &Path, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
 
+    /// Get commits on the branch since it diverged from `base_branch`.
+    ///
+    /// Returns up to `limit` commits reachable from HEAD in `worktree_path` but
+    /// not reachable from `base_branch` (i.e., `base_branch..HEAD`).
+    fn branch_commits(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+        limit: usize,
+    ) -> Result<Vec<CommitInfo>, GitError>;
+
     /// Get file change counts for a batch of commit hashes.
     ///
     /// Returns a map from commit hash to the number of files changed.

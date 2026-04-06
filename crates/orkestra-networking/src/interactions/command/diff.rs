@@ -204,6 +204,26 @@ pub fn handle_get_syntax_css(ctx: &Arc<CommandContext>, _params: Value) -> Value
 // Commit history
 // ============================================================================
 
+/// Handle the `get_branch_commits` method — returns commits on the task branch not on the base.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub(super) async fn handle_get_branch_commits(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let commits = api
+            .get_branch_commits(&task_id)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(commits).unwrap_or(Value::Array(vec![])))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
 /// Handle the `get_commit_log` method — returns the 20 most recent commits.
 pub(super) async fn handle_get_commit_log(
     ctx: Arc<CommandContext>,

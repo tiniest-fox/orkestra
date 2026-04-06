@@ -1,6 +1,7 @@
 //! Read-only query interactions grouped by domain.
 
 pub mod artifacts;
+pub mod branch_commits;
 pub mod diff;
 pub mod file_content;
 pub mod iterations;

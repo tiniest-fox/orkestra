@@ -471,6 +471,20 @@ fn parse_range(range: &str) -> Option<(u32, u32)> {
 // Commit History Commands
 // =============================================================================
 
+/// Get commits on a task's branch since it diverged from the base branch.
+#[tauri::command]
+pub fn workflow_get_branch_commits(
+    registry: State<ProjectRegistry>,
+    window: tauri::Window,
+    task_id: String,
+) -> Result<Vec<CommitInfo>, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
+        api.get_branch_commits(&task_id)
+            .map_err(std::convert::Into::into)
+    })
+}
+
 /// Get recent commit history for the main repository.
 ///
 /// Returns the 20 most recent commits on the current branch.

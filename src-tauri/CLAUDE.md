@@ -46,6 +46,11 @@ Commands now fall into two categories: **shared** (same logic on Tauri and WebSo
    }
    ```
 5. Re-export from `commands/mod.rs` if new module, register in `invoke_handler!` in `lib.rs`
+6. Add the mapping to `METHOD_MAP` in `src/transport/TauriTransport.ts`:
+   ```ts
+   my_command: "workflow_my_command",
+   ```
+   Without this entry, `TauriTransport.call("my_command")` silently falls back to passing the raw method name to Tauri, which resolves to the wrong command name and breaks desktop mode. The WebSocket transport works fine (it uses the canonical method name directly), so the bug only surfaces in the desktop app.
 
 ### Desktop-only command (no WebSocket equivalent)
 

@@ -13,7 +13,6 @@ use crate::types::ServiceError;
 /// vec — secrets injection is silently skipped rather than failing the start.
 ///
 /// Individual secrets that fail to decrypt are skipped with a warning log.
-#[allow(dead_code)]
 pub fn execute(
     conn: &Arc<Mutex<Connection>>,
     project_id: &str,

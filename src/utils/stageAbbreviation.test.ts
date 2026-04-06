@@ -14,7 +14,14 @@ describe("abbreviateStage", () => {
     expect(abbreviateStage("Review")).toBe("rvw");
     expect(abbreviateStage("Compound")).toBe("cmp");
     expect(abbreviateStage("Breakdown")).toBe("brk");
-    expect(abbreviateStage("Check")).toBe("chc");
+    expect(abbreviateStage("Check")).toBe("chk");
+  });
+
+  it("prefers non-duplicate consonants (dedup behavior)", () => {
+    // "Check": rest consonants = h, c, k — skips duplicate 'c', takes 'k'
+    expect(abbreviateStage("Check")).toBe("chk");
+    // "Test": rest consonants = s, t — no non-duplicate alternative for 't', so duplicate kept
+    expect(abbreviateStage("Test")).toBe("tst");
   });
 
   it("is case insensitive", () => {

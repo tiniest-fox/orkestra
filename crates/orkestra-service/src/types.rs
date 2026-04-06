@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// A GitHub repository returned by `gh repo list`.
+/// A GitHub repository returned by `gh api /user/repos`.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GithubRepo {
     pub name: String,

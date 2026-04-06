@@ -36,9 +36,9 @@ pub fn execute() -> Result<Vec<GithubRepo>, ServiceError> {
 
 /// Parse `--paginate` output, which emits one JSON array per page.
 ///
-/// With `--jq`, `gh api --paginate` outputs a separate JSON array per page
-/// (e.g. `[...][...]`). We wrap these in an outer array to make valid JSON,
-/// then flatten.
+/// With `--jq`, `gh api --paginate` outputs one JSON array per page,
+/// concatenated (e.g. `[...][...]`). Uses streaming deserialization to
+/// parse each page independently and flatten into a single list.
 fn parse_paginated_output(stdout: &[u8]) -> Result<Vec<GithubRepo>, ServiceError> {
     let text = String::from_utf8_lossy(stdout);
     let trimmed = text.trim();
@@ -46,16 +46,10 @@ fn parse_paginated_output(stdout: &[u8]) -> Result<Vec<GithubRepo>, ServiceError
         return Ok(Vec::new());
     }
 
-    // Single page: already valid JSON array
-    if let Ok(repos) = serde_json::from_str::<Vec<GithubRepo>>(trimmed) {
-        return Ok(repos);
-    }
-
-    // Multiple pages: concatenated arrays like `[...][...]`
-    // Insert commas between arrays, wrap, and parse as Vec<Vec<GithubRepo>>
-    let joined = trimmed.replace("][", "],[");
-    let wrapped = format!("[{joined}]");
-    let pages: Vec<Vec<GithubRepo>> = serde_json::from_str(&wrapped)
+    let de = serde_json::Deserializer::from_str(trimmed);
+    let pages: Vec<Vec<GithubRepo>> = de
+        .into_iter::<Vec<GithubRepo>>()
+        .collect::<Result<_, _>>()
         .map_err(|e| ServiceError::Other(format!("Failed to parse repo list output: {e}")))?;
 
     Ok(pages.into_iter().flatten().collect())
@@ -111,5 +105,24 @@ mod tests {
 
         let repos = parse_paginated_output(b"  ").unwrap();
         assert!(repos.is_empty());
+    }
+
+    #[test]
+    fn parses_description_containing_bracket_pair() {
+        let json = r#"[{"name":"tricky","nameWithOwner":"x/tricky","url":"https://github.com/x/tricky","description":"array[0][1] access"}]"#;
+
+        let repos = parse_paginated_output(json.as_bytes()).unwrap();
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].description.as_deref(), Some("array[0][1] access"));
+    }
+
+    #[test]
+    fn parses_multi_page_with_bracket_in_description() {
+        // Two pages concatenated, second page has ][ in a description
+        let json = r#"[{"name":"a","nameWithOwner":"x/a","url":"https://github.com/x/a","description":null}][{"name":"b","nameWithOwner":"y/b","url":"https://github.com/y/b","description":"uses arr[0][1]"}]"#;
+
+        let repos = parse_paginated_output(json.as_bytes()).unwrap();
+        assert_eq!(repos.len(), 2);
+        assert_eq!(repos[1].description.as_deref(), Some("uses arr[0][1]"));
     }
 }

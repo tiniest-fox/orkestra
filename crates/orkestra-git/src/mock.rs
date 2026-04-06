@@ -37,6 +37,7 @@ pub struct MockGitService {
     commit_pending_changes_calls: Mutex<Vec<(PathBuf, String)>>,
     force_push_calls: Mutex<Vec<String>>,
     force_push_error: Mutex<Option<GitError>>,
+    branch_commits_results: Mutex<std::collections::VecDeque<Result<Vec<CommitInfo>, GitError>>>,
 }
 
 impl MockGitService {
@@ -67,6 +68,7 @@ impl MockGitService {
             commit_pending_changes_calls: Mutex::new(Vec::new()),
             force_push_calls: Mutex::new(Vec::new()),
             force_push_error: Mutex::new(None),
+            branch_commits_results: Mutex::new(std::collections::VecDeque::new()),
         }
     }
 
@@ -191,6 +193,14 @@ impl MockGitService {
     /// Get the list of `force_push_branch` calls for verification.
     pub fn get_force_push_calls(&self) -> Vec<String> {
         self.force_push_calls.lock().unwrap().clone()
+    }
+
+    /// Push a result for the next `branch_commits` call.
+    pub fn push_branch_commits_result(&self, result: Result<Vec<CommitInfo>, GitError>) {
+        self.branch_commits_results
+            .lock()
+            .unwrap()
+            .push_back(result);
     }
 }
 
@@ -323,7 +333,11 @@ impl GitService for MockGitService {
         _base_branch: &str,
         _limit: usize,
     ) -> Result<Vec<CommitInfo>, GitError> {
-        Ok(vec![])
+        self.branch_commits_results
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(vec![]))
     }
 
     fn batch_file_counts(&self, _hashes: &[String]) -> Result<HashMap<String, usize>, GitError> {

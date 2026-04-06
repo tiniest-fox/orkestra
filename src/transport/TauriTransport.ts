@@ -69,6 +69,7 @@ const METHOD_MAP: Record<string, string> = {
   get_task_diff: "workflow_get_task_diff",
   get_file_content: "workflow_get_file_content",
   get_syntax_css: "workflow_get_syntax_css",
+  get_branch_commits: "workflow_get_branch_commits",
   get_commit_log: "workflow_get_commit_log",
   get_batch_file_counts: "workflow_get_batch_file_counts",
   get_commit_diff: "workflow_get_commit_diff",

@@ -522,6 +522,38 @@ mod tests {
     }
 
     #[test]
+    fn test_branch_commits() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create a branch and add a commit
+        Command::new("git")
+            .args(["checkout", "-b", "task/test-branch"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(repo_path.join("branch_file.txt"), "branch content")
+            .expect("Failed to write");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Branch commit"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+
+        let commits = git
+            .branch_commits(&repo_path, "main", 200)
+            .expect("Failed to get branch commits");
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].message, "Branch commit");
+    }
+
+    #[test]
     fn test_commit_diff() {
         let (_temp_dir, repo_path) = create_test_repo();
         let git = Git2GitService::new(&repo_path).expect("Failed to create git service");

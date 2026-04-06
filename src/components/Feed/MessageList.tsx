@@ -270,8 +270,13 @@ export function MessageList({
                 <AgentEntries entries={msg.entries} projectRoot={projectRoot} />
               </div>
             ) : (
-              <div className="font-sans text-forge-body text-text-secondary leading-relaxed whitespace-pre-wrap">
-                {contentFilter ? contentFilter(msg.content) : msg.content}
+              <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
+                <ReactMarkdown
+                  remarkPlugins={richContentPlugins}
+                  components={richContentComponents}
+                >
+                  {contentFilter ? contentFilter(msg.content) : msg.content}
+                </ReactMarkdown>
               </div>
             )}
 

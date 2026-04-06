@@ -84,13 +84,13 @@ export function DrawerTabContent({
   if (activeTab === "logs") {
     return (
       <>
-        <div
-          ref={logContainerRef}
+        <FeedLogList
+          logs={logs}
+          error={logsError}
+          isAgentRunning={task.derived.is_working || task.derived.chat_agent_active}
+          containerRef={logContainerRef}
           onScroll={handleLogScroll}
-          className="flex-1 overflow-y-auto p-4"
-        >
-          <FeedLogList logs={logs} error={logsError} />
-        </div>
+        />
         {(task.derived.needs_review ||
           task.derived.has_questions ||
           task.derived.is_interrupted ||

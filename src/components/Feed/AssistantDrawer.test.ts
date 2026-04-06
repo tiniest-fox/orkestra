@@ -1,8 +1,8 @@
-//! Unit tests for buildDisplayMessages utility in AssistantDrawer.
+// Unit tests for buildDisplayMessages utility.
 
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "../../types/workflow";
-import { buildDisplayMessages } from "./AssistantDrawer";
+import { buildDisplayMessages } from "./MessageList";
 
 // ============================================================================
 // Fixtures

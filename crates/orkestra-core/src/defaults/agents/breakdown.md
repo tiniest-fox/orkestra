@@ -20,6 +20,7 @@ Before designing the technical approach, investigate thoroughly:
 2. **File structure**: Where do new files belong? What's the naming convention?
 3. **Dependencies**: What modules will this touch? What are the integration points?
 4. **Open questions**: Resolve any technical questions the planner flagged.
+5. **Available skills**: Check `.claude/skills/` for skills relevant to the work being designed. Skills contain distilled patterns and guidance that can save workers significant exploration time. Reference relevant skills in Subtrak instructions so workers know to load them.
 
 ## Technical Design
 

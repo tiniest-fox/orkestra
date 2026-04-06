@@ -8,7 +8,6 @@ import { useCommitDiff } from "../../hooks/useCommitDiff";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
-import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
 import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
@@ -46,7 +45,13 @@ export function DrawerDiffTab({
   onAddDraftComment,
   onRemoveDraftComment,
 }: DrawerDiffTabProps) {
-  const { diff: liveDiff, diffLoading, fileContextLines, expandContext } = useDrawerDiff();
+  const {
+    diff: liveDiff,
+    diffLoading,
+    fileContextLines,
+    expandContext,
+    branchCommits: commits,
+  } = useDrawerDiff();
   const { css } = useSyntaxCss();
   const isMobile = useIsMobile();
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -54,7 +59,7 @@ export function DrawerDiffTab({
   const diffContentRef = useRef<DiffContentHandle>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
-  const [commitPanelCollapsed, setCommitPanelCollapsed] = useState(false);
+  const [commitPanelCollapsed, setCommitPanelCollapsed] = useState(true);
   const [commitOverlayOpen, setCommitOverlayOpen] = useState(false);
 
   // -- Active comment line (local state) --
@@ -77,7 +82,6 @@ export function DrawerDiffTab({
     }
   }, [hasDrafts, liveDiff]);
 
-  const { commits } = useGitHistory();
   const { diff: commitDiff, loading: commitDiffLoading } = useCommitDiff(selectedCommitHash);
 
   // Per-commit mode: use commit diff directly (immutable, no snapshot needed).

@@ -91,6 +91,7 @@ pub const TRANSPORT_SPECIFIC_COMMANDS: &[&str] = &[
     "get_task_diff",
     "get_file_content",
     "get_syntax_css",
+    "get_branch_commits",
     "get_commit_log",
     "get_batch_file_counts",
     "get_commit_diff",

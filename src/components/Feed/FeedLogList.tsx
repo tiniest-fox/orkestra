@@ -1,21 +1,37 @@
-// Feed log list — Forge-styled activity log for FocusDrawer and ReviewDrawer.
-//
-// A variant of LogList tuned for the Feed's compact, monospaced aesthetic.
-// Tool calls are compact one-liners; thinking is subtle prose; user messages
-// are minimal dividers. All colours use Forge design system Tailwind tokens.
+// Feed log list — conversation-style activity log for FocusDrawer and ReviewDrawer.
 
-import { Terminal } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import { useProjectInfo } from "../../hooks/useProjectInfo";
-import type { LogEntry, ResumeType } from "../../types/workflow";
-import { stripParameterBlocks } from "../../utils/feedContent";
-import { PROSE_CLASSES } from "../../utils/prose";
-import { toolSummary } from "../../utils/toolSummary";
-import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
-import { useGroupedLogs } from "../Logs/useGroupedLogs";
-import { EmptyState, ErrorState } from "../ui";
-import { richContentComponents, richContentPlugins } from "../ui/RichContent";
-import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
+import { useMemo } from "react";
+import type { LogEntry } from "../../types/workflow";
+import { ErrorState } from "../ui";
+import type { UserClassification, UserMessage } from "./MessageList";
+import { buildDisplayMessages, MessageList } from "./MessageList";
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function classifyUser(msg: UserMessage): UserClassification {
+  const resumeType = msg.resumeType;
+  if (!resumeType) return { label: "System", isHuman: false };
+
+  switch (resumeType) {
+    case "initial":
+    case "feedback":
+    case "answers":
+    case "manual_resume":
+    case "chat":
+    case "return_to_work":
+      return { label: "You", isHuman: true };
+    case "continue":
+    case "recheck":
+    case "retry_failed":
+    case "retry_blocked":
+    case "integration":
+      return { label: "System", isHuman: false };
+    default:
+      return { label: "System", isHuman: false };
+  }
+}
 
 // ============================================================================
 // Public component
@@ -24,180 +40,37 @@ import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 interface FeedLogListProps {
   logs: LogEntry[];
   error?: unknown;
+  isAgentRunning?: boolean;
+  containerRef?: React.Ref<HTMLDivElement>;
+  onScroll?: React.UIEventHandler<HTMLDivElement>;
 }
 
-export function FeedLogList({ logs, error }: FeedLogListProps) {
-  const grouped = useGroupedLogs(logs);
-  const projectInfo = useProjectInfo();
-  const projectRoot = projectInfo?.project_root;
+export function FeedLogList({
+  logs,
+  error,
+  isAgentRunning = false,
+  containerRef,
+  onScroll,
+}: FeedLogListProps) {
+  const messages = useMemo(() => buildDisplayMessages(logs), [logs]);
 
   if (error != null) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex flex-1 items-center justify-center">
         <ErrorState message="Failed to load logs" error={error} />
       </div>
     );
   }
 
-  if (logs.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <EmptyState
-          icon={Terminal}
-          message="No activity yet."
-          description="Agent output will appear here."
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-0">
-      {grouped.map((entry, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: log entries have no stable IDs
-        <FeedEntry key={i} entry={entry} projectRoot={projectRoot} />
-      ))}
-    </div>
-  );
-}
-
-// ============================================================================
-// Entry dispatcher
-// ============================================================================
-
-function FeedEntry({ entry, projectRoot }: { entry: GroupedLogEntry; projectRoot?: string }) {
-  if (entry.type === "subagent_group") {
-    const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
-    const shown = toolCalls.slice(-2);
-    const hidden = toolCalls.length - shown.length;
-    return (
-      <>
-        <ToolLine
-          label="Agent"
-          summary={
-            entry.taskEntry.input.tool === "agent"
-              ? ((entry.taskEntry.input as { description?: string }).description ?? "")
-              : ""
-          }
-          variant="task"
-        />
-        <div className="ml-[2px] pl-4 border-l border-border">
-          {hidden > 0 && (
-            <div className="font-mono text-forge-mono-sm text-text-quaternary py-[3px]">
-              +{hidden} tool call{hidden !== 1 ? "s" : ""}
-            </div>
-          )}
-          {shown.map((sub, i) => {
-            if (sub.type !== "subagent_tool_use") return null;
-            const summary = toolSummary(sub.input, projectRoot);
-            // biome-ignore lint/suspicious/noArrayIndexKey: no stable ID
-            return <ToolLine key={i} label={sub.tool} summary={summary} variant="tool" />;
-          })}
-        </div>
-      </>
-    );
-  }
-
-  switch (entry.type) {
-    case "text":
-      return <ThinkingLine content={entry.content} />;
-
-    case "user_message":
-      return <UserBubble content={entry.content} resumeType={entry.resume_type} />;
-
-    case "tool_use":
-      return (
-        <ToolLine
-          label={entry.tool}
-          summary={toolSummary(entry.input, projectRoot)}
-          variant="tool"
-        />
-      );
-
-    case "tool_result":
-    case "subagent_tool_result":
-    case "subagent_tool_use":
-    case "process_exit":
-      return null;
-
-    case "error":
-      return <ErrorLine message={entry.message} />;
-
-    case "script_start":
-      return <ToolLine label={`sh · ${entry.stage}`} summary={entry.command} variant="script" />;
-
-    case "script_output":
-      return <ScriptOutputLine content={entry.content} />;
-
-    case "script_exit":
-      return (
-        <div
-          className={`font-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-text-quaternary" : "text-status-error"}`}
-        >
-          {entry.success
-            ? "✓ done"
-            : `✗ exit ${entry.code}${entry.timed_out ? " (timed out)" : ""}`}
-        </div>
-      );
-
-    default:
-      return null;
-  }
-}
-
-// ============================================================================
-// Entry components
-// ============================================================================
-
-function ThinkingLine({ content }: { content: string }) {
-  const cleaned = stripParameterBlocks(content);
-  if (!cleaned) return null;
-  return (
-    <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
-      <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
-        {cleaned}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-// Bubble style groups — color communicates type, no label needed.
-// human:  direct human input (feedback, answers, manual resume) — warm accent tint
-// system: automatic continuations — neutral, nearly invisible
-// initial: the very first prompt — purple tint, distinctly one-of-a-kind
-type BubbleGroup = "human" | "system" | "initial";
-
-const RESUME_GROUP: Record<ResumeType, BubbleGroup> = {
-  initial: "initial",
-  feedback: "human",
-  answers: "human",
-  manual_resume: "human",
-  chat: "human",
-  return_to_work: "human",
-  continue: "system",
-  recheck: "system",
-  retry_failed: "system",
-  retry_blocked: "system",
-  integration: "system",
-};
-
-const BUBBLE_STYLES: Record<BubbleGroup, string> = {
-  human: "bg-accent-soft border border-accent",
-  initial: "bg-status-purple-bg border border-status-purple",
-  system: "bg-canvas border border-border",
-};
-
-function UserBubble({ content, resumeType }: { content: string; resumeType?: ResumeType }) {
-  const group: BubbleGroup = resumeType ? RESUME_GROUP[resumeType] : "system";
-  return (
-    <div className="flex justify-end py-3">
-      <div className={`max-w-[85%] rounded-lg px-3 py-2 ${BUBBLE_STYLES[group]}`}>
-        <div className={`text-forge-body text-text-primary ${PROSE_CLASSES}`}>
-          <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
-            {content}
-          </ReactMarkdown>
-        </div>
-      </div>
-    </div>
+    <MessageList
+      messages={messages}
+      isAgentRunning={isAgentRunning}
+      emptyText="No activity yet."
+      agentLabel="Agent"
+      classifyUser={classifyUser}
+      containerRef={containerRef}
+      onScroll={onScroll}
+    />
   );
 }

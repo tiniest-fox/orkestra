@@ -1,7 +1,7 @@
 // Shared conversation-style message list for AssistantDrawer, InteractiveDrawer, and Logs tab.
 
 import ReactMarkdown from "react-markdown";
-import type { LogEntry } from "../../types/workflow";
+import type { LogEntry, ResumeType } from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -18,7 +18,11 @@ import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 export interface UserMessage {
   kind: "user";
   content: string;
+  resumeType?: ResumeType;
 }
+
+/** Label and visual style for a user message block. */
+export type UserClassification = { label: string; isHuman: boolean };
 
 export interface AgentMessage {
   kind: "agent";
@@ -37,7 +41,11 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
         messages.push({ kind: "agent", entries: agentEntries });
         agentEntries = [];
       }
-      messages.push({ kind: "user", content: entry.content });
+      const userMsg: UserMessage = { kind: "user", content: entry.content };
+      if (entry.resume_type !== undefined) {
+        userMsg.resumeType = entry.resume_type;
+      }
+      messages.push(userMsg);
     } else {
       agentEntries.push(entry);
     }
@@ -163,16 +171,19 @@ export interface MessageListProps {
   isAgentRunning: boolean;
   /** Label shown on agent message blocks. Defaults to "Agent". */
   agentLabel?: string;
-  /** Label shown on user message blocks. Defaults to "You". */
+  /** Label shown on user message blocks when classifyUser is not provided. Defaults to "You". */
   userLabel?: string;
+  /** Per-message classification for user messages — provides label and accent style. */
+  classifyUser?: (msg: UserMessage) => UserClassification;
   /** Transforms user message content before rendering. Defaults to identity. */
   contentFilter?: (content: string) => string;
   /** Content rendered below the last agent message block (e.g. question cards). */
   lastAgentExtra?: React.ReactNode;
   /** Text shown when there are no messages and the agent is not running. */
   emptyText?: string;
-  containerRef: React.Ref<HTMLDivElement>;
-  onScroll: React.UIEventHandler<HTMLDivElement>;
+  /** When provided, MessageList is the scroll container (adds flex-1 overflow-y-auto). */
+  containerRef?: React.Ref<HTMLDivElement>;
+  onScroll?: React.UIEventHandler<HTMLDivElement>;
 }
 
 export function MessageList({
@@ -180,14 +191,20 @@ export function MessageList({
   isAgentRunning,
   agentLabel = "Agent",
   userLabel = "You",
+  classifyUser,
   contentFilter,
   lastAgentExtra,
   emptyText = "No messages yet.",
   containerRef,
   onScroll,
 }: MessageListProps) {
+  const isScrollContainer = containerRef != null;
   return (
-    <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto bg-canvas">
+    <div
+      ref={containerRef}
+      onScroll={onScroll}
+      className={isScrollContainer ? "flex-1 overflow-y-auto bg-canvas" : ""}
+    >
       {messages.length === 0 && !isAgentRunning && (
         <div className="flex items-center justify-center h-full">
           <p className="font-mono text-forge-mono-sm text-text-quaternary">{emptyText}</p>
@@ -197,6 +214,11 @@ export function MessageList({
         const isLastAgent =
           msg.kind === "agent" && messages.slice(i + 1).every((m) => m.kind !== "agent");
 
+        const classification = msg.kind === "user" && classifyUser ? classifyUser(msg) : null;
+        const isHuman = classification ? classification.isHuman : true;
+        const msgLabel =
+          msg.kind === "user" ? (classification ? classification.label : userLabel) : agentLabel;
+
         return (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: display messages have no stable IDs
@@ -204,17 +226,19 @@ export function MessageList({
             className={[
               "border-b border-border last:border-b-0",
               msg.kind === "user"
-                ? "border-l-2 border-l-accent bg-surface px-6 py-3.5 pl-[22px]"
+                ? isHuman
+                  ? "border-l-2 border-l-accent bg-surface px-6 py-3.5 pl-[22px]"
+                  : "border-l-2 border-l-border bg-canvas px-6 py-3.5 pl-[22px]"
                 : "bg-canvas px-6 py-3.5",
             ].join(" ")}
           >
             <div
               className={[
                 "font-mono text-forge-mono-label font-medium uppercase tracking-wider mb-1.5",
-                msg.kind === "user" ? "text-accent" : "text-text-tertiary",
+                msg.kind === "user" && isHuman ? "text-accent" : "text-text-tertiary",
               ].join(" ")}
             >
-              {msg.kind === "user" ? userLabel : agentLabel}
+              {msgLabel}
             </div>
             {msg.kind === "agent" ? (
               <div className="text-text-secondary">

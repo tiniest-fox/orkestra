@@ -38,6 +38,9 @@ The following artifacts from prior stages are available in your worktree. You MU
 Your Trak definition is at `{{task_file_path}}`. Read it before starting work.
 
 {{#if sibling_tasks}}
+
+---
+
 ## Sibling Subtraks
 
 This Trak is part of a breakdown. Here are your siblings:
@@ -48,6 +51,9 @@ This Trak is part of a breakdown. Here are your siblings:
 {{/each}}
 {{/if}}
 {{#if question_history}}
+
+---
+
 ## Previous Questions and Answers
 
 {{#each question_history}}
@@ -57,12 +63,18 @@ A: {{this.answer}}
 {{/each}}
 {{/if}}
 {{#if feedback}}
+
+---
+
 ## Feedback to Address
 
 {{feedback}}
 
 {{/if}}
 {{#if integration_error}}
+
+---
+
 ## MERGE CONFLICT - Resolution Required
 
 {{integration_error.message}}

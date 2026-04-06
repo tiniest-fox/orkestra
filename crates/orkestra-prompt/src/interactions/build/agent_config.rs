@@ -8,6 +8,7 @@ use handlebars::Handlebars;
 
 use orkestra_types::config::WorkflowConfig;
 use orkestra_types::domain::Task;
+use orkestra_types::runtime::ResourceStore;
 
 use crate::types::{
     AgentConfigError, IntegrationErrorContext, ResolvedAgentConfig, SiblingTaskContext,
@@ -27,6 +28,8 @@ use super::context::PromptBuilder;
 /// # Arguments
 /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
 ///   These are used to construct file paths in the prompt.
+/// * `parent_resources` - Resources from the parent task (for subtasks), merged into
+///   the inline resources list in the prompt.
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
     templates: &Handlebars<'static>,
@@ -40,6 +43,7 @@ pub fn execute(
     integration_error: Option<IntegrationErrorContext<'_>>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
+    parent_resources: Option<&ResourceStore>,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
         .stage(&task.flow, stage_name)
@@ -56,6 +60,7 @@ pub fn execute(
             integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
+            parent_resources,
         )
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
 

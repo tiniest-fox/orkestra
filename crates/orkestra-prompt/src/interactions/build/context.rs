@@ -5,7 +5,7 @@
 use orkestra_types::config::{StageConfig, WorkflowConfig};
 use orkestra_types::domain::Task;
 use orkestra_types::runtime::{
-    resolve_artifact_path, ACTIVITY_LOG_ARTIFACT_NAME, RESOURCES_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
+    resolve_artifact_path, ResourceStore, ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
 };
 
 use crate::types::{
@@ -39,6 +39,8 @@ impl<'a> PromptBuilder<'a> {
     /// # Arguments
     /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
     ///   These are used to construct file paths for the prompt.
+    /// * `parent_resources` - Resources from the parent task (for subtasks), merged into
+    ///   the inline resources list so agents see parent-registered resources in the prompt.
     #[allow(clippy::too_many_arguments)]
     pub fn build_context(
         &self,
@@ -49,6 +51,7 @@ impl<'a> PromptBuilder<'a> {
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
         sibling_tasks: &[SiblingTaskContext],
+        parent_resources: Option<&ResourceStore>,
     ) -> Option<StagePromptContext<'a>> {
         let stage = self.workflow.stage(&task.flow, stage_name)?;
         Some(build_context_from_stage(
@@ -60,6 +63,7 @@ impl<'a> PromptBuilder<'a> {
             integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
+            parent_resources,
         ))
     }
 
@@ -71,6 +75,8 @@ impl<'a> PromptBuilder<'a> {
     /// # Arguments
     /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
     ///   These are used to construct file paths for the prompt.
+    /// * `parent_resources` - Resources from the parent task (for subtasks), merged into
+    ///   the inline resources list so agents see parent-registered resources in the prompt.
     #[allow(clippy::too_many_arguments)]
     pub fn build_context_with_stage(
         &self,
@@ -81,6 +87,7 @@ impl<'a> PromptBuilder<'a> {
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
         sibling_tasks: &[SiblingTaskContext],
+        parent_resources: Option<&ResourceStore>,
     ) -> Option<StagePromptContext<'a>> {
         Some(build_context_from_stage(
             self.workflow,
@@ -91,6 +98,7 @@ impl<'a> PromptBuilder<'a> {
             integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
+            parent_resources,
         ))
     }
 }
@@ -107,6 +115,7 @@ fn build_context_from_stage<'a>(
     integration_error: Option<IntegrationErrorContext<'a>>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
+    parent_resources: Option<&ResourceStore>,
 ) -> StagePromptContext<'a> {
     // Question history is passed via resume prompts (IterationTrigger::Answers).
     // Initial prompts don't include question history since no questions have been asked yet.
@@ -125,12 +134,13 @@ fn build_context_from_stage<'a>(
         .any(|n| n == ACTIVITY_LOG_ARTIFACT_NAME)
         .then(|| resolve_artifact_path(task.worktree_path.as_deref(), ACTIVITY_LOG_ARTIFACT_NAME));
 
-    let resources_path = artifact_names
-        .iter()
-        .any(|n| n == RESOURCES_ARTIFACT_NAME)
-        .then(|| resolve_artifact_path(task.worktree_path.as_deref(), RESOURCES_ARTIFACT_NAME));
-
-    let mut sorted_resources: Vec<_> = task.resources.all().collect();
+    // Merge parent + task resources: parent first, task overrides on name collision.
+    let mut merged = ResourceStore::new();
+    if let Some(parent) = parent_resources {
+        merged.merge_from(parent);
+    }
+    merged.merge_from(&task.resources);
+    let mut sorted_resources: Vec<_> = merged.all().collect();
     sorted_resources.sort_by_key(|r| &r.name);
     let resources: Vec<ResourceContext> = sorted_resources
         .into_iter()
@@ -143,7 +153,7 @@ fn build_context_from_stage<'a>(
 
     let has_input_artifacts = workflow_stages.iter().any(|s| s.artifact_path.is_some())
         || activity_log_path.is_some()
-        || resources_path.is_some();
+        || !resources.is_empty();
 
     StagePromptContext {
         stage,
@@ -151,7 +161,6 @@ fn build_context_from_stage<'a>(
         task_file_path: resolve_artifact_path(task.worktree_path.as_deref(), TASK_ARTIFACT_NAME),
         has_input_artifacts,
         activity_log_path,
-        resources_path,
         resources,
         question_history,
         feedback,

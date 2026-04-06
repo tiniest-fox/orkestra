@@ -7,6 +7,7 @@ use handlebars::Handlebars;
 
 use orkestra_types::config::WorkflowConfig;
 use orkestra_types::domain::{QuestionAnswer, Task};
+use orkestra_types::runtime::ResourceStore;
 
 use crate::interactions;
 use crate::types::{
@@ -55,6 +56,8 @@ impl PromptService {
     /// # Arguments
     /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
     ///   These are used to construct file paths in the prompt.
+    /// * `parent_resources` - Resources from the parent task (for subtasks), merged into
+    ///   the inline resources list in the prompt.
     #[allow(clippy::too_many_arguments)]
     pub fn build_agent_config(
         &self,
@@ -68,6 +71,7 @@ impl PromptService {
         integration_error: Option<IntegrationErrorContext<'_>>,
         show_direct_structured_output_hint: bool,
         sibling_tasks: &[SiblingTaskContext],
+        parent_resources: Option<&ResourceStore>,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         interactions::build::agent_config::execute(
             &self.templates,
@@ -81,6 +85,7 @@ impl PromptService {
             integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
+            parent_resources,
         )
     }
 

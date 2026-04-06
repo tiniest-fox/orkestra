@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
+use orkestra_types::runtime::ResourceStore;
+
 use crate::workflow::execution::{
     resolve_stage_agent_config_for, AgentConfigError, IntegrationErrorContext, ResolvedAgentConfig,
     SiblingTaskContext,
@@ -55,6 +57,7 @@ impl PromptService {
     /// * `feedback` - Optional rejection feedback to incorporate
     /// * `integration_error` - Optional merge conflict information
     /// * `sibling_tasks` - Sibling subtask context for subtasks
+    /// * `parent_resources` - Resources from the parent task (for subtasks)
     ///
     /// # Returns
     /// Complete agent configuration including prompt and JSON schema.
@@ -68,6 +71,7 @@ impl PromptService {
         integration_error: Option<IntegrationErrorContext<'_>>,
         show_direct_structured_output_hint: bool,
         sibling_tasks: &[SiblingTaskContext],
+        parent_resources: Option<&ResourceStore>,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         let stage_name = task
             .current_stage()
@@ -83,6 +87,7 @@ impl PromptService {
             integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
+            parent_resources,
         )
     }
 }
@@ -114,7 +119,7 @@ mod tests {
         let mut task = Task::new("task-1", "Test", "Desc", "planning", "now");
         task.state = crate::workflow::runtime::TaskState::Done;
 
-        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[]);
+        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[], None);
         assert!(matches!(result, Err(AgentConfigError::NotInActiveStage)));
     }
 
@@ -126,7 +131,7 @@ mod tests {
         // Task in an unknown stage
         let task = Task::new("task-1", "Test", "Desc", "nonexistent", "now");
 
-        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[]);
+        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[], None);
         assert!(matches!(result, Err(AgentConfigError::UnknownStage(_))));
     }
 }

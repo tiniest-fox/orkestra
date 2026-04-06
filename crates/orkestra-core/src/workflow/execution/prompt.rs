@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
+use orkestra_types::runtime::ResourceStore;
 
 // Re-export everything from orkestra-prompt for backward compatibility.
 pub use orkestra_prompt::{
@@ -128,6 +129,7 @@ pub fn resolve_stage_agent_config_for(
     integration_error: Option<IntegrationErrorContext<'_>>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
+    parent_resources: Option<&ResourceStore>,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
         .stage(&task.flow, stage_name)
@@ -158,6 +160,7 @@ pub fn resolve_stage_agent_config_for(
         integration_error,
         show_direct_structured_output_hint,
         sibling_tasks,
+        parent_resources,
     )
 }
 
@@ -232,7 +235,7 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         assert_eq!(ctx.stage.name, "planning");
@@ -258,7 +261,16 @@ mod tests {
         // Pass artifact names (artifacts are materialized to files before spawn)
         let artifact_names = vec!["plan".to_string(), "summary".to_string()];
         let ctx = builder
-            .build_context("review", &task, &artifact_names, None, None, false, &[])
+            .build_context(
+                "review",
+                &task,
+                &artifact_names,
+                None,
+                None,
+                false,
+                &[],
+                None,
+            )
             .unwrap();
 
         assert_eq!(ctx.stage.name, "review");
@@ -274,7 +286,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Desc", "planning", "now");
 
-        let ctx = builder.build_context("nonexistent", &task, &[], None, None, false, &[]);
+        let ctx = builder.build_context("nonexistent", &task, &[], None, None, false, &[], None);
         assert!(ctx.is_none());
     }
 
@@ -294,7 +306,7 @@ mod tests {
         // Pass artifact names (artifacts are materialized to files before agent spawn)
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[], None)
             .unwrap();
 
         // Verify context has artifact path in workflow stages (not inline content)
@@ -326,7 +338,7 @@ mod tests {
 
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[], None)
             .unwrap();
 
         // With worktree_path set, workflow stages use absolute paths
@@ -350,7 +362,7 @@ mod tests {
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         assert!(ctx.stage.capabilities.ask_questions);
@@ -366,7 +378,16 @@ mod tests {
         // Pass artifact names for review stage inputs
         let artifact_names = vec!["plan".to_string(), "summary".to_string()];
         let ctx = builder
-            .build_context("review", &task, &artifact_names, None, None, false, &[])
+            .build_context(
+                "review",
+                &task,
+                &artifact_names,
+                None,
+                None,
+                false,
+                &[],
+                None,
+            )
             .unwrap();
 
         assert!(ctx.stage.capabilities.has_approval());
@@ -408,6 +429,7 @@ mod tests {
                 None,
                 false,
                 &[],
+                None,
             )
             .unwrap();
 
@@ -421,7 +443,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         assert!(ctx.question_history.is_empty());
@@ -736,6 +758,7 @@ mod tests {
             None,
             false,
             &[],
+            None,
         )
         .unwrap();
 
@@ -773,7 +796,7 @@ mod tests {
 
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[], None)
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -800,7 +823,7 @@ mod tests {
 
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[], None)
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -837,7 +860,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "work", "now");
         let ctx = builder
-            .build_context("work", &task, &[], None, None, false, &[])
+            .build_context("work", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -878,7 +901,7 @@ mod tests {
         task.flow = "quick".into();
 
         let ctx = builder
-            .build_context("work", &task, &[], None, None, false, &[])
+            .build_context("work", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -919,7 +942,7 @@ mod tests {
         ];
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &siblings)
+            .build_context("planning", &task, &[], None, None, false, &siblings, None)
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -942,7 +965,7 @@ mod tests {
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let user_message = build_user_message(&ctx);

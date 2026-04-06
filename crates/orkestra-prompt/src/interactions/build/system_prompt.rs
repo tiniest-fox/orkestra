@@ -231,7 +231,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let input = "You are a planner agent. Do planning.";
@@ -247,7 +247,16 @@ mod tests {
 
         // With feedback
         let ctx = builder
-            .build_context("planning", &task, &[], Some("Fix this"), None, false, &[])
+            .build_context(
+                "planning",
+                &task,
+                &[],
+                Some("Fix this"),
+                None,
+                false,
+                &[],
+                None,
+            )
             .unwrap();
         let template = "Base instructions.\n\n{{#if feedback}}\nFEEDBACK_SECTION\n{{/if}}";
         let result = render_agent_definition(template, &ctx);
@@ -256,7 +265,7 @@ mod tests {
 
         // Without feedback
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
         let result = render_agent_definition(template, &ctx);
         assert!(!result.contains("FEEDBACK_SECTION"));
@@ -269,7 +278,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let bad_template = "Start {{#if}} missing close";
@@ -283,7 +292,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[])
+            .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
         let template = "Stage: {{stage_name}}, Task: {{task_id}}";

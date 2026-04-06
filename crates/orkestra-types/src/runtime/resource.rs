@@ -7,9 +7,6 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// The artifact name used for the materialized resources file.
-pub const RESOURCES_ARTIFACT_NAME: &str = "resources";
-
 /// A named external resource registered by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Resource {

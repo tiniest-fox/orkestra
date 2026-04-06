@@ -20,6 +20,7 @@ import type { DrawerTabId } from "./drawerTabs";
 import { LogsChatInput } from "./Footer/LogsChatInput";
 import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
+import { ResourcesTab } from "./Sections/ResourcesTab";
 import { RunTab } from "./Sections/RunTab";
 import { SubtasksSection } from "./Sections/SubtasksSection";
 import type { TaskDrawerState } from "./useTaskDrawerState";
@@ -170,6 +171,10 @@ export function DrawerTabContent({
 
   if (activeTab === "gate") {
     return <DrawerGateTab task={task} config={config} />;
+  }
+
+  if (activeTab === "resources") {
+    return <ResourcesTab task={task} bodyRef={bodyRef} />;
   }
 
   if (activeTab === "run") {

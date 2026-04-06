@@ -13,6 +13,7 @@ export function createMockWorkflowTask(overrides?: Partial<WorkflowTask>): Workf
     description: "A test task description",
     state: { type: "queued", stage: "planning" },
     artifacts: {},
+    resources: {},
     depends_on: [],
     base_branch: "main",
     base_commit: "",

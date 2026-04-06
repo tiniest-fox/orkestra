@@ -601,6 +601,7 @@ pub fn run() {
             commands::workflow_get_task_diff,
             commands::workflow_get_file_content,
             commands::workflow_get_syntax_css,
+            commands::workflow_get_branch_commits,
             commands::workflow_get_commit_log,
             commands::workflow_get_batch_file_counts,
             commands::workflow_get_commit_diff,

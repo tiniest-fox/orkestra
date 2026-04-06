@@ -471,6 +471,44 @@ fn parse_range(range: &str) -> Option<(u32, u32)> {
 // Commit History Commands
 // =============================================================================
 
+/// Get commits on a task's branch since it diverged from the base branch.
+///
+/// Returns up to 200 commits reachable from the task branch HEAD but not from
+/// the base branch (`base_branch..HEAD`).
+#[tauri::command]
+pub fn workflow_get_branch_commits(
+    registry: State<ProjectRegistry>,
+    window: tauri::Window,
+    task_id: String,
+) -> Result<Vec<CommitInfo>, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let (worktree_path, base_branch, git) = {
+            let api = state.api()?;
+            let git = api
+                .git_service()
+                .ok_or_else(|| {
+                    orkestra_core::workflow::ports::WorkflowError::GitError(
+                        "No git service configured".into(),
+                    )
+                })?
+                .clone();
+            let task = api.get_task(&task_id)?;
+            let worktree_path = task.worktree_path.ok_or_else(|| {
+                orkestra_core::workflow::ports::WorkflowError::GitError(
+                    "Task has no worktree".into(),
+                )
+            })?;
+            let base_branch = task.base_branch.clone();
+            (worktree_path, base_branch, git)
+        }; // mutex released — git subprocess runs off the lock
+
+        git.branch_commits(std::path::Path::new(&worktree_path), &base_branch, 200)
+            .map_err(|e| {
+                orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()).into()
+            })
+    })
+}
+
 /// Get recent commit history for the main repository.
 ///
 /// Returns the 20 most recent commits on the current branch.

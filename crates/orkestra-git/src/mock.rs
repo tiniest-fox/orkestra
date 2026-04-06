@@ -317,6 +317,15 @@ impl GitService for MockGitService {
         Ok(vec![])
     }
 
+    fn branch_commits(
+        &self,
+        _worktree_path: &Path,
+        _base_branch: &str,
+        _limit: usize,
+    ) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
     fn batch_file_counts(&self, _hashes: &[String]) -> Result<HashMap<String, usize>, GitError> {
         Ok(HashMap::new())
     }

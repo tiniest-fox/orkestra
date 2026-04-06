@@ -5,15 +5,16 @@ use std::process::Command;
 
 use crate::types::{CommitInfo, GitError};
 
+/// Format string for `git log` output: record-separated fields per commit.
+///
+/// Fields (null-delimited): hash, subject, author name, author ISO date, body.
+pub(super) const LOG_FORMAT: &str = "--format=%x1e%h%x00%s%x00%an%x00%aI%x00%b";
+
 /// Get the N most recent commits on the current branch.
 pub fn execute(repo_path: &Path, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
     // Use record separator (0x1e) between commits to handle multi-line bodies
     let output = Command::new("git")
-        .args([
-            "log",
-            &format!("-{limit}"),
-            "--format=%x1e%h%x00%s%x00%an%x00%aI%x00%b",
-        ])
+        .args(["log", &format!("-{limit}"), LOG_FORMAT])
         .current_dir(repo_path)
         .output()
         .map_err(|e| GitError::IoError(format!("Failed to run git log: {e}")))?;
@@ -24,6 +25,11 @@ pub fn execute(repo_path: &Path, limit: usize) -> Result<Vec<CommitInfo>, GitErr
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_log_output(&stdout))
+}
+
+/// Parse the output of `git log` formatted with [`LOG_FORMAT`] into [`CommitInfo`] records.
+pub(super) fn parse_log_output(stdout: &str) -> Vec<CommitInfo> {
     let mut commits = Vec::new();
 
     for record in stdout.split('\x1e') {
@@ -50,5 +56,5 @@ pub fn execute(repo_path: &Path, limit: usize) -> Result<Vec<CommitInfo>, GitErr
         }
     }
 
-    Ok(commits)
+    commits
 }

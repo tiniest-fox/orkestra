@@ -18,9 +18,8 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    let worktree_path = match &task.worktree_path {
-        Some(p) => p,
-        None => return Ok(vec![]), // Task has no worktree yet — nothing to show
+    let Some(worktree_path) = &task.worktree_path else {
+        return Ok(vec![]); // Task has no worktree yet — nothing to show
     };
 
     git.branch_commits(Path::new(worktree_path), &task.base_branch, 200)

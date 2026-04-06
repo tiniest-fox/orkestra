@@ -191,3 +191,53 @@ export async function gitPush(id: string): Promise<void> {
   const res = await apiFetch(`/api/projects/${id}/git/push`, { method: "POST" });
   await requireOk(res);
 }
+
+export interface SecretEntry {
+  key: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SecretValue {
+  key: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SecretMutationResult {
+  restart_required: boolean;
+}
+
+export async function listSecrets(projectId: string): Promise<SecretEntry[]> {
+  const res = await apiFetch(`/api/projects/${projectId}/secrets`);
+  await requireOk(res);
+  return res.json();
+}
+
+export async function getSecret(projectId: string, key: string): Promise<SecretValue> {
+  const res = await apiFetch(`/api/projects/${projectId}/secrets/${encodeURIComponent(key)}`);
+  await requireOk(res);
+  return res.json();
+}
+
+export async function setSecret(
+  projectId: string,
+  key: string,
+  value: string,
+): Promise<SecretMutationResult> {
+  const res = await apiFetch(`/api/projects/${projectId}/secrets/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+  await requireOk(res);
+  return res.json();
+}
+
+export async function deleteSecret(projectId: string, key: string): Promise<SecretMutationResult> {
+  const res = await apiFetch(`/api/projects/${projectId}/secrets/${encodeURIComponent(key)}`, {
+    method: "DELETE",
+  });
+  await requireOk(res);
+  return res.json();
+}

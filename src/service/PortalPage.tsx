@@ -28,6 +28,7 @@ import { PairingForm } from "./components/PairingForm";
 import { ProjectList } from "./components/ProjectList";
 import type { ProjectRowActions } from "./components/ProjectRow";
 import { RepoSearch } from "./components/RepoSearch";
+import { SecretsDrawer } from "./components/SecretsDrawer";
 import { ServiceFilterBar } from "./components/ServiceFilterBar";
 import { ServiceHeader } from "./components/ServiceHeader";
 import { ServiceMobileTabBar } from "./components/ServiceMobileTabBar";
@@ -64,6 +65,7 @@ export function PortalPage() {
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<number | null>(null);
   const [pairingError, setPairingError] = useState<string | null>(null);
+  const [secretsProjectId, setSecretsProjectId] = useState<string | null>(null);
 
   // -- New state --
   const [filterText, setFilterText] = useState("");
@@ -127,7 +129,7 @@ export function PortalPage() {
     [sections],
   );
 
-  const modalOpen = showAddModal || pairingCode !== null;
+  const modalOpen = showAddModal || pairingCode !== null || secretsProjectId !== null;
 
   // -- Navigation --
 
@@ -194,6 +196,7 @@ export function PortalPage() {
         onGitPull: () => runAction(id, project.status, () => gitPull(id)),
         onGitPush: () => runAction(id, project.status, () => gitPush(id)),
         onCancel: () => runAction(id, "stopping", () => stopProject(id)),
+        onManageSecrets: () => setSecretsProjectId(id),
       });
     }
     return map;
@@ -255,7 +258,7 @@ export function PortalPage() {
   const hasNoFilterMatches = filterText.length > 0 && !hasNoProjects && sections.length === 0;
 
   return (
-    <div className="h-full flex flex-col bg-canvas">
+    <div className="h-full flex flex-col bg-canvas relative">
       <ServiceHeader
         hotkeyActive={!modalOpen}
         onAddProject={() => setShowAddModal(true)}
@@ -341,6 +344,19 @@ export function PortalPage() {
           />
         )}
       </ModalPanel>
+      {secretsProjectId &&
+        (() => {
+          const project = projects.find((p) => p.id === secretsProjectId);
+          if (!project) return null;
+          return (
+            <SecretsDrawer
+              onClose={() => setSecretsProjectId(null)}
+              projectId={project.id}
+              projectName={project.name}
+              projectStatus={optimisticStatuses.get(project.id) ?? project.status}
+            />
+          );
+        })()}
     </div>
   );
 }

@@ -24,6 +24,22 @@ describe("defaultTab", () => {
     const task = createMockWorkflowTaskView({ state: { type: "queued", stage: "planning" } });
     expect(defaultTab(task)).toBe("logs");
   });
+
+  it("returns 'logs' when task is in chat mode", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+      derived: { is_chatting: true },
+    });
+    expect(defaultTab(task)).toBe("logs");
+  });
+
+  it("returns 'logs' in chat mode even when needs_review is true", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "awaiting_approval", stage: "review" },
+      derived: { is_chatting: true, needs_review: true },
+    });
+    expect(defaultTab(task)).toBe("logs");
+  });
 });
 
 describe("availableTabs — blocked task", () => {

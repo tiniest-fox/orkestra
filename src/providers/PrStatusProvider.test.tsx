@@ -19,6 +19,7 @@ function createMockTask(id: string, prUrl?: string): WorkflowTaskView {
     description: "Test task",
     state: { type: "done" },
     artifacts: {},
+    resources: {},
     depends_on: [],
     base_branch: "main",
     base_commit: "",

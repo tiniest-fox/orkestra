@@ -254,11 +254,11 @@ mod tests {
         let user_message = execute(&templates, &ctx);
 
         assert!(user_message.contains("## Your Workflow"));
-        assert!(user_message.contains("*Plan*"));
+        assert!(user_message.contains("**Plan**"));
         assert!(user_message.contains("Create a plan"));
-        assert!(user_message.contains("*Work* ← YOU ARE HERE"));
+        assert!(user_message.contains("**Work** ← YOU ARE HERE"));
         assert!(user_message.contains("Implement the plan"));
-        assert!(user_message.contains("*Review*"));
+        assert!(user_message.contains("**Review**"));
         assert!(user_message.contains("Review the work"));
     }
 

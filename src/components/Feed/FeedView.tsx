@@ -6,6 +6,7 @@ import { useDrawerHistory } from "../../hooks/useDrawerHistory";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { stalenessClass } from "../../hooks/useStalenessTimer";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
+import { usePrStatus } from "../../providers/PrStatusProvider";
 import { useTasks } from "../../providers/TasksProvider";
 import { useToast } from "../../providers/ToastProvider";
 import { useTransport } from "../../transport";
@@ -95,6 +96,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     interactiveTaskId !== null;
   const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
+  const { getPrStatus } = usePrStatus();
 
   const drawerOpen = panelOpen || isNewTaskOpen;
   const activeTask = activeTaskId ? (tasks.find((t) => t.id === activeTaskId) ?? null) : null;
@@ -123,7 +125,18 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     rejectMode,
   );
 
-  const { sections, subtaskRows } = useMemo(() => groupTasksForFeed(tasks), [tasks]);
+  const { sections, subtaskRows } = useMemo(() => {
+    const prStates = new Map<string, string>();
+    for (const task of tasks) {
+      if (task.pr_url && task.derived.is_done) {
+        const status = getPrStatus(task.id);
+        if (status?.state) {
+          prStates.set(task.id, status.state);
+        }
+      }
+    }
+    return groupTasksForFeed(tasks, prStates);
+  }, [tasks, getPrStatus]);
 
   // Derive whether any task has an active assistant agent
   const anyAssistantActive = useMemo(

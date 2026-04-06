@@ -843,11 +843,11 @@ mod tests {
         let user_message = build_user_message(&ctx);
 
         assert!(user_message.contains("## Your Workflow"));
-        assert!(user_message.contains("*Plan*"));
+        assert!(user_message.contains("**Plan**"));
         assert!(user_message.contains("Create a plan"));
-        assert!(user_message.contains("*Work* ← YOU ARE HERE"));
+        assert!(user_message.contains("**Work** ← YOU ARE HERE"));
         assert!(user_message.contains("Implement the plan"));
-        assert!(user_message.contains("*Review*"));
+        assert!(user_message.contains("**Review**"));
         assert!(user_message.contains("Review the work"));
     }
 
@@ -884,12 +884,12 @@ mod tests {
         let user_message = build_user_message(&ctx);
 
         assert!(user_message.contains("## Your Workflow"));
-        assert!(user_message.contains("*Plan*"));
+        assert!(user_message.contains("**Plan**"));
         assert!(user_message.contains("Create a plan"));
-        assert!(user_message.contains("*Work* ← YOU ARE HERE"));
+        assert!(user_message.contains("**Work** ← YOU ARE HERE"));
         assert!(user_message.contains("Implement the plan"));
-        assert!(!user_message.contains("*Task*"));
-        assert!(!user_message.contains("*Review*"));
+        assert!(!user_message.contains("**Task**"));
+        assert!(!user_message.contains("**Review**"));
     }
 
     // -- Sibling context tests --

@@ -9,10 +9,10 @@ The following artifacts from prior stages are available in your worktree. You MU
 
 {{#each workflow_stages}}
 {{#if this.is_current}}
-*{{this.display_name}}* ← YOU ARE HERE
+**{{this.display_name}}** ← YOU ARE HERE
 {{#if this.description}}{{this.description}}{{/if}}
 {{else}}
-*{{this.display_name}}*
+**{{this.display_name}}**
 {{#if this.description}}{{this.description}}{{/if}}{{#if this.artifact_path}}
 `{{this.artifact_path}}`{{/if}}
 {{/if}}

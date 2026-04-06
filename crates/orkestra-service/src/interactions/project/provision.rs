@@ -226,12 +226,24 @@ async fn container_and_spawn(
     })
     .await;
 
+    // Step 5c: Decrypt project secrets for env-var injection.
+    let secrets = {
+        let c = Arc::clone(conn);
+        let pid = project_id.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::interactions::secret::decrypt_all::execute(&c, &pid)
+        })
+        .await
+        .map_err(|e| ServiceError::Other(e.to_string()))??
+    };
+
     // Step 6: Start container.
     append_log(log_path, "\n=== Starting container ===");
     let container_id = tokio::task::spawn_blocking({
         let config = config.clone();
         let p = path.clone();
         let id = project_id.clone();
+        let od = override_dir.clone();
         let lp = log_path.to_path_buf();
         move || {
             devcontainer::start_container::execute(
@@ -240,9 +252,10 @@ async fn container_and_spawn(
                 &image,
                 &p,
                 project.daemon_port,
-                &override_dir,
+                &od,
                 Some(&lp),
                 force_build,
+                &secrets,
             )
         }
     })

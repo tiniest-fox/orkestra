@@ -11,6 +11,9 @@
 #[path = "e2e/helpers.rs"]
 mod helpers;
 
+#[path = "e2e/artifact_history.rs"]
+mod artifact_history;
+
 #[path = "e2e/assistant.rs"]
 mod assistant;
 #[path = "e2e/cleanup.rs"]

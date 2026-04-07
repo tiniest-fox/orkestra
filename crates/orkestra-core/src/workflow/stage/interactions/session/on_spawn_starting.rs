@@ -110,5 +110,6 @@ pub(crate) fn execute(
         session_id: session.claude_session_id,
         is_resume,
         stage_session_id,
+        iteration_id: iteration.id.clone(),
     })
 }

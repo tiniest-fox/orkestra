@@ -97,7 +97,7 @@ pub(crate) fn execute(
 mod tests {
     use crate::pr_description::mock::MockPrDescriptionGenerator;
     use crate::workflow::domain::Task;
-    use crate::workflow::ports::{MockGitService, MockPrService};
+    use crate::workflow::ports::{CommitInfo, MockGitService, MockPrService};
 
     use super::*;
 
@@ -143,5 +143,52 @@ mod tests {
             }
             other => panic!("expected CommitFailed for missing worktree_path, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn happy_path_creates_pr() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let worktree_path = tmp.path().to_str().unwrap();
+
+        let git = MockGitService::new();
+        // has_pending_changes defaults to false — commit_worktree is a no-op
+        // push_branch defaults to Ok(()) — push succeeds
+        // diff_against_base defaults to Ok(TaskDiff { files: vec![] }) — empty metadata
+        // commit_log_at needs explicit setup (defaults to Ok(vec![]) which gives "Commit log unavailable")
+        git.push_commit_log_at_result(Ok(vec![CommitInfo {
+            hash: "abc1234".to_string(),
+            message: "feat: add feature".to_string(),
+            body: None,
+            author: "Test".to_string(),
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            file_count: None,
+        }]));
+
+        let pr_service = MockPrService::new();
+        // Defaults to Ok("https://github.com/test/repo/pull/1")
+
+        let pr_desc_gen = MockPrDescriptionGenerator::succeeding();
+
+        let task = Task::new(
+            "t1",
+            "Add feature",
+            "Add a new feature",
+            "work",
+            "2025-01-01T00:00:00Z",
+        )
+        .with_branch("task/t1")
+        .with_worktree(worktree_path);
+
+        let result = execute(
+            &git,
+            &pr_service,
+            &pr_desc_gen,
+            &task,
+            &["Claude Sonnet 4.5".to_string()],
+            &[],
+        );
+
+        let url = result.expect("execute should succeed");
+        assert!(url.contains("github.com"), "should return PR URL");
     }
 }

@@ -26,6 +26,7 @@ pub use interactions::command::query::fetch_pr_status;
 pub use relay_client::{RelayClientConfig, RelayClientError};
 pub use server::start;
 pub use types::{
-    AuthError, ErrorPayload, ErrorResponse, Event, PairedDevice, PrCheck, PrComment, PrReview,
-    PrStatus, Request, Response,
+    format_conflict_notification, format_error_notification, format_review_notification, AuthError,
+    ErrorPayload, ErrorResponse, Event, PairedDevice, PrCheck, PrComment, PrReview, PrStatus,
+    Request, Response,
 };

@@ -47,6 +47,14 @@ Additionally, store the `setTimeout` handle inside the `PendingRequest` entry an
 
 **New timeout/transport error strings must go in `DISCONNECT_MESSAGES`** — Any error message that a timeout or dead-socket condition produces (e.g., `"Request timed out"`) must be registered in `DISCONNECT_MESSAGES` in `transportErrors.ts`. This ensures `isDisconnectError()` returns `true` for these errors, so action-handler `.catch()` guards correctly suppress spurious toast notifications during the exact reconnection scenario you're fixing.
 
+## Notification Formatting
+
+Notification format strings (title and body) are the **single source of truth** in `crates/orkestra-networking/src/types.rs` as three public functions: `format_review_notification`, `format_error_notification`, `format_conflict_notification`. Both Tauri's `TaskNotifier` and WebSocket `Event` constructors delegate to these functions.
+
+Event payloads include pre-formatted `notification_title` and `notification_body` fields so all clients (Tauri desktop, PWA) receive ready-to-display strings. **Never duplicate this formatting logic in `src-tauri/src/notifications.rs` or frontend hooks** — put new notification format functions here and have all consumers call them.
+
+When adding a new notification type: add a `format_*_notification` function in `types.rs`, call it from the relevant `Event::*()` constructor to embed it in the payload, and update the Tauri `TaskNotifier` to call the same function.
+
 ## Async Handler Conventions
 
 When writing async HTTP handlers (axum, actix, etc.), **never call blocking operations directly** — process management, synchronous I/O, heavy computation, or anything that holds a lock while doing I/O. Blocking the async runtime starves all other requests on the thread.

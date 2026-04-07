@@ -4,6 +4,9 @@
 //! (review, questions, merge conflicts, errors).
 
 use orkestra_core::orkestra_debug;
+use orkestra_networking::{
+    format_conflict_notification, format_error_notification, format_review_notification,
+};
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
@@ -28,38 +31,20 @@ impl<'a> TaskNotifier<'a> {
         stage: &str,
         output_type: &str,
     ) {
-        let (title, body) = match output_type {
-            "questions" => (
-                "Questions need answers".to_string(),
-                format!("{task_title} — {stage} agent has questions"),
-            ),
-            "subtasks" => (
-                "Subtasks need approval".to_string(),
-                format!("{task_title} — review proposed subtask breakdown"),
-            ),
-            "approval" => (
-                "Rejection needs review".to_string(),
-                format!("{task_title} — reviewer rejected, needs your decision"),
-            ),
-            _ => (
-                "Ready for review".to_string(),
-                format!("{task_title} — {stage} stage output ready"),
-            ),
-        };
-
+        let (title, body) = format_review_notification(task_title, stage, output_type);
         self.send(task_id, &title, &body);
     }
 
     /// Notify that a task encountered an error.
     pub fn task_error(&self, task_id: &str, error: &str) {
-        let body = truncate_at_char_boundary(error, 200);
-        self.send(task_id, "Task error", body);
+        let (title, body) = format_error_notification(error);
+        self.send(task_id, &title, &body);
     }
 
     /// Notify that integration (merge) failed with conflicts.
     pub fn merge_conflict(&self, task_id: &str, conflict_count: usize) {
-        let body = format!("{task_id} — {conflict_count} conflicting files");
-        self.send(task_id, "Merge conflict", &body);
+        let (title, body) = format_conflict_notification(task_id, conflict_count);
+        self.send(task_id, &title, &body);
     }
 
     /// Send an OS notification (alert only, no focus event).
@@ -83,19 +68,6 @@ impl<'a> TaskNotifier<'a> {
             );
         }
     }
-}
-
-/// Truncate a string to at most `max_bytes` bytes, landing on a valid UTF-8
-/// char boundary. Returns the full string if it's already within the limit.
-fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
-    let mut end = max_bytes;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
 }
 
 /// Request notification permission from the OS on startup.

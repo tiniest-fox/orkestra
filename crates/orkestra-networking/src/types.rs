@@ -228,13 +228,114 @@ impl Event {
     }
 
     /// `review_ready` event indicating a task needs human review.
-    pub fn review_ready(task_id: impl Into<String>, parent_id: Option<&str>) -> Self {
+    pub fn review_ready(
+        task_id: impl Into<String>,
+        parent_id: Option<&str>,
+        task_title: &str,
+        stage: &str,
+        output_type: &str,
+    ) -> Self {
+        let (notification_title, notification_body) =
+            format_review_notification(task_title, stage, output_type);
         Self::new(
             "review_ready",
             serde_json::json!({
                 "task_id": task_id.into(),
                 "parent_id": parent_id,
+                "task_title": task_title,
+                "stage": stage,
+                "output_type": output_type,
+                "notification_title": notification_title,
+                "notification_body": notification_body,
             }),
         )
     }
+
+    /// `task_error` event carrying error details for notification.
+    pub fn task_error(task_id: impl Into<String>, error: impl Into<String>) -> Self {
+        let error = error.into();
+        let (notification_title, notification_body) = format_error_notification(&error);
+        Self::new(
+            "task_error",
+            serde_json::json!({
+                "task_id": task_id.into(),
+                "error": error,
+                "notification_title": notification_title,
+                "notification_body": notification_body,
+            }),
+        )
+    }
+
+    /// `merge_conflict` event carrying conflict details for notification.
+    pub fn merge_conflict(task_id: impl Into<String>, conflict_count: usize) -> Self {
+        let task_id = task_id.into();
+        let (notification_title, notification_body) =
+            format_conflict_notification(&task_id, conflict_count);
+        Self::new(
+            "merge_conflict",
+            serde_json::json!({
+                "task_id": task_id,
+                "conflict_count": conflict_count,
+                "notification_title": notification_title,
+                "notification_body": notification_body,
+            }),
+        )
+    }
+}
+
+// ============================================================================
+// Notification Formatting
+// ============================================================================
+
+/// Format notification title and body for a review-ready event.
+pub fn format_review_notification(
+    task_title: &str,
+    stage: &str,
+    output_type: &str,
+) -> (String, String) {
+    match output_type {
+        "questions" => (
+            "Questions need answers".to_string(),
+            format!("{task_title} — {stage} agent has questions"),
+        ),
+        "subtasks" => (
+            "Subtasks need approval".to_string(),
+            format!("{task_title} — review proposed subtask breakdown"),
+        ),
+        "approval" => (
+            "Rejection needs review".to_string(),
+            format!("{task_title} — reviewer rejected, needs your decision"),
+        ),
+        _ => (
+            "Ready for review".to_string(),
+            format!("{task_title} — {stage} stage output ready"),
+        ),
+    }
+}
+
+/// Format notification title and body for a task error event.
+pub fn format_error_notification(error: &str) -> (String, String) {
+    let body = truncate_at_char_boundary(error, 200);
+    ("Task error".to_string(), body.to_string())
+}
+
+/// Format notification title and body for a merge conflict event.
+pub fn format_conflict_notification(task_id: &str, conflict_count: usize) -> (String, String) {
+    (
+        "Merge conflict".to_string(),
+        format!("{task_id} — {conflict_count} conflicting files"),
+    )
+}
+
+/// Truncate a string to at most `max_bytes` bytes, landing on a valid UTF-8
+/// char boundary. Returns the full string if it's already within the limit.
+pub(crate) fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }

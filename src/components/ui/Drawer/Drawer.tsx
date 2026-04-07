@@ -3,8 +3,8 @@
 // Starts below the FeedHeader (top-11). On desktop, the 240px feed strip on the
 // left remains interactive behind the drawer. On mobile, covers the full width.
 //
-// Close affordance is provided by DrawerHeader in each child — not by this component.
-// Swiping from the left screen edge (0-20px) rightward closes the drawer on mobile.
+// Close affordances: Escape key (desktop), outside click (desktop), swipe from
+// left edge (mobile). Both Escape and outside click are disabled during reject mode.
 //
 // The outer div is a permanent clipping container at the target dimensions.
 // The inner panel uses a CSS keyframe animation (not a JS-driven transition) so
@@ -33,6 +33,21 @@ export function Drawer({ onClose, disableEscape = false, children }: DrawerProps
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, disableEscape]);
+
+  // Close on outside click (desktop only).
+  useEffect(() => {
+    if (isMobile || disableEscape) return;
+
+    function onMouseDown(e: MouseEvent) {
+      const panel = panelRef.current;
+      if (panel && !panel.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [onClose, isMobile, disableEscape]);
 
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {

@@ -153,6 +153,15 @@ Each implementation Subtrak's `detailed_instructions` should include an "Accepta
 Good examples: "new function handles empty input by returning None", "migration adds index on `task_id` column", "error messages include the failing file path"
 Bad examples: "all tests pass", "cargo clippy has no warnings", "cargo fmt produces no changes"
 
+## Visual Formatting
+
+Use visual elements in your breakdown when they aid clarity — not as a requirement for every breakdown:
+
+- Use a **mermaid diagram** for Subtrak dependency graphs — these are naturally graph-shaped, and a diagram communicates execution order far better than a numbered list. Prefer top-down (`TD`) orientation.
+- Use a **table** when listing files, patterns, or interface mappings in Subtrak instructions — structured data reads faster than prose in implementation briefs
+- Use a **wireframe block** when a Subtrak involves UI changes — show the intended layout so the worker has a visual target, not just a prose description
+- Use a **flow diagram** for multi-step orchestration designs where the sequence of operations and branching conditions matter
+
 ## Guidelines
 
 - Each Subtrak should be completable in one focused session

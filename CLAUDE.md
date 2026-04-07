@@ -100,6 +100,19 @@ mod tests {
 
 **Exemplar:** `crates/orkestra-git/src/interface.rs`, `service.rs`, and `mock.rs` demonstrate all three levels.
 
+## Releasing
+
+Use `bin/release` to cut a release. It handles everything: version bumping, pre-flight checks, committing, tagging, and pushing.
+
+```bash
+bin/release 0.2.0   # bump to a specific version
+bin/release         # auto-detect: bumps patch if current tag is live, retags HEAD if not
+```
+
+The script will prompt before pushing. It requires a clean working tree on `main`.
+
+**Never update version numbers by hand.** `bin/bump-version` is the single source of truth — it updates all 19 `Cargo.toml` files, `package.json`, `src-tauri/tauri.conf.json`, and regenerates `Cargo.lock` atomically. Running `bin/release` calls it automatically.
+
 ## Build & Development Commands
 
 ```bash

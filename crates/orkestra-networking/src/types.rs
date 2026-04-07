@@ -228,12 +228,43 @@ impl Event {
     }
 
     /// `review_ready` event indicating a task needs human review.
-    pub fn review_ready(task_id: impl Into<String>, parent_id: Option<&str>) -> Self {
+    pub fn review_ready(
+        task_id: impl Into<String>,
+        parent_id: Option<&str>,
+        task_title: &str,
+        stage: &str,
+        output_type: &str,
+    ) -> Self {
         Self::new(
             "review_ready",
             serde_json::json!({
                 "task_id": task_id.into(),
                 "parent_id": parent_id,
+                "task_title": task_title,
+                "stage": stage,
+                "output_type": output_type,
+            }),
+        )
+    }
+
+    /// `task_error` event carrying error details for notification.
+    pub fn task_error(task_id: impl Into<String>, error: impl Into<String>) -> Self {
+        Self::new(
+            "task_error",
+            serde_json::json!({
+                "task_id": task_id.into(),
+                "error": error.into(),
+            }),
+        )
+    }
+
+    /// `merge_conflict` event carrying conflict details for notification.
+    pub fn merge_conflict(task_id: impl Into<String>, conflict_count: usize) -> Self {
+        Self::new(
+            "merge_conflict",
+            serde_json::json!({
+                "task_id": task_id.into(),
+                "conflict_count": conflict_count,
             }),
         )
     }

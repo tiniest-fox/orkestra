@@ -25,6 +25,8 @@ pub enum UtilityError {
     IoError(String),
     /// Task timed out.
     Timeout,
+    /// Process completed but produced no parseable structured output.
+    OutputNotFound(String),
     /// Failed to parse output.
     ParseError(String),
     /// Schema is invalid.
@@ -41,6 +43,7 @@ impl std::fmt::Display for UtilityError {
             Self::SpawnFailed(msg) => write!(f, "Failed to spawn process: {msg}"),
             Self::IoError(msg) => write!(f, "I/O error: {msg}"),
             Self::Timeout => write!(f, "Task timed out"),
+            Self::OutputNotFound(msg) => write!(f, "Output not found: {msg}"),
             Self::ParseError(msg) => write!(f, "Parse error: {msg}"),
             Self::SchemaError(msg) => write!(f, "Schema error: {msg}"),
             Self::ValidationFailed(msg) => write!(f, "Validation failed: {msg}"),
@@ -59,7 +62,7 @@ pub use commit_message::{
 };
 pub use orkestra_types::config::models::friendly_model_name;
 pub use pr_description::{format_pr_footer, ClaudePrDescriptionGenerator, PrDescriptionGenerator};
-pub use runner::UtilityRunner;
+pub use runner::{ExecutionMode, UtilityRunner};
 pub use title::{
     generate_fallback_title, generate_title_sync, ClaudeTitleGenerator, TitleGenerator,
 };

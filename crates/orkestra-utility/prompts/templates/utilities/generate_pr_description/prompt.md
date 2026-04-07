@@ -1,33 +1,32 @@
-Generate a GitHub pull request title and description for the following code changes.
+You are generating a GitHub pull request title and description.
 
-Study all the inputs below — the commit history, the changed files diff, the task description, and the workflow stage references — until you have a full, holistic understanding of what was built and why. Only then write the PR title and description.
+You are running in the task's git worktree with full tool access. Use your tools to understand the changes before writing.
 
-Guidance:
-- The **commit history** shows what was done step by step — this is your primary narrative. Read every commit, not just the last few.
-- The **diff** is the ground truth of what actually changed in the code.
-- The **task title and description** are the initial prompt that started the work — they may be vague, incomplete, or not reflect what was actually built.
-- The **workflow stages** show what planning and review happened — use them as context for the overall arc, not as content to echo.
-- Do NOT fixate on any single input. The last few commits are often minor cleanup ("fix lint", "add tests") — look past them to the substantive work. The task title may be a rough one-liner that undersells the scope.
+Below is orientation to get you started — commit titles showing the arc of work, and a list of changed files with line counts. This is NOT sufficient context to write a good PR. Before writing anything:
+
+1. Read the changed files to understand what actually changed
+2. Run `git diff {{base_branch}}...HEAD` (or read specific file diffs) to see the actual code changes
+3. Read the workflow stage artifacts listed below to understand the planning and review context
+
+Only after you have a thorough understanding of the full scope, write the PR title and description.
 
 Trak: {{title}}
 Description: {{description}}
 Base branch: {{base_branch}}
 {{#if artifacts}}
 
-## Workflow Stages
+## Workflow Stage Artifacts
 
-These workflow stages produced artifacts (available in the worktree for reference):
+These files contain planning and review context — read them:
 
 {{#each artifacts}}
 - **{{this.name}}**{{#if this.description}} — {{this.description}}{{/if}} (`{{this.path}}`)
 {{/each}}
 {{/if}}
-{{#if commits}}
 
-## Commit History
+## Commit Titles
 
 {{commits}}
-{{/if}}
 
 ## Changed Files
 
@@ -43,3 +42,4 @@ Rules:
 - Write for a human reviewer who has not seen the Trak description. The PR body should stand alone.
 - Use the workflow stage artifacts as context for the overall arc of the work. Do not copy them verbatim.
 - Each section should be substantive but concise. Omit a section only if genuinely not applicable.
+- Do NOT fixate on any single input. The last few commits are often minor cleanup ("fix lint", "add tests") — look past them to the substantive work. The task title may be a rough one-liner that undersells the scope.

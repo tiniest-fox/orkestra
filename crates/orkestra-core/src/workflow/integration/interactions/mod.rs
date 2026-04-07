@@ -10,6 +10,7 @@ pub mod create_pull_request;
 pub mod find_next_candidate;
 pub mod force_push_pr_changes;
 pub(crate) mod format_commit_summaries;
+pub(crate) mod format_commit_titles;
 pub mod generate_commit_message;
 pub mod integration_failed;
 pub mod integration_succeeded;

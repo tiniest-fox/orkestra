@@ -7,6 +7,9 @@ import { useEffect, useRef } from "react";
  * notifications for Orkestra. Should be called once the app is ready
  * (not during splash screen) so the user sees a contextual request.
  *
+ * In PWA context (when TAURI_ENV_PLATFORM is not set), requests Web
+ * Notification API permission instead.
+ *
  * Note: On desktop platforms, the current `tauri-plugin-notification` v2
  * Rust backend always returns "granted" — the real permission check happens
  * through the JS plugin's bridge to the native notification API. This hook
@@ -19,14 +22,15 @@ export function useNotificationPermission() {
     if (requested.current) return;
     requested.current = true;
 
-    // Notification plugin is Tauri-only; skip in PWA context.
-    if (!import.meta.env.TAURI_ENV_PLATFORM) return;
-
-    requestNotificationPermission();
+    if (import.meta.env.TAURI_ENV_PLATFORM) {
+      requestTauriPermission();
+    } else {
+      requestBrowserPermission();
+    }
   }, []);
 }
 
-async function requestNotificationPermission() {
+async function requestTauriPermission() {
   try {
     const { isPermissionGranted, requestPermission } = await import(
       "@tauri-apps/plugin-notification"
@@ -47,6 +51,27 @@ async function requestNotificationPermission() {
           "Enable in System Settings > Notifications to receive task alerts.",
       );
     }
+  } catch (err) {
+    console.error("[notifications] Failed to request permission:", err);
+  }
+}
+
+async function requestBrowserPermission() {
+  if (!("Notification" in window)) {
+    console.log("[notifications] Browser notifications not supported");
+    return;
+  }
+  if (Notification.permission === "granted") {
+    console.log("[notifications] Permission already granted");
+    return;
+  }
+  if (Notification.permission === "denied") {
+    console.log("[notifications] Permission denied by user");
+    return;
+  }
+  try {
+    const result = await Notification.requestPermission();
+    console.log(`[notifications] Permission ${result}`);
   } catch (err) {
     console.error("[notifications] Failed to request permission:", err);
   }

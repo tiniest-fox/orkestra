@@ -193,6 +193,7 @@ export class WebSocketTransport implements Transport {
   private _connect(): void {
     this._setConnectionState("connecting");
 
+    console.log("[WebSocket] Connecting to", this._url);
     const url = this._token ? `${this._url}?token=${encodeURIComponent(this._token)}` : this._url;
 
     const ws = this._createWebSocket(url);
@@ -207,13 +208,15 @@ export class WebSocketTransport implements Transport {
       this._reconnectDelay = RECONNECT_BASE_DELAY_MS;
       this._connectedAt = Date.now();
       this._setConnectionState("connected");
+      console.log("[WebSocket] Connected");
     };
 
     ws.onmessage = (event: MessageEvent) => {
       this._handleMessage(event.data as string);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
+      console.log("[WebSocket] Disconnected", { code: event.code, reason: event.reason });
       this._handleDisconnect();
     };
 
@@ -285,6 +288,7 @@ export class WebSocketTransport implements Transport {
       this._reconnectDelay = Math.min(this._reconnectDelay * 2, RECONNECT_MAX_DELAY_MS);
     }
 
+    console.log("[WebSocket] Reconnecting in", delay, "ms");
     this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null;
       this._connect();

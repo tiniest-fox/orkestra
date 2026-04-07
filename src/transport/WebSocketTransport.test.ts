@@ -36,8 +36,8 @@ class MockWebSocket {
     this.onmessage?.({ data: raw } as MessageEvent);
   }
 
-  simulateClose(): void {
-    this.onclose?.({ type: "close" } as CloseEvent);
+  simulateClose(code = 1000, reason = ""): void {
+    this.onclose?.({ type: "close", code, reason } as CloseEvent);
   }
 
   simulateError(): void {

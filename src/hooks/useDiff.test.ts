@@ -2,7 +2,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mockTransportCall } from "../test/mocks/transport";
+import { mockTransport, mockTransportCall } from "../test/mocks/transport";
 
 // Mock usePolling to capture the polling callback for manual invocation in tests.
 let capturedPollCallback: (() => Promise<void>) | null = null;
@@ -144,6 +144,7 @@ describe("useDiff", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    (mockTransport as { connectionState: string }).connectionState = "connected";
   });
 
   it("sets loading to true only on the first fetch, not on subsequent polls", async () => {
@@ -170,6 +171,12 @@ describe("useDiff", () => {
       await capturedPollCallback?.();
     });
     expect(result.current.loading).toBe(false);
+  });
+
+  it("disables polling when connectionState is disconnected", () => {
+    (mockTransport as { connectionState: string }).connectionState = "disconnected";
+    renderHook(() => useDiff("task-1"));
+    expect(capturedPollCallback).toBeNull();
   });
 
   it("does not update diff state when fingerprint is unchanged between polls", async () => {

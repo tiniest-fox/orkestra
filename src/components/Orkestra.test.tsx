@@ -44,6 +44,10 @@ vi.mock("../hooks/useNotificationPermission", () => ({
   useNotificationPermission: () => {},
 }));
 
+vi.mock("../hooks/useBrowserNotifications", () => ({
+  useBrowserNotifications: () => {},
+}));
+
 import { useTasks } from "../providers";
 
 const mockUseTasks = useTasks as ReturnType<typeof vi.fn>;

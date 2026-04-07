@@ -71,6 +71,16 @@ Testable conditions that define "done":
 ### 4. Open Technical Questions
 Things requiring codebase analysis that the breakdown agent should resolve. Leave empty if none.
 
+## Visual Formatting
+
+Use visual elements when they aid clarity — not as a requirement for every plan:
+
+- Use a **table** for scope in/out comparisons when the distinction between what's included and excluded needs to be unambiguous
+- Use a **table** for success criteria when listing multiple testable conditions side-by-side with their verification method
+- Use a **table** for tradeoff matrices when the plan involves a meaningful design choice (e.g., two viable approaches with different implications)
+- Use a **mermaid diagram** when the plan involves a user flow, state transition, or system relationship that's easier to follow as a graph than as prose
+- Keep it proportional to scope — a one-paragraph plan for a simple bug fix doesn't need a diagram
+
 ## Self-Review Before Finalizing
 
 ### When to Skip Self-Review

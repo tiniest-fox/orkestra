@@ -80,6 +80,16 @@ Describe what **new tests need to be written** (if any) and where they should li
 
 **Do NOT list commands to run** (`cargo test`, `pnpm check`, etc.) — the automated checks stage handles all of that. Focus on what test *code* the worker should write.
 
+## Visual Formatting
+
+Use visual elements in your plan when they aid clarity — not as a requirement for every section:
+
+- Use a **table** for the Implementation Map when listing files to modify, patterns to follow, or key interfaces — a table communicates the structure more directly than a bulleted list
+- Use a **table** for dependency relationships between changes (what must exist before what)
+- Use a **mermaid diagram** for flows involving multiple steps or decision points (e.g., which files call which, how a user action propagates through the system)
+- Use a **mermaid diagram** when the implementation order has non-obvious dependencies that a graph makes explicit
+- Keep it proportional — light research tasks may not warrant diagrams; complex multi-file changes usually benefit from at least a table
+
 ## Self-Review
 
 Before finalizing, assess the scope of your plan:

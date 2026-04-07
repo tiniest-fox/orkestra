@@ -234,6 +234,16 @@ Good (concise):
 
 Omit anything obvious from the diff. The reviewer can see the code — your summary explains *intent*, not *mechanics*.
 
+### Using Visual Elements in Work Summaries
+
+When a visual element communicates your changes more clearly than prose, use it — but keep the summary short overall:
+
+- Use a **table** when your changes span multiple files and the relationship between them matters (file | what changed | why)
+- Use a **mermaid diagram** when the work involved a flow change or state machine modification — show before/after or the new routing
+- Use a **wireframe block** when the work involved UI changes — show the new layout so reviewers can evaluate it at a glance
+
+Don't add visuals for the sake of it. A three-bullet summary is often the right length.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:

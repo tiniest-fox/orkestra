@@ -16,14 +16,24 @@ use crate::types::Event;
 /// only for that lookup and released immediately.
 pub fn execute(event: &OrchestratorEvent, api: &Arc<Mutex<WorkflowApi>>) -> Vec<Event> {
     match event {
-        OrchestratorEvent::OutputProcessed { task_id, .. } => {
+        OrchestratorEvent::OutputProcessed {
+            task_id,
+            stage,
+            output_type,
+        } => {
             let mut events = vec![Event::task_updated(task_id)];
 
             // Check if the task now needs human action, and emit review_ready if so.
             if let Ok(api_lock) = api.lock() {
                 if let Ok(task) = api_lock.get_task(task_id) {
                     if task.state.needs_human_action() {
-                        events.push(Event::review_ready(task_id, task.parent_id.as_deref()));
+                        events.push(Event::review_ready(
+                            task_id,
+                            task.parent_id.as_deref(),
+                            &task.title,
+                            stage,
+                            output_type,
+                        ));
                     }
                 }
             }
@@ -31,26 +41,135 @@ pub fn execute(event: &OrchestratorEvent, api: &Arc<Mutex<WorkflowApi>>) -> Vec<
             events
         }
 
-        OrchestratorEvent::Error { task_id, .. } => {
+        OrchestratorEvent::Error { task_id, error } => {
             if let Some(id) = task_id {
-                vec![Event::task_updated(id)]
+                vec![Event::task_updated(id), Event::task_error(id, error)]
             } else {
                 vec![]
             }
         }
 
+        OrchestratorEvent::IntegrationFailed {
+            task_id,
+            error,
+            conflict_files,
+        } => {
+            let mut events = vec![Event::task_updated(task_id)];
+            if conflict_files.is_empty() {
+                events.push(Event::task_error(task_id, error));
+            } else {
+                events.push(Event::merge_conflict(task_id, conflict_files.len()));
+            }
+            events
+        }
+
+        OrchestratorEvent::PrCreationFailed { task_id, error } => {
+            vec![
+                Event::task_updated(task_id),
+                Event::task_error(task_id, error),
+            ]
+        }
+
         OrchestratorEvent::AgentSpawned { task_id, .. }
         | OrchestratorEvent::IntegrationStarted { task_id, .. }
         | OrchestratorEvent::IntegrationCompleted { task_id }
-        | OrchestratorEvent::IntegrationFailed { task_id, .. }
         | OrchestratorEvent::ParentAdvanced { task_id, .. }
         | OrchestratorEvent::PrCreationStarted { task_id, .. }
         | OrchestratorEvent::PrCreationCompleted { task_id, .. }
-        | OrchestratorEvent::PrCreationFailed { task_id, .. }
         | OrchestratorEvent::GateSpawned { task_id, .. }
         | OrchestratorEvent::GatePassed { task_id, .. }
         | OrchestratorEvent::GateFailed { task_id, .. } => {
             vec![Event::task_updated(task_id)]
         }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use orkestra_core::adapters::sqlite::DatabaseConnection;
+    use orkestra_core::workflow::{
+        config::{StageConfig, WorkflowConfig},
+        OrchestratorEvent, SqliteWorkflowStore, WorkflowApi, WorkflowStore,
+    };
+
+    use super::execute;
+    use crate::types::Event;
+
+    fn dummy_api() -> Arc<Mutex<WorkflowApi>> {
+        let conn = DatabaseConnection::in_memory().expect("in-memory db");
+        let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        Arc::new(Mutex::new(WorkflowApi::new(workflow, store)))
+    }
+
+    fn event_names(events: &[Event]) -> Vec<&str> {
+        events.iter().map(|e| e.event.as_str()).collect()
+    }
+
+    #[test]
+    fn error_with_task_id_emits_task_updated_and_task_error() {
+        let api = dummy_api();
+        let event = OrchestratorEvent::Error {
+            task_id: Some("task-1".into()),
+            error: "something went wrong".into(),
+        };
+        let events = execute(&event, &api);
+        assert_eq!(event_names(&events), vec!["task_updated", "task_error"]);
+    }
+
+    #[test]
+    fn error_without_task_id_emits_nothing() {
+        let api = dummy_api();
+        let event = OrchestratorEvent::Error {
+            task_id: None,
+            error: "global error".into(),
+        };
+        let events = execute(&event, &api);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn integration_failed_with_conflicts_emits_merge_conflict() {
+        let api = dummy_api();
+        let event = OrchestratorEvent::IntegrationFailed {
+            task_id: "task-2".into(),
+            error: "merge failed".into(),
+            conflict_files: vec!["src/foo.rs".into(), "src/bar.rs".into()],
+        };
+        let events = execute(&event, &api);
+        assert_eq!(event_names(&events), vec!["task_updated", "merge_conflict"]);
+        // Verify conflict_count in payload
+        assert_eq!(events[1].payload["conflict_count"], 2);
+    }
+
+    #[test]
+    fn integration_failed_without_conflicts_emits_task_error() {
+        let api = dummy_api();
+        let event = OrchestratorEvent::IntegrationFailed {
+            task_id: "task-3".into(),
+            error: "rebase failed".into(),
+            conflict_files: vec![],
+        };
+        let events = execute(&event, &api);
+        assert_eq!(event_names(&events), vec!["task_updated", "task_error"]);
+        assert_eq!(events[1].payload["error"], "rebase failed");
+    }
+
+    #[test]
+    fn pr_creation_failed_emits_task_error() {
+        let api = dummy_api();
+        let event = OrchestratorEvent::PrCreationFailed {
+            task_id: "task-4".into(),
+            error: "pr failed".into(),
+        };
+        let events = execute(&event, &api);
+        assert_eq!(event_names(&events), vec!["task_updated", "task_error"]);
+        assert_eq!(events[1].payload["error"], "pr failed");
     }
 }

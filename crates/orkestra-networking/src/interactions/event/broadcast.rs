@@ -95,7 +95,7 @@ mod tests {
     use orkestra_core::adapters::sqlite::DatabaseConnection;
     use orkestra_core::workflow::{
         config::{StageConfig, WorkflowConfig},
-        OrchestratorEvent, SqliteWorkflowStore, WorkflowApi, WorkflowStore,
+        OrchestratorEvent, SqliteWorkflowStore, Task, TaskState, WorkflowApi, WorkflowStore,
     };
 
     use super::execute;
@@ -106,6 +106,14 @@ mod tests {
         let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
         let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
         Arc::new(Mutex::new(WorkflowApi::new(workflow, store)))
+    }
+
+    fn dummy_api_with_store() -> (Arc<Mutex<WorkflowApi>>, Arc<dyn WorkflowStore>) {
+        let conn = DatabaseConnection::in_memory().expect("in-memory db");
+        let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        let api = Arc::new(Mutex::new(WorkflowApi::new(workflow, Arc::clone(&store))));
+        (api, store)
     }
 
     fn event_names(events: &[Event]) -> Vec<&str> {
@@ -171,5 +179,62 @@ mod tests {
         let events = execute(&event, &api);
         assert_eq!(event_names(&events), vec!["task_updated", "task_error"]);
         assert_eq!(events[1].payload["error"], "pr failed");
+    }
+
+    #[test]
+    fn output_processed_emits_review_ready_when_needs_human_action() {
+        let (api, store) = dummy_api_with_store();
+
+        // Create a task and set it to awaiting_approval (needs_human_action = true)
+        let mut task: Task = {
+            let api_lock = api.lock().unwrap();
+            api_lock
+                .create_task("Fix bug", "Fix the login bug", None)
+                .unwrap()
+        };
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let event = OrchestratorEvent::OutputProcessed {
+            task_id: task.id.clone(),
+            stage: "work".into(),
+            output_type: "default".into(),
+        };
+        let events = execute(&event, &api);
+
+        assert_eq!(event_names(&events), vec!["task_updated", "review_ready"]);
+        assert_eq!(events[1].payload["task_title"], "Fix bug");
+        assert_eq!(events[1].payload["stage"], "work");
+        assert_eq!(events[1].payload["output_type"], "default");
+        assert_eq!(events[1].payload["notification_title"], "Ready for review");
+        assert_eq!(
+            events[1].payload["notification_body"],
+            "Fix bug — work stage output ready"
+        );
+    }
+
+    #[test]
+    fn output_processed_emits_only_task_updated_when_no_human_action() {
+        let (api, store) = dummy_api_with_store();
+
+        // Create a task in queued state (needs_human_action = false)
+        let task: Task = {
+            let api_lock = api.lock().unwrap();
+            api_lock
+                .create_task("Fix bug", "Fix the login bug", None)
+                .unwrap()
+        };
+        // Task starts in queued state — does not need human action
+        // Save so get_task() succeeds in execute()
+        store.save_task(&task).unwrap();
+
+        let event = OrchestratorEvent::OutputProcessed {
+            task_id: task.id.clone(),
+            stage: "work".into(),
+            output_type: "default".into(),
+        };
+        let events = execute(&event, &api);
+
+        assert_eq!(event_names(&events), vec!["task_updated"]);
     }
 }

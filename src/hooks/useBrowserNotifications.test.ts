@@ -67,6 +67,8 @@ describe("useBrowserNotifications", () => {
         task_title: "My Task",
         stage: "work",
         output_type: "default",
+        notification_title: "Ready for review",
+        notification_body: "My Task — work stage output ready",
       });
 
       expect(MockNotification).toHaveBeenCalledWith("Ready for review", {
@@ -84,6 +86,8 @@ describe("useBrowserNotifications", () => {
         task_title: "My Task",
         stage: "work",
         output_type: "default",
+        notification_title: "Ready for review",
+        notification_body: "My Task — work stage output ready",
       });
 
       expect(MockNotification).not.toHaveBeenCalled();
@@ -99,6 +103,8 @@ describe("useBrowserNotifications", () => {
         task_title: "My Task",
         stage: "work",
         output_type: "default",
+        notification_title: "Ready for review",
+        notification_body: "My Task — work stage output ready",
       });
 
       expect(MockNotification).not.toHaveBeenCalled();
@@ -113,12 +119,14 @@ describe("useBrowserNotifications", () => {
         task_title: "My Task",
         stage: "work",
         output_type: "default",
+        notification_title: "Ready for review",
+        notification_body: "My Task — work stage output ready",
       });
 
       expect(MockNotification).not.toHaveBeenCalled();
     });
 
-    it("formats questions output_type correctly", async () => {
+    it("uses pre-formatted notification_title and notification_body for questions output_type", async () => {
       await renderHookInPwaMode();
 
       fireEvent("review_ready", {
@@ -127,6 +135,8 @@ describe("useBrowserNotifications", () => {
         task_title: "My Task",
         stage: "planning",
         output_type: "questions",
+        notification_title: "Questions need answers",
+        notification_body: "My Task — planning agent has questions",
       });
 
       expect(MockNotification).toHaveBeenCalledWith("Questions need answers", {
@@ -134,7 +144,7 @@ describe("useBrowserNotifications", () => {
       });
     });
 
-    it("formats subtasks output_type correctly", async () => {
+    it("uses pre-formatted notification_title and notification_body for subtasks output_type", async () => {
       await renderHookInPwaMode();
 
       fireEvent("review_ready", {
@@ -143,6 +153,8 @@ describe("useBrowserNotifications", () => {
         task_title: "My Task",
         stage: "breakdown",
         output_type: "subtasks",
+        notification_title: "Subtasks need approval",
+        notification_body: "My Task — review proposed subtask breakdown",
       });
 
       expect(MockNotification).toHaveBeenCalledWith("Subtasks need approval", {
@@ -150,7 +162,7 @@ describe("useBrowserNotifications", () => {
       });
     });
 
-    it("formats approval output_type correctly", async () => {
+    it("uses pre-formatted notification_title and notification_body for approval output_type", async () => {
       await renderHookInPwaMode();
 
       fireEvent("review_ready", {
@@ -159,6 +171,8 @@ describe("useBrowserNotifications", () => {
         task_title: "My Task",
         stage: "review",
         output_type: "approval",
+        notification_title: "Rejection needs review",
+        notification_body: "My Task — reviewer rejected, needs your decision",
       });
 
       expect(MockNotification).toHaveBeenCalledWith("Rejection needs review", {
@@ -168,35 +182,34 @@ describe("useBrowserNotifications", () => {
   });
 
   describe("task_error event", () => {
-    it("fires notification with error body", async () => {
+    it("fires notification with pre-formatted title and body", async () => {
       await renderHookInPwaMode();
 
-      fireEvent("task_error", { task_id: "t1", error: "Something went wrong" });
+      fireEvent("task_error", {
+        task_id: "t1",
+        error: "Something went wrong",
+        notification_title: "Task error",
+        notification_body: "Something went wrong",
+      });
 
       expect(MockNotification).toHaveBeenCalledWith("Task error", {
         body: "Something went wrong",
       });
     });
 
-    it("truncates error at 200 chars", async () => {
+    it("uses pre-formatted body (truncated by backend)", async () => {
       await renderHookInPwaMode();
 
-      const longError = "x".repeat(250);
-      fireEvent("task_error", { task_id: "t1", error: longError });
-
-      expect(MockNotification).toHaveBeenCalledWith("Task error", {
-        body: "x".repeat(200),
+      const truncatedBody = "x".repeat(200);
+      fireEvent("task_error", {
+        task_id: "t1",
+        error: "x".repeat(250),
+        notification_title: "Task error",
+        notification_body: truncatedBody,
       });
-    });
-
-    it("does not truncate errors at exactly 200 chars", async () => {
-      await renderHookInPwaMode();
-
-      const exactError = "x".repeat(200);
-      fireEvent("task_error", { task_id: "t1", error: exactError });
 
       expect(MockNotification).toHaveBeenCalledWith("Task error", {
-        body: "x".repeat(200),
+        body: truncatedBody,
       });
     });
 
@@ -204,17 +217,27 @@ describe("useBrowserNotifications", () => {
       Object.defineProperty(document, "hidden", { value: false, configurable: true });
       await renderHookInPwaMode();
 
-      fireEvent("task_error", { task_id: "t1", error: "oops" });
+      fireEvent("task_error", {
+        task_id: "t1",
+        error: "oops",
+        notification_title: "Task error",
+        notification_body: "oops",
+      });
 
       expect(MockNotification).not.toHaveBeenCalled();
     });
   });
 
   describe("merge_conflict event", () => {
-    it("formats merge_conflict notification correctly", async () => {
+    it("fires notification with pre-formatted title and body", async () => {
       await renderHookInPwaMode();
 
-      fireEvent("merge_conflict", { task_id: "t1", conflict_count: 3 });
+      fireEvent("merge_conflict", {
+        task_id: "t1",
+        conflict_count: 3,
+        notification_title: "Merge conflict",
+        notification_body: "t1 — 3 conflicting files",
+      });
 
       expect(MockNotification).toHaveBeenCalledWith("Merge conflict", {
         body: "t1 — 3 conflicting files",
@@ -225,7 +248,12 @@ describe("useBrowserNotifications", () => {
       Object.defineProperty(document, "hidden", { value: false, configurable: true });
       await renderHookInPwaMode();
 
-      fireEvent("merge_conflict", { task_id: "t1", conflict_count: 3 });
+      fireEvent("merge_conflict", {
+        task_id: "t1",
+        conflict_count: 3,
+        notification_title: "Merge conflict",
+        notification_body: "t1 — 3 conflicting files",
+      });
 
       expect(MockNotification).not.toHaveBeenCalled();
     });

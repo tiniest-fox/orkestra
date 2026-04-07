@@ -37,7 +37,7 @@ describe("isActivelyProgressing", () => {
   });
 
   it("returns false when all flags are false", () => {
-    const task = createMockWorkflowTaskView({});
+    const task = createMockWorkflowTaskView({ derived: { is_preparing: false } });
     expect(isActivelyProgressing(task)).toBe(false);
   });
 });

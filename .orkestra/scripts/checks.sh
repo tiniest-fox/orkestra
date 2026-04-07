@@ -353,6 +353,9 @@ else
                 src/*|package.json|pnpm-lock.yaml|biome.json|tsconfig*.json|vite.config.ts|vitest.config.ts|tailwind.config.js|postcss.config.js|index.html|knip.json)
                     HAS_FRONTEND=true
                     ;;
+                .storybook/*)
+                    HAS_FRONTEND=true
+                    ;;
                 src-tauri/*)
                     HAS_TAURI=true
                     ;;
@@ -459,6 +462,7 @@ if $HAS_FRONTEND; then
     run_check "Frontend unused code (knip)" "pnpm knip"
     run_check "Frontend type check" "pnpm exec tsc --noEmit"
     run_check "Frontend tests" "pnpm test:run"
+    run_check "Storybook build" "pnpm build-storybook --quiet"
 fi
 
 # Rust checks - run clippy and tests for affected crates

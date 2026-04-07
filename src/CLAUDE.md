@@ -677,6 +677,23 @@ vi.mock("react-dom/client", () => ({ createRoot: mockCreateRoot }));
 <!-- compound: prominently-restful-ratel -->
 - **`vi.useFakeTimers()` / `vi.useRealTimers()` cleanup**: Always restore real timers in `afterEach(() => vi.useRealTimers())` at file scope, not inline at the end of each test. If an assertion throws before the inline `vi.useRealTimers()` call, fake timers leak and affect subsequent tests. This follows the same pattern as `vi.unstubAllEnvs()` cleanup.
 
+## Storybook Stories
+
+Stories live in `src/stories/`. The shared infrastructure is in `src/stories/storybook-helpers.tsx`.
+
+**Provider setup**: Every story needs the full provider stack. Use `StorybookProviders` as the wrapper or rely on `storybookDecorator` (registered in `.storybook/preview.ts`), which wraps all stories automatically.
+
+```tsx
+import { storybookDecorator } from "../stories/storybook-helpers";
+export default { decorators: [storybookDecorator] };
+```
+
+**`useWorkflowConfig` vs `useWorkflowConfigState`**: `useWorkflowConfig()` throws when config is null — which happens on every first render before the async `get_startup_data` resolves. In Storybook (and any component that conditionally gates on config), use `useWorkflowConfigState()` instead — it returns `{ config: null }` safely. `StorybookProviders` includes a `ConfigGate` that waits for config before rendering children, preventing null-config throws from consumers.
+
+**Mock transport (`createMockTransport`)**: Returns a `Transport` with `supportsLocalOperations: false` (bypasses Tauri fast paths and `useRunScript`) and a routing table for every RPC method called by `AppProviders` child providers. The `default` branch returns a never-resolving promise to pause polling chains for unhandled methods.
+
+When adding a new RPC method to the mock, verify the return shape against the `transport.call<T>()` call at the usage site — the `<T>` type parameter is the authoritative expected shape. A shape mismatch (e.g., returning `{ entries: [], cursor: null }` when the hook expects `LogEntry[]`) causes silent type coercion that only surfaces as a story crash at render time.
+
 ## Keyboard Navigation
 
 <!-- compound: beauteously-liberal-pollock -->

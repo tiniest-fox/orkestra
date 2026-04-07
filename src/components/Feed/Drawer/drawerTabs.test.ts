@@ -318,7 +318,7 @@ describe("availableTabs — resources tab visibility", () => {
 describe("currentArtifact — terminal task fallback", () => {
   it("returns artifact for active task via current_stage", () => {
     const config = createMockWorkflowConfig();
-    const artifact = createMockArtifact("summary", "work done");
+    const artifact = createMockArtifact({ name: "summary", content: "work done" });
     const task = {
       ...createMockWorkflowTaskView({
         state: { type: "awaiting_approval", stage: "work" },
@@ -331,7 +331,7 @@ describe("currentArtifact — terminal task fallback", () => {
 
   it("returns artifact for done task via last iteration stage", () => {
     const config = createMockWorkflowConfig();
-    const artifact = createMockArtifact("summary", "work done");
+    const artifact = createMockArtifact({ name: "summary", content: "work done" });
     const iteration: WorkflowIteration = {
       id: "iter-1",
       task_id: "test-task-123",

@@ -6,6 +6,7 @@ export default {
     "./index.html",
     "./service.html",
     "./src/**/*.{js,ts,jsx,tsx}",
+    "./.storybook/**/*.{ts,tsx}",
   ],
   // Use media query strategy so dark: variants respond to the OS color scheme.
   // Forge design tokens use CSS variables for automatic dark mode; dark: variants

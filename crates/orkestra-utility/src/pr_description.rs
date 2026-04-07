@@ -226,10 +226,11 @@ pub fn generate_pr_description_sync(
     worktree_path: &str,
     timeout_secs: u64,
 ) -> std::io::Result<(String, String)> {
+    use crate::runner::ExecutionMode;
     let runner = UtilityRunner::new()
         .with_model("sonnet")
         .with_timeout(timeout_secs)
-        .with_interactive(true)
+        .with_mode(ExecutionMode::Interactive)
         .with_cwd(worktree_path);
     let artifact_list: Vec<_> = artifacts
         .iter()

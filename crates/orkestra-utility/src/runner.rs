@@ -62,6 +62,15 @@ pub mod tasks {
     }
 }
 
+/// Execution mode for utility tasks.
+#[derive(Debug, Clone)]
+pub enum ExecutionMode {
+    /// Single-turn output with `--print` flag. No tool access.
+    SingleTurn,
+    /// Interactive mode — agent can use tools. Omits `--print`.
+    Interactive,
+}
+
 /// Runner for utility tasks.
 ///
 /// Executes lightweight AI tasks with structured JSON output.
@@ -69,7 +78,7 @@ pub struct UtilityRunner {
     timeout_secs: u64,
     model: String,
     cwd: Option<PathBuf>,
-    interactive: bool,
+    mode: ExecutionMode,
 }
 
 impl Default for UtilityRunner {
@@ -85,7 +94,7 @@ impl UtilityRunner {
             timeout_secs: 30,
             model: "haiku".to_string(),
             cwd: None,
-            interactive: false,
+            mode: ExecutionMode::SingleTurn,
         }
     }
 
@@ -110,13 +119,10 @@ impl UtilityRunner {
         self
     }
 
-    /// Enable or disable interactive mode.
-    ///
-    /// When `true`, `--print` is omitted so the agent can use tools.
-    /// When `false` (default), `--print` is included for single-turn output.
+    /// Set the execution mode.
     #[must_use]
-    pub fn with_interactive(mut self, interactive: bool) -> Self {
-        self.interactive = interactive;
+    pub fn with_mode(mut self, mode: ExecutionMode) -> Self {
+        self.mode = mode;
         self
     }
 
@@ -163,7 +169,7 @@ impl UtilityRunner {
         let mut cmd = Command::new("claude");
 
         let mut args = vec!["--model", &self.model];
-        if !self.interactive {
+        if matches!(self.mode, ExecutionMode::SingleTurn) {
             args.push("--print");
         }
         args.extend(["--output-format", "json", "--json-schema", schema]);
@@ -201,8 +207,7 @@ impl UtilityRunner {
         let stderr_handle = spawn_stderr_reader(stderr);
 
         // Extract structured output
-        let output =
-            extract_structured_output(stdout, self.timeout_secs).ok_or(UtilityError::Timeout)?;
+        let output = extract_structured_output(stdout, self.timeout_secs)?;
 
         // Log stderr if any
         if let Some(handle) = stderr_handle {
@@ -285,11 +290,15 @@ fn validate_output(output: &Value, schema: &Value) -> Result<(), UtilityError> {
 /// Extract structured JSON output from Claude's response.
 ///
 /// Handles the JSON output format from Claude Code with `--output-format json`.
+/// Returns `Err(UtilityError::Timeout)` if the process timed out without output,
+/// or `Err(UtilityError::OutputNotFound)` if the process completed but produced no
+/// parseable structured output.
 fn extract_structured_output(
     stdout: Option<std::process::ChildStdout>,
     timeout_secs: u64,
-) -> Option<String> {
-    let stdout = stdout?;
+) -> Result<String, UtilityError> {
+    let stdout =
+        stdout.ok_or_else(|| UtilityError::OutputNotFound("No stdout available".into()))?;
     let reader = std::io::BufReader::new(stdout);
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
@@ -305,6 +314,7 @@ fn extract_structured_output(
     });
 
     let mut full_output = String::new();
+    let mut completed = false;
 
     loop {
         if start.elapsed() > timeout {
@@ -322,17 +332,27 @@ fn extract_structured_output(
                 // Check for result event which signals completion
                 if let Ok(v) = serde_json::from_str::<Value>(&line) {
                     if v.get("type").and_then(|t| t.as_str()) == Some("result") {
+                        completed = true;
                         break;
                     }
                 }
             }
-            Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                completed = true;
+                break;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
     }
 
-    // Extract structured_output from the response
-    find_structured_output(&full_output)
+    let timed_out = !completed && start.elapsed() > timeout;
+    match find_structured_output(&full_output) {
+        Some(output) => Ok(output),
+        None if timed_out => Err(UtilityError::Timeout),
+        None => Err(UtilityError::OutputNotFound(
+            "Process completed but produced no structured output".into(),
+        )),
+    }
 }
 
 /// Find the `structured_output` field in Claude's response.
@@ -500,16 +520,16 @@ mod tests {
     }
 
     #[test]
-    fn test_default_is_not_interactive() {
+    fn test_default_is_single_turn() {
         let runner = UtilityRunner::new();
-        assert!(!runner.interactive);
+        assert!(matches!(runner.mode, ExecutionMode::SingleTurn));
         assert!(runner.cwd.is_none());
     }
 
     #[test]
-    fn test_with_interactive_sets_flag() {
-        let runner = UtilityRunner::new().with_interactive(true);
-        assert!(runner.interactive);
+    fn test_with_mode_sets_interactive() {
+        let runner = UtilityRunner::new().with_mode(ExecutionMode::Interactive);
+        assert!(matches!(runner.mode, ExecutionMode::Interactive));
     }
 
     #[test]

@@ -191,6 +191,20 @@ pub enum LogEntry {
     },
 }
 
+/// A log entry with associated database metadata.
+///
+/// Used when the caller needs the iteration association alongside the entry content.
+/// The standard `get_log_entries` returns just `Vec<LogEntry>` for backward compatibility;
+/// `get_annotated_log_entries` returns these enriched entries.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AnnotatedLogEntry {
+    /// The log entry content.
+    pub entry: LogEntry,
+    /// The iteration that was active when this log entry was written.
+    /// `None` for chat-mode messages (written before a `ChatCompletion` iteration exists).
+    pub iteration_id: Option<String>,
+}
+
 impl LogEntry {
     /// Return the serde type discriminant for this log entry variant.
     ///

@@ -50,7 +50,8 @@ mod tests {
                 stage_session_id TEXT NOT NULL,
                 sequence_number INTEGER NOT NULL,
                 content TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT ''
+                created_at TEXT NOT NULL DEFAULT '',
+                iteration_id TEXT
             );",
         )
         .unwrap();
@@ -81,7 +82,7 @@ mod tests {
             },
         ];
         for entry in &entries {
-            append::execute(&conn, "session-1", entry).unwrap();
+            append::execute(&conn, "session-1", entry, None).unwrap();
         }
 
         let result = execute(&conn, "session-1").unwrap();
@@ -102,6 +103,7 @@ mod tests {
             &LE::Text {
                 content: "other".into(),
             },
+            None,
         )
         .unwrap();
 

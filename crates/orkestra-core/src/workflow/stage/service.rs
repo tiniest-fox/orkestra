@@ -582,7 +582,7 @@ impl StageExecutionService {
     ) {
         for entry in entries {
             // Persist to database
-            if let Err(e) = self.store.append_log_entry(stage_session_id, entry) {
+            if let Err(e) = self.store.append_log_entry(stage_session_id, entry, None) {
                 crate::orkestra_debug!(
                     "stage_execution",
                     "Failed to persist log entry for session {}: {}",

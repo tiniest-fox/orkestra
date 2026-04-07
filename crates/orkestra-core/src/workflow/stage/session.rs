@@ -25,6 +25,9 @@ pub struct SessionSpawnContext {
     /// The `StageSession.id` for log correlation. Unlike the old `"{task_id}-{stage}"`
     /// format, this is a UUID that uniquely identifies this session record.
     pub stage_session_id: String,
+    /// ID of the iteration created/found for this spawn.
+    /// Used to tag log entries with their iteration.
+    pub iteration_id: String,
 }
 
 // ============================================================================

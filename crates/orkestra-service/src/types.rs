@@ -126,6 +126,23 @@ impl Default for ServiceConfig {
     }
 }
 
+/// A secret key entry (without the decrypted value).
+#[derive(Debug, Serialize)]
+pub struct SecretEntry {
+    pub key: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A secret with its decrypted value.
+#[derive(Debug, Serialize)]
+pub struct SecretValue {
+    pub key: String,
+    pub value: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// Service-level errors.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
@@ -139,6 +156,12 @@ pub enum ServiceError {
     NoAvailablePorts(u16, u16),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Secret not found: {0}")]
+    SecretNotFound(String),
+    #[error("Invalid secret key name: {0}")]
+    SecretKeyInvalid(String),
+    #[error("Secret management is not configured")]
+    SecretsKeyNotConfigured,
     #[error("{0}")]
     Other(String),
 }

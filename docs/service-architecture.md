@@ -28,6 +28,7 @@ The system splits responsibility across two binaries:
 | `CLAUDE_AUTH_DIR` | Host-side path to Claude CLI auth dir. Mounted into project containers at `/home/orkestra/.claude`. Must be a **host** path, not a service-container path (see DooD section). |
 | `GIT_USER_EMAIL` / `GIT_USER_NAME` | Commit author identity forwarded into project containers via git env vars. |
 | `GH_TOKEN` | GitHub token forwarded into project containers for HTTPS pushes via the git credential helper. |
+| `ORKESTRA_SECRETS_KEY` | 64-char hex string (32 bytes). AES-256-GCM key for encrypting project secrets at rest. Optional — if absent, secret get/set/inject endpoints return 503; list and delete still work. Read once at startup (`service/src/main.rs`) and stored in `AppState.secrets_key: Option<String>`. Passed explicitly through the provision call chain, never re-read from the environment at runtime. |
 
 **Deployment pattern:** Docker-outside-of-Docker (DooD). The service container talks to the host Docker daemon (via socket mount). Project containers are siblings on the host, not nested inside the service container. See [DooD section](#docker-outside-of-docker-dood) for implications.
 

@@ -92,6 +92,19 @@ const MIGRATION_V2: &str = "
 ALTER TABLE service_projects ADD COLUMN container_id TEXT;
 ";
 
+const MIGRATION_V3: &str = "
+CREATE TABLE IF NOT EXISTS project_secrets (
+    project_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    encrypted_value BLOB NOT NULL,
+    nonce BLOB NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (project_id, key),
+    FOREIGN KEY (project_id) REFERENCES service_projects(id) ON DELETE CASCADE
+);
+";
+
 fn run_migrations(conn: &Connection) -> Result<(), ServiceError> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 1 {
@@ -101,6 +114,10 @@ fn run_migrations(conn: &Connection) -> Result<(), ServiceError> {
     if version < 2 {
         conn.execute_batch(MIGRATION_V2)?;
         conn.pragma_update(None, "user_version", 2)?;
+    }
+    if version < 3 {
+        conn.execute_batch(MIGRATION_V3)?;
+        conn.pragma_update(None, "user_version", 3)?;
     }
     Ok(())
 }
@@ -119,7 +136,7 @@ pub(crate) fn apply_migrations_for_test(conn: &Connection) {
 mod tests {
     use rusqlite::Connection;
 
-    use super::{run_migrations, MIGRATION_V1, MIGRATION_V2};
+    use super::{run_migrations, MIGRATION_V1, MIGRATION_V2, MIGRATION_V3};
 
     fn migrated_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -162,6 +179,28 @@ mod tests {
         conn.execute(
             "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret, container_id)
              VALUES ('x', 'x', '/x', 3850, 's', NULL)",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn migration_v3_creates_project_secrets() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATION_V1).unwrap();
+        conn.execute_batch(MIGRATION_V2).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute_batch(MIGRATION_V3).unwrap();
+        // project_secrets table should exist — insert succeeds given a valid project.
+        conn.execute(
+            "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret)
+             VALUES ('proj1', 'p', '/p', 3850, 's')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO project_secrets (project_id, key, encrypted_value, nonce)
+             VALUES ('proj1', 'MY_SECRET', X'deadbeef', X'cafebabe')",
             [],
         )
         .unwrap();

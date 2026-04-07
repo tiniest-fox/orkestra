@@ -24,7 +24,7 @@ use tower_http::cors::CorsLayer;
 use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
-use crate::interactions::{daemon_token, github, port, project};
+use crate::interactions::{daemon_token, github, port, project, secret};
 use crate::types::{ProjectStatus, ServiceConfig, ServiceError};
 
 // ============================================================================
@@ -42,6 +42,8 @@ pub(crate) struct OrkServiceState {
     /// Abort handles for in-flight provisioning tasks, keyed by project ID.
     /// Used to cancel background builds when the user clicks Cancel.
     provision_handles: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    /// AES-256-GCM encryption key for secrets, read once from `ORKESTRA_SECRETS_KEY` at startup.
+    secrets_key: Option<String>,
 }
 
 impl OrkServiceState {
@@ -89,6 +91,7 @@ pub async fn start(
     listener: tokio::net::TcpListener,
     extra_routes: Option<Router>,
     shutdown: impl Future<Output = ()> + Send + 'static,
+    secrets_key: Option<String>,
 ) -> Result<(), std::io::Error> {
     let local_addr = listener.local_addr()?;
 
@@ -98,6 +101,7 @@ pub async fn start(
         config,
         pairing_locks: Arc::new(Mutex::new(HashMap::new())),
         provision_handles: Arc::new(Mutex::new(HashMap::new())),
+        secrets_key,
     };
 
     let auth_routes = Router::new()
@@ -113,6 +117,13 @@ pub async fn start(
         .route("/api/projects/{id}/git/fetch", post(git_fetch_handler))
         .route("/api/projects/{id}/git/pull", post(git_pull_handler))
         .route("/api/projects/{id}/git/push", post(git_push_handler))
+        .route("/api/projects/{id}/secrets", get(list_secrets_handler))
+        .route(
+            "/api/projects/{id}/secrets/{key}",
+            get(get_secret_handler)
+                .put(set_secret_handler)
+                .delete(delete_secret_handler),
+        )
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -529,11 +540,12 @@ async fn add_project_handler(
     let repo_url = body.repo_url.clone();
     let supervisor = Arc::clone(&state.supervisor);
     let proj_for_bg = proj.clone();
+    let secrets_key = state.secrets_key.clone();
     {
         let handles = Arc::clone(&state.provision_handles);
         let bg_id = proj_for_bg.id.clone();
         let handle = tokio::spawn(async move {
-            project::provision::execute(conn, supervisor, proj_for_bg, repo_url).await;
+            project::provision::execute(conn, supervisor, proj_for_bg, repo_url, secrets_key).await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")
@@ -639,6 +651,7 @@ async fn start_project_handler(
     };
 
     // Container setup is async (docker pull/run may take time); run in background.
+    let secrets_key = state.secrets_key.clone();
     {
         let handles = Arc::clone(&state.provision_handles);
         let bg_id = proj.id.clone();
@@ -646,8 +659,15 @@ async fn start_project_handler(
         let conn = Arc::clone(&state.conn);
         let supervisor = Arc::clone(&state.supervisor);
         let handle = tokio::spawn(async move {
-            project::provision::start_containers_and_spawn(conn, supervisor, proj, false, false)
-                .await;
+            project::provision::start_containers_and_spawn(
+                conn,
+                supervisor,
+                proj,
+                false,
+                false,
+                secrets_key,
+            )
+            .await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")
@@ -690,6 +710,7 @@ async fn rebuild_project_handler(
     }
 
     // Rebuild: create new container with setup, then spawn daemon.
+    let secrets_key = state.secrets_key.clone();
     {
         let handles = Arc::clone(&state.provision_handles);
         let bg_id = proj.id.clone();
@@ -697,8 +718,15 @@ async fn rebuild_project_handler(
         let conn = Arc::clone(&state.conn);
         let supervisor = Arc::clone(&state.supervisor);
         let handle = tokio::spawn(async move {
-            project::provision::start_containers_and_spawn(conn, supervisor, proj, true, true)
-                .await;
+            project::provision::start_containers_and_spawn(
+                conn,
+                supervisor,
+                proj,
+                true,
+                true,
+                secrets_key,
+            )
+            .await;
             handles
                 .lock()
                 .expect("provision_handles poisoned")
@@ -891,6 +919,91 @@ async fn git_push_handler(
     .await
     {
         Ok(()) => Json(serde_json::json!({})).into_response(),
+        Err(r) => r,
+    }
+}
+
+// -- Secrets --
+
+/// `GET /api/projects/{id}/secrets` — list secret key names for a project.
+async fn list_secrets_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || secret::list::execute(&conn, &id)
+    })
+    .await
+    {
+        Ok(entries) => Json(entries).into_response(),
+        Err(r) => r,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SetSecretRequest {
+    value: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SecretMutationResponse {
+    restart_required: bool,
+}
+
+/// `GET /api/projects/{id}/secrets/{key}` — retrieve and decrypt a single secret.
+async fn get_secret_handler(
+    State(state): State<OrkServiceState>,
+    Path((id, key)): Path<(String, String)>,
+) -> Response<Body> {
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        let secrets_key = state.secrets_key.clone();
+        move || {
+            let sk = secrets_key.ok_or(ServiceError::SecretsKeyNotConfigured)?;
+            secret::get::execute(&conn, &id, &key, &sk)
+        }
+    })
+    .await
+    {
+        Ok(entry) => Json(entry).into_response(),
+        Err(r) => r,
+    }
+}
+
+/// `PUT /api/projects/{id}/secrets/{key}` — create or update a secret.
+async fn set_secret_handler(
+    State(state): State<OrkServiceState>,
+    Path((id, key)): Path<(String, String)>,
+    Json(body): Json<SetSecretRequest>,
+) -> Response<Body> {
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        let secrets_key = state.secrets_key.clone();
+        move || {
+            let sk = secrets_key.ok_or(ServiceError::SecretsKeyNotConfigured)?;
+            secret::set::execute(&conn, &id, &key, &body.value, &sk)
+        }
+    })
+    .await
+    {
+        Ok(restart_required) => Json(SecretMutationResponse { restart_required }).into_response(),
+        Err(r) => r,
+    }
+}
+
+/// `DELETE /api/projects/{id}/secrets/{key}` — delete a secret.
+async fn delete_secret_handler(
+    State(state): State<OrkServiceState>,
+    Path((id, key)): Path<(String, String)>,
+) -> Response<Body> {
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || secret::delete::execute(&conn, &id, &key)
+    })
+    .await
+    {
+        Ok(restart_required) => Json(SecretMutationResponse { restart_required }).into_response(),
         Err(r) => r,
     }
 }
@@ -1114,11 +1227,15 @@ where
 {
     match tokio::task::spawn_blocking(f).await {
         Ok(Ok(v)) => Ok(v),
-        Ok(Err(e)) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
-        )
-            .into_response()),
+        Ok(Err(e)) => {
+            let status = match &e {
+                ServiceError::SecretNotFound(_) => StatusCode::NOT_FOUND,
+                ServiceError::SecretKeyInvalid(_) => StatusCode::BAD_REQUEST,
+                ServiceError::SecretsKeyNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            Err((status, Json(serde_json::json!({"error": e.to_string()}))).into_response())
+        }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": e.to_string()})),

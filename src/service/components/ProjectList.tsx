@@ -63,6 +63,7 @@ export function ProjectList({
                 onGitPull={actions.onGitPull}
                 onGitPush={actions.onGitPush}
                 onCancel={actions.onCancel}
+                onManageSecrets={actions.onManageSecrets}
                 isFocused={focusedId === project.id}
                 onMouseEnter={() => onFocusRow(project.id)}
               />

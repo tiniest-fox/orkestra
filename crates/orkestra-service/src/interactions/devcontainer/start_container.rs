@@ -31,6 +31,10 @@ use crate::types::{DevcontainerConfig, ServiceError};
 /// image build even when the cached image is up-to-date. Only effective for
 /// `Compose` configs; silently ignored for `Default`/`Image`/`Build` configs
 /// (those use `docker run` which has no build step).
+///
+/// `secrets` — decrypted `(key, value)` pairs to inject as environment
+/// variables into the container. Each pair becomes a `-e KEY=VALUE` flag for
+/// `docker run`, or a YAML environment entry for `docker compose`.
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
     project_id: &str,
@@ -41,11 +45,14 @@ pub fn execute(
     override_dir: &Path,
     log_path: Option<&Path>,
     force_build: bool,
+    secrets: &[(String, String)],
 ) -> Result<String, ServiceError> {
     match config {
         DevcontainerConfig::Default
         | DevcontainerConfig::Image { .. }
-        | DevcontainerConfig::Build { .. } => docker_run(project_id, image, repo_path, port),
+        | DevcontainerConfig::Build { .. } => {
+            docker_run(project_id, image, repo_path, port, secrets)
+        }
         DevcontainerConfig::Compose {
             compose_file,
             service,
@@ -60,6 +67,7 @@ pub fn execute(
                 override_dir,
                 log_path,
                 force_build,
+                secrets,
             )
         }
     }
@@ -72,6 +80,7 @@ fn docker_run(
     image: &str,
     repo_path: &Path,
     port: u16,
+    secrets: &[(String, String)],
 ) -> Result<String, ServiceError> {
     let container_name = format!("orkestra-{project_id}");
 
@@ -147,6 +156,12 @@ fn docker_run(
         args.push(token);
     }
 
+    let secret_envs: Vec<String> = secrets.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    for env in &secret_envs {
+        args.push("-e");
+        args.push(env);
+    }
+
     args.extend_from_slice(&[image, "sleep", "infinity"]);
 
     let output = Command::new("docker")
@@ -168,6 +183,7 @@ fn docker_run(
     Ok(container_id)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compose_up(
     project_id: &str,
     compose_file: &Path,
@@ -176,6 +192,7 @@ fn compose_up(
     override_dir: &Path,
     log_path: Option<&Path>,
     force_build: bool,
+    secrets: &[(String, String)],
 ) -> Result<String, ServiceError> {
     // 10 minutes is generous for even the heaviest healthcheck chains.
     const TIMEOUT: Duration = Duration::from_secs(600);
@@ -184,7 +201,7 @@ fn compose_up(
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
     let override_path = override_dir.join("orkestra-override.yml");
-    let override_content = build_compose_override(service, port);
+    let override_content = build_compose_override(service, port, secrets);
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 
@@ -320,7 +337,7 @@ fn resolve_compose_container_id(
 /// Mirrors the mounts and environment variables that `docker_run` sets for
 /// non-compose containers: toolbox volume, Claude auth directory, git identity,
 /// `HOME`, and `GH_TOKEN`.
-fn build_compose_override(service: &str, port: u16) -> String {
+fn build_compose_override(service: &str, port: u16, secrets: &[(String, String)]) -> String {
     const I: &str = "      "; // 6-space indent for items under a 4-space key
 
     let git_email =
@@ -346,6 +363,17 @@ fn build_compose_override(service: &str, port: u16) -> String {
     let _ = writeln!(environment, "{I}GIT_COMMITTER_NAME: \"{git_name}\"");
     if let Some(ref token) = gh_token {
         let _ = writeln!(environment, "{I}GH_TOKEN: \"{token}\"");
+    }
+    for (key, value) in secrets {
+        // Escape for YAML double-quoted string: backslash first, then double-quote,
+        // then control characters that would break the single-line string.
+        let escaped = value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        let _ = writeln!(environment, "{I}{key}: \"{escaped}\"");
     }
 
     format!(
@@ -375,4 +403,60 @@ fn pipe_to_log(
         }
         collected
     })
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::build_compose_override;
+
+    #[test]
+    fn build_compose_override_escapes_secret_special_chars() {
+        let secrets = vec![
+            ("PLAIN".to_string(), "simple_value".to_string()),
+            ("WITH_COLON".to_string(), "host:port".to_string()),
+            ("WITH_HASH".to_string(), "value#comment".to_string()),
+            ("WITH_QUOTE".to_string(), r#"val"ue"#.to_string()),
+            ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
+        ];
+
+        let yaml = build_compose_override("app", 3000, &secrets);
+
+        // Plain value is quoted but not escaped.
+        assert!(yaml.contains("PLAIN: \"simple_value\""));
+        // Colon in value is safe inside double-quoted string.
+        assert!(yaml.contains("WITH_COLON: \"host:port\""));
+        // Hash in value is safe inside double-quoted string.
+        assert!(yaml.contains("WITH_HASH: \"value#comment\""));
+        // Double-quote must be escaped as \".
+        assert!(yaml.contains(r#"WITH_QUOTE: "val\"ue""#));
+        // Backslash must be escaped as \\.
+        assert!(yaml.contains(r#"WITH_BACKSLASH: "val\\ue""#));
+    }
+
+    #[test]
+    fn build_compose_override_escapes_multiline_secrets() {
+        let secrets = vec![(
+            "PEM_KEY".to_string(),
+            "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
+        )];
+        let yaml = build_compose_override("app", 3000, &secrets);
+        // Literal newlines must be escaped as \n in the YAML double-quoted string.
+        assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
+        // The value must NOT contain unescaped literal newlines.
+        assert!(!yaml.contains("-----BEGIN KEY-----\n"));
+    }
+
+    #[test]
+    fn build_compose_override_no_secrets_produces_valid_structure() {
+        let yaml = build_compose_override("myservice", 8080, &[]);
+
+        assert!(yaml.contains("services:"));
+        assert!(yaml.contains("myservice:"));
+        assert!(yaml.contains("8080:8080"));
+        assert!(yaml.contains("HOME: /home/orkestra"));
+    }
 }

@@ -6,3 +6,4 @@ pub mod devcontainer;
 pub mod github;
 pub mod port;
 pub mod project;
+pub mod secret;

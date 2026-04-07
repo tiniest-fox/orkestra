@@ -45,6 +45,7 @@ function renderRow(project: api.Project, overrides?: Partial<ProjectRowProps>) {
     onGitPull: vi.fn(),
     onGitPush: vi.fn(),
     onCancel: vi.fn(),
+    onManageSecrets: vi.fn(),
     isFocused: false,
     onMouseEnter: vi.fn(),
     ...overrides,

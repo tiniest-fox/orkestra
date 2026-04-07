@@ -23,6 +23,7 @@ pub async fn execute(
     supervisor: Arc<DaemonSupervisor>,
     project: Project,
     repo_url: String,
+    secrets_key: Option<String>,
 ) {
     let project_id = project.id.clone();
     let path = PathBuf::from(&project.path);
@@ -89,6 +90,7 @@ pub async fn execute(
         true,  /* run_setup */
         false, /* force_build */
         &log_path,
+        secrets_key,
     )
     .await
     {
@@ -110,6 +112,7 @@ pub async fn start_containers_and_spawn(
     project: Project,
     run_setup: bool,
     force_build: bool,
+    secrets_key: Option<String>,
 ) {
     let project_id = project.id.clone();
     let path = PathBuf::from(&project.path);
@@ -157,6 +160,7 @@ pub async fn start_containers_and_spawn(
         run_setup,
         force_build,
         &log_path,
+        secrets_key,
     )
     .await
     {
@@ -171,7 +175,7 @@ pub async fn start_containers_and_spawn(
 /// Steps 4–9: detect → prepare image → start container → inject orkd + ork →
 /// store `container_id` → optionally run setup → spawn daemon.
 #[cfg(unix)]
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn container_and_spawn(
     conn: &Arc<Mutex<Connection>>,
     supervisor: &Arc<DaemonSupervisor>,
@@ -180,6 +184,7 @@ async fn container_and_spawn(
     run_setup: bool,
     force_build: bool,
     log_path: &Path,
+    secrets_key: Option<String>,
 ) -> Result<(), ServiceError> {
     let project_id = project.id.clone();
     let orkd_path = supervisor.orkd_path().to_path_buf();
@@ -226,12 +231,25 @@ async fn container_and_spawn(
     })
     .await;
 
+    // Step 5c: Decrypt project secrets for env-var injection.
+    let secrets = {
+        let c = Arc::clone(conn);
+        let pid = project_id.clone();
+        let sk = secrets_key.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::interactions::secret::decrypt_all::execute(&c, &pid, sk.as_deref())
+        })
+        .await
+        .map_err(|e| ServiceError::Other(e.to_string()))??
+    };
+
     // Step 6: Start container.
     append_log(log_path, "\n=== Starting container ===");
     let container_id = tokio::task::spawn_blocking({
         let config = config.clone();
         let p = path.clone();
         let id = project_id.clone();
+        let od = override_dir.clone();
         let lp = log_path.to_path_buf();
         move || {
             devcontainer::start_container::execute(
@@ -240,9 +258,10 @@ async fn container_and_spawn(
                 &image,
                 &p,
                 project.daemon_port,
-                &override_dir,
+                &od,
                 Some(&lp),
                 force_build,
+                &secrets,
             )
         }
     })

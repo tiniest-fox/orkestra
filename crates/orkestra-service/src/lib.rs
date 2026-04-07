@@ -101,6 +101,7 @@ pub fn devcontainer_start_container(params: &ContainerStartParams) -> Result<Str
         &params.override_dir,
         None,
         params.force_build,
+        &[],
     )
 }
 

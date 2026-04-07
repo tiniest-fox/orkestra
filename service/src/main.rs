@@ -121,6 +121,8 @@ async fn run(args: Args) -> Result<(), String> {
     let ork_path = find_ork_path()?;
     tracing::info!("Using ork binary: {}", ork_path.display());
 
+    let secrets_key = std::env::var("ORKESTRA_SECRETS_KEY").ok();
+
     let config = Arc::new(ServiceConfig {
         data_dir: data_dir.clone(),
         port: args.port,
@@ -165,6 +167,7 @@ async fn run(args: Args) -> Result<(), String> {
                 proj,
                 false, // run_setup: false — repo is already set up
                 false, // force_build: false — no image rebuild on restart
+                secrets_key.clone(),
             ));
         }
     }
@@ -249,6 +252,7 @@ async fn run(args: Args) -> Result<(), String> {
         listener,
         Some(extra_routes),
         stop_watcher,
+        secrets_key,
     )
     .await
     {

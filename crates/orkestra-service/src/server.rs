@@ -999,11 +999,7 @@ async fn delete_secret_handler(
 ) -> Response<Body> {
     match run_blocking({
         let conn = Arc::clone(&state.conn);
-        let secrets_key = state.secrets_key.clone();
-        move || {
-            let _sk = secrets_key.ok_or(ServiceError::SecretsKeyNotConfigured)?;
-            secret::delete::execute(&conn, &id, &key)
-        }
+        move || secret::delete::execute(&conn, &id, &key)
     })
     .await
     {

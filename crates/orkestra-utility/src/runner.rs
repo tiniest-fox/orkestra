@@ -2,8 +2,11 @@
 //!
 //! Executes single-turn AI operations (title generation, commit messages, etc.)
 //! by spawning Claude with structured JSON output and schema validation.
+//! Interactive mode is also supported for tasks requiring tool use (e.g., reading
+//! files or running git commands in a worktree).
 
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -65,6 +68,8 @@ pub mod tasks {
 pub struct UtilityRunner {
     timeout_secs: u64,
     model: String,
+    cwd: Option<PathBuf>,
+    interactive: bool,
 }
 
 impl Default for UtilityRunner {
@@ -79,6 +84,8 @@ impl UtilityRunner {
         Self {
             timeout_secs: 30,
             model: "haiku".to_string(),
+            cwd: None,
+            interactive: false,
         }
     }
 
@@ -93,6 +100,23 @@ impl UtilityRunner {
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
+        self
+    }
+
+    /// Set the working directory for the Claude process.
+    #[must_use]
+    pub fn with_cwd(mut self, path: impl Into<PathBuf>) -> Self {
+        self.cwd = Some(path.into());
+        self
+    }
+
+    /// Enable or disable interactive mode.
+    ///
+    /// When `true`, `--print` is omitted so the agent can use tools.
+    /// When `false` (default), `--print` is included for single-turn output.
+    #[must_use]
+    pub fn with_interactive(mut self, interactive: bool) -> Self {
+        self.interactive = interactive;
         self
     }
 
@@ -137,18 +161,20 @@ impl UtilityRunner {
     fn execute(&self, prompt: &str, schema: &str) -> Result<Value, UtilityError> {
         // Spawn Claude with lightweight options
         let mut cmd = Command::new("claude");
-        cmd.args([
-            "--model",
-            &self.model,
-            "--print",
-            "--output-format",
-            "json",
-            "--json-schema",
-            schema,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+
+        let mut args = vec!["--model", &self.model];
+        if !self.interactive {
+            args.push("--print");
+        }
+        args.extend(["--output-format", "json", "--json-schema", schema]);
+        cmd.args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        if let Some(cwd) = &self.cwd {
+            cmd.current_dir(cwd);
+        }
 
         // Create new process group so kill_process_tree can clean up descendants
         #[cfg(unix)]
@@ -471,5 +497,27 @@ mod tests {
         let output = "{\"type\":\"system\"}\n{\"structured_output\":{\"title\":\"Fix bug\"}}";
         let result = find_structured_output(output);
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_default_is_not_interactive() {
+        let runner = UtilityRunner::new();
+        assert!(!runner.interactive);
+        assert!(runner.cwd.is_none());
+    }
+
+    #[test]
+    fn test_with_interactive_sets_flag() {
+        let runner = UtilityRunner::new().with_interactive(true);
+        assert!(runner.interactive);
+    }
+
+    #[test]
+    fn test_with_cwd_sets_path() {
+        let runner = UtilityRunner::new().with_cwd("/tmp/my-worktree");
+        assert_eq!(
+            runner.cwd,
+            Some(std::path::PathBuf::from("/tmp/my-worktree"))
+        );
     }
 }

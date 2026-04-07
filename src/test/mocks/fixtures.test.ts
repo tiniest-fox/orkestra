@@ -56,6 +56,41 @@ describe("state→derived inference", () => {
     expect(task.derived.has_questions).toBe(true);
     expect(task.derived.needs_review).toBe(true);
   });
+
+  it("infers phase_icon and is_system_active for gate_running state", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "gate_running", stage: "work" } });
+    expect(task.derived.phase_icon).toBe("gate");
+    expect(task.derived.is_system_active).toBe(true);
+  });
+
+  it("infers phase_icon for awaiting_gate state", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "awaiting_gate", stage: "work" } });
+    expect(task.derived.phase_icon).toBe("gate");
+    expect(task.derived.is_system_active).toBe(false);
+  });
+
+  it("infers is_interactive for interactive state", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "interactive", stage: "work" } });
+    expect(task.derived.is_interactive).toBe(true);
+  });
+
+  it("infers is_preparing for queued state", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "queued", stage: "planning" } });
+    expect(task.derived.is_preparing).toBe(true);
+  });
+
+  it("infers is_preparing for setting_up state", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "setting_up", stage: "work" } });
+    expect(task.derived.is_preparing).toBe(true);
+  });
+
+  it("infers pending_approval for awaiting_approval state", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "awaiting_approval", stage: "review" },
+    });
+    expect(task.derived.pending_approval).toBe(true);
+    expect(task.derived.needs_review).toBe(true);
+  });
 });
 
 describe("override precedence", () => {
@@ -130,12 +165,6 @@ describe("backwards compatibility", () => {
     expect(config.flows.default.stages).toHaveLength(2);
     expect(config.flows.default.stages[0].name).toBe("planning");
     expect(config.flows.default.stages[1].name).toBe("work");
-  });
-
-  it("createMockArtifact positional API still works", () => {
-    const artifact = createMockArtifact("plan", "content here");
-    expect(artifact.name).toBe("plan");
-    expect(artifact.content).toBe("content here");
   });
 
   it("createMockArtifact overrides API works", () => {

@@ -167,9 +167,29 @@ export function createMockWorkflowTaskView(
     derivedDefaults.phase_icon = "git";
     derivedDefaults.is_system_active = true;
   }
-  // Queued state uses "queued" phase_icon
+  // Queued state uses "queued" phase_icon and is_preparing
   if (state.type === "queued") {
     derivedDefaults.phase_icon = "queued";
+    derivedDefaults.is_preparing = true;
+  }
+  // Gate states
+  if (state.type === "gate_running" || state.type === "awaiting_gate") {
+    derivedDefaults.phase_icon = "gate";
+    if (state.type === "gate_running") {
+      derivedDefaults.is_system_active = true;
+    }
+  }
+  // Interactive state
+  if (state.type === "interactive") {
+    derivedDefaults.is_interactive = true;
+  }
+  // Setup states also set is_preparing (phase_icon already set above)
+  if (state.type === "setting_up" || state.type === "awaiting_setup") {
+    derivedDefaults.is_preparing = true;
+  }
+  // Awaiting approval also sets pending_approval
+  if (state.type === "awaiting_approval") {
+    derivedDefaults.pending_approval = true;
   }
 
   return {
@@ -196,7 +216,12 @@ export function createMockFlowConfig(overrides?: Partial<FlowConfig>): FlowConfi
   return {
     stages: [
       createMockStageConfig({ name: "planning", artifact: "plan" }),
-      createMockStageConfig({ name: "work", artifact: "summary", inputs: ["plan"] }),
+      createMockStageConfig({
+        name: "work",
+        artifact: "summary",
+        inputs: ["plan"],
+        capabilities: { ask_questions: true, subtasks: {} },
+      }),
     ],
     integration: { on_failure: "work" },
     ...overrides,
@@ -315,26 +340,13 @@ export function createMockResource(overrides?: Partial<WorkflowResource>): Workf
   };
 }
 
-export function createMockArtifact(
-  nameOrOverrides?: string | Partial<WorkflowArtifact>,
-  content?: string,
-): WorkflowArtifact {
-  if (typeof nameOrOverrides === "string") {
-    // Legacy positional API
-    return {
-      name: nameOrOverrides,
-      content: content ?? "",
-      stage: "planning",
-      created_at: "2026-01-01T00:00:00Z",
-      iteration: 1,
-    };
-  }
+export function createMockArtifact(overrides?: Partial<WorkflowArtifact>): WorkflowArtifact {
   return {
     name: "plan",
     content: "## Plan\nImplementation details here.",
     stage: "planning",
     created_at: "2026-01-01T00:00:00Z",
     iteration: 1,
-    ...nameOrOverrides,
+    ...overrides,
   };
 }

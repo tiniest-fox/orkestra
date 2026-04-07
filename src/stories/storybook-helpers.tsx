@@ -3,6 +3,7 @@
 import type { Decorator } from "@storybook/react";
 import type { ReactNode } from "react";
 import { AppProviders } from "../providers/AppProviders";
+import { useWorkflowConfigState } from "../providers/WorkflowConfigProvider";
 import { createMockWorkflowConfig } from "../test/mocks/fixtures";
 import { TransportProvider } from "../transport/TransportProvider";
 import type { Transport } from "../transport/types";
@@ -46,11 +47,20 @@ export function createMockTransport(): Transport {
   };
 }
 
+// Gates rendering until the workflow config is loaded, preventing null-config throws.
+function ConfigGate({ children }: { children: ReactNode }) {
+  const { config } = useWorkflowConfigState();
+  if (!config) return null;
+  return <>{children}</>;
+}
+
 // Wraps children in the full provider stack required by Orkestra components.
 export function StorybookProviders({ children }: { children: ReactNode }) {
   return (
     <TransportProvider transport={createMockTransport()}>
-      <AppProviders>{children}</AppProviders>
+      <AppProviders>
+        <ConfigGate>{children}</ConfigGate>
+      </AppProviders>
     </TransportProvider>
   );
 }

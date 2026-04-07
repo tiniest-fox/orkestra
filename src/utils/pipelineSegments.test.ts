@@ -24,7 +24,7 @@ describe("computePipelineSegments", () => {
         state: { type: "queued", stage: "planning" },
       });
       const segments = computePipelineSegments(task, config);
-      expect(segments[0]).toEqual({ stageName: "planning", state: "review" });
+      expect(segments[0]).toEqual({ stageName: "planning", state: "active" });
       expect(segments[1]).toEqual({ stageName: "work", state: "pending" });
     });
   });

@@ -15,7 +15,7 @@ const meta = {
     layout: "padded",
   },
   render: (args) => (
-    <div style={{ maxWidth: "600px", margin: "0 auto" }}>
+    <div className="max-w-[600px] mx-auto">
       <FeedTaskRow {...args} />
     </div>
   ),

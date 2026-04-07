@@ -843,3 +843,19 @@ Pattern:
 4. **If the hook exports a pure utility function** (e.g., a CSS class helper), add a `useSharedConcept.test.ts` unit test alongside it — this file requires unit tests for pure utility modules.
 
 Reference: `src/hooks/useStalenessTimer.ts` exports both `useStalenessTimer` (hook) and `stalenessClass` (pure utility).
+
+## Test Both Sides of Connection State Guards
+
+<!-- compound: perceptibly-epic-pickerel -->
+
+When adding a `connectionState === "connected"` guard to a polling hook, the guard *is* the behavioral change — test it explicitly. A test that only exercises the happy path (connected, data arrives) won't catch a regression that removes the guard.
+
+**Required test coverage when adding a connection guard:**
+1. Guard suppresses the operation when `connectionState !== "connected"` — set `mockTransport.connectionState = "disconnected"` before rendering and assert that the callback is never invoked
+2. Guard allows the operation when connected (the happy path, often already covered by existing tests)
+
+`useConnectionState` reads from the global transport mock, so mutating `mockTransport.connectionState` is sufficient — no additional mock setup required.
+
+**Components using `usePolling` that still lack connection guards** (known follow-up):
+- `src/components/Feed/LatestLogSummary.tsx`
+- `src/service/components/ProjectLatestLog.tsx`

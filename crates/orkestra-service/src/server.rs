@@ -91,6 +91,7 @@ pub async fn start(
     listener: tokio::net::TcpListener,
     extra_routes: Option<Router>,
     shutdown: impl Future<Output = ()> + Send + 'static,
+    secrets_key: Option<String>,
 ) -> Result<(), std::io::Error> {
     let local_addr = listener.local_addr()?;
 
@@ -100,7 +101,7 @@ pub async fn start(
         config,
         pairing_locks: Arc::new(Mutex::new(HashMap::new())),
         provision_handles: Arc::new(Mutex::new(HashMap::new())),
-        secrets_key: std::env::var("ORKESTRA_SECRETS_KEY").ok(),
+        secrets_key,
     };
 
     let auth_routes = Router::new()
@@ -955,17 +956,13 @@ async fn get_secret_handler(
     State(state): State<OrkServiceState>,
     Path((id, key)): Path<(String, String)>,
 ) -> Response<Body> {
-    let Some(ref secrets_key) = state.secrets_key else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
-        )
-            .into_response();
-    };
-    let sk = secrets_key.clone();
     match run_blocking({
         let conn = Arc::clone(&state.conn);
-        move || secret::get::execute(&conn, &id, &key, &sk)
+        let secrets_key = state.secrets_key.clone();
+        move || {
+            let sk = secrets_key.ok_or(ServiceError::SecretsKeyNotConfigured)?;
+            secret::get::execute(&conn, &id, &key, &sk)
+        }
     })
     .await
     {
@@ -980,17 +977,13 @@ async fn set_secret_handler(
     Path((id, key)): Path<(String, String)>,
     Json(body): Json<SetSecretRequest>,
 ) -> Response<Body> {
-    let Some(ref secrets_key) = state.secrets_key else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
-        )
-            .into_response();
-    };
-    let sk = secrets_key.clone();
     match run_blocking({
         let conn = Arc::clone(&state.conn);
-        move || secret::set::execute(&conn, &id, &key, &body.value, &sk)
+        let secrets_key = state.secrets_key.clone();
+        move || {
+            let sk = secrets_key.ok_or(ServiceError::SecretsKeyNotConfigured)?;
+            secret::set::execute(&conn, &id, &key, &body.value, &sk)
+        }
     })
     .await
     {
@@ -1004,16 +997,13 @@ async fn delete_secret_handler(
     State(state): State<OrkServiceState>,
     Path((id, key)): Path<(String, String)>,
 ) -> Response<Body> {
-    if state.secrets_key.is_none() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"error": "Secret management is not configured (ORKESTRA_SECRETS_KEY not set)"})),
-        )
-            .into_response();
-    }
     match run_blocking({
         let conn = Arc::clone(&state.conn);
-        move || secret::delete::execute(&conn, &id, &key)
+        let secrets_key = state.secrets_key.clone();
+        move || {
+            let _sk = secrets_key.ok_or(ServiceError::SecretsKeyNotConfigured)?;
+            secret::delete::execute(&conn, &id, &key)
+        }
     })
     .await
     {

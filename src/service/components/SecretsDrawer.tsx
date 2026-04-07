@@ -1,6 +1,7 @@
 // Secrets management drawer for per-project environment variables.
 
 import { Pencil, Trash2 } from "lucide-react";
+import { Button } from "../../components/ui";
 import { Drawer } from "../../components/ui/Drawer/Drawer";
 import { DrawerHeader } from "../../components/ui/Drawer/DrawerHeader";
 import type { ProjectStatus, SecretEntry } from "../api";
@@ -98,13 +99,9 @@ export function SecretsDrawer({
         {/* Footer — Add Secret button when in list view */}
         {!editingKey && !addMode && (
           <div className="px-4 py-3 border-t border-border">
-            <button
-              type="button"
-              onClick={openAdd}
-              className="w-full py-2 rounded-panel-sm border border-border text-forge-body text-text-secondary hover:bg-surface-2 transition-colors"
-            >
+            <Button variant="secondary" fullWidth onClick={openAdd}>
               Add Secret
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -225,14 +222,9 @@ function EditSecretView({
             className="w-full px-3 py-1.5 rounded-panel-sm border border-border bg-canvas font-mono text-forge-mono-sm text-text-primary focus:outline-none focus:border-accent resize-none"
           />
           <div>
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={saving}
-              className="px-3 py-1.5 rounded-panel-sm bg-accent text-white text-forge-body font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-            >
+            <Button variant="primary" onClick={onSave} disabled={saving} loading={saving}>
               {saving ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </div>
         </>
       )}

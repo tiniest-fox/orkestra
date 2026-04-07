@@ -2,10 +2,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
-use crate::interactions::secret::encrypt;
-use crate::types::{ProjectStatus, ServiceError};
+use crate::interactions::secret::{encrypt, is_running};
+use crate::types::ServiceError;
 
 /// Upsert the secret `key` with `value` for `project_id`.
 ///
@@ -35,7 +35,7 @@ pub fn execute(
         params![project_id, key, ciphertext, nonce],
     )?;
 
-    let restart_required = is_running(&guard, project_id)?;
+    let restart_required = is_running::execute(&guard, project_id)?;
     Ok(restart_required)
 }
 
@@ -56,17 +56,6 @@ fn validate_key(key: &str) -> Result<(), ServiceError> {
             "{key}. Must match [A-Za-z_][A-Za-z0-9_]*"
         )))
     }
-}
-
-fn is_running(guard: &rusqlite::Connection, project_id: &str) -> Result<bool, ServiceError> {
-    let status: Option<String> = guard
-        .query_row(
-            "SELECT status FROM service_projects WHERE id = ?",
-            params![project_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(status.as_deref() == Some(ProjectStatus::Running.as_str()))
 }
 
 // ============================================================================

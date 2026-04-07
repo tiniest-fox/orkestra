@@ -2,9 +2,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
-use crate::types::{ProjectStatus, ServiceError};
+use crate::interactions::secret::is_running;
+use crate::types::ServiceError;
 
 /// Delete the secret identified by `key` for `project_id`.
 ///
@@ -21,15 +22,8 @@ pub fn execute(
         params![project_id, key],
     )?;
 
-    let status: Option<String> = guard
-        .query_row(
-            "SELECT status FROM service_projects WHERE id = ?",
-            params![project_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-
-    Ok(status.as_deref() == Some(ProjectStatus::Running.as_str()))
+    let restart_required = is_running::execute(&guard, project_id)?;
+    Ok(restart_required)
 }
 
 // ============================================================================

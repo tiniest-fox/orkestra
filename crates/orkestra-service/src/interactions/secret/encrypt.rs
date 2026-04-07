@@ -9,7 +9,7 @@ use crate::types::ServiceError;
 /// Encrypt `plaintext` with AES-256-GCM using `key_hex` (64 hex chars = 32 bytes).
 ///
 /// Returns `(ciphertext, nonce)`. A fresh 96-bit nonce is generated for each call.
-pub fn encrypt(plaintext: &str, key_hex: &str) -> Result<(Vec<u8>, Vec<u8>), ServiceError> {
+pub(super) fn encrypt(plaintext: &str, key_hex: &str) -> Result<(Vec<u8>, Vec<u8>), ServiceError> {
     let key = parse_key(key_hex)?;
     let cipher = Aes256Gcm::new(&key.into());
 
@@ -27,7 +27,11 @@ pub fn encrypt(plaintext: &str, key_hex: &str) -> Result<(Vec<u8>, Vec<u8>), Ser
 /// Decrypt `ciphertext` with AES-256-GCM using the provided `nonce` and `key_hex`.
 ///
 /// Returns the plaintext as a UTF-8 string.
-pub fn decrypt(ciphertext: &[u8], nonce: &[u8], key_hex: &str) -> Result<String, ServiceError> {
+pub(super) fn decrypt(
+    ciphertext: &[u8],
+    nonce: &[u8],
+    key_hex: &str,
+) -> Result<String, ServiceError> {
     let key = parse_key(key_hex)?;
     let cipher = Aes256Gcm::new(&key.into());
 

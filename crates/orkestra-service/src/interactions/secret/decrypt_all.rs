@@ -12,7 +12,8 @@ use crate::types::ServiceError;
 /// If `secrets_key` is `None`, logs a warning and returns an empty vec —
 /// secrets injection is silently skipped rather than failing the start.
 ///
-/// Individual secrets that fail to decrypt are skipped with a warning log.
+/// Returns `Err` if any secret fails to decrypt — this indicates key rotation
+/// or data corruption and must surface to the caller.
 pub fn execute(
     conn: &Arc<Mutex<Connection>>,
     project_id: &str,
@@ -44,12 +45,12 @@ pub fn execute(
 
     let mut pairs = Vec::with_capacity(rows.len());
     for (key, ciphertext, nonce) in rows {
-        match encrypt::decrypt(&ciphertext, &nonce, secrets_key) {
-            Ok(value) => pairs.push((key, value)),
-            Err(err) => {
-                tracing::warn!("Failed to decrypt secret '{key}' for project {project_id}: {err}");
-            }
-        }
+        let value = encrypt::decrypt(&ciphertext, &nonce, secrets_key).map_err(|e| {
+            ServiceError::Other(format!(
+                "Failed to decrypt secret '{key}' for project {project_id}: {e}"
+            ))
+        })?;
+        pairs.push((key, value));
     }
 
     Ok(pairs)
@@ -136,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn skips_secrets_that_fail_to_decrypt() {
+    fn fails_when_any_secret_cannot_decrypt() {
         let conn = conn();
         insert_project(&conn, "proj1");
 
@@ -147,9 +148,7 @@ mod tests {
         // Insert a garbage ciphertext for the second secret.
         insert_secret_raw(&conn, "proj1", "BAD_VAR", b"garbage_ciphertext", &[0u8; 12]);
 
-        let result = execute(&conn, "proj1", Some(VALID_KEY)).unwrap();
-        // Only the valid secret is returned; the bad one is silently skipped.
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, "GOOD_VAR");
+        let result = execute(&conn, "proj1", Some(VALID_KEY));
+        assert!(result.is_err());
     }
 }

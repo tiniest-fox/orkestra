@@ -1,6 +1,7 @@
 // Inline form for adding a new secret, with its own key/value/validation state.
 
 import { useState } from "react";
+import { Button } from "../../components/ui";
 
 // ============================================================================
 // Types
@@ -64,22 +65,12 @@ export function AddSecretForm({ onSave, onCancel }: AddSecretFormProps) {
         className="w-full px-3 py-1.5 rounded-panel-sm border border-border bg-canvas font-mono text-forge-mono-sm text-text-primary placeholder:text-text-quaternary focus:outline-none focus:border-accent resize-none"
       />
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="px-3 py-1.5 rounded-panel-sm bg-accent text-white text-forge-body font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-        >
+        <Button variant="primary" onClick={handleSave} disabled={saving} loading={saving}>
           {saving ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="px-3 py-1.5 rounded-panel-sm border border-border text-forge-body text-text-secondary hover:bg-surface-2 transition-colors disabled:opacity-50"
-        >
+        </Button>
+        <Button variant="secondary" onClick={onCancel} disabled={saving}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

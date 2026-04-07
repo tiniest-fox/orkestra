@@ -46,6 +46,7 @@ pub trait PrDescriptionGenerator: Send + Sync {
     ///
     /// `artifacts` contains workflow stage artifact references (name, description, path),
     /// assembled by `collect_pr_artifacts::execute()` in workflow stage order.
+    #[allow(clippy::too_many_arguments)]
     fn generate_pr_description(
         &self,
         task_title: &str,

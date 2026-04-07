@@ -2,7 +2,8 @@
 //!
 //! Provides title generation, commit message generation, and PR description
 //! generation using Claude haiku. Each utility runs as a single-turn AI call
-//! with structured JSON output and schema validation.
+//! with structured JSON output and schema validation. Interactive mode is also
+//! supported for tasks that require tool use in a working directory.
 
 // Suppress pedantic clippy warnings we're not addressing yet
 #![allow(clippy::missing_errors_doc)]

@@ -44,6 +44,27 @@ pub(crate) fn execute_for_committed(git: &dyn GitService, task: &Task) -> String
     }
 }
 
+/// Build a metadata-only file list from a task's committed changes.
+///
+/// Returns path, change type, and line counts — no diff content.
+/// Used for PR generation where the agent discovers diffs via tools.
+pub(crate) fn execute_file_metadata(git: &dyn GitService, task: &Task) -> String {
+    let Some(worktree_path) = &task.worktree_path else {
+        return String::from("No worktree");
+    };
+    let Some(branch_name) = &task.branch_name else {
+        return String::from("No branch");
+    };
+    // context_lines=0 since we don't need diff content
+    match git.diff_against_base(Path::new(worktree_path), branch_name, &task.base_branch, 0) {
+        Ok(diff) => format_file_metadata(&diff),
+        Err(e) => {
+            crate::orkestra_debug!("commit", "Failed to get file metadata: {e}");
+            String::from("File list unavailable")
+        }
+    }
+}
+
 // -- Helpers --
 
 /// Format a `TaskDiff` into a human-readable summary.
@@ -99,6 +120,30 @@ fn format_diff_summary(diff: &TaskDiff) -> String {
                 let _ = writeln!(summary, "```diff\n{content}```");
             }
         }
+    }
+    summary
+}
+
+/// Format a `TaskDiff` into a metadata-only file list (no diff content).
+fn format_file_metadata(diff: &TaskDiff) -> String {
+    use std::fmt::Write;
+
+    if diff.files.is_empty() {
+        return "No file changes detected".to_string();
+    }
+    let mut summary = String::new();
+    for file in &diff.files {
+        let change = match file.change_type {
+            FileChangeType::Added => "added",
+            FileChangeType::Modified => "modified",
+            FileChangeType::Deleted => "deleted",
+            FileChangeType::Renamed => "renamed",
+        };
+        let _ = writeln!(
+            summary,
+            "- {} ({}, +{} -{})",
+            file.path, change, file.additions, file.deletions
+        );
     }
     summary
 }
@@ -239,5 +284,66 @@ mod tests {
             result.contains("```diff"),
             "text file diff should be included"
         );
+    }
+
+    // -- format_file_metadata tests --
+
+    #[test]
+    fn metadata_format() {
+        let diff = make_diff(vec![
+            make_file("src/main.rs", 10, 3, Some("@@ diff content @@")),
+            make_file("src/lib.rs", 5, 0, None),
+        ]);
+        let result = format_file_metadata(&diff);
+        assert!(result.contains("src/main.rs (modified, +10 -3)"));
+        assert!(result.contains("src/lib.rs (modified, +5 -0)"));
+        // No diff content should appear
+        assert!(!result.contains("```diff"));
+        assert!(!result.contains("diff content"));
+    }
+
+    #[test]
+    fn empty_diff_returns_no_changes() {
+        let diff = make_diff(vec![]);
+        assert_eq!(format_file_metadata(&diff), "No file changes detected");
+    }
+
+    #[test]
+    fn mixed_change_types() {
+        let added = FileDiff {
+            path: "new_file.rs".to_string(),
+            change_type: FileChangeType::Added,
+            old_path: None,
+            additions: 20,
+            deletions: 0,
+            is_binary: false,
+            diff_content: None,
+            total_new_lines: None,
+        };
+        let deleted = FileDiff {
+            path: "old_file.rs".to_string(),
+            change_type: FileChangeType::Deleted,
+            old_path: None,
+            additions: 0,
+            deletions: 15,
+            is_binary: false,
+            diff_content: None,
+            total_new_lines: None,
+        };
+        let renamed = FileDiff {
+            path: "renamed.rs".to_string(),
+            change_type: FileChangeType::Renamed,
+            old_path: Some("original.rs".to_string()),
+            additions: 2,
+            deletions: 2,
+            is_binary: false,
+            diff_content: None,
+            total_new_lines: None,
+        };
+        let diff = make_diff(vec![added, deleted, renamed]);
+        let result = format_file_metadata(&diff);
+        assert!(result.contains("new_file.rs (added, +20 -0)"));
+        assert!(result.contains("old_file.rs (deleted, +0 -15)"));
+        assert!(result.contains("renamed.rs (renamed, +2 -2)"));
     }
 }

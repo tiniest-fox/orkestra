@@ -55,6 +55,7 @@ pub trait PrDescriptionGenerator: Send + Sync {
         commits_summary: &str,
         diff_summary: &str,
         base_branch: &str,
+        worktree_path: &str,
         model_names: &[String],
     ) -> Result<(String, String), String>;
 
@@ -89,10 +90,11 @@ pub fn format_pr_footer(model_names: &[String]) -> String {
 // Production Implementation
 // =============================================================================
 
-/// Production PR description generator — uses Claude haiku via `UtilityRunner`.
+/// Production PR description generator — runs Claude Sonnet as an interactive agent in the task worktree.
 ///
-/// Spawns Claude with `--model haiku --max-turns 1` to minimize latency and cost.
-/// Uses structured JSON output with schema validation for reliable results.
+/// Spawns Claude with `--model sonnet` in interactive mode with a 5-minute timeout,
+/// giving the agent access to tools (git log, diff, etc.) so it can read context directly.
+/// Returns the agent's final output as the PR description.
 pub struct ClaudePrDescriptionGenerator;
 
 impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
@@ -104,6 +106,7 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         commits_summary: &str,
         diff_summary: &str,
         base_branch: &str,
+        worktree_path: &str,
         model_names: &[String],
     ) -> Result<(String, String), String> {
         let (title, body) = generate_pr_description_sync(
@@ -113,7 +116,8 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
             commits_summary,
             diff_summary,
             base_branch,
-            120,
+            worktree_path,
+            300,
         )
         .map_err(|e| e.to_string())?;
 
@@ -170,6 +174,7 @@ pub mod mock {
             _commits_summary: &str,
             _diff_summary: &str,
             _base_branch: &str,
+            _worktree_path: &str,
             model_names: &[String],
         ) -> Result<(String, String), String> {
             if self.fail {
@@ -203,12 +208,14 @@ pub mod mock {
 // PR Description Generation Helpers
 // =============================================================================
 
-/// Generates a PR description synchronously using a lightweight Claude instance.
+/// Generates a PR description synchronously using an interactive Claude agent in the worktree.
 ///
-/// This spawns Claude with `--model haiku --max-turns 1` to minimize latency and cost.
-/// Uses structured JSON output with schema validation for reliable results.
+/// Spawns Claude in interactive mode with tool access so the agent can explore the diff,
+/// read files, and examine artifacts before writing. Uses Sonnet for better reasoning quality
+/// and a 5-minute timeout to allow thorough exploration.
 ///
 /// Returns the (title, body) tuple, or an error if generation fails.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_pr_description_sync(
     task_title: &str,
     task_description: &str,
@@ -216,9 +223,14 @@ pub fn generate_pr_description_sync(
     commits_summary: &str,
     diff_summary: &str,
     base_branch: &str,
+    worktree_path: &str,
     timeout_secs: u64,
 ) -> std::io::Result<(String, String)> {
-    let runner = UtilityRunner::new().with_timeout(timeout_secs);
+    let runner = UtilityRunner::new()
+        .with_model("sonnet")
+        .with_timeout(timeout_secs)
+        .with_interactive(true)
+        .with_cwd(worktree_path);
     let artifact_list: Vec<_> = artifacts
         .iter()
         .map(|a| {
@@ -308,6 +320,7 @@ mod tests {
             "- abc123 Add feature",
             "file.rs",
             "main",
+            "/fake/worktree",
             &["Claude Sonnet 4.5".to_string()],
         );
         assert!(result.is_ok());
@@ -330,6 +343,7 @@ mod tests {
             "",
             "file.rs",
             "main",
+            "/fake/worktree",
             &[],
         );
         assert!(result.is_err());

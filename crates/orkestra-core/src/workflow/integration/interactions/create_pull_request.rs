@@ -57,10 +57,10 @@ pub(crate) fn execute(
         .map_err(|e| PrPipelineError::PushFailed(e.to_string()))?;
 
     // 3. Generate PR description (with fallback on failure)
-    // Use committed diff — uncommitted changes were already committed in step 1.
+    // Use file metadata only — the interactive agent explores diffs via tools.
     // Artifacts were assembled by collect_pr_artifacts::execute() before the background thread.
-    let diff_summary = super::build_diff_summary::execute_for_committed(git, task);
-    let commits_summary = super::format_commit_summaries::execute(git, worktree_dir, 20);
+    let diff_summary = super::build_diff_summary::execute_file_metadata(git, task);
+    let commits_summary = super::format_commit_titles::execute(git, worktree_dir, 20);
 
     let (pr_title, pr_body) = pr_desc_gen
         .generate_pr_description(
@@ -70,6 +70,7 @@ pub(crate) fn execute(
             &commits_summary,
             &diff_summary,
             base_branch,
+            worktree_path,
             model_names,
         )
         .unwrap_or_else(|_| {

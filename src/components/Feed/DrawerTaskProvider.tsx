@@ -9,7 +9,7 @@ import { prefetchCommitDiff } from "../../hooks/useCommitDiff";
 import type { HighlightedLine, HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useDiff } from "../../hooks/useDiff";
 import { usePolling } from "../../hooks/usePolling";
-import { useTransport } from "../../transport";
+import { useConnectionState, useTransport } from "../../transport";
 import type { CommitInfo } from "../../types/workflow";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { applySplice, type ExpandPosition } from "./applySplice";
@@ -46,6 +46,7 @@ interface DrawerTaskProviderProps {
 
 export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps) {
   const transport = useTransport();
+  const connectionState = useConnectionState();
   // Always fetch 3 context lines — expansion is handled locally via file content splicing.
   const { diff: remoteDiff, loading: diffLoading, error: diffError } = useDiff(taskId, 3);
   const [localDiff, setLocalDiff] = useState<HighlightedTaskDiff | null>(null);
@@ -69,7 +70,7 @@ export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps
     }
   }, [transport, taskId]);
 
-  usePolling(fetchBranchCommits, 2000);
+  usePolling(connectionState === "connected" ? fetchBranchCommits : null, 2000);
 
   // Ref so the replay effect always reads the latest intents without being in its dep array.
   const expansionIntentsRef = useRef<ExpansionIntents>(expansionIntents);

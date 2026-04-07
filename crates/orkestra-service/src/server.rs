@@ -1111,6 +1111,11 @@ async fn proxy_ws(mut client: WebSocket, project_id: String, daemon_port: u16, t
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("Daemon WS connect failed on port {daemon_port}: {e}");
+            let close_frame = axum::extract::ws::CloseFrame {
+                code: 4502,
+                reason: "daemon_unavailable".into(),
+            };
+            let _ = client.send(WsMessage::Close(Some(close_frame))).await;
             return;
         }
     };

@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { useTransport } from "../transport";
+import { useConnectionState, useTransport } from "../transport";
 import { usePolling } from "./usePolling";
 
 export interface HighlightedLine {
@@ -65,6 +65,7 @@ export function buildDiffFingerprint(files: HighlightedFileDiff[]): string {
 
 export function useDiff(taskId: string | null, contextLines = 3): UseDiffResult {
   const transport = useTransport();
+  const connectionState = useConnectionState();
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -99,7 +100,7 @@ export function useDiff(taskId: string | null, contextLines = 3): UseDiffResult 
     }
   }, [transport, taskId, contextLines]);
 
-  usePolling(taskId ? fetchDiff : null, 2000);
+  usePolling(taskId && connectionState === "connected" ? fetchDiff : null, 2000);
 
   return { diff, loading, error };
 }

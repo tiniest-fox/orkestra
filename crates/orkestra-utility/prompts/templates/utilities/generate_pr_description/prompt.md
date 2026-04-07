@@ -34,7 +34,6 @@ These workflow stages produced artifacts (available in the worktree for referenc
 {{diff_summary}}
 
 Rules:
-- Just output the JSON immediately - do not use any tools
 - Describe the final state of the code, not the journey taken to get there. A reviewer only cares about what was built and why — not false starts, moved files, or abandoned approaches along the way.
 - Title: concise description of the change, max 70 characters, no trailing period
 - Body must be valid GitHub-flavored markdown with exactly three sections:

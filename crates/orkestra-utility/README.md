@@ -22,7 +22,7 @@ All utilities use Claude haiku for fast, low-cost responses with schema-enforced
 |-------|--------|---------|
 | `TitleGenerator` | `generate_title(task_id, description)` | Generate task title from description |
 | `CommitMessageGenerator` | `generate_commit_message(title, description, diff, models)` | Generate commit message from task context |
-| `PrDescriptionGenerator` | `generate_pr_description(title, description, plan, diff, base_branch, models)` | Generate PR title and body |
+| `PrDescriptionGenerator` | `generate_pr_description(task_title, task_description, artifacts, commits_summary, diff_summary, base_branch, model_names)` | Generate PR title and body from task context, artifact references, and commit history |
 
 ### Implementations
 

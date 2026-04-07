@@ -38,6 +38,7 @@ pub struct MockGitService {
     force_push_calls: Mutex<Vec<String>>,
     force_push_error: Mutex<Option<GitError>>,
     branch_commits_results: Mutex<std::collections::VecDeque<Result<Vec<CommitInfo>, GitError>>>,
+    commit_log_at_results: Mutex<std::collections::VecDeque<Result<Vec<CommitInfo>, GitError>>>,
 }
 
 impl MockGitService {
@@ -69,6 +70,7 @@ impl MockGitService {
             force_push_calls: Mutex::new(Vec::new()),
             force_push_error: Mutex::new(None),
             branch_commits_results: Mutex::new(std::collections::VecDeque::new()),
+            commit_log_at_results: Mutex::new(std::collections::VecDeque::new()),
         }
     }
 
@@ -202,6 +204,11 @@ impl MockGitService {
             .unwrap()
             .push_back(result);
     }
+
+    /// Push a result for the next `commit_log_at` call.
+    pub fn push_commit_log_at_result(&self, result: Result<Vec<CommitInfo>, GitError>) {
+        self.commit_log_at_results.lock().unwrap().push_back(result);
+    }
 }
 
 impl Default for MockGitService {
@@ -324,7 +331,11 @@ impl GitService for MockGitService {
     }
 
     fn commit_log_at(&self, _path: &Path, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
-        Ok(vec![])
+        self.commit_log_at_results
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(vec![]))
     }
 
     fn branch_commits(

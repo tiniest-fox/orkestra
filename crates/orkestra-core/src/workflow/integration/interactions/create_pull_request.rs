@@ -37,7 +37,15 @@ pub(crate) fn execute(
     model_names: &[String],
     artifacts: &[PrArtifact],
 ) -> Result<String, PrPipelineError> {
-    let branch = task.branch_name.clone().unwrap_or_default();
+    let branch = task
+        .branch_name
+        .as_deref()
+        .ok_or_else(|| PrPipelineError::CommitFailed("branch_name missing".into()))?;
+    let worktree_path = task
+        .worktree_path
+        .as_deref()
+        .ok_or_else(|| PrPipelineError::CommitFailed("worktree_path missing".into()))?;
+    let worktree_dir = std::path::Path::new(worktree_path);
     let base_branch = &task.base_branch;
 
     // 1. Safety-net commit
@@ -45,18 +53,14 @@ pub(crate) fn execute(
         .map_err(|e| PrPipelineError::CommitFailed(e.to_string()))?;
 
     // 2. Push branch
-    git.push_branch(&branch)
+    git.push_branch(branch)
         .map_err(|e| PrPipelineError::PushFailed(e.to_string()))?;
 
     // 3. Generate PR description (with fallback on failure)
     // Use committed diff — uncommitted changes were already committed in step 1.
     // Artifacts were assembled by collect_pr_artifacts::execute() before the background thread.
     let diff_summary = super::build_diff_summary::execute_for_committed(git, task);
-    let commits_summary = super::format_commit_summaries::execute(
-        git,
-        std::path::Path::new(task.worktree_path.as_deref().unwrap_or(".")),
-        20,
-    );
+    let commits_summary = super::format_commit_summaries::execute(git, worktree_dir, 20);
 
     let (pr_title, pr_body) = pr_desc_gen
         .generate_pr_description(
@@ -79,11 +83,7 @@ pub(crate) fn execute(
         });
 
     // 4. Create PR (idempotent — checks for existing PR first)
-    let repo_root = task
-        .worktree_path
-        .as_deref()
-        .map_or_else(|| std::path::Path::new("."), std::path::Path::new);
     pr_service
-        .create_pull_request(repo_root, &branch, base_branch, &pr_title, &pr_body)
+        .create_pull_request(worktree_dir, branch, base_branch, &pr_title, &pr_body)
         .map_err(|e| PrPipelineError::CreateFailed(e.to_string()))
 }

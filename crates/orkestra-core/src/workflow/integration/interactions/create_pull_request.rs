@@ -87,3 +87,60 @@ pub(crate) fn execute(
         .create_pull_request(worktree_dir, branch, base_branch, &pr_title, &pr_body)
         .map_err(|e| PrPipelineError::CreateFailed(e.to_string()))
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use crate::pr_description::mock::MockPrDescriptionGenerator;
+    use crate::workflow::domain::Task;
+    use crate::workflow::ports::{MockGitService, MockPrService};
+
+    use super::*;
+
+    #[test]
+    fn missing_branch_name_fails_fast() {
+        let git = MockGitService::new();
+        let pr_service = MockPrService::new();
+        let pr_desc_gen = MockPrDescriptionGenerator::succeeding();
+        // Task::new() defaults branch_name to None; set worktree so we isolate the branch guard
+        let task = Task::new("t1", "title", "desc", "work", "2025-01-01T00:00:00Z")
+            .with_worktree("/some/path");
+
+        let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[]);
+
+        match result {
+            Err(PrPipelineError::CommitFailed(msg)) => {
+                assert!(
+                    msg.contains("branch_name missing"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected CommitFailed for missing branch_name, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_worktree_path_fails_fast() {
+        let git = MockGitService::new();
+        let pr_service = MockPrService::new();
+        let pr_desc_gen = MockPrDescriptionGenerator::succeeding();
+        // Set branch_name so we pass the first guard; worktree_path remains None
+        let task =
+            Task::new("t1", "title", "desc", "work", "2025-01-01T00:00:00Z").with_branch("task/t1");
+
+        let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[]);
+
+        match result {
+            Err(PrPipelineError::CommitFailed(msg)) => {
+                assert!(
+                    msg.contains("worktree_path missing"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected CommitFailed for missing worktree_path, got {other:?}"),
+        }
+    }
+}

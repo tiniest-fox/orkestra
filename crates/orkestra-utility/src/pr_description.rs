@@ -14,19 +14,19 @@ use crate::runner::UtilityRunner;
 // Types
 // =============================================================================
 
-/// A workflow artifact with its name, optional stage description, and content.
+/// A workflow artifact with its name, optional stage description, and file path.
 ///
-/// Passed to [`PrDescriptionGenerator`] so the PR description has full context
+/// Passed to [`PrDescriptionGenerator`] so the PR description has context
 /// about what each stage produced. Assembled by `collect_pr_artifacts::execute()`
 /// in orkestra-core, which is the single source of truth for this collection.
 #[derive(Debug, Clone)]
 pub struct PrArtifact {
-    /// Artifact name (e.g. "plan", "summary", "`activity_log`").
+    /// Artifact name (e.g. "plan", "summary").
     pub name: String,
     /// Human-readable description from the stage config, if set.
     pub description: Option<String>,
-    /// The artifact content (markdown).
-    pub content: String,
+    /// File path where the artifact content can be found.
+    pub path: String,
 }
 
 // =============================================================================
@@ -44,13 +44,14 @@ pub trait PrDescriptionGenerator: Send + Sync {
     /// Returns `Ok((title, body))` on success, `Err(reason)` on failure.
     /// The body includes the model attribution footer.
     ///
-    /// `artifacts` contains all workflow stage artifacts (including activity log),
+    /// `artifacts` contains workflow stage artifact references (name, description, path),
     /// assembled by `collect_pr_artifacts::execute()` in workflow stage order.
     fn generate_pr_description(
         &self,
         task_title: &str,
         task_description: &str,
         artifacts: &[PrArtifact],
+        commits_summary: &str,
         diff_summary: &str,
         base_branch: &str,
         model_names: &[String],
@@ -99,6 +100,7 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         task_title: &str,
         task_description: &str,
         artifacts: &[PrArtifact],
+        commits_summary: &str,
         diff_summary: &str,
         base_branch: &str,
         model_names: &[String],
@@ -107,9 +109,10 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
             task_title,
             task_description,
             artifacts,
+            commits_summary,
             diff_summary,
             base_branch,
-            60,
+            120,
         )
         .map_err(|e| e.to_string())?;
 
@@ -125,7 +128,7 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         commits_summary: &str,
         diff_summary: &str,
     ) -> Result<String, String> {
-        update_pr_description_sync(task_title, current_body, commits_summary, diff_summary, 60)
+        update_pr_description_sync(task_title, current_body, commits_summary, diff_summary, 120)
             .map_err(|e| e.to_string())
     }
 }
@@ -163,6 +166,7 @@ pub mod mock {
             task_title: &str,
             _task_description: &str,
             _artifacts: &[super::PrArtifact],
+            _commits_summary: &str,
             _diff_summary: &str,
             _base_branch: &str,
             model_names: &[String],
@@ -208,6 +212,7 @@ pub fn generate_pr_description_sync(
     task_title: &str,
     task_description: &str,
     artifacts: &[PrArtifact],
+    commits_summary: &str,
     diff_summary: &str,
     base_branch: &str,
     timeout_secs: u64,
@@ -219,7 +224,7 @@ pub fn generate_pr_description_sync(
             json!({
                 "name": a.name,
                 "description": a.description,
-                "content": a.content,
+                "path": a.path,
             })
         })
         .collect();
@@ -227,6 +232,7 @@ pub fn generate_pr_description_sync(
         "title": task_title,
         "description": task_description,
         "artifacts": artifact_list,
+        "commits": commits_summary,
         "diff_summary": diff_summary,
         "base_branch": base_branch,
     });
@@ -290,14 +296,15 @@ mod tests {
                 PrArtifact {
                     name: "plan".into(),
                     description: Some("The plan".into()),
-                    content: "Do the thing".into(),
+                    path: "/worktree/.orkestra/.artifacts/plan.md".into(),
                 },
                 PrArtifact {
                     name: "summary".into(),
                     description: None,
-                    content: "Did the thing".into(),
+                    path: "/worktree/.orkestra/.artifacts/summary.md".into(),
                 },
             ],
+            "- abc123 Add feature",
             "file.rs",
             "main",
             &["Claude Sonnet 4.5".to_string()],
@@ -319,6 +326,7 @@ mod tests {
             "Add feature",
             "Add new feature",
             &[] as &[PrArtifact],
+            "",
             "file.rs",
             "main",
             &[],

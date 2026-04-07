@@ -5,25 +5,21 @@
 
 use orkestra_types::config::WorkflowConfig;
 use orkestra_types::domain::Task;
-use orkestra_types::runtime::ACTIVITY_LOG_ARTIFACT_NAME;
+use orkestra_types::runtime::{resolve_artifact_path, ACTIVITY_LOG_ARTIFACT_NAME};
 
 use crate::pr_description::PrArtifact;
 
-/// Collect all task artifacts enriched with stage descriptions, sorted by creation time.
+/// Collect task artifacts enriched with stage descriptions and file paths, sorted by creation time.
 ///
-/// The activity log is placed last since it spans all stages. Descriptions
-/// come from `WorkflowConfig::stage_description_for_artifact()` — the canonical lookup.
+/// The activity log is excluded — it is operational noise, not narrative context.
+/// Descriptions come from `WorkflowConfig::stage_description_for_artifact()` — the canonical lookup.
 pub fn execute(workflow: &WorkflowConfig, task: &Task) -> Vec<PrArtifact> {
-    let mut artifacts: Vec<_> = task.artifacts.all().collect();
-    artifacts.sort_by(|a, b| {
-        let a_is_log = a.name == ACTIVITY_LOG_ARTIFACT_NAME;
-        let b_is_log = b.name == ACTIVITY_LOG_ARTIFACT_NAME;
-        match (a_is_log, b_is_log) {
-            (true, false) => std::cmp::Ordering::Greater,
-            (false, true) => std::cmp::Ordering::Less,
-            _ => a.created_at.cmp(&b.created_at),
-        }
-    });
+    let mut artifacts: Vec<_> = task
+        .artifacts
+        .all()
+        .filter(|a| a.name != ACTIVITY_LOG_ARTIFACT_NAME)
+        .collect();
+    artifacts.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     artifacts
         .into_iter()
@@ -32,7 +28,7 @@ pub fn execute(workflow: &WorkflowConfig, task: &Task) -> Vec<PrArtifact> {
             description: workflow
                 .stage_description_for_artifact(&task.flow, &a.name)
                 .map(str::to_owned),
-            content: a.content.clone(),
+            path: resolve_artifact_path(task.worktree_path.as_deref(), &a.name),
         })
         .collect()
 }
@@ -65,8 +61,7 @@ mod tests {
     }
 
     #[test]
-    fn activity_log_is_always_last_regardless_of_created_at() {
-        // Activity log has an earlier timestamp than the plan, but must sort last.
+    fn activity_log_is_excluded() {
         let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")]);
         let task = task_with_artifacts(vec![
             Artifact::new(
@@ -80,9 +75,8 @@ mod tests {
 
         let result = execute(&workflow, &task);
 
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "plan");
-        assert_eq!(result[1].name, ACTIVITY_LOG_ARTIFACT_NAME);
     }
 
     #[test]
@@ -141,9 +135,25 @@ mod tests {
 
         let result = execute(&workflow, &task);
 
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.len(), 2);
         assert_eq!(result[0].name, "plan");
         assert_eq!(result[1].name, "summary");
-        assert_eq!(result[2].name, ACTIVITY_LOG_ARTIFACT_NAME);
+    }
+
+    #[test]
+    fn artifact_paths_use_resolve_artifact_path() {
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")]);
+        let task = task_with_artifacts(vec![Artifact::new(
+            "plan",
+            "plan content",
+            "planning",
+            "2025-01-01T00:00:00Z",
+        )]);
+
+        let result = execute(&workflow, &task);
+
+        assert_eq!(result.len(), 1);
+        // When no worktree_path is set, resolve_artifact_path returns relative path
+        assert!(result[0].path.contains(".orkestra/.artifacts/plan.md"));
     }
 }

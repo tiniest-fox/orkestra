@@ -28,7 +28,7 @@ pub(crate) fn execute(
 
     // 2. Gather current branch state using existing infrastructure
     let diff_summary = super::build_diff_summary::execute_for_committed(git, task);
-    let commits_summary = format_commit_summaries(git, worktree_dir);
+    let commits_summary = super::format_commit_summaries::execute(git, worktree_dir, 20);
 
     // 3. Generate incremental update
     let updated_body = pr_desc_gen.update_pr_description(
@@ -44,33 +44,4 @@ pub(crate) fn execute(
         .map_err(|e| format!("Failed to update PR body: {e}"))?;
 
     Ok(())
-}
-
-// -- Helpers --
-
-/// Format recent commit messages for the AI prompt.
-fn format_commit_summaries(git: &dyn GitService, worktree_path: &Path) -> String {
-    use std::fmt::Write;
-    match git.commit_log_at(worktree_path, 20) {
-        Ok(commits) if !commits.is_empty() => {
-            let mut summary = String::new();
-            for commit in &commits {
-                let _ = writeln!(summary, "- {} {}", commit.hash, commit.message);
-                if let Some(body) = &commit.body {
-                    let truncated = if body.len() > 200 {
-                        let mut end = 200;
-                        while !body.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        &body[..end]
-                    } else {
-                        body
-                    };
-                    let _ = writeln!(summary, "  {truncated}");
-                }
-            }
-            summary
-        }
-        _ => "Commit log unavailable".to_string(),
-    }
 }

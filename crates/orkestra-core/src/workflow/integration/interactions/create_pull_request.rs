@@ -52,12 +52,18 @@ pub(crate) fn execute(
     // Use committed diff — uncommitted changes were already committed in step 1.
     // Artifacts were assembled by collect_pr_artifacts::execute() before the background thread.
     let diff_summary = super::build_diff_summary::execute_for_committed(git, task);
+    let commits_summary = super::format_commit_summaries::execute(
+        git,
+        std::path::Path::new(task.worktree_path.as_deref().unwrap_or(".")),
+        20,
+    );
 
     let (pr_title, pr_body) = pr_desc_gen
         .generate_pr_description(
             &task.title,
             &task.description,
             artifacts,
+            &commits_summary,
             &diff_summary,
             base_branch,
             model_names,

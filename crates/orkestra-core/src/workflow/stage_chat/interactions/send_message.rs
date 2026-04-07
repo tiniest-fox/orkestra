@@ -73,6 +73,7 @@ pub fn execute(
             resume_type: CHAT_RESUME_TYPE.to_string(),
             content: message.to_string(),
         },
+        None,
     )?;
 
     // Resolve worktree path for the task
@@ -299,7 +300,7 @@ fn read_chat_output(
                     if let LogEntry::Text { ref content } = entry {
                         accumulated_text.push(content.clone());
                     }
-                    if let Err(e) = store.append_log_entry(session_id, &entry) {
+                    if let Err(e) = store.append_log_entry(session_id, &entry, None) {
                         orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
                     }
                 }
@@ -317,7 +318,7 @@ fn read_chat_output(
         if let LogEntry::Text { ref content } = entry {
             accumulated_text.push(content.clone());
         }
-        if let Err(e) = store.append_log_entry(session_id, &entry) {
+        if let Err(e) = store.append_log_entry(session_id, &entry, None) {
             orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
         }
     }
@@ -349,7 +350,7 @@ fn read_chat_output(
                      The agent's response was treated as regular chat text."
                 );
                 if let Err(log_err) =
-                    store.append_log_entry(session_id, &LogEntry::Text { content: error_msg })
+                    store.append_log_entry(session_id, &LogEntry::Text { content: error_msg }, None)
                 {
                     orkestra_debug!(
                         "stage_chat",
@@ -362,7 +363,8 @@ fn read_chat_output(
     }
 
     // Append ProcessExit so the frontend knows the agent is done
-    if let Err(e) = store.append_log_entry(session_id, &LogEntry::ProcessExit { code: None }) {
+    if let Err(e) = store.append_log_entry(session_id, &LogEntry::ProcessExit { code: None }, None)
+    {
         orkestra_debug!(
             "stage_chat",
             "Failed to append ProcessExit log entry: {}",

@@ -4,7 +4,8 @@
 //! to work with `SQLite`, in-memory stores for testing, or other backends.
 
 use orkestra_types::domain::{
-    AssistantSession, GateResult, Iteration, LogEntry, SessionType, StageSession, Task, TaskHeader,
+    AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionType,
+    StageSession, Task, TaskHeader,
 };
 
 // ============================================================================
@@ -191,10 +192,22 @@ pub trait WorkflowStore: Send + Sync {
     /// Append a log entry to a stage session.
     ///
     /// The sequence number is auto-assigned as the next value for the session.
-    fn append_log_entry(&self, stage_session_id: &str, entry: &LogEntry) -> WorkflowResult<()>;
+    /// `iteration_id` associates this entry with the active iteration at write time.
+    fn append_log_entry(
+        &self,
+        stage_session_id: &str,
+        entry: &LogEntry,
+        iteration_id: Option<&str>,
+    ) -> WorkflowResult<()>;
 
     /// Get all log entries for a stage session, ordered by sequence number.
     fn get_log_entries(&self, stage_session_id: &str) -> WorkflowResult<Vec<LogEntry>>;
+
+    /// Get log entries with iteration metadata for a stage session.
+    fn get_annotated_log_entries(
+        &self,
+        stage_session_id: &str,
+    ) -> WorkflowResult<Vec<AnnotatedLogEntry>>;
 
     /// Get the most recent log entry for a stage session.
     ///

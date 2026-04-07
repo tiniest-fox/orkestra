@@ -6,7 +6,8 @@
 use std::sync::{Arc, Mutex};
 
 use orkestra_types::domain::{
-    AssistantSession, GateResult, Iteration, LogEntry, SessionType, StageSession, Task, TaskHeader,
+    AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionType,
+    StageSession, Task, TaskHeader,
 };
 use rusqlite::Connection;
 
@@ -201,14 +202,27 @@ impl WorkflowStore for SqliteWorkflowStore {
 
     // -- Log Entry --
 
-    fn append_log_entry(&self, stage_session_id: &str, entry: &LogEntry) -> WorkflowResult<()> {
+    fn append_log_entry(
+        &self,
+        stage_session_id: &str,
+        entry: &LogEntry,
+        iteration_id: Option<&str>,
+    ) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
-        interactions::log_entry::append::execute(&conn, stage_session_id, entry)
+        interactions::log_entry::append::execute(&conn, stage_session_id, entry, iteration_id)
     }
 
     fn get_log_entries(&self, stage_session_id: &str) -> WorkflowResult<Vec<LogEntry>> {
         let conn = self.lock_conn()?;
         interactions::log_entry::get::execute(&conn, stage_session_id)
+    }
+
+    fn get_annotated_log_entries(
+        &self,
+        stage_session_id: &str,
+    ) -> WorkflowResult<Vec<AnnotatedLogEntry>> {
+        let conn = self.lock_conn()?;
+        interactions::log_entry::get::get_annotated(&conn, stage_session_id)
     }
 
     fn get_latest_log_entry(&self, stage_session_id: &str) -> WorkflowResult<Option<LogEntry>> {

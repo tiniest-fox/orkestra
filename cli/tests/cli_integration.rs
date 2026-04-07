@@ -331,6 +331,7 @@ fn test_log_viewing_with_pagination() {
                 &LogEntry::Text {
                     content: format!("Log entry {i}"),
                 },
+                None,
             )
             .expect("append log");
     }
@@ -391,6 +392,7 @@ fn test_stages_with_logs() {
             &LogEntry::Text {
                 content: "Planning log".to_string(),
             },
+            None,
         )
         .expect("append log");
 
@@ -418,6 +420,7 @@ fn test_get_logs_by_session_id() {
             &LogEntry::Text {
                 content: "Log from session 1".to_string(),
             },
+            None,
         )
         .expect("append log to session 1");
 
@@ -430,6 +433,7 @@ fn test_get_logs_by_session_id() {
             &LogEntry::Text {
                 content: "Log from session 2".to_string(),
             },
+            None,
         )
         .expect("append log to session 2");
 

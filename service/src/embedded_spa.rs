@@ -45,3 +45,53 @@ pub fn serve_embedded_file<T: Embed>(path: &str, root_file: &str) -> Response {
         },
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::header::CACHE_CONTROL;
+    use rust_embed::Embed;
+
+    #[derive(Embed)]
+    #[folder = "test-assets/"]
+    struct TestAssets;
+
+    /// Helper: extract Cache-Control header value from a Response, if present.
+    fn cache_control(response: &Response) -> Option<String> {
+        response
+            .headers()
+            .get(CACHE_CONTROL)
+            .map(|v| v.to_str().unwrap().to_owned())
+    }
+
+    #[test]
+    fn root_html_returns_no_cache() {
+        let resp = serve_embedded_file::<TestAssets>("index.html", "index.html");
+        assert_eq!(cache_control(&resp).as_deref(), Some("no-cache"));
+    }
+
+    #[test]
+    fn hashed_asset_returns_immutable() {
+        let resp = serve_embedded_file::<TestAssets>("assets/app.abc123.js", "index.html");
+        assert_eq!(
+            cache_control(&resp).as_deref(),
+            Some("public, max-age=31536000, immutable")
+        );
+    }
+
+    #[test]
+    fn other_static_file_has_no_cache_control() {
+        let resp = serve_embedded_file::<TestAssets>("other.css", "index.html");
+        assert!(cache_control(&resp).is_none());
+    }
+
+    #[test]
+    fn spa_fallback_returns_no_cache() {
+        let resp = serve_embedded_file::<TestAssets>("nonexistent/route", "index.html");
+        assert_eq!(cache_control(&resp).as_deref(), Some("no-cache"));
+    }
+}

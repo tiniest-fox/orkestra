@@ -11,6 +11,7 @@ use orkestra_types::domain::{
     AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionState,
     SessionType, StageSession, Task,
 };
+use orkestra_types::runtime::Artifact;
 
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
 
@@ -23,6 +24,7 @@ pub struct InMemoryWorkflowStore {
     stage_sessions: Mutex<Vec<StageSession>>,
     assistant_sessions: Mutex<Vec<AssistantSession>>,
     log_entries: Mutex<Vec<LogEntryRecord>>,
+    artifacts: Mutex<Vec<(String, Artifact)>>,
     next_id: AtomicU32,
 }
 
@@ -35,6 +37,7 @@ impl InMemoryWorkflowStore {
             stage_sessions: Mutex::new(Vec::new()),
             assistant_sessions: Mutex::new(Vec::new()),
             log_entries: Mutex::new(Vec::new()),
+            artifacts: Mutex::new(Vec::new()),
             next_id: AtomicU32::new(1),
         }
     }
@@ -436,6 +439,38 @@ impl WorkflowStore for InMemoryWorkflowStore {
 
         let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         entries.retain(|(sid, _, _, _)| !session_ids.contains(sid));
+        Ok(())
+    }
+
+    fn save_artifact(&self, task_id: &str, artifact: &Artifact) -> WorkflowResult<()> {
+        let mut artifacts = self.artifacts.lock().map_err(|_| WorkflowError::Lock)?;
+        artifacts.retain(|(tid, a)| !(tid == task_id && a.name == artifact.name));
+        artifacts.push((task_id.to_string(), artifact.clone()));
+        Ok(())
+    }
+
+    fn get_artifact(&self, task_id: &str, name: &str) -> WorkflowResult<Option<Artifact>> {
+        let artifacts = self.artifacts.lock().map_err(|_| WorkflowError::Lock)?;
+        Ok(artifacts
+            .iter()
+            .find(|(tid, a)| tid == task_id && a.name == name)
+            .map(|(_, a)| a.clone()))
+    }
+
+    fn get_artifacts(&self, task_id: &str) -> WorkflowResult<Vec<Artifact>> {
+        let artifacts = self.artifacts.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = artifacts
+            .iter()
+            .filter(|(tid, _)| tid == task_id)
+            .map(|(_, a)| a.clone())
+            .collect();
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(result)
+    }
+
+    fn delete_artifacts(&self, task_id: &str) -> WorkflowResult<()> {
+        let mut artifacts = self.artifacts.lock().map_err(|_| WorkflowError::Lock)?;
+        artifacts.retain(|(tid, _)| tid != task_id);
         Ok(())
     }
 

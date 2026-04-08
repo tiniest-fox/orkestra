@@ -7,6 +7,7 @@ use orkestra_types::domain::{
     AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionType,
     StageSession, Task, TaskHeader,
 };
+use orkestra_types::runtime::Artifact;
 
 // ============================================================================
 // Error types
@@ -366,6 +367,20 @@ pub trait WorkflowStore: Send + Sync {
         Ok(all)
     }
 
+    // -- Artifact --
+
+    /// Save an artifact for a task (insert or replace by name).
+    fn save_artifact(&self, task_id: &str, artifact: &Artifact) -> WorkflowResult<()>;
+
+    /// Get a single artifact by task ID and name.
+    fn get_artifact(&self, task_id: &str, name: &str) -> WorkflowResult<Option<Artifact>>;
+
+    /// Get all artifacts for a task.
+    fn get_artifacts(&self, task_id: &str) -> WorkflowResult<Vec<Artifact>>;
+
+    /// Delete all artifacts for a task.
+    fn delete_artifacts(&self, task_id: &str) -> WorkflowResult<()>;
+
     // -- Bulk Write --
 
     /// Delete an entire task tree (tasks, iterations, stage sessions) atomically.
@@ -377,6 +392,7 @@ pub trait WorkflowStore: Send + Sync {
             self.delete_log_entries_for_task(id)?;
             self.delete_stage_sessions(id)?;
             self.delete_iterations(id)?;
+            self.delete_artifacts(id)?;
             self.delete_task(id)?;
         }
         Ok(())

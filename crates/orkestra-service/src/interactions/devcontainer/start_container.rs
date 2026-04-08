@@ -75,6 +75,110 @@ pub fn execute(
 
 // -- Helpers --
 
+/// Separate git-identity secrets (`GIT_USER_NAME`, `GIT_USER_EMAIL`) from
+/// regular secrets and resolve the final values. Returns `(git_email,
+/// git_name, remaining_secrets)` with fully resolved strings: secret value →
+/// service env var → hardcoded default. Found keys are removed from the
+/// returned secrets vec to prevent double-injection.
+fn extract_git_identity(secrets: &[(String, String)]) -> (String, String, Vec<(String, String)>) {
+    let mut git_email = None;
+    let mut git_name = None;
+    let mut remaining = Vec::with_capacity(secrets.len());
+    for (key, value) in secrets {
+        match key.as_str() {
+            "GIT_USER_EMAIL" => git_email = Some(value.clone()),
+            "GIT_USER_NAME" => git_name = Some(value.clone()),
+            _ => remaining.push((key.clone(), value.clone())),
+        }
+    }
+    let resolved_email = git_email.unwrap_or_else(|| {
+        std::env::var("GIT_USER_EMAIL").unwrap_or_else(|_| "agent@orkestra.local".to_string())
+    });
+    let resolved_name = git_name.unwrap_or_else(|| {
+        std::env::var("GIT_USER_NAME").unwrap_or_else(|_| "Orkestra Agent".to_string())
+    });
+    (resolved_email, resolved_name, remaining)
+}
+
+/// All resolved inputs needed to build `docker run` arguments.
+struct DockerRunConfig {
+    container_name: String,
+    workspace_mount: String,
+    port_bind: String,
+    git_email: String,
+    git_name: String,
+    claude_auth_mount: Option<String>,
+    gh_token: Option<String>,
+    secret_envs: Vec<String>,
+    image: String,
+}
+
+/// Build the `docker run` argument list from resolved config values.
+///
+/// Pure function — takes resolved inputs and returns the full args vec.
+/// Separated from `docker_run` so arg construction can be tested without
+/// spawning a Docker process.
+fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
+    let git_author_email = format!("GIT_AUTHOR_EMAIL={}", config.git_email);
+    let git_committer_email = format!("GIT_COMMITTER_EMAIL={}", config.git_email);
+    let git_author_name = format!("GIT_AUTHOR_NAME={}", config.git_name);
+    let git_committer_name = format!("GIT_COMMITTER_NAME={}", config.git_name);
+    let toolbox_mount = format!("{TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro");
+
+    let mut args = vec![
+        "run".to_string(),
+        "-d".to_string(),
+        "--name".to_string(),
+        config.container_name.clone(),
+        "-v".to_string(),
+        config.workspace_mount.clone(),
+        "-p".to_string(),
+        config.port_bind.clone(),
+        "-w".to_string(),
+        "/workspace".to_string(),
+        "-e".to_string(),
+        git_author_email,
+        "-e".to_string(),
+        git_committer_email,
+        "-e".to_string(),
+        git_author_name,
+        "-e".to_string(),
+        git_committer_name,
+    ];
+
+    if let Some(ref mount) = config.claude_auth_mount {
+        args.push("-v".to_string());
+        args.push(mount.clone());
+    }
+
+    // Mount the shared toolbox volume read-only so agents have access to
+    // the claude CLI, gh, and other pre-built tools without baking them
+    // into the per-project image.
+    args.push("-v".to_string());
+    args.push(toolbox_mount);
+
+    // Ensure the claude CLI finds auth tokens under /home/orkestra/.claude.
+    args.push("-e".to_string());
+    args.push("HOME=/home/orkestra".to_string());
+
+    // Forward GH_TOKEN so the git credential helper can authenticate pushes.
+    if let Some(ref token) = config.gh_token {
+        args.push("-e".to_string());
+        args.push(format!("GH_TOKEN={token}"));
+    }
+
+    for env in &config.secret_envs {
+        args.push("-e".to_string());
+        args.push(env.clone());
+    }
+
+    args.push(config.image.clone());
+    args.push("sleep".to_string());
+    args.push("infinity".to_string());
+
+    args
+}
+
 fn docker_run(
     project_id: &str,
     image: &str,
@@ -99,70 +203,27 @@ fn docker_run(
     let port_bind = format!("127.0.0.1:{port}:{port}");
 
     // Forward git author identity into the container using git's native env vars.
-    // GIT_USER_EMAIL / GIT_USER_NAME can be set on the service container to
-    // control commit attribution. Falls back to the Dockerfile-baked git config.
-    let git_email =
-        std::env::var("GIT_USER_EMAIL").unwrap_or_else(|_| "agent@orkestra.local".to_string());
-    let git_name = std::env::var("GIT_USER_NAME").unwrap_or_else(|_| "Orkestra Agent".to_string());
-    let git_author_email = format!("GIT_AUTHOR_EMAIL={git_email}");
-    let git_committer_email = format!("GIT_COMMITTER_EMAIL={git_email}");
-    let git_author_name = format!("GIT_AUTHOR_NAME={git_name}");
-    let git_committer_name = format!("GIT_COMMITTER_NAME={git_name}");
+    // Project secrets GIT_USER_EMAIL / GIT_USER_NAME take precedence; falls back
+    // to service-wide env vars, then the hardcoded defaults.
+    let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
+    let gh_token = std::env::var("GH_TOKEN").ok();
+    let secret_envs: Vec<String> = filtered_secrets
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect();
 
-    let mut args = vec![
-        "run",
-        "-d",
-        "--name",
-        &container_name,
-        "-v",
-        &workspace_mount,
-        "-p",
-        &port_bind,
-        "-w",
-        "/workspace",
-        "-e",
-        &git_author_email,
-        "-e",
-        &git_committer_email,
-        "-e",
-        &git_author_name,
-        "-e",
-        &git_committer_name,
-    ];
-
-    if let Some(ref mount) = claude_auth_mount {
-        args.push("-v");
-        args.push(mount);
-    }
-
-    // Mount the shared toolbox volume read-only so agents have access to
-    // the claude CLI, gh, and other pre-built tools without baking them
-    // into the per-project image.
-    let toolbox_mount = format!("{TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro");
-    args.push("-v");
-    args.push(&toolbox_mount);
-
-    // Ensure the claude CLI finds auth tokens under /home/orkestra/.claude.
-    let home_env = "HOME=/home/orkestra".to_string();
-    args.push("-e");
-    args.push(&home_env);
-
-    // Forward GH_TOKEN so the git credential helper can authenticate pushes.
-    let gh_token_env = std::env::var("GH_TOKEN")
-        .ok()
-        .map(|t| format!("GH_TOKEN={t}"));
-    if let Some(ref token) = gh_token_env {
-        args.push("-e");
-        args.push(token);
-    }
-
-    let secret_envs: Vec<String> = secrets.iter().map(|(k, v)| format!("{k}={v}")).collect();
-    for env in &secret_envs {
-        args.push("-e");
-        args.push(env);
-    }
-
-    args.extend_from_slice(&[image, "sleep", "infinity"]);
+    let config = DockerRunConfig {
+        container_name,
+        workspace_mount,
+        port_bind,
+        git_email,
+        git_name,
+        claude_auth_mount,
+        gh_token,
+        secret_envs,
+        image: image.to_string(),
+    };
+    let args = build_docker_run_args(&config);
 
     let output = Command::new("docker")
         .args(&args)
@@ -340,9 +401,10 @@ fn resolve_compose_container_id(
 fn build_compose_override(service: &str, port: u16, secrets: &[(String, String)]) -> String {
     const I: &str = "      "; // 6-space indent for items under a 4-space key
 
-    let git_email =
-        std::env::var("GIT_USER_EMAIL").unwrap_or_else(|_| "agent@orkestra.local".to_string());
-    let git_name = std::env::var("GIT_USER_NAME").unwrap_or_else(|_| "Orkestra Agent".to_string());
+    // Project secrets GIT_USER_EMAIL / GIT_USER_NAME take precedence over
+    // service-wide env vars. They are removed from the regular secrets list
+    // to prevent double-injection as plain env vars.
+    let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
     let claude_auth_dir = std::env::var("CLAUDE_AUTH_DIR").ok();
     let gh_token = std::env::var("GH_TOKEN").ok();
 
@@ -364,7 +426,7 @@ fn build_compose_override(service: &str, port: u16, secrets: &[(String, String)]
     if let Some(ref token) = gh_token {
         let _ = writeln!(environment, "{I}GH_TOKEN: \"{token}\"");
     }
-    for (key, value) in secrets {
+    for (key, value) in &filtered_secrets {
         // Escape for YAML double-quoted string: backslash first, then double-quote,
         // then control characters that would break the single-line string.
         let escaped = value
@@ -411,7 +473,9 @@ fn pipe_to_log(
 
 #[cfg(test)]
 mod tests {
-    use super::build_compose_override;
+    use super::{
+        build_compose_override, build_docker_run_args, extract_git_identity, DockerRunConfig,
+    };
 
     #[test]
     fn build_compose_override_escapes_secret_special_chars() {
@@ -458,5 +522,203 @@ mod tests {
         assert!(yaml.contains("myservice:"));
         assert!(yaml.contains("8080:8080"));
         assert!(yaml.contains("HOME: /home/orkestra"));
+    }
+
+    #[test]
+    fn extract_git_identity_extracts_and_filters() {
+        let secrets = vec![
+            ("GIT_USER_EMAIL".to_string(), "dev@example.com".to_string()),
+            ("GIT_USER_NAME".to_string(), "Dev User".to_string()),
+            ("API_KEY".to_string(), "secret123".to_string()),
+        ];
+
+        let (email, name, remaining) = extract_git_identity(&secrets);
+
+        assert_eq!(email, "dev@example.com");
+        assert_eq!(name, "Dev User");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0, "API_KEY");
+        assert_eq!(remaining[0].1, "secret123");
+    }
+
+    #[test]
+    fn extract_git_identity_returns_defaults_when_no_secrets_no_env() {
+        // Save and remove git identity env vars to force hardcoded defaults.
+        let saved_email = std::env::var("GIT_USER_EMAIL").ok();
+        let saved_name = std::env::var("GIT_USER_NAME").ok();
+        unsafe {
+            std::env::remove_var("GIT_USER_EMAIL");
+            std::env::remove_var("GIT_USER_NAME");
+        }
+
+        let (email, name, remaining) = extract_git_identity(&[]);
+
+        // Restore env vars before any assertion so they are always restored.
+        unsafe {
+            if let Some(v) = saved_email {
+                std::env::set_var("GIT_USER_EMAIL", v);
+            }
+            if let Some(v) = saved_name {
+                std::env::set_var("GIT_USER_NAME", v);
+            }
+        }
+
+        assert_eq!(email, "agent@orkestra.local");
+        assert_eq!(name, "Orkestra Agent");
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn extract_git_identity_passes_through_non_git_secrets() {
+        let secrets = vec![
+            ("API_KEY".to_string(), "secret123".to_string()),
+            ("DB_URL".to_string(), "postgres://localhost/db".to_string()),
+        ];
+
+        let (_email, _name, remaining) = extract_git_identity(&secrets);
+
+        assert_eq!(remaining.len(), 2);
+    }
+
+    #[test]
+    fn build_compose_override_uses_secret_git_identity() {
+        let secrets = vec![
+            (
+                "GIT_USER_EMAIL".to_string(),
+                "project@example.com".to_string(),
+            ),
+            ("GIT_USER_NAME".to_string(), "Project Bot".to_string()),
+            ("API_KEY".to_string(), "mykey".to_string()),
+        ];
+
+        let yaml = build_compose_override("app", 3000, &secrets);
+
+        // Git identity env vars use the secret values.
+        assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
+        assert!(yaml.contains("GIT_COMMITTER_EMAIL: \"project@example.com\""));
+        assert!(yaml.contains("GIT_AUTHOR_NAME: \"Project Bot\""));
+        assert!(yaml.contains("GIT_COMMITTER_NAME: \"Project Bot\""));
+
+        // Regular secret is still injected.
+        assert!(yaml.contains("API_KEY: \"mykey\""));
+
+        // Git identity secrets must NOT be double-injected as regular env vars.
+        assert!(!yaml.contains("GIT_USER_EMAIL:"));
+        assert!(!yaml.contains("GIT_USER_NAME:"));
+    }
+
+    #[test]
+    fn build_compose_override_partial_secret_override() {
+        let secrets = vec![(
+            "GIT_USER_EMAIL".to_string(),
+            "project@example.com".to_string(),
+        )];
+
+        let yaml = build_compose_override("app", 3000, &secrets);
+
+        // Email uses the secret value.
+        assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
+        assert!(yaml.contains("GIT_COMMITTER_EMAIL: \"project@example.com\""));
+
+        // Name falls back to env/default (no GIT_USER_NAME secret provided).
+        // We can't assert the exact value since it depends on env, but we can
+        // confirm the key is present.
+        assert!(yaml.contains("GIT_AUTHOR_NAME:"));
+        assert!(yaml.contains("GIT_COMMITTER_NAME:"));
+
+        // GIT_USER_EMAIL must NOT appear as a regular env var.
+        assert!(!yaml.contains("GIT_USER_EMAIL:"));
+    }
+
+    fn default_run_config() -> DockerRunConfig {
+        DockerRunConfig {
+            container_name: "orkestra-test".to_string(),
+            workspace_mount: "/repo:/workspace".to_string(),
+            port_bind: "127.0.0.1:9000:9000".to_string(),
+            git_email: "agent@orkestra.local".to_string(),
+            git_name: "Orkestra Agent".to_string(),
+            claude_auth_mount: None,
+            gh_token: None,
+            secret_envs: vec![],
+            image: "myimage:latest".to_string(),
+        }
+    }
+
+    #[test]
+    fn build_docker_run_args_includes_git_identity() {
+        let config = DockerRunConfig {
+            git_email: "test@example.com".to_string(),
+            git_name: "Test User".to_string(),
+            ..default_run_config()
+        };
+
+        let args = build_docker_run_args(&config);
+
+        assert!(args.contains(&"GIT_AUTHOR_EMAIL=test@example.com".to_string()));
+        assert!(args.contains(&"GIT_COMMITTER_EMAIL=test@example.com".to_string()));
+        assert!(args.contains(&"GIT_AUTHOR_NAME=Test User".to_string()));
+        assert!(args.contains(&"GIT_COMMITTER_NAME=Test User".to_string()));
+    }
+
+    #[test]
+    fn build_docker_run_args_uses_secret_git_identity() {
+        let secrets = vec![
+            (
+                "GIT_USER_EMAIL".to_string(),
+                "project@example.com".to_string(),
+            ),
+            ("GIT_USER_NAME".to_string(), "Project Bot".to_string()),
+            ("API_KEY".to_string(), "mykey".to_string()),
+        ];
+        let (git_email, git_name, filtered_secrets) = extract_git_identity(&secrets);
+        let config = DockerRunConfig {
+            git_email,
+            git_name,
+            secret_envs: filtered_secrets
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect(),
+            ..default_run_config()
+        };
+
+        let args = build_docker_run_args(&config);
+
+        assert!(args.contains(&"GIT_AUTHOR_EMAIL=project@example.com".to_string()));
+        assert!(args.contains(&"GIT_COMMITTER_EMAIL=project@example.com".to_string()));
+        assert!(args.contains(&"GIT_AUTHOR_NAME=Project Bot".to_string()));
+        assert!(args.contains(&"GIT_COMMITTER_NAME=Project Bot".to_string()));
+        // Regular secret is still injected.
+        assert!(args.contains(&"API_KEY=mykey".to_string()));
+    }
+
+    #[test]
+    fn build_docker_run_args_filters_git_secrets() {
+        let secrets = vec![
+            (
+                "GIT_USER_EMAIL".to_string(),
+                "project@example.com".to_string(),
+            ),
+            ("GIT_USER_NAME".to_string(), "Project Bot".to_string()),
+            ("API_KEY".to_string(), "mykey".to_string()),
+        ];
+        let (git_email, git_name, filtered_secrets) = extract_git_identity(&secrets);
+        let config = DockerRunConfig {
+            git_email,
+            git_name,
+            secret_envs: filtered_secrets
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect(),
+            ..default_run_config()
+        };
+
+        let args = build_docker_run_args(&config);
+
+        // Regular secret appears.
+        assert!(args.contains(&"API_KEY=mykey".to_string()));
+        // Git identity secrets must NOT appear as raw env vars — only as the
+        // GIT_AUTHOR_*/GIT_COMMITTER_* variants.
+        assert!(!args.iter().any(|a| a.starts_with("GIT_USER_EMAIL=")));
+        assert!(!args.iter().any(|a| a.starts_with("GIT_USER_NAME=")));
     }
 }

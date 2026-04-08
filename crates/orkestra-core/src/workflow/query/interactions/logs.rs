@@ -148,6 +148,7 @@ mod tests {
                 &LogEntry::Text {
                     content: "first".to_string(),
                 },
+                None,
             )
             .unwrap();
         api.store
@@ -156,6 +157,7 @@ mod tests {
                 &LogEntry::Text {
                     content: "latest".to_string(),
                 },
+                None,
             )
             .unwrap();
 

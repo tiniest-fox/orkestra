@@ -71,6 +71,7 @@ Tracks individual agent/script runs within a stage. Each stage execution creates
 | `incoming_context` | TEXT | | JSON trigger context explaining why this iteration was created (feedback from rejection, integration failure, etc.) |
 | `trigger_delivered` | INTEGER | NOT NULL, DEFAULT 0 | Boolean: whether the trigger prompt has been delivered to the agent (1 = delivered, 0 = pending) |
 | `activity_log` | TEXT | | Short narrative summary of what the agent did during this iteration. Only present on work-completing outputs (artifact, approval, subtasks). |
+| `artifact_snapshot` | TEXT | | JSON-encoded artifact snapshot capturing artifact name and content when the agent produces output. Preserves artifact history across rejections. |
 
 **Indexes:**
 - `idx_workflow_iterations_task` on `task_id`
@@ -132,6 +133,7 @@ Stores structured logs from agent sessions. Each entry is a serialized `LogEntry
 | `assistant_session_id` | TEXT | FOREIGN KEY → assistant_sessions(id) | Associated assistant session (XOR with stage_session_id) |
 | `sequence_number` | INTEGER | NOT NULL, UNIQUE(stage_session_id, sequence_number), UNIQUE(assistant_session_id, sequence_number) | Monotonically increasing sequence within the session |
 | `content` | TEXT | NOT NULL | JSON-encoded LogEntry object (text, tool_use, tool_result, etc.) |
+| `iteration_id` | TEXT | | ID of the active iteration when this log entry was written. NULL for chat-mode messages. |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 
 **Constraints:**

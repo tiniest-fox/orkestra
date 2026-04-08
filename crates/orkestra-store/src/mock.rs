@@ -8,11 +8,13 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use orkestra_types::domain::{
-    AssistantSession, GateResult, Iteration, LogEntry, SessionState, SessionType, StageSession,
-    Task,
+    AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionState,
+    SessionType, StageSession, Task,
 };
 
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
+
+type LogEntryRecord = (String, i32, LogEntry, Option<String>);
 
 /// In-memory implementation of `WorkflowStore` for testing.
 pub struct InMemoryWorkflowStore {
@@ -20,7 +22,7 @@ pub struct InMemoryWorkflowStore {
     iterations: Mutex<Vec<Iteration>>,
     stage_sessions: Mutex<Vec<StageSession>>,
     assistant_sessions: Mutex<Vec<AssistantSession>>,
-    log_entries: Mutex<Vec<(String, i32, LogEntry)>>,
+    log_entries: Mutex<Vec<LogEntryRecord>>,
     next_id: AtomicU32,
 }
 
@@ -357,16 +359,26 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(())
     }
 
-    fn append_log_entry(&self, stage_session_id: &str, entry: &LogEntry) -> WorkflowResult<()> {
+    fn append_log_entry(
+        &self,
+        stage_session_id: &str,
+        entry: &LogEntry,
+        iteration_id: Option<&str>,
+    ) -> WorkflowResult<()> {
         let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         let next_seq = entries
             .iter()
-            .filter(|(sid, _, _)| sid == stage_session_id)
-            .map(|(_, seq, _)| *seq)
+            .filter(|(sid, _, _, _)| sid == stage_session_id)
+            .map(|(_, seq, _, _)| *seq)
             .max()
             .unwrap_or(0)
             + 1;
-        entries.push((stage_session_id.to_string(), next_seq, entry.clone()));
+        entries.push((
+            stage_session_id.to_string(),
+            next_seq,
+            entry.clone(),
+            iteration_id.map(String::from),
+        ));
         Ok(())
     }
 
@@ -374,20 +386,40 @@ impl WorkflowStore for InMemoryWorkflowStore {
         let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         let mut result: Vec<_> = entries
             .iter()
-            .filter(|(sid, _, _)| sid == stage_session_id)
+            .filter(|(sid, _, _, _)| sid == stage_session_id)
             .cloned()
             .collect();
-        result.sort_by_key(|(_, seq, _)| *seq);
-        Ok(result.into_iter().map(|(_, _, entry)| entry).collect())
+        result.sort_by_key(|(_, seq, _, _)| *seq);
+        Ok(result.into_iter().map(|(_, _, entry, _)| entry).collect())
+    }
+
+    fn get_annotated_log_entries(
+        &self,
+        stage_session_id: &str,
+    ) -> WorkflowResult<Vec<AnnotatedLogEntry>> {
+        let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = entries
+            .iter()
+            .filter(|(sid, _, _, _)| sid == stage_session_id)
+            .cloned()
+            .collect();
+        result.sort_by_key(|(_, seq, _, _)| *seq);
+        Ok(result
+            .into_iter()
+            .map(|(_, _, entry, iteration_id)| AnnotatedLogEntry {
+                entry,
+                iteration_id,
+            })
+            .collect())
     }
 
     fn get_latest_log_entry(&self, stage_session_id: &str) -> WorkflowResult<Option<LogEntry>> {
         let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         Ok(entries
             .iter()
-            .filter(|(sid, _, _)| sid == stage_session_id)
-            .max_by_key(|(_, seq, _)| *seq)
-            .map(|(_, _, entry)| entry.clone()))
+            .filter(|(sid, _, _, _)| sid == stage_session_id)
+            .max_by_key(|(_, seq, _, _)| *seq)
+            .map(|(_, _, entry, _)| entry.clone()))
     }
 
     fn delete_log_entries_for_task(&self, task_id: &str) -> WorkflowResult<()> {
@@ -403,7 +435,7 @@ impl WorkflowStore for InMemoryWorkflowStore {
         drop(sessions);
 
         let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
-        entries.retain(|(sid, _, _)| !session_ids.contains(sid));
+        entries.retain(|(sid, _, _, _)| !session_ids.contains(sid));
         Ok(())
     }
 
@@ -505,12 +537,17 @@ impl WorkflowStore for InMemoryWorkflowStore {
         let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         let next_seq = entries
             .iter()
-            .filter(|(sid, _, _)| sid == assistant_session_id)
-            .map(|(_, seq, _)| *seq)
+            .filter(|(sid, _, _, _)| sid == assistant_session_id)
+            .map(|(_, seq, _, _)| *seq)
             .max()
             .unwrap_or(0)
             + 1;
-        entries.push((assistant_session_id.to_string(), next_seq, entry.clone()));
+        entries.push((
+            assistant_session_id.to_string(),
+            next_seq,
+            entry.clone(),
+            None,
+        ));
         Ok(())
     }
 
@@ -521,11 +558,11 @@ impl WorkflowStore for InMemoryWorkflowStore {
         let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         let mut result: Vec<_> = entries
             .iter()
-            .filter(|(sid, _, _)| sid == assistant_session_id)
+            .filter(|(sid, _, _, _)| sid == assistant_session_id)
             .cloned()
             .collect();
-        result.sort_by_key(|(_, seq, _)| *seq);
-        Ok(result.into_iter().map(|(_, _, entry)| entry).collect())
+        result.sort_by_key(|(_, seq, _, _)| *seq);
+        Ok(result.into_iter().map(|(_, _, entry, _)| entry).collect())
     }
 }
 

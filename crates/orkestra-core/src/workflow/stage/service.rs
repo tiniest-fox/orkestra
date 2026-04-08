@@ -52,6 +52,8 @@ struct ActiveAgent {
     handle: ExecutionHandle,
     /// Stage session ID for persisting log entries to the database.
     stage_session_id: String,
+    /// Iteration ID for tagging log entries with their iteration.
+    iteration_id: String,
     /// When the agent was spawned.
     spawned_at: Instant,
     /// Whether the agent has ever produced any output.
@@ -62,10 +64,11 @@ struct ActiveAgent {
 }
 
 impl ActiveAgent {
-    fn new(handle: ExecutionHandle, stage_session_id: String) -> Self {
+    fn new(handle: ExecutionHandle, stage_session_id: String, iteration_id: String) -> Self {
         Self {
             handle,
             stage_session_id,
+            iteration_id,
             spawned_at: Instant::now(),
             has_activity: false,
             extracted_session_id: None,
@@ -501,7 +504,7 @@ impl StageExecutionService {
 
         let pid = handle.pid;
         let stage_session_id = spawn_context.stage_session_id.clone();
-        let agent = ActiveAgent::new(handle, stage_session_id);
+        let agent = ActiveAgent::new(handle, stage_session_id, spawn_context.iteration_id.clone());
 
         self.active_agents
             .lock()
@@ -579,10 +582,14 @@ impl StageExecutionService {
         task_id: &str,
         stage: &str,
         entries: &[LogEntry],
+        iteration_id: &str,
     ) {
         for entry in entries {
             // Persist to database
-            if let Err(e) = self.store.append_log_entry(stage_session_id, entry) {
+            if let Err(e) = self
+                .store
+                .append_log_entry(stage_session_id, entry, Some(iteration_id))
+            {
                 crate::orkestra_debug!(
                     "stage_execution",
                     "Failed to persist log entry for session {}: {}",
@@ -602,8 +609,8 @@ impl StageExecutionService {
     fn poll_agents(&self) -> Vec<ExecutionComplete> {
         let mut completed = Vec::new();
         let mut to_remove = Vec::new();
-        // Collect (stage_session_id, task_id, stage, entries) outside the lock to write after releasing it.
-        let mut log_batches: Vec<(String, String, String, Vec<LogEntry>)> = Vec::new();
+        // Collect (stage_session_id, task_id, stage, entries, iteration_id) outside the lock to write after releasing it.
+        let mut log_batches: Vec<(String, String, String, Vec<LogEntry>, String)> = Vec::new();
         // Collect extracted session IDs to persist outside the lock.
         let mut session_id_updates: Vec<(String, String, String)> = Vec::new(); // (task_id, stage, session_id)
 
@@ -617,6 +624,7 @@ impl StageExecutionService {
                                 task_id.clone(),
                                 agent.stage().to_string(),
                                 log_entries,
+                                agent.iteration_id.clone(),
                             ));
                         }
                     }
@@ -627,6 +635,7 @@ impl StageExecutionService {
                                 task_id.clone(),
                                 agent.stage().to_string(),
                                 log_entries,
+                                agent.iteration_id.clone(),
                             ));
                         }
                         to_remove.push(task_id.clone());
@@ -662,8 +671,8 @@ impl StageExecutionService {
         }
 
         // Persist log entries outside the agents lock to avoid holding it during I/O
-        for (stage_session_id, task_id, stage, entries) in &log_batches {
-            self.persist_log_entries(stage_session_id, task_id, stage, entries);
+        for (stage_session_id, task_id, stage, entries, iteration_id) in &log_batches {
+            self.persist_log_entries(stage_session_id, task_id, stage, entries, iteration_id);
         }
 
         // Persist provider-generated session IDs (e.g. OpenCode's ses_...) so that

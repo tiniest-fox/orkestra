@@ -63,6 +63,7 @@ mod tests {
                 &LogEntry::Text {
                     content: "Hello".to_string(),
                 },
+                None,
             )
             .unwrap();
         store
@@ -75,6 +76,7 @@ mod tests {
                         file_path: "/foo.rs".to_string(),
                     },
                 },
+                None,
             )
             .unwrap();
 
@@ -101,6 +103,7 @@ mod tests {
                 &LogEntry::Text {
                     content: "Hello".to_string(),
                 },
+                None,
             )
             .unwrap();
 

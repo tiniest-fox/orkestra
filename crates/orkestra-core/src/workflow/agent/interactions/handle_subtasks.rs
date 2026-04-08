@@ -1,7 +1,7 @@
 //! Handle subtasks output: store artifact + structured data, auto-advance or review.
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{ArtifactSnapshot, Task};
+use crate::workflow::domain::Task;
 use crate::workflow::execution::SubtaskOutput;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::WorkflowResult;
@@ -24,7 +24,7 @@ pub fn execute(
         "breakdown",
     );
 
-    let snapshot_content = if subtasks.len() == 1 {
+    if subtasks.len() == 1 {
         // Single subtask: inline on parent. Combine design + instructions as artifact.
         let artifact_content = format_inline_artifact(content, &subtasks[0].detailed_instructions);
 
@@ -37,7 +37,6 @@ pub fn execute(
         // Clear any stale _structured data from a previous iteration
         task.artifacts
             .remove(&format!("{artifact_name}_structured"));
-        artifact_content
     } else {
         // Multiple subtasks: store human-readable artifact + structured data
         let mut artifact_content = content.to_string();
@@ -58,18 +57,7 @@ pub fn execute(
             stage_name,
             now,
         ));
-        artifact_content
-    };
-
-    // Snapshot primary human-readable artifact on iteration for history (NOT the _structured JSON)
-    iteration_service.set_artifact_snapshot(
-        &task.id,
-        stage_name,
-        ArtifactSnapshot {
-            name: artifact_name,
-            content: snapshot_content,
-        },
-    )?;
+    }
 
     stage::auto_advance_or_review::execute(iteration_service, workflow, task, stage_name, now)
 }

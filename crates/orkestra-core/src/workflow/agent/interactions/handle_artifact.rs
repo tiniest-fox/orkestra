@@ -1,7 +1,7 @@
 //! Handle artifact output: store artifact, check gate, auto-approve or await review.
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{ArtifactSnapshot, Task};
+use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::WorkflowResult;
 use crate::workflow::runtime::{Artifact, TaskState};
@@ -20,15 +20,6 @@ pub fn execute(
     );
     task.artifacts
         .set(Artifact::new(&artifact_name, content, stage_name, now));
-
-    iteration_service.set_artifact_snapshot(
-        &task.id,
-        stage_name,
-        ArtifactSnapshot {
-            name: artifact_name,
-            content: content.to_string(),
-        },
-    )?;
 
     // If the stage has a gate configured, transition to AwaitingGate instead of
     // entering the commit pipeline or awaiting review. The orchestrator will spawn

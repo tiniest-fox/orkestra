@@ -70,8 +70,20 @@ pub fn execute(
 
     let now = chrono::Utc::now().to_rfc3339();
 
+    // Capture active iteration ID before dispatch (handlers may end the iteration).
+    let iteration_id = store.get_active_iteration(task_id, stage)?.map(|it| it.id);
+
     // Dispatch the output through the shared handler (same as normal agent completion)
-    dispatch_output(workflow, &iteration_service, &mut task, output, stage, &now)?;
+    dispatch_output(
+        store.as_ref(),
+        workflow,
+        &iteration_service,
+        &mut task,
+        output,
+        stage,
+        &now,
+        iteration_id.as_deref(),
+    )?;
 
     // Save updated task
     store.save_task(&task)?;

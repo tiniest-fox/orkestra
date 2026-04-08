@@ -2,7 +2,7 @@
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::Task;
+use crate::workflow::domain::{LogEntry, Task};
 use crate::workflow::execution::StageOutput;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -50,13 +50,20 @@ pub fn execute(
         iteration_service.set_activity_log(task_id, &current_stage, log)?;
     }
 
+    // Capture active iteration ID before dispatch (handlers may end the iteration).
+    let iteration_id = store
+        .get_active_iteration(task_id, &current_stage)?
+        .map(|it| it.id);
+
     dispatch_output(
+        store,
         workflow,
         iteration_service,
         &mut task,
         output,
         &current_stage,
         &now,
+        iteration_id.as_deref(),
     )?;
 
     orkestra_debug!(
@@ -77,13 +84,19 @@ pub fn execute(
 /// the task — callers handle persistence.
 ///
 /// Resources declared in the output are merged into `task.resources` before returning.
+/// After artifact-producing handlers, writes the artifact to the `workflow_artifacts`
+/// table and emits an `ArtifactProduced` log entry to the stage session.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 pub(crate) fn dispatch_output(
+    store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task: &mut Task,
     output: StageOutput,
     current_stage: &str,
     now: &str,
+    iteration_id: Option<&str>,
 ) -> WorkflowResult<()> {
     // Extract resources before the match consumes the output.
     let output_resources = output.resources().to_vec();
@@ -108,6 +121,13 @@ pub(crate) fn dispatch_output(
                 current_stage,
                 now,
             )?;
+            let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+                workflow,
+                &task.flow,
+                current_stage,
+                "artifact",
+            );
+            persist_and_emit_artifact(store, task, &artifact_name, current_stage, iteration_id)?;
         }
         StageOutput::Approval {
             decision, content, ..
@@ -121,6 +141,22 @@ pub(crate) fn dispatch_output(
                 &content,
                 now,
             )?;
+            // Only emit for approve path — reject artifacts are confusing in log view.
+            if decision == "approve" {
+                let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+                    workflow,
+                    &task.flow,
+                    current_stage,
+                    "artifact",
+                );
+                persist_and_emit_artifact(
+                    store,
+                    task,
+                    &artifact_name,
+                    current_stage,
+                    iteration_id,
+                )?;
+            }
         }
         StageOutput::Subtasks {
             content, subtasks, ..
@@ -134,6 +170,14 @@ pub(crate) fn dispatch_output(
                 current_stage,
                 now,
             )?;
+            // Emit for the primary human-readable artifact, NOT the _structured JSON.
+            let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+                workflow,
+                &task.flow,
+                current_stage,
+                "breakdown",
+            );
+            persist_and_emit_artifact(store, task, &artifact_name, current_stage, iteration_id)?;
         }
         StageOutput::Failed { error } => {
             stage::end_iteration::execute(
@@ -165,6 +209,34 @@ pub(crate) fn dispatch_output(
     }
 
     Ok(())
+}
+
+/// Write artifact to the `workflow_artifacts` table and emit an `ArtifactProduced` log entry.
+///
+/// Silently succeeds if the artifact is not found on the task or the stage session is missing.
+fn persist_and_emit_artifact(
+    store: &dyn WorkflowStore,
+    task: &Task,
+    artifact_name: &str,
+    current_stage: &str,
+    iteration_id: Option<&str>,
+) -> WorkflowResult<()> {
+    let Some(artifact) = task.artifacts.get(artifact_name) else {
+        return Ok(());
+    };
+
+    store.save_artifact(&task.id, artifact)?;
+
+    let Some(session) = store.get_stage_session(&task.id, current_stage)? else {
+        return Ok(());
+    };
+    store.append_log_entry(
+        &session.id,
+        &LogEntry::ArtifactProduced {
+            artifact: artifact.clone(),
+        },
+        iteration_id,
+    )
 }
 
 /// Convert parsed resource output into `Resource` entries and merge into the store.
@@ -240,12 +312,14 @@ mod tests {
         };
 
         dispatch_output(
+            store.as_ref(),
             &workflow,
             &iteration_service,
             &mut task,
             output,
             "planning",
             FIXTURE_TIMESTAMP,
+            None,
         )
         .unwrap();
 
@@ -281,12 +355,14 @@ mod tests {
         };
 
         dispatch_output(
+            store.as_ref(),
             &workflow,
             &iteration_service,
             &mut task,
             output,
             "planning",
             FIXTURE_TIMESTAMP,
+            None,
         )
         .unwrap();
 
@@ -324,12 +400,14 @@ mod tests {
         };
 
         dispatch_output(
+            store.as_ref(),
             &workflow,
             &iteration_service,
             &mut task,
             output,
             "planning",
             FIXTURE_TIMESTAMP,
+            None,
         )
         .unwrap();
 

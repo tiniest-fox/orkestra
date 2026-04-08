@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTransport } from "../transport";
+import { extractErrorMessage } from "../utils/errors";
 import { usePolling } from "./usePolling";
 
 // ============================================================================
@@ -97,7 +98,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       if (gen !== generationRef.current) return;
       setStatus(newStatus);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(extractErrorMessage(e));
     }
   }, [taskId, transport]);
 
@@ -110,7 +111,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       if (gen !== generationRef.current) return;
       setStatus(newStatus);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(extractErrorMessage(e));
     }
   }, [taskId, transport]);
 
@@ -136,7 +137,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       setStatus(newStatus);
     } catch (e) {
       if (gen !== generationRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(extractErrorMessage(e));
     } finally {
       if (gen === generationRef.current) setLoading(false);
     }
@@ -165,7 +166,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       setStatus(newStatus);
     } catch (e) {
       if (gen !== generationRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(extractErrorMessage(e));
     } finally {
       if (gen === generationRef.current) setLoading(false);
     }

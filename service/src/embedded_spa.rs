@@ -26,21 +26,20 @@ pub fn serve_embedded_file<T: Embed>(path: &str, root_file: &str) -> Response {
     match T::get(path) {
         Some(file) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
-            let mut headers = vec![(header::CONTENT_TYPE, mime.as_ref().to_owned())];
+            let mut builder = Response::builder().header(header::CONTENT_TYPE, mime.as_ref());
             if let Some(cc) = cache_control {
-                headers.push((header::CACHE_CONTROL, cc.to_owned()));
+                builder = builder.header(header::CACHE_CONTROL, cc);
             }
-            (headers, file.data.to_vec()).into_response()
+            builder
+                .body(axum::body::Body::from(file.data.to_vec()))
+                .unwrap()
         }
         None => match T::get(root_file) {
-            Some(file) => (
-                vec![
-                    (header::CONTENT_TYPE, "text/html".to_owned()),
-                    (header::CACHE_CONTROL, "no-cache".to_owned()),
-                ],
-                file.data.to_vec(),
-            )
-                .into_response(),
+            Some(file) => Response::builder()
+                .header(header::CONTENT_TYPE, "text/html")
+                .header(header::CACHE_CONTROL, "no-cache")
+                .body(axum::body::Body::from(file.data.to_vec()))
+                .unwrap(),
             None => StatusCode::NOT_FOUND.into_response(),
         },
     }

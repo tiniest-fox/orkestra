@@ -1,5 +1,6 @@
 // Shared conversation-style message list for AssistantDrawer, InteractiveDrawer, and Logs tab.
 
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { LogEntry, ResumeType } from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
@@ -62,7 +63,7 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 // Entry components
 // ============================================================================
 
-function AssistantTextLine({ content }: { content: string }) {
+const AssistantTextLine = memo(function AssistantTextLine({ content }: { content: string }) {
   const cleaned = stripQuestionBlocks(stripParameterBlocks(content));
   if (!cleaned) return null;
   return (
@@ -72,9 +73,9 @@ function AssistantTextLine({ content }: { content: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});
 
-export function AgentEntry({
+export const AgentEntry = memo(function AgentEntry({
   entry,
   projectRoot,
 }: {
@@ -158,7 +159,7 @@ export function AgentEntry({
     default:
       return null;
   }
-}
+});
 
 // ============================================================================
 // AgentEntries (private)

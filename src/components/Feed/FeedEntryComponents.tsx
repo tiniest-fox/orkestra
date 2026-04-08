@@ -1,5 +1,7 @@
 //! Shared log-entry display components used by FeedLogList and AssistantDrawer.
 
+import { memo } from "react";
+
 // ============================================================================
 // Tool variant map
 // ============================================================================
@@ -14,7 +16,7 @@ export const TOOL_VARIANTS = {
 // Components
 // ============================================================================
 
-export function ToolLine({
+export const ToolLine = memo(function ToolLine({
   label,
   summary,
   variant,
@@ -37,17 +39,17 @@ export function ToolLine({
       )}
     </div>
   );
-}
+});
 
-export function ErrorLine({ message }: { message: string }) {
+export const ErrorLine = memo(function ErrorLine({ message }: { message: string }) {
   return (
     <div className="font-mono text-forge-mono-sm text-status-error py-2 border-l-2 border-status-error pl-2 my-2">
       {message}
     </div>
   );
-}
+});
 
-export function ScriptOutputLine({ content }: { content: string }) {
+export const ScriptOutputLine = memo(function ScriptOutputLine({ content }: { content: string }) {
   const trimmed = content.trimEnd();
   if (!trimmed) return null;
   return (
@@ -55,4 +57,4 @@ export function ScriptOutputLine({ content }: { content: string }) {
       {trimmed}
     </div>
   );
-}
+});

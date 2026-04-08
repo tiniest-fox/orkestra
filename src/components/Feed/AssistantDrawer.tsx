@@ -232,7 +232,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     setInputValue("");
   }, []);
 
-  const displayMessages = buildDisplayMessages(logs);
+  const displayMessages = useMemo(() => buildDisplayMessages(logs), [logs]);
   const sessionTitle = activeSession?.title ?? null;
 
   const headerActions: DrawerAction[] = taskId

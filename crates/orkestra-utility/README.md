@@ -2,7 +2,7 @@
 
 Lightweight AI utility tasks for Orkestra.
 
-Provides title generation, commit message generation, and PR description generation using Claude haiku. Each utility runs as a single-turn AI call with structured JSON output and schema validation.
+Provides title generation, commit message generation, and PR description generation. Each utility runs with structured JSON output and schema validation. Title and commit message generation use Claude haiku in single-turn mode; PR generation uses Claude Sonnet in interactive mode.
 
 ## Overview
 
@@ -10,9 +10,7 @@ This crate handles small, focused AI tasks that don't warrant a full agent sessi
 
 - **Title generation** — Generate concise task titles from descriptions
 - **Commit message generation** — Generate conventional commit messages from diffs
-- **PR description generation** — Generate structured PR titles and bodies
-
-All utilities use Claude haiku for fast, low-cost responses with schema-enforced output.
+- **PR description generation** — Generate structured PR titles and bodies (uses Sonnet in interactive mode)
 
 ## Key Types
 
@@ -22,7 +20,7 @@ All utilities use Claude haiku for fast, low-cost responses with schema-enforced
 |-------|--------|---------|
 | `TitleGenerator` | `generate_title(task_id, description)` | Generate task title from description |
 | `CommitMessageGenerator` | `generate_commit_message(title, description, diff, models)` | Generate commit message from task context |
-| `PrDescriptionGenerator` | `generate_pr_description(title, description, plan, diff, base_branch, models)` | Generate PR title and body |
+| `PrDescriptionGenerator` | `generate_pr_description(ctx: &PrDescriptionContext)` | Generate PR title and body from task context, artifact references, and commit history |
 
 ### Implementations
 
@@ -30,7 +28,7 @@ All utilities use Claude haiku for fast, low-cost responses with schema-enforced
 |--------|-------|-------------|
 | `ClaudeTitleGenerator` | `TitleGenerator` | Spawns Claude haiku for title generation |
 | `ClaudeCommitMessageGenerator` | `CommitMessageGenerator` | Spawns Claude haiku for commit messages |
-| `ClaudePrDescriptionGenerator` | `PrDescriptionGenerator` | Spawns Claude haiku for PR descriptions |
+| `ClaudePrDescriptionGenerator` | `PrDescriptionGenerator` | Spawns Claude Sonnet in interactive mode for PR descriptions |
 
 ### Mocks (behind `testutil` feature)
 
@@ -96,12 +94,19 @@ let footer = format_pr_footer(&["Claude Sonnet 4.5".to_string()]);
 The `UtilityRunner` is the shared execution infrastructure for all utility tasks:
 
 ```rust
-use orkestra_utility::UtilityRunner;
+use orkestra_utility::{ExecutionMode, UtilityRunner};
 use serde_json::json;
 
+// Single-turn mode (default) — uses --print flag, no tool access
 let runner = UtilityRunner::new()
     .with_timeout(30)
     .with_model("haiku");
+
+// Interactive mode — omits --print, agent can use tools
+let runner = UtilityRunner::new()
+    .with_model("sonnet")
+    .with_mode(ExecutionMode::Interactive)
+    .with_cwd("/path/to/worktree");
 
 let output = runner.run("generate_title", &json!({
     "description": "Fix the login bug"
@@ -109,8 +114,10 @@ let output = runner.run("generate_title", &json!({
 ```
 
 Features:
-- Spawns Claude with `--model haiku --output-format json --json-schema`
-- Handles timeout with configurable duration
+- Spawns Claude with `--model <model> --output-format json --json-schema`
+- `ExecutionMode::SingleTurn` (default): adds `--print` for single-turn output
+- `ExecutionMode::Interactive`: omits `--print`, allows tool use in a working directory
+- Handles timeout with configurable duration; distinguishes timeout from missing output
 - Validates output against JSON schema
 - Returns structured `UtilityError` on failure
 
@@ -122,7 +129,8 @@ All operations return `UtilityError` variants:
 |---------|---------|
 | `SpawnFailed` | Failed to spawn Claude process |
 | `IoError` | I/O error during communication |
-| `Timeout` | Task exceeded timeout |
+| `Timeout` | Task exceeded timeout without producing output |
+| `OutputNotFound` | Process completed but produced no parseable structured output |
 | `ParseError` | Failed to parse output |
 | `SchemaError` | Invalid JSON schema |
 | `ValidationFailed` | Output failed schema validation |

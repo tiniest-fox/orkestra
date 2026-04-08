@@ -2,8 +2,11 @@
 //!
 //! Executes single-turn AI operations (title generation, commit messages, etc.)
 //! by spawning Claude with structured JSON output and schema validation.
+//! Interactive mode is also supported for tasks requiring tool use (e.g., reading
+//! files or running git commands in a worktree).
 
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -59,12 +62,23 @@ pub mod tasks {
     }
 }
 
+/// Execution mode for utility tasks.
+#[derive(Debug, Clone)]
+pub enum ExecutionMode {
+    /// Single-turn output with `--print` flag. No tool access.
+    SingleTurn,
+    /// Interactive mode — agent can use tools. Omits `--print`.
+    Interactive,
+}
+
 /// Runner for utility tasks.
 ///
 /// Executes lightweight AI tasks with structured JSON output.
 pub struct UtilityRunner {
     timeout_secs: u64,
     model: String,
+    cwd: Option<PathBuf>,
+    mode: ExecutionMode,
 }
 
 impl Default for UtilityRunner {
@@ -79,6 +93,8 @@ impl UtilityRunner {
         Self {
             timeout_secs: 30,
             model: "haiku".to_string(),
+            cwd: None,
+            mode: ExecutionMode::SingleTurn,
         }
     }
 
@@ -93,6 +109,20 @@ impl UtilityRunner {
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
+        self
+    }
+
+    /// Set the working directory for the Claude process.
+    #[must_use]
+    pub fn with_cwd(mut self, path: impl Into<PathBuf>) -> Self {
+        self.cwd = Some(path.into());
+        self
+    }
+
+    /// Set the execution mode.
+    #[must_use]
+    pub fn with_mode(mut self, mode: ExecutionMode) -> Self {
+        self.mode = mode;
         self
     }
 
@@ -137,18 +167,20 @@ impl UtilityRunner {
     fn execute(&self, prompt: &str, schema: &str) -> Result<Value, UtilityError> {
         // Spawn Claude with lightweight options
         let mut cmd = Command::new("claude");
-        cmd.args([
-            "--model",
-            &self.model,
-            "--print",
-            "--output-format",
-            "json",
-            "--json-schema",
-            schema,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+
+        let mut args = vec!["--model", &self.model];
+        if matches!(self.mode, ExecutionMode::SingleTurn) {
+            args.push("--print");
+        }
+        args.extend(["--output-format", "json", "--json-schema", schema]);
+        cmd.args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        if let Some(cwd) = &self.cwd {
+            cmd.current_dir(cwd);
+        }
 
         // Create new process group so kill_process_tree can clean up descendants
         #[cfg(unix)]
@@ -175,8 +207,7 @@ impl UtilityRunner {
         let stderr_handle = spawn_stderr_reader(stderr);
 
         // Extract structured output
-        let output =
-            extract_structured_output(stdout, self.timeout_secs).ok_or(UtilityError::Timeout)?;
+        let output = extract_structured_output(stdout, self.timeout_secs)?;
 
         // Log stderr if any
         if let Some(handle) = stderr_handle {
@@ -259,11 +290,15 @@ fn validate_output(output: &Value, schema: &Value) -> Result<(), UtilityError> {
 /// Extract structured JSON output from Claude's response.
 ///
 /// Handles the JSON output format from Claude Code with `--output-format json`.
+/// Returns `Err(UtilityError::Timeout)` if the process timed out without output,
+/// or `Err(UtilityError::OutputNotFound)` if the process completed but produced no
+/// parseable structured output.
 fn extract_structured_output(
     stdout: Option<std::process::ChildStdout>,
     timeout_secs: u64,
-) -> Option<String> {
-    let stdout = stdout?;
+) -> Result<String, UtilityError> {
+    let stdout =
+        stdout.ok_or_else(|| UtilityError::OutputNotFound("No stdout available".into()))?;
     let reader = std::io::BufReader::new(stdout);
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
@@ -279,6 +314,7 @@ fn extract_structured_output(
     });
 
     let mut full_output = String::new();
+    let mut completed = false;
 
     loop {
         if start.elapsed() > timeout {
@@ -296,17 +332,34 @@ fn extract_structured_output(
                 // Check for result event which signals completion
                 if let Ok(v) = serde_json::from_str::<Value>(&line) {
                     if v.get("type").and_then(|t| t.as_str()) == Some("result") {
+                        completed = true;
                         break;
                     }
                 }
             }
-            Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                completed = true;
+                break;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
     }
 
-    // Extract structured_output from the response
-    find_structured_output(&full_output)
+    classify_output(&full_output, completed)
+}
+
+/// Classify the collected output after the read loop finishes.
+///
+/// `completed` is true if the process finished (result event or EOF), false if
+/// the read loop exited due to timeout.
+fn classify_output(full_output: &str, completed: bool) -> Result<String, UtilityError> {
+    match find_structured_output(full_output) {
+        Some(output) => Ok(output),
+        None if !completed => Err(UtilityError::Timeout),
+        None => Err(UtilityError::OutputNotFound(
+            "Process completed but produced no structured output".into(),
+        )),
+    }
 }
 
 /// Find the `structured_output` field in Claude's response.
@@ -471,5 +524,48 @@ mod tests {
         let output = "{\"type\":\"system\"}\n{\"structured_output\":{\"title\":\"Fix bug\"}}";
         let result = find_structured_output(output);
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_default_is_single_turn() {
+        let runner = UtilityRunner::new();
+        assert!(matches!(runner.mode, ExecutionMode::SingleTurn));
+        assert!(runner.cwd.is_none());
+    }
+
+    #[test]
+    fn test_with_mode_sets_interactive() {
+        let runner = UtilityRunner::new().with_mode(ExecutionMode::Interactive);
+        assert!(matches!(runner.mode, ExecutionMode::Interactive));
+    }
+
+    #[test]
+    fn test_with_cwd_sets_path() {
+        let runner = UtilityRunner::new().with_cwd("/tmp/my-worktree");
+        assert_eq!(
+            runner.cwd,
+            Some(std::path::PathBuf::from("/tmp/my-worktree"))
+        );
+    }
+
+    #[test]
+    fn test_classify_output_success() {
+        let output = r#"{"structured_output": {"title": "Fix bug"}}"#;
+        let result = classify_output(output, true);
+        assert!(result.is_ok());
+        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(parsed["title"], "Fix bug");
+    }
+
+    #[test]
+    fn test_classify_output_timeout() {
+        let result = classify_output("", false);
+        assert!(matches!(result, Err(UtilityError::Timeout)));
+    }
+
+    #[test]
+    fn test_classify_output_not_found() {
+        let result = classify_output(r#"{"type": "system"}"#, true);
+        assert!(matches!(result, Err(UtilityError::OutputNotFound(_))));
     }
 }

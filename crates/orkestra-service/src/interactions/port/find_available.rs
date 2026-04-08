@@ -102,7 +102,9 @@ mod tests {
             .unwrap();
         }
         // Also bind the remaining port 49106 with a listener.
-        let _listener = std::net::TcpListener::bind(("127.0.0.1", 49_106_u16)).unwrap();
+        // If the port is already bound by another process, that's fine — the test
+        // only needs it to be unavailable, not that *we* bound it.
+        let _listener = std::net::TcpListener::bind(("127.0.0.1", 49_106_u16)).ok();
         let err = execute(&conn, 49_100, 49_106).unwrap_err();
         assert!(matches!(
             err,

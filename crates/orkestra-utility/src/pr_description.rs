@@ -14,19 +14,34 @@ use crate::runner::UtilityRunner;
 // Types
 // =============================================================================
 
-/// A workflow artifact with its name, optional stage description, and content.
+/// A workflow artifact with its name, optional stage description, and file path.
 ///
-/// Passed to [`PrDescriptionGenerator`] so the PR description has full context
+/// Passed to [`PrDescriptionGenerator`] so the PR description has context
 /// about what each stage produced. Assembled by `collect_pr_artifacts::execute()`
 /// in orkestra-core, which is the single source of truth for this collection.
 #[derive(Debug, Clone)]
 pub struct PrArtifact {
-    /// Artifact name (e.g. "plan", "summary", "`activity_log`").
+    /// Artifact name (e.g. "plan", "summary").
     pub name: String,
     /// Human-readable description from the stage config, if set.
     pub description: Option<String>,
-    /// The artifact content (markdown).
-    pub content: String,
+    /// File path where the artifact content can be found.
+    pub path: String,
+}
+
+/// Context for generating a PR description.
+///
+/// Bundles all inputs needed by [`PrDescriptionGenerator::generate_pr_description`]
+/// so the trait interface stays stable as context grows.
+pub struct PrDescriptionContext<'a> {
+    pub task_title: &'a str,
+    pub task_description: &'a str,
+    pub artifacts: &'a [PrArtifact],
+    pub commits_summary: &'a str,
+    pub diff_summary: &'a str,
+    pub base_branch: &'a str,
+    pub worktree_path: &'a str,
+    pub model_names: &'a [String],
 }
 
 // =============================================================================
@@ -44,16 +59,11 @@ pub trait PrDescriptionGenerator: Send + Sync {
     /// Returns `Ok((title, body))` on success, `Err(reason)` on failure.
     /// The body includes the model attribution footer.
     ///
-    /// `artifacts` contains all workflow stage artifacts (including activity log),
+    /// `artifacts` contains workflow stage artifact references (name, description, path),
     /// assembled by `collect_pr_artifacts::execute()` in workflow stage order.
     fn generate_pr_description(
         &self,
-        task_title: &str,
-        task_description: &str,
-        artifacts: &[PrArtifact],
-        diff_summary: &str,
-        base_branch: &str,
-        model_names: &[String],
+        ctx: &PrDescriptionContext<'_>,
     ) -> Result<(String, String), String>;
 
     /// Attempt to update an existing PR body to reflect the current branch state.
@@ -87,34 +97,32 @@ pub fn format_pr_footer(model_names: &[String]) -> String {
 // Production Implementation
 // =============================================================================
 
-/// Production PR description generator — uses Claude haiku via `UtilityRunner`.
+/// Production PR description generator — runs Claude Sonnet as an interactive agent in the task worktree.
 ///
-/// Spawns Claude with `--model haiku --max-turns 1` to minimize latency and cost.
-/// Uses structured JSON output with schema validation for reliable results.
+/// Spawns Claude with `--model sonnet` in interactive mode with a 5-minute timeout,
+/// giving the agent access to tools (git log, diff, etc.) so it can read context directly.
+/// Returns the agent's final output as the PR description.
 pub struct ClaudePrDescriptionGenerator;
 
 impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
     fn generate_pr_description(
         &self,
-        task_title: &str,
-        task_description: &str,
-        artifacts: &[PrArtifact],
-        diff_summary: &str,
-        base_branch: &str,
-        model_names: &[String],
+        ctx: &PrDescriptionContext<'_>,
     ) -> Result<(String, String), String> {
         let (title, body) = generate_pr_description_sync(
-            task_title,
-            task_description,
-            artifacts,
-            diff_summary,
-            base_branch,
-            60,
+            ctx.task_title,
+            ctx.task_description,
+            ctx.artifacts,
+            ctx.commits_summary,
+            ctx.diff_summary,
+            ctx.base_branch,
+            ctx.worktree_path,
+            300,
         )
         .map_err(|e| e.to_string())?;
 
         // Append model attribution footer
-        let body_with_footer = format!("{}{}", body, format_pr_footer(model_names));
+        let body_with_footer = format!("{}{}", body, format_pr_footer(ctx.model_names));
         Ok((title, body_with_footer))
     }
 
@@ -125,7 +133,7 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         commits_summary: &str,
         diff_summary: &str,
     ) -> Result<String, String> {
-        update_pr_description_sync(task_title, current_body, commits_summary, diff_summary, 60)
+        update_pr_description_sync(task_title, current_body, commits_summary, diff_summary, 120)
             .map_err(|e| e.to_string())
     }
 }
@@ -160,21 +168,16 @@ pub mod mock {
     impl PrDescriptionGenerator for MockPrDescriptionGenerator {
         fn generate_pr_description(
             &self,
-            task_title: &str,
-            _task_description: &str,
-            _artifacts: &[super::PrArtifact],
-            _diff_summary: &str,
-            _base_branch: &str,
-            model_names: &[String],
+            ctx: &super::PrDescriptionContext<'_>,
         ) -> Result<(String, String), String> {
             if self.fail {
                 Err("Mock PR description generation failed".into())
             } else {
                 let body = format!(
                     "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Change Walkthrough\n\n- Mock walkthrough of changes{}",
-                    format_pr_footer(model_names)
+                    format_pr_footer(ctx.model_names)
                 );
-                Ok((task_title.to_string(), body))
+                Ok((ctx.task_title.to_string(), body))
             }
         }
 
@@ -198,28 +201,37 @@ pub mod mock {
 // PR Description Generation Helpers
 // =============================================================================
 
-/// Generates a PR description synchronously using a lightweight Claude instance.
+/// Generates a PR description synchronously using an interactive Claude agent in the worktree.
 ///
-/// This spawns Claude with `--model haiku --max-turns 1` to minimize latency and cost.
-/// Uses structured JSON output with schema validation for reliable results.
+/// Spawns Claude in interactive mode with tool access so the agent can explore the diff,
+/// read files, and examine artifacts before writing. Uses Sonnet for better reasoning quality
+/// and a 5-minute timeout to allow thorough exploration.
 ///
 /// Returns the (title, body) tuple, or an error if generation fails.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_pr_description_sync(
     task_title: &str,
     task_description: &str,
     artifacts: &[PrArtifact],
+    commits_summary: &str,
     diff_summary: &str,
     base_branch: &str,
+    worktree_path: &str,
     timeout_secs: u64,
 ) -> std::io::Result<(String, String)> {
-    let runner = UtilityRunner::new().with_timeout(timeout_secs);
+    use crate::runner::ExecutionMode;
+    let runner = UtilityRunner::new()
+        .with_model("sonnet")
+        .with_timeout(timeout_secs)
+        .with_mode(ExecutionMode::Interactive)
+        .with_cwd(worktree_path);
     let artifact_list: Vec<_> = artifacts
         .iter()
         .map(|a| {
             json!({
                 "name": a.name,
                 "description": a.description,
-                "content": a.content,
+                "path": a.path,
             })
         })
         .collect();
@@ -227,6 +239,7 @@ pub fn generate_pr_description_sync(
         "title": task_title,
         "description": task_description,
         "artifacts": artifact_list,
+        "commits": commits_summary,
         "diff_summary": diff_summary,
         "base_branch": base_branch,
     });
@@ -283,25 +296,30 @@ mod tests {
     #[test]
     fn test_mock_pr_description_succeeding() {
         let generator = mock::MockPrDescriptionGenerator::succeeding();
-        let result = generator.generate_pr_description(
-            "Add feature",
-            "Add new feature",
-            &[
-                PrArtifact {
-                    name: "plan".into(),
-                    description: Some("The plan".into()),
-                    content: "Do the thing".into(),
-                },
-                PrArtifact {
-                    name: "summary".into(),
-                    description: None,
-                    content: "Did the thing".into(),
-                },
-            ],
-            "file.rs",
-            "main",
-            &["Claude Sonnet 4.5".to_string()],
-        );
+        let model_names = vec!["Claude Sonnet 4.5".to_string()];
+        let artifacts = vec![
+            PrArtifact {
+                name: "plan".into(),
+                description: Some("The plan".into()),
+                path: "/worktree/.orkestra/.artifacts/plan.md".into(),
+            },
+            PrArtifact {
+                name: "summary".into(),
+                description: None,
+                path: "/worktree/.orkestra/.artifacts/summary.md".into(),
+            },
+        ];
+        let ctx = PrDescriptionContext {
+            task_title: "Add feature",
+            task_description: "Add new feature",
+            artifacts: &artifacts,
+            commits_summary: "- abc123 Add feature",
+            diff_summary: "file.rs",
+            base_branch: "main",
+            worktree_path: "/fake/worktree",
+            model_names: &model_names,
+        };
+        let result = generator.generate_pr_description(&ctx);
         assert!(result.is_ok());
         let (title, body) = result.unwrap();
         assert_eq!(title, "Add feature");
@@ -315,14 +333,17 @@ mod tests {
     #[test]
     fn test_mock_pr_description_failing() {
         let generator = mock::MockPrDescriptionGenerator::failing();
-        let result = generator.generate_pr_description(
-            "Add feature",
-            "Add new feature",
-            &[] as &[PrArtifact],
-            "file.rs",
-            "main",
-            &[],
-        );
+        let ctx = PrDescriptionContext {
+            task_title: "Add feature",
+            task_description: "Add new feature",
+            artifacts: &[],
+            commits_summary: "",
+            diff_summary: "file.rs",
+            base_branch: "main",
+            worktree_path: "/fake/worktree",
+            model_names: &[],
+        };
+        let result = generator.generate_pr_description(&ctx);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Mock PR description generation failed");
     }

@@ -54,9 +54,7 @@ export function canUseRunScript(
   task: WorkflowTaskView,
   hasRunScript: boolean | undefined,
 ): boolean {
-  return (
-    !!hasRunScript && !!task.worktree_path && !task.derived.is_done && !task.derived.is_archived
-  );
+  return !!hasRunScript && !!task.worktree_path && !task.derived.is_archived;
 }
 
 export function currentArtifact(

@@ -156,6 +156,8 @@ If your breakdown instructions specify tests to write, write them as part of you
 
 **Bug fixes in pure functions always need a regression test**, even when breakdown instructions don't mention it. A pure function (no side effects, deterministic) is trivial to test — there's no excuse to skip it. Write at least one test that directly exercises the fixed code path (e.g., "hides tab when Trak has advanced past the gate stage"). This is the most common cause of rejection on small frontend/Rust fixes.
 
+**New conditional branches in pure functions always need tests**, even when not a bug fix. When you add `if/else` or `match` arms to a pure function — e.g., routing logic, header selection, format dispatch — write one unit test per branch. A function with 4 code paths needs 4 tests. Reviewers treat untested branches as unverified behavior regardless of how obvious the logic looks.
+
 **Cargo feature flags that affect runtime behavior need regression tests.** Features like `preserve_order` or `arbitrary_precision` on `serde_json` change how the library behaves globally — the only visible code change is in `Cargo.toml`. Add at least one test that would fail if the feature were removed. Without a test, the feature can be silently dropped during dependency cleanup and the regression is invisible.
 
 ### `orkestra-service` Docker Exec Interactions Need `#[ignore]` Tests

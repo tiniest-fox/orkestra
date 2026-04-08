@@ -163,6 +163,8 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 - **Don't put business logic in orchestrator** — It's a thin sequencer; logic goes in interactions
 - **Don't mix concerns in interactions** — One `execute()` per file, single responsibility
 - **Don't hardcode stage names** — Stage names are user-defined in `workflow.yaml`. Never write `"planning"` or any other stage name as a hardcoded fallback. Use `workflow.first_stage_in_flow(&flow).ok_or_else(...)` or return `WorkflowError::InvalidTransition` instead. Hardcoded names silently route tasks to the wrong pipeline when a project uses custom stage names.
+- **Don't embed data blobs in `LogEntry` variants** — `LogEntry` variants that reference workflow artifacts carry lightweight identifiers (`name: String`, `stage: String`), not the full `Artifact` struct. The frontend looks up content from `task.artifacts` at render time. Embedding full artifacts creates dual-write complexity and bloats log storage.
+- **Don't recompute artifact names in `dispatch_output`** — Handlers (`handle_artifact`, `handle_approval`, `handle_subtasks`) return `WorkflowResult<Option<String>>` — the artifact name they persisted, or `None` (e.g. rejection path). `dispatch_output` collects this value and calls `persist_and_emit_artifact` once after the match. Never call `artifact_name_for_stage()` again in the dispatcher — the handler already did it.
 
 ## Rust Anti-Patterns to Avoid
 

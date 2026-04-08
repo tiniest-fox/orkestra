@@ -9,6 +9,7 @@ import { toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
+import { ArtifactLogCard } from "./ArtifactLogCard";
 import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 
 // ============================================================================
@@ -147,6 +148,9 @@ export function AgentEntry({
             : `✗ exit ${entry.code}${entry.timed_out ? " (timed out)" : ""}`}
         </div>
       );
+
+    case "artifact_produced":
+      return <ArtifactLogCard artifact={entry.artifact} />;
 
     case "user_message":
     case "tool_result":

@@ -1,5 +1,6 @@
 // Top bar for the Feed view — logo, live task metrics, keyboard hint.
 
+import { Bell } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -19,6 +20,8 @@ interface FeedHeaderProps {
   assistantActive: boolean;
   serviceProjectName?: string;
   showHomeLink?: boolean;
+  notificationPermission?: NotificationPermission | "unsupported";
+  onRequestNotifications?: () => void;
 }
 
 interface Metric {
@@ -35,6 +38,8 @@ export function FeedHeader({
   assistantActive,
   serviceProjectName,
   showHomeLink = false,
+  notificationPermission,
+  onRequestNotifications,
 }: FeedHeaderProps) {
   const transport = useTransport();
   const { currentProject } = useProjects();
@@ -108,6 +113,17 @@ export function FeedHeader({
               <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask} onAccent>
                 New Trak
               </Button>
+              {notificationPermission === "default" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={onRequestNotifications}
+                  title="Enable browser notifications"
+                >
+                  <Bell size={14} />
+                  Notifications
+                </Button>
+              )}
               <Button
                 hotkey="shift+a"
                 variant="secondary"

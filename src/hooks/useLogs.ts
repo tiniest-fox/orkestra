@@ -72,11 +72,16 @@ export function useLogs(
   const [isLoading, setIsLoading] = useState(() => activeLogStage !== null);
   const [error, setError] = useState<unknown>(null);
 
+  // Fingerprint the last-known logs to skip setLogs when data hasn't changed.
+  // Logs are append-only: length catches new entries; last-entry JSON catches streaming updates.
+  const logsFingerprintRef = useRef<string>("");
+
   // Clear stale logs immediately when stage or session changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: deps are intentional triggers, not values used inside
   useEffect(() => {
     setLogs([]);
     setError(null);
+    logsFingerprintRef.current = "";
   }, [activeLogStage, activeSessionId]);
 
   // Track activeLogStage and activeSessionId in refs for race condition protection
@@ -105,7 +110,11 @@ export function useLogs(
         activeLogStageRef.current === stageToFetch &&
         activeSessionIdRef.current === sessionToFetch
       ) {
-        setLogs(result);
+        const fingerprint = `${result.length}:${result.length > 0 ? JSON.stringify(result[result.length - 1]) : ""}`;
+        if (fingerprint !== logsFingerprintRef.current) {
+          logsFingerprintRef.current = fingerprint;
+          setLogs(result);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch logs:", err);

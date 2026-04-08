@@ -1,8 +1,5 @@
-/**
- * Hook for grouping subagent log entries under their parent Agent tool invocations.
- */
+// Groups subagent log entries under their parent Agent tool invocations.
 
-import { useMemo } from "react";
 import type { LogEntry, ToolInput } from "../../types/workflow";
 
 export interface SubagentGroup {
@@ -105,12 +102,4 @@ export function groupLogEntries(logs: LogEntry[]): GroupedLogEntry[] {
   }
 
   return result;
-}
-
-/**
- * Groups subagent tool calls under their parent Agent tool_use entries.
- * Returns a memoized array where Agent tool_use entries are replaced with groups containing their subagent children.
- */
-export function useGroupedLogs(logs: LogEntry[]): GroupedLogEntry[] {
-  return useMemo(() => groupLogEntries(logs), [logs]);
 }

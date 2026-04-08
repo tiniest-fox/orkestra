@@ -4,7 +4,7 @@ AI agent guidance for working in this crate.
 
 ## Purpose
 
-Single-turn AI utility tasks: title generation, commit message generation, and PR description generation. Not for multi-turn conversations or complex orchestration.
+Lightweight AI utility tasks: title generation, commit message generation, and PR description generation. Most tasks run single-turn (`--print` mode); PR description runs interactively with tool access so the agent can read files and git history directly.
 
 ## Module Structure
 
@@ -30,11 +30,19 @@ Each generator follows the same pattern:
 The core execution engine in `runner.rs`:
 
 ```rust
-let runner = UtilityRunner::new()  // defaults: 30s timeout, haiku model
+// Single-turn (default): haiku, 30s timeout, no tool access
+let runner = UtilityRunner::new()
     .with_timeout(60)
     .with_model("haiku");
 
-let output = runner.run("generate_title", &context)?;
+// Interactive: sonnet, longer timeout, tool access in a worktree
+let runner = UtilityRunner::new()
+    .with_model("sonnet")
+    .with_timeout(300)
+    .with_mode(ExecutionMode::Interactive)
+    .with_cwd("/path/to/worktree");
+
+let output = runner.run("generate_pr_description", &context)?;
 ```
 
 **How it works:**
@@ -42,15 +50,15 @@ let output = runner.run("generate_title", &context)?;
 1. Loads prompt template and JSON schema from embedded `tasks` module
 2. Renders prompt with Handlebars (context variables)
 3. Appends output format section from schema
-4. Spawns `claude --model haiku --print --output-format json --json-schema <schema>`
+4. In `SingleTurn` mode: spawns `claude --model <model> --print --output-format json --json-schema <schema>`; in `Interactive` mode: omits `--print` so the agent can use tools
 5. Writes prompt to stdin, reads structured output from stdout
 6. Validates output against schema using `jsonschema`
 7. Returns parsed JSON or `UtilityError`
 
 **Built-in tasks:**
-- `generate_title` — Title from description
-- `generate_commit_message` — Commit message from title/description/diff
-- `generate_pr_description` — PR title and body from task context
+- `generate_title` — Title from description (SingleTurn, haiku)
+- `generate_commit_message` — Commit message from title/description/diff (SingleTurn, haiku)
+- `generate_pr_description` — PR title and body from task context (Interactive, sonnet, 5-min timeout — runs in task worktree so agent can read git history directly)
 
 ## Key Functions
 
@@ -106,8 +114,7 @@ Always appends "Claude Haiku 4.5" (the utility model) if not already present.
 
 ## Anti-Patterns
 
-- **Don't use for multi-turn conversations** — This crate is for single-turn, schema-validated responses
-- **Don't add complex orchestration** — Keep utilities atomic and fast
+- **Don't add complex orchestration** — Keep utilities atomic and fast; interactive mode is for context gathering, not multi-step workflows
 - **Don't bypass schema validation** — All outputs must validate against their schema
 - **Don't hardcode model names** — Use `friendly_model_name()` for consistent display names
 

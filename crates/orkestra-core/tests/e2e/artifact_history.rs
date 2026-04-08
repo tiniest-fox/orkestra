@@ -123,11 +123,9 @@ fn test_artifact_produced_log_entry_on_completion() {
         "Expected ArtifactProduced log entry. Entries: {entries:?}"
     );
 
-    if let LogEntry::ArtifactProduced { artifact } = artifact_entry.unwrap() {
-        assert_eq!(artifact.content, "Plan content");
-        assert!(artifact.html.is_some());
-        assert_eq!(artifact.stage, "work");
-        assert_eq!(artifact.name, "summary");
+    if let LogEntry::ArtifactProduced { name, stage } = artifact_entry.unwrap() {
+        assert_eq!(name, "summary");
+        assert_eq!(stage, "work");
     }
 }
 

@@ -1,7 +1,7 @@
 // Shared conversation-style message list for AssistantDrawer, InteractiveDrawer, and Logs tab.
 
 import ReactMarkdown from "react-markdown";
-import type { LogEntry, ResumeType } from "../../types/workflow";
+import type { LogEntry, ResumeType, WorkflowArtifact } from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -78,9 +78,11 @@ function AssistantTextLine({ content }: { content: string }) {
 export function AgentEntry({
   entry,
   projectRoot,
+  artifacts,
 }: {
   entry: GroupedLogEntry;
   projectRoot?: string;
+  artifacts?: Record<string, WorkflowArtifact>;
 }) {
   if (entry.type === "subagent_group") {
     const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
@@ -149,8 +151,11 @@ export function AgentEntry({
         </div>
       );
 
-    case "artifact_produced":
-      return <ArtifactLogCard artifact={entry.artifact} />;
+    case "artifact_produced": {
+      const artifact = artifacts?.[entry.name];
+      if (!artifact) return null;
+      return <ArtifactLogCard artifact={artifact} />;
+    }
 
     case "user_message":
     case "tool_result":
@@ -168,13 +173,21 @@ export function AgentEntry({
 // AgentEntries (private)
 // ============================================================================
 
-function AgentEntries({ entries, projectRoot }: { entries: LogEntry[]; projectRoot?: string }) {
+function AgentEntries({
+  entries,
+  projectRoot,
+  artifacts,
+}: {
+  entries: LogEntry[];
+  projectRoot?: string;
+  artifacts?: Record<string, WorkflowArtifact>;
+}) {
   const grouped = useGroupedLogs(entries);
   return (
     <>
       {grouped.map((entry, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: no stable IDs on log entries
-        <AgentEntry key={i} entry={entry} projectRoot={projectRoot} />
+        <AgentEntry key={i} entry={entry} projectRoot={projectRoot} artifacts={artifacts} />
       ))}
     </>
   );
@@ -189,6 +202,8 @@ export interface MessageListProps {
   isAgentRunning: boolean;
   /** Absolute path to the project root — threaded to toolSummary for path relativization. */
   projectRoot?: string;
+  /** Artifact map from the task — used to look up artifact content for artifact_produced entries. */
+  artifacts?: Record<string, WorkflowArtifact>;
   /** Label shown on agent message blocks. Defaults to "Agent". */
   agentLabel?: string;
   /** Label shown on user message blocks when classifyUser is not provided. Defaults to "You". */
@@ -210,6 +225,7 @@ export function MessageList({
   messages,
   isAgentRunning,
   projectRoot,
+  artifacts,
   agentLabel = "Agent",
   userLabel = "You",
   classifyUser,
@@ -271,7 +287,11 @@ export function MessageList({
             </div>
             {msg.kind === "agent" ? (
               <div className="text-text-secondary">
-                <AgentEntries entries={msg.entries} projectRoot={projectRoot} />
+                <AgentEntries
+                  entries={msg.entries}
+                  projectRoot={projectRoot}
+                  artifacts={artifacts}
+                />
               </div>
             ) : (
               <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>

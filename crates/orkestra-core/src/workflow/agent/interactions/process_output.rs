@@ -87,7 +87,6 @@ pub fn execute(
 /// After artifact-producing handlers, writes the artifact to the `workflow_artifacts`
 /// table and emits an `ArtifactProduced` log entry to the stage session.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_lines)]
 pub(crate) fn dispatch_output(
     store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
@@ -101,7 +100,7 @@ pub(crate) fn dispatch_output(
     // Extract resources before the match consumes the output.
     let output_resources = output.resources().to_vec();
 
-    match output {
+    let artifact_name: Option<String> = match output {
         StageOutput::Questions { questions, .. } => {
             super::handle_questions::execute(
                 workflow,
@@ -111,74 +110,38 @@ pub(crate) fn dispatch_output(
                 current_stage,
                 now,
             )?;
+            None
         }
-        StageOutput::Artifact { content, .. } => {
-            super::handle_artifact::execute(
-                workflow,
-                iteration_service,
-                task,
-                &content,
-                current_stage,
-                now,
-            )?;
-            let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
-                workflow,
-                &task.flow,
-                current_stage,
-                "artifact",
-            );
-            persist_and_emit_artifact(store, task, &artifact_name, current_stage, iteration_id)?;
-        }
+        StageOutput::Artifact { content, .. } => super::handle_artifact::execute(
+            workflow,
+            iteration_service,
+            task,
+            &content,
+            current_stage,
+            now,
+        )?,
         StageOutput::Approval {
             decision, content, ..
-        } => {
-            super::handle_approval::execute(
-                workflow,
-                iteration_service,
-                task,
-                current_stage,
-                &decision,
-                &content,
-                now,
-            )?;
-            // Only emit for approve path — reject artifacts are confusing in log view.
-            if decision == "approve" {
-                let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
-                    workflow,
-                    &task.flow,
-                    current_stage,
-                    "artifact",
-                );
-                persist_and_emit_artifact(
-                    store,
-                    task,
-                    &artifact_name,
-                    current_stage,
-                    iteration_id,
-                )?;
-            }
-        }
+        } => super::handle_approval::execute(
+            workflow,
+            iteration_service,
+            task,
+            current_stage,
+            &decision,
+            &content,
+            now,
+        )?,
         StageOutput::Subtasks {
             content, subtasks, ..
-        } => {
-            super::handle_subtasks::execute(
-                workflow,
-                iteration_service,
-                task,
-                &content,
-                &subtasks,
-                current_stage,
-                now,
-            )?;
-            // Emit for the primary human-readable artifact, NOT the _structured JSON.
-            let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
-                workflow,
-                &task.flow,
-                current_stage,
-                "breakdown",
-            );
-            persist_and_emit_artifact(store, task, &artifact_name, current_stage, iteration_id)?;
-        }
+        } => super::handle_subtasks::execute(
+            workflow,
+            iteration_service,
+            task,
+            &content,
+            &subtasks,
+            current_stage,
+            now,
+        )?,
         StageOutput::Failed { error } => {
             stage::end_iteration::execute(
                 iteration_service,
@@ -189,6 +152,7 @@ pub(crate) fn dispatch_output(
             )?;
             task.state = TaskState::failed_at(current_stage, &error);
             task.updated_at = now.to_string();
+            None
         }
         StageOutput::Blocked { reason } => {
             stage::end_iteration::execute(
@@ -200,7 +164,12 @@ pub(crate) fn dispatch_output(
             )?;
             task.state = TaskState::blocked_at(current_stage, &reason);
             task.updated_at = now.to_string();
+            None
         }
+    };
+
+    if let Some(name) = artifact_name {
+        persist_and_emit_artifact(store, task, &name, current_stage, iteration_id)?;
     }
 
     // Persist any resources the agent declared into the task.
@@ -235,7 +204,8 @@ fn persist_and_emit_artifact(
     store.append_log_entry(
         &session.id,
         &LogEntry::ArtifactProduced {
-            artifact: artifact.clone(),
+            name: artifact_name.to_string(),
+            stage: current_stage.to_string(),
         },
         iteration_id,
     )

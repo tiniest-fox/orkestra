@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useProjectInfo } from "../../hooks/useProjectInfo";
-import type { LogEntry } from "../../types/workflow";
+import type { LogEntry, WorkflowArtifact } from "../../types/workflow";
 import { ErrorState } from "../ui";
 import type { UserClassification, UserMessage } from "./MessageList";
 import { buildDisplayMessages, MessageList } from "./MessageList";
@@ -42,6 +42,7 @@ interface FeedLogListProps {
   logs: LogEntry[];
   error?: unknown;
   isAgentRunning?: boolean;
+  artifacts?: Record<string, WorkflowArtifact>;
   containerRef?: React.Ref<HTMLDivElement>;
   onScroll?: React.UIEventHandler<HTMLDivElement>;
 }
@@ -50,6 +51,7 @@ export function FeedLogList({
   logs,
   error,
   isAgentRunning = false,
+  artifacts,
   containerRef,
   onScroll,
 }: FeedLogListProps) {
@@ -69,6 +71,7 @@ export function FeedLogList({
       messages={messages}
       isAgentRunning={isAgentRunning}
       projectRoot={projectInfo?.project_root}
+      artifacts={artifacts}
       emptyText="No activity yet."
       agentLabel="Agent"
       classifyUser={classifyUser}

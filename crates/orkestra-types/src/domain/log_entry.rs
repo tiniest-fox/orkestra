@@ -3,7 +3,6 @@
 //! These types represent the parsed content of Claude's session files (.jsonl),
 //! providing structured access to tool uses, text output, and agent activity.
 
-use crate::runtime::Artifact;
 use serde::{Deserialize, Serialize};
 
 /// A single todo item from `TodoWrite` tool.
@@ -170,7 +169,7 @@ pub enum LogEntry {
     // Artifact Production
     // =========================================================================
     /// An artifact was produced by a stage agent and written to the artifacts table.
-    ArtifactProduced { artifact: Artifact },
+    ArtifactProduced { name: String, stage: String },
 
     // =========================================================================
     // Script Stage Logs

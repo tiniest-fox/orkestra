@@ -623,7 +623,7 @@ export type LogEntry =
   | { type: "script_start"; command: string; stage: string }
   | { type: "script_output"; content: string }
   | { type: "script_exit"; code: number; success: boolean; timed_out: boolean }
-  | { type: "artifact_produced"; artifact: WorkflowArtifact };
+  | { type: "artifact_produced"; name: string; stage: string };
 
 // =============================================================================
 // PR Status

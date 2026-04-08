@@ -15,7 +15,7 @@ pub fn execute(
     decision: &str,
     content: &str,
     now: &str,
-) -> WorkflowResult<()> {
+) -> WorkflowResult<Option<String>> {
     // Verify stage has approval capability
     let stage_config = workflow.stage(&task.flow, current_stage).ok_or_else(|| {
         WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
@@ -87,7 +87,8 @@ pub fn execute(
                 task.state = TaskState::awaiting_rejection_confirmation(current_stage.to_string());
                 task.updated_at = now.to_string();
             }
-            Ok(())
+            // Reject path: artifact stored on task but not persisted to workflow_artifacts
+            Ok(None)
         }
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Invalid approval decision: {decision}"

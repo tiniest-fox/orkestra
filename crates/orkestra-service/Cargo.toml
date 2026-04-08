@@ -23,7 +23,7 @@ axum = { version = "0.8", features = ["ws"] }
 tokio-tungstenite = "0.28"
 futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "set-header"] }
 reqwest = { version = "0.12", features = ["json"] }
 base64 = "0.22"
 orkestra-git = { path = "../orkestra-git" }
@@ -32,6 +32,7 @@ orkestra-core = { path = "../orkestra-core" }
 
 [dev-dependencies]
 tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

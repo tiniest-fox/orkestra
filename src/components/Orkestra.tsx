@@ -19,7 +19,7 @@ export function Orkestra({
   serviceProjectName?: string;
   showHomeLink?: boolean;
 }) {
-  useNotificationPermission();
+  const notificationState = useNotificationPermission();
   useBrowserNotifications();
   const configState = useWorkflowConfigState();
   const { config, error: configError } = configState;
@@ -57,6 +57,8 @@ export function Orkestra({
         tasks={tasks}
         serviceProjectName={serviceProjectName}
         showHomeLink={showHomeLink}
+        notificationPermission={notificationState.permission}
+        onRequestNotifications={notificationState.requestPermission}
       />
     </div>
   );

@@ -1,6 +1,7 @@
-//! Feed view displaying tasks grouped by intent with pipeline bars and status symbols.
+// Feed view displaying tasks grouped by intent with pipeline bars and status symbols.
 
-import { Inbox } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Inbox, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawerHistory } from "../../hooks/useDrawerHistory";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -72,9 +73,18 @@ interface FeedViewProps {
   tasks: WorkflowTaskView[];
   serviceProjectName?: string;
   showHomeLink?: boolean;
+  notificationPermission?: NotificationPermission | "unsupported";
+  onRequestNotifications?: () => void;
 }
 
-export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: FeedViewProps) {
+export function FeedView({
+  config,
+  tasks,
+  serviceProjectName,
+  showHomeLink,
+  notificationPermission,
+  onRequestNotifications,
+}: FeedViewProps) {
   const transport = useTransport();
   const { applyOptimistic, isStale } = useTasks();
   const { showError } = useToast();
@@ -87,6 +97,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
   const [taskAssistantId, setTaskAssistantId] = useState<string | null>(null);
   const [interactiveTaskId, setInteractiveTaskId] = useState<string | null>(null);
   const commandBarInputRef = useRef<HTMLInputElement>(null);
+  const [notificationBannerDismissed, setNotificationBannerDismissed] = useState(false);
 
   const panelOpen =
     activeTaskId !== null ||
@@ -347,6 +358,8 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
         assistantActive={assistantOpen}
         serviceProjectName={serviceProjectName}
         showHomeLink={showHomeLink}
+        notificationPermission={notificationPermission}
+        onRequestNotifications={onRequestNotifications}
       />
       <CommandBar
         tasks={tasks}
@@ -356,6 +369,40 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
         onSelectTask={handleSelectTask}
         inputRef={commandBarInputRef}
       />
+      {isMobile && !import.meta.env.TAURI_ENV_PLATFORM && (
+        <AnimatePresence>
+          {notificationPermission === "default" && !notificationBannerDismissed && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.2 }}
+              className="flex items-center justify-between gap-2 px-4 py-2 bg-surface-2/90 backdrop-blur-sm border-b border-border"
+            >
+              <span className="text-forge-mono-sm text-text-secondary flex-1">
+                Enable notifications to get alerts when reviews are ready
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onRequestNotifications?.()}
+                  className="text-forge-mono-sm font-medium text-accent hover:text-accent/80 transition-colors"
+                >
+                  Enable
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotificationBannerDismissed(true)}
+                  className="text-text-quaternary hover:text-text-secondary transition-colors"
+                  aria-label="Dismiss notification banner"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto flex flex-col">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
           <div className={stalenessClass(isStale)}>

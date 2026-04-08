@@ -41,7 +41,7 @@ vi.mock("../providers", () => ({
 }));
 
 vi.mock("../hooks/useNotificationPermission", () => ({
-  useNotificationPermission: () => {},
+  useNotificationPermission: () => ({ permission: "default", requestPermission: () => {} }),
 }));
 
 vi.mock("../hooks/useBrowserNotifications", () => ({

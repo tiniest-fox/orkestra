@@ -222,7 +222,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         stage_session_id: &str,
     ) -> WorkflowResult<Vec<AnnotatedLogEntry>> {
         let conn = self.lock_conn()?;
-        interactions::log_entry::get::get_annotated(&conn, stage_session_id)
+        interactions::log_entry::get_annotated::execute(&conn, stage_session_id)
     }
 
     fn get_latest_log_entry(&self, stage_session_id: &str) -> WorkflowResult<Option<LogEntry>> {

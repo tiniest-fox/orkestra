@@ -1,6 +1,6 @@
 //! PR creation pipeline: commit, push, describe, create PR.
 
-use crate::pr_description::{PrArtifact, PrDescriptionGenerator};
+use crate::pr_description::{PrArtifact, PrDescriptionContext, PrDescriptionGenerator};
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, PrService};
 
@@ -8,6 +8,8 @@ use crate::workflow::ports::{GitService, PrService};
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum PrPipelineError {
+    /// Required task field is missing for PR creation.
+    PreconditionFailed(String),
     /// Safety-net commit failed.
     CommitFailed(String),
     /// Push failed.
@@ -19,6 +21,7 @@ pub(crate) enum PrPipelineError {
 impl std::fmt::Display for PrPipelineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::PreconditionFailed(e) => write!(f, "Precondition failed: {e}"),
             Self::CommitFailed(e) => write!(f, "Commit failed: {e}"),
             Self::PushFailed(e) | Self::CreateFailed(e) => write!(f, "{e}"),
         }
@@ -40,11 +43,11 @@ pub(crate) fn execute(
     let branch = task
         .branch_name
         .as_deref()
-        .ok_or_else(|| PrPipelineError::CommitFailed("branch_name missing".into()))?;
+        .ok_or_else(|| PrPipelineError::PreconditionFailed("branch_name missing".into()))?;
     let worktree_path = task
         .worktree_path
         .as_deref()
-        .ok_or_else(|| PrPipelineError::CommitFailed("worktree_path missing".into()))?;
+        .ok_or_else(|| PrPipelineError::PreconditionFailed("worktree_path missing".into()))?;
     let worktree_dir = std::path::Path::new(worktree_path);
     let base_branch = &task.base_branch;
 
@@ -62,17 +65,18 @@ pub(crate) fn execute(
     let diff_summary = super::build_diff_summary::execute_file_metadata(git, task);
     let commits_summary = super::format_commit_titles::execute(git, worktree_dir, 20);
 
+    let pr_ctx = PrDescriptionContext {
+        task_title: &task.title,
+        task_description: &task.description,
+        artifacts,
+        commits_summary: &commits_summary,
+        diff_summary: &diff_summary,
+        base_branch,
+        worktree_path,
+        model_names,
+    };
     let (pr_title, pr_body) = pr_desc_gen
-        .generate_pr_description(
-            &task.title,
-            &task.description,
-            artifacts,
-            &commits_summary,
-            &diff_summary,
-            base_branch,
-            worktree_path,
-            model_names,
-        )
+        .generate_pr_description(&pr_ctx)
         .unwrap_or_else(|_| {
             // Fallback: use task title and basic body with new format + footer
             let body = format!(
@@ -113,13 +117,13 @@ mod tests {
         let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[]);
 
         match result {
-            Err(PrPipelineError::CommitFailed(msg)) => {
+            Err(PrPipelineError::PreconditionFailed(msg)) => {
                 assert!(
                     msg.contains("branch_name missing"),
                     "unexpected message: {msg}"
                 );
             }
-            other => panic!("expected CommitFailed for missing branch_name, got {other:?}"),
+            other => panic!("expected PreconditionFailed for missing branch_name, got {other:?}"),
         }
     }
 
@@ -135,13 +139,13 @@ mod tests {
         let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[]);
 
         match result {
-            Err(PrPipelineError::CommitFailed(msg)) => {
+            Err(PrPipelineError::PreconditionFailed(msg)) => {
                 assert!(
                     msg.contains("worktree_path missing"),
                     "unexpected message: {msg}"
                 );
             }
-            other => panic!("expected CommitFailed for missing worktree_path, got {other:?}"),
+            other => panic!("expected PreconditionFailed for missing worktree_path, got {other:?}"),
         }
     }
 

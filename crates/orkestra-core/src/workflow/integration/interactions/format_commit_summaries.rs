@@ -8,7 +8,7 @@ use crate::workflow::ports::GitService;
 /// Format recent commit messages from a worktree into a prompt-ready summary.
 ///
 /// Retrieves up to `limit` commits and formats each as a one-liner with optional
-/// truncated body. Used by both PR creation and PR audit flows.
+/// truncated body. Used by the PR audit flow to provide commit context for description updates.
 pub(crate) fn execute(git: &dyn GitService, worktree_path: &Path, limit: usize) -> String {
     match git.commit_log_at(worktree_path, limit) {
         Ok(commits) if !commits.is_empty() => {

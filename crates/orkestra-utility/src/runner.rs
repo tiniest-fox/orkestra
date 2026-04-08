@@ -345,10 +345,17 @@ fn extract_structured_output(
         }
     }
 
-    let timed_out = !completed && start.elapsed() > timeout;
-    match find_structured_output(&full_output) {
+    classify_output(&full_output, completed)
+}
+
+/// Classify the collected output after the read loop finishes.
+///
+/// `completed` is true if the process finished (result event or EOF), false if
+/// the read loop exited due to timeout.
+fn classify_output(full_output: &str, completed: bool) -> Result<String, UtilityError> {
+    match find_structured_output(full_output) {
         Some(output) => Ok(output),
-        None if timed_out => Err(UtilityError::Timeout),
+        None if !completed => Err(UtilityError::Timeout),
         None => Err(UtilityError::OutputNotFound(
             "Process completed but produced no structured output".into(),
         )),
@@ -539,5 +546,26 @@ mod tests {
             runner.cwd,
             Some(std::path::PathBuf::from("/tmp/my-worktree"))
         );
+    }
+
+    #[test]
+    fn test_classify_output_success() {
+        let output = r#"{"structured_output": {"title": "Fix bug"}}"#;
+        let result = classify_output(output, true);
+        assert!(result.is_ok());
+        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(parsed["title"], "Fix bug");
+    }
+
+    #[test]
+    fn test_classify_output_timeout() {
+        let result = classify_output("", false);
+        assert!(matches!(result, Err(UtilityError::Timeout)));
+    }
+
+    #[test]
+    fn test_classify_output_not_found() {
+        let result = classify_output(r#"{"type": "system"}"#, true);
+        assert!(matches!(result, Err(UtilityError::OutputNotFound(_))));
     }
 }

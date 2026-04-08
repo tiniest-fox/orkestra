@@ -61,7 +61,9 @@ pub use commit_message::{
     ClaudeCommitMessageGenerator, CommitMessageGenerator,
 };
 pub use orkestra_types::config::models::friendly_model_name;
-pub use pr_description::{format_pr_footer, ClaudePrDescriptionGenerator, PrDescriptionGenerator};
+pub use pr_description::{
+    format_pr_footer, ClaudePrDescriptionGenerator, PrDescriptionContext, PrDescriptionGenerator,
+};
 pub use runner::{ExecutionMode, UtilityRunner};
 pub use title::{
     generate_fallback_title, generate_title_sync, ClaudeTitleGenerator, TitleGenerator,

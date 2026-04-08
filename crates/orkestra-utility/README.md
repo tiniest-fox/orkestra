@@ -20,7 +20,7 @@ This crate handles small, focused AI tasks that don't warrant a full agent sessi
 |-------|--------|---------|
 | `TitleGenerator` | `generate_title(task_id, description)` | Generate task title from description |
 | `CommitMessageGenerator` | `generate_commit_message(title, description, diff, models)` | Generate commit message from task context |
-| `PrDescriptionGenerator` | `generate_pr_description(task_title, task_description, artifacts, commits_summary, diff_summary, base_branch, worktree_path, model_names)` | Generate PR title and body from task context, artifact references, and commit history |
+| `PrDescriptionGenerator` | `generate_pr_description(ctx: &PrDescriptionContext)` | Generate PR title and body from task context, artifact references, and commit history |
 
 ### Implementations
 

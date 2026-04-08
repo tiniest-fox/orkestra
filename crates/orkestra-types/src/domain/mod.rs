@@ -13,9 +13,7 @@ pub(crate) mod task;
 
 pub use assistant_session::{AssistantSession, SessionType};
 pub use check_status::{classify_check, CheckStatus};
-pub use iteration::{
-    ArtifactSnapshot, GateResult, Iteration, IterationTrigger, PrCheckData, PrCommentData,
-};
+pub use iteration::{GateResult, Iteration, IterationTrigger, PrCheckData, PrCommentData};
 pub use log_entry::{AnnotatedLogEntry, LogEntry, OrkAction, TodoItem, ToolInput};
 pub use question::{Question, QuestionAnswer, QuestionOption};
 pub use stage_session::{SessionState, StageSession};

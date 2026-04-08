@@ -213,7 +213,7 @@ pub(crate) fn dispatch_output(
 
 /// Write artifact to the `workflow_artifacts` table and emit an `ArtifactProduced` log entry.
 ///
-/// Silently succeeds if the artifact is not found on the task or the stage session is missing.
+/// Silently succeeds if the stage session is missing; fails fast if the artifact is missing.
 fn persist_and_emit_artifact(
     store: &dyn WorkflowStore,
     task: &Task,
@@ -222,7 +222,9 @@ fn persist_and_emit_artifact(
     iteration_id: Option<&str>,
 ) -> WorkflowResult<()> {
     let Some(artifact) = task.artifacts.get(artifact_name) else {
-        return Ok(());
+        return Err(WorkflowError::InvalidState(format!(
+            "artifact '{artifact_name}' not found on task after handler set it"
+        )));
     };
 
     store.save_artifact(&task.id, artifact)?;

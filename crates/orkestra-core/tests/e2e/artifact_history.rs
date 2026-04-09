@@ -278,6 +278,7 @@ fn test_approval_rejection_artifact_snapshot() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more work on edge cases".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },

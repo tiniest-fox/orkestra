@@ -1,4 +1,4 @@
-//! Feed view displaying tasks grouped by intent with pipeline bars and status symbols.
+// Feed view displaying tasks grouped by intent with pipeline bars and status symbols.
 
 import { Inbox } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +28,7 @@ import { InteractiveDrawer } from "./InteractiveDrawer";
 import { MobileTabBar } from "./MobileTabBar";
 import { NewTaskDrawer } from "./NewTaskDrawer";
 import { NewTaskModal } from "./NewTaskModal";
+import { NotificationBanner } from "./NotificationBanner";
 import { taskMatchesFilter } from "./useCommandBar";
 import { useFeedNavigation } from "./useFeedNavigation";
 import { useFocusSaveRestore } from "./useFocusSaveRestore";
@@ -356,6 +357,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
         onSelectTask={handleSelectTask}
         inputRef={commandBarInputRef}
       />
+      {isMobile && <NotificationBanner />}
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto flex flex-col">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
           <div className={stalenessClass(isStale)}>

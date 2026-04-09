@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use axum::body::Body;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, Request, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -20,6 +20,7 @@ use futures_util::{SinkExt, StreamExt};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use orkestra_git::{Git2GitService, GitService};
 
@@ -104,6 +105,19 @@ pub async fn start(
         secrets_key,
     };
 
+    let router = build_router(state, extra_routes);
+
+    tracing::info!("Service HTTP server listening on {local_addr}");
+
+    axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown)
+        .await
+}
+
+/// Build the axum router with all routes, auth middleware, CORS, and security headers.
+///
+/// Extracted from `start()` so tests can construct the router without binding a listener.
+pub(crate) fn build_router(state: OrkServiceState, extra_routes: Option<Router>) -> Router {
     let auth_routes = Router::new()
         .route(
             "/api/projects",
@@ -132,23 +146,37 @@ pub async fn start(
             require_bearer_auth,
         ));
 
-    let mut router = Router::new()
+    // Provide state to the core routes, producing Router<()>, so that extra_routes
+    // (also Router<()>) can be merged before the security header layers are applied.
+    let mut combined = Router::new()
         .route("/health", get(health_handler))
         .route("/pair", post(pair_handler))
         .route("/projects/{id}/ws", get(ws_proxy_handler))
         .merge(auth_routes)
-        .layer(CorsLayer::permissive())
         .with_state(state);
 
     if let Some(extra) = extra_routes {
-        router = router.merge(extra);
+        combined = combined.merge(extra);
     }
 
-    tracing::info!("Service HTTP server listening on {local_addr}");
-
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown)
-        .await
+    combined
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("content-security-policy"),
+            HeaderValue::from_static("default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("strict-transport-security"),
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(CorsLayer::new())
 }
 
 // ============================================================================
@@ -1255,9 +1283,167 @@ where
 
 #[cfg(test)]
 mod tests {
-    use axum::http::HeaderMap;
+    use axum::body::Body;
+    use axum::http::{HeaderMap, HeaderValue, Request};
+    use tower::ServiceExt;
 
-    use super::{validate_project_name, ws_base_from_headers};
+    use super::{build_router, validate_project_name, ws_base_from_headers};
+
+    // -- Security headers and CORS --
+
+    fn minimal_state() -> super::OrkServiceState {
+        use crate::daemon_supervisor::DaemonSupervisor;
+        use crate::types::ServiceConfig;
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        // Build a minimal in-memory state. The health endpoint doesn't touch the
+        // DB or supervisor, so we can use a stub SQLite connection.
+        let conn = Arc::new(Mutex::new(
+            rusqlite::Connection::open_in_memory().expect("in-memory DB"),
+        ));
+        let data_dir = std::path::PathBuf::from("/tmp");
+        let supervisor = Arc::new(DaemonSupervisor::new(
+            conn.clone(),
+            std::path::PathBuf::from("orkd"),
+            std::path::PathBuf::from("ork"),
+            data_dir.clone(),
+            (3850, 3899),
+        ));
+        let config = Arc::new(ServiceConfig {
+            data_dir,
+            port: 3847,
+            port_range: (3850, 3899),
+        });
+
+        super::OrkServiceState {
+            conn,
+            supervisor,
+            config,
+            pairing_locks: Arc::new(Mutex::new(HashMap::new())),
+            provision_handles: Arc::new(Mutex::new(HashMap::new())),
+            secrets_key: None,
+        }
+    }
+
+    fn minimal_router() -> axum::Router {
+        build_router(minimal_state(), None)
+    }
+
+    #[tokio::test]
+    async fn security_headers_present_on_health() {
+        let app = minimal_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let headers = response.headers();
+        assert_eq!(
+            headers
+                .get("x-content-type-options")
+                .map(HeaderValue::as_bytes),
+            Some(b"nosniff".as_ref()),
+            "x-content-type-options must be 'nosniff'"
+        );
+        assert_eq!(
+            headers.get("x-frame-options").map(HeaderValue::as_bytes),
+            Some(b"DENY".as_ref()),
+            "x-frame-options must be 'DENY'"
+        );
+        assert!(
+            headers.contains_key("strict-transport-security"),
+            "strict-transport-security header must be present"
+        );
+        assert!(
+            headers.contains_key("content-security-policy"),
+            "content-security-policy header must be present"
+        );
+        let csp = headers
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            csp.contains("default-src 'self'"),
+            "CSP must have default-src 'self'"
+        );
+        assert!(
+            csp.contains("frame-ancestors 'none'"),
+            "CSP must block framing"
+        );
+    }
+
+    #[tokio::test]
+    async fn cors_rejects_cross_origin_requests() {
+        let app = minimal_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .header("origin", "https://evil.example.com")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !response
+                .headers()
+                .contains_key("access-control-allow-origin"),
+            "cross-origin requests must not receive ACAO header"
+        );
+    }
+
+    #[tokio::test]
+    async fn same_origin_request_succeeds() {
+        let app = minimal_router();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn security_headers_present_on_extra_routes() {
+        let state = minimal_state();
+        let extra =
+            axum::Router::new().route("/pwa/index.html", axum::routing::get(|| async { "pwa" }));
+        let app = build_router(state, Some(extra));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/pwa/index.html")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let headers = response.headers();
+        assert!(
+            headers.contains_key("x-content-type-options"),
+            "extra_routes must receive x-content-type-options security header"
+        );
+        assert!(
+            headers.contains_key("content-security-policy"),
+            "extra_routes must receive content-security-policy header"
+        );
+    }
 
     // -- ws_base_from_headers --
 

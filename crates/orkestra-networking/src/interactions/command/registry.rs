@@ -95,6 +95,7 @@ pub const TRANSPORT_SPECIFIC_COMMANDS: &[&str] = &[
     "get_commit_log",
     "get_batch_file_counts",
     "get_commit_diff",
+    "get_uncommitted_diff",
     // Background event commands (different notification mechanisms)
     "merge_task",
     "open_pr",

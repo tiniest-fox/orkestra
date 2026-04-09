@@ -41,6 +41,7 @@ export function ModalPanel({ isOpen, onClose, children, className = "" }: ModalP
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.1 }}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={onClose}
           />
           <motion.div
@@ -49,6 +50,7 @@ export function ModalPanel({ isOpen, onClose, children, className = "" }: ModalP
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             {children}
           </motion.div>

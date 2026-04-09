@@ -25,9 +25,9 @@ import { useDiffSearch } from "../Diff/useDiffSearch";
 import { EmptyState } from "../ui/EmptyState";
 import { useNavHandler } from "../ui/HotkeyScope";
 import type { ExpandPosition } from "./applySplice";
-import type { DiffMode } from "./DiffCommitPanel";
 import { DiffCommitPanel } from "./DiffCommitPanel";
 import { useDrawerDiff } from "./DrawerTaskProvider";
+import type { DiffMode } from "./types";
 
 interface DrawerDiffTabProps {
   /** Whether this tab is currently visible — controls data loading and hotkey registration. */
@@ -109,12 +109,15 @@ export function DrawerDiffTab({
       .then((result) => {
         if (!cancelled) {
           setUncommittedDiff(result);
-          setUncommittedDiffLoading(false);
         }
       })
       .catch((err) => {
         if (!cancelled && !isDisconnectError(err)) {
           console.error("Failed to fetch uncommitted diff:", err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
           setUncommittedDiffLoading(false);
         }
       });

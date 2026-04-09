@@ -150,7 +150,7 @@ Read these before modifying cross-cutting flows:
 `DerivedTaskState` detects two pending-human states asymmetrically:
 
 - **`pending_rejection`**: Detected by `Outcome::AwaitingRejectionReview` on the latest iteration. The outcome is set *before* the iteration ends, so it's a reliable signal.
-- **`pending_approval`**: There is no equivalent distinguishing outcome. When a task is `AwaitingApproval`, the current iteration stays open with `outcome = None`. Detection requires two conditions: state is `AwaitingApproval` **and** the current stage has approval capability (`WorkflowConfig::stage(&task.flow, stage_name)?.has_approval()`).
+- **`pending_approval`**: There is no equivalent distinguishing outcome. When a task is `AwaitingApproval`, the current iteration stays open with `outcome = None`. Detection requires two conditions: state is `AwaitingApproval` **and** the current stage has an agentic gate (`WorkflowConfig::stage(&task.flow, stage_name)?.has_agentic_gate()`).
 
 The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. When a human-review gate succeeds without an approval-capable stage, the flow goes through `auto_advance_or_review` (sets state, doesn't end iteration); when it succeeds *with* an approval-capable stage, `enter_commit_pipeline` atomically sets both `Outcome::Approved` and `Finishing` state — so `AwaitingApproval + Outcome::Approved` never coexists.
 

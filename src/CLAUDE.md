@@ -592,9 +592,9 @@ This applies to any code gated on `IS_TAURI` that needs project context. The `ge
 Verdict display is computed in two places — this is intentional, not duplication. They serve different data sources:
 
 - **`DrawerTabContent.tsx`** (live view): uses backend-computed `DerivedTaskState` (e.g., `task.derived.pending_approval`, `task.derived.pending_rejection`). No config lookup needed; the backend already has the full workflow config.
-- **`HistoricalRunView.tsx`** (past runs): computes verdict from raw iteration outcomes because historical snapshots don't carry pre-computed derived state. Requires a config lookup to distinguish approval-capability stages from regular human-review gates.
+- **`HistoricalRunView.tsx`** (past runs): computes verdict from raw iteration outcomes because historical snapshots don't carry pre-computed derived state. Requires a config lookup to distinguish agentic gate stages from regular human-review gates.
 
-**Flow-scoped stage lookup is required for correctness.** When `HistoricalRunView.tsx` queries stage config (e.g., `workflow.stage(flow, stageName).has_approval()`), always scope to `task.flow` — never flat-map across all flows. Flows may share stage names, and searching all flows silently returns the wrong config for any task not in the first matching flow.
+**Flow-scoped stage lookup is required for correctness.** When `HistoricalRunView.tsx` queries stage config (e.g., `workflow.stage(flow, stageName).has_agentic_gate()`), always scope to `task.flow` — never flat-map across all flows. Flows may share stage names, and searching all flows silently returns the wrong config for any task not in the first matching flow.
 
 ```tsx
 // Correct — scoped to this task's flow

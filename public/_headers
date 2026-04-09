@@ -1,0 +1,3 @@
+/*
+  Access-Control-Allow-Origin: https://orkestra.codes
+  Content-Security-Policy: frame-ancestors https://orkestra.codes https://*.orkestra.codes

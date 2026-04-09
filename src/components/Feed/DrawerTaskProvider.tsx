@@ -10,7 +10,7 @@ import type { HighlightedLine, HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useDiff } from "../../hooks/useDiff";
 import { usePolling } from "../../hooks/usePolling";
 import { useConnectionState, useTransport } from "../../transport";
-import type { CommitInfo } from "../../types/workflow";
+import type { BranchCommitsResponse, CommitInfo } from "../../types/workflow";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { applySplice, type ExpandPosition } from "./applySplice";
 
@@ -35,6 +35,7 @@ interface DrawerTaskContextValue {
   ) => Promise<void>;
   taskId: string;
   branchCommits: CommitInfo[];
+  hasUncommittedChanges: boolean;
 }
 
 const DrawerTaskContext = createContext<DrawerTaskContextValue | null>(null);
@@ -53,15 +54,17 @@ export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps
   const [fileContextLines, setFileContextLines] = useState<Map<string, number>>(new Map());
   const [expansionIntents, setExpansionIntents] = useState<ExpansionIntents>(new Map());
   const [branchCommits, setBranchCommits] = useState<CommitInfo[]>([]);
+  const [hasUncommittedChanges, setHasUncommittedChanges] = useState(false);
 
   const fetchBranchCommits = useCallback(async () => {
     try {
-      const commits = await transport.call<CommitInfo[]>("get_branch_commits", {
+      const response = await transport.call<BranchCommitsResponse>("get_branch_commits", {
         task_id: taskId,
       });
-      setBranchCommits(commits);
-      if (commits.length > 0) {
-        prefetchCommitDiff(commits[0].hash, transport);
+      setBranchCommits(response.commits);
+      setHasUncommittedChanges(response.has_uncommitted_changes);
+      if (response.commits.length > 0) {
+        prefetchCommitDiff(response.commits[0].hash, transport);
       }
     } catch (err) {
       if (!isDisconnectError(err)) {
@@ -216,6 +219,7 @@ export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps
         expandContext,
         taskId,
         branchCommits,
+        hasUncommittedChanges,
       }}
     >
       {children}

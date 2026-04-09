@@ -4,24 +4,40 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import type { CommitInfo } from "../../types/workflow";
 import { relativeTime } from "../../utils/relativeTime";
 
+// "all" = all changes, "uncommitted" = uncommitted changes, string = commit hash
+export type DiffMode = "all" | "uncommitted" | string;
+
 interface DiffCommitPanelProps {
   commits: CommitInfo[];
-  selectedHash: string | null; // null = "All changes"
+  diffMode: DiffMode;
   onSelectHash: (hash: string) => void;
   onSelectAll: () => void;
+  onSelectUncommitted: () => void;
+  hasUncommittedChanges: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }
 
 export function DiffCommitPanel({
   commits,
-  selectedHash,
+  diffMode,
   onSelectHash,
   onSelectAll,
+  onSelectUncommitted,
+  hasUncommittedChanges,
   collapsed = false,
   onToggleCollapsed,
 }: DiffCommitPanelProps) {
-  const selectedCommit = selectedHash ? commits.find((c) => c.hash === selectedHash) : null;
+  const selectedCommit =
+    diffMode !== "all" && diffMode !== "uncommitted"
+      ? commits.find((c) => c.hash === diffMode)
+      : null;
+
+  function collapsedLabel(): string {
+    if (diffMode === "uncommitted") return "Uncommitted changes";
+    if (selectedCommit) return `${selectedCommit.hash} ${selectedCommit.message}`;
+    return "All changes";
+  }
 
   if (collapsed) {
     return (
@@ -36,7 +52,7 @@ export function DiffCommitPanel({
           >
             <ChevronRight size={14} />
             <span className="font-sans text-forge-mono-sm text-text-primary">
-              {selectedCommit ? `${selectedCommit.hash} ${selectedCommit.message}` : "All changes"}
+              {collapsedLabel()}
             </span>
             <span className="font-mono text-forge-mono-label text-text-quaternary">
               · {commits.length} commits
@@ -46,7 +62,7 @@ export function DiffCommitPanel({
           <div className="flex items-center gap-1.5 text-text-tertiary">
             <ChevronRight size={14} />
             <span className="font-sans text-forge-mono-sm text-text-primary">
-              {selectedCommit ? `${selectedCommit.hash} ${selectedCommit.message}` : "All changes"}
+              {collapsedLabel()}
             </span>
             <span className="font-mono text-forge-mono-label text-text-quaternary">
               · {commits.length} commits
@@ -83,7 +99,7 @@ export function DiffCommitPanel({
         )}
       </div>
       <div className="max-h-[200px] overflow-y-auto">
-        {commits.length === 0 ? (
+        {commits.length === 0 && !hasUncommittedChanges ? (
           <div className="p-3 font-mono text-forge-mono-label text-text-quaternary">
             No commits yet.
           </div>
@@ -95,13 +111,28 @@ export function DiffCommitPanel({
               onKeyDown={() => {}}
               className={[
                 "w-full text-left px-3 py-2 border-b border-border transition-colors font-sans text-forge-mono-sm",
-                selectedHash === null
+                diffMode === "all"
                   ? "bg-accent-soft border-l-2 border-l-accent !pl-2.5 text-text-primary font-semibold"
                   : "hover:bg-canvas text-text-secondary",
               ].join(" ")}
             >
               All changes
             </button>
+            {hasUncommittedChanges && (
+              <button
+                type="button"
+                onClick={onSelectUncommitted}
+                onKeyDown={() => {}}
+                className={[
+                  "w-full text-left px-3 py-2 border-b border-border transition-colors font-sans text-forge-mono-sm",
+                  diffMode === "uncommitted"
+                    ? "bg-accent-soft border-l-2 border-l-accent !pl-2.5 text-text-primary font-semibold"
+                    : "hover:bg-canvas text-text-secondary",
+                ].join(" ")}
+              >
+                Uncommitted changes
+              </button>
+            )}
             {commits.map((commit) => (
               <button
                 key={commit.hash}
@@ -110,7 +141,7 @@ export function DiffCommitPanel({
                 onKeyDown={() => {}}
                 className={[
                   "w-full text-left px-3 py-2 border-b border-border transition-colors",
-                  commit.hash === selectedHash
+                  commit.hash === diffMode
                     ? "bg-accent-soft border-l-2 border-l-accent !pl-2.5"
                     : "hover:bg-canvas",
                 ].join(" ")}

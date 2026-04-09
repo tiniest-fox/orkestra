@@ -72,4 +72,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full development workflow.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+Orkestra is dual-licensed:
+
+- **Core** (`crates/orkestra-*` except `orkestra-service`, `cli/`, `daemon/`, `src-tauri/`, `src/`) — [MIT](LICENSE)
+- **Hosted platform** (`crates/orkestra-service/`, `service/`) — [FSL-1.1-ALv2](crates/orkestra-service/LICENSE)
+
+FSL permits self-hosting and modification for any purpose except offering a competing hosted service. It converts to Apache 2.0 two years after each release. See [fsl.software](https://fsl.software) for details.

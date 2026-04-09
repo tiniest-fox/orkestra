@@ -2,6 +2,7 @@
 name = "ork-service"
 version = "0.1.2"
 edition = "2021"
+license = "FSL-1.1-ALv2"
 
 [[bin]]
 name = "ork-service"

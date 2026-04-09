@@ -2,7 +2,7 @@
 name = "orkestra-service"
 version = "0.1.2"
 edition.workspace = true
-license.workspace = true
+license = "FSL-1.1-ALv2"
 repository.workspace = true
 description = "Service database, types, and project CRUD for the ork-service binary"
 

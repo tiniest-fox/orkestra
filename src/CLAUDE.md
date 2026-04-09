@@ -715,6 +715,19 @@ export default { decorators: [storybookDecorator] };
 
 When adding a new RPC method to the mock, verify the return shape against the `transport.call<T>()` call at the usage site — the `<T>` type parameter is the authoritative expected shape. A shape mismatch (e.g., returning `{ entries: [], cursor: null }` when the hook expects `LogEntry[]`) causes silent type coercion that only surfaces as a story crash at render time.
 
+**Custom transport stories**: When a story group needs a transport with different stage names, data, or RPC behaviour than the global mock, every story file in that group must explicitly wrap with `StorybookProviders` passing the custom transport — **do not rely on the global `storybookDecorator`**, which injects the default mock transport and will cause stage name mismatches:
+
+```tsx
+const decorator = (Story: React.ComponentType) => (
+  <StorybookProviders transport={createDemoTransport()}>
+    <Story />
+  </StorybookProviders>
+);
+export default { decorators: [decorator] };
+```
+
+See `src/stories/Demo/AppShell.stories.tsx` for the reference pattern.
+
 ## Keyboard Navigation
 
 <!-- compound: beauteously-liberal-pollock -->

@@ -2,12 +2,8 @@
 
 import { memo, useCallback, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-<<<<<<< HEAD
-import type { LogEntry, ResumeType, WorkflowArtifact } from "../../types/workflow";
-=======
 import { Virtualizer } from "virtua";
-import type { LogEntry, ResumeType } from "../../types/workflow";
->>>>>>> origin/main
+import type { LogEntry, ResumeType, WorkflowArtifact } from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -72,7 +68,7 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 type VirtualItem =
   | { kind: "user-block"; msg: UserMessage; label: string; isHuman: boolean; isBlockEnd: boolean }
   | { kind: "agent-header"; label: string }
-  | { kind: "agent-entry"; entry: GroupedLogEntry; projectRoot?: string; isBlockEnd: boolean }
+  | { kind: "agent-entry"; entry: GroupedLogEntry; projectRoot?: string; artifacts?: Record<string, WorkflowArtifact>; isBlockEnd: boolean }
   | { kind: "extra"; content: React.ReactNode }
   | { kind: "spinner" };
 
@@ -87,6 +83,7 @@ export function buildVirtualItems(
     userLabel: string;
     classifyUser?: (msg: UserMessage) => UserClassification;
     projectRoot?: string;
+    artifacts?: Record<string, WorkflowArtifact>;
     isAgentRunning: boolean;
     lastAgentExtra?: React.ReactNode;
   },
@@ -110,6 +107,7 @@ export function buildVirtualItems(
           kind: "agent-entry",
           entry: grouped[j],
           projectRoot: opts.projectRoot,
+          artifacts: opts.artifacts,
           isBlockEnd: isLast,
         });
       }
@@ -253,27 +251,6 @@ export const AgentEntry = memo(function AgentEntry({
 // VirtualItemRenderer
 // ============================================================================
 
-<<<<<<< HEAD
-function AgentEntries({
-  entries,
-  projectRoot,
-  artifacts,
-}: {
-  entries: LogEntry[];
-  projectRoot?: string;
-  artifacts?: Record<string, WorkflowArtifact>;
-}) {
-  const grouped = useGroupedLogs(entries);
-  return (
-    <>
-      {grouped.map((entry, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: no stable IDs on log entries
-        <AgentEntry key={i} entry={entry} projectRoot={projectRoot} artifacts={artifacts} />
-      ))}
-    </>
-  );
-}
-=======
 const VirtualItemRenderer = memo(function VirtualItemRenderer({
   item,
   contentFilter,
@@ -316,7 +293,7 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
         <div
           className={`bg-canvas px-6 text-text-secondary ${item.isBlockEnd ? "pb-3.5 border-b border-border" : ""}`}
         >
-          <AgentEntry entry={item.entry} projectRoot={item.projectRoot} />
+          <AgentEntry entry={item.entry} projectRoot={item.projectRoot} artifacts={item.artifacts} />
         </div>
       );
     case "extra":
@@ -330,7 +307,6 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
       );
   }
 });
->>>>>>> origin/main
 
 // ============================================================================
 // MessageList
@@ -384,10 +360,11 @@ export function MessageList({
         userLabel,
         classifyUser,
         projectRoot,
+        artifacts,
         isAgentRunning,
         lastAgentExtra,
       }),
-    [messages, agentLabel, userLabel, classifyUser, projectRoot, isAgentRunning, lastAgentExtra],
+    [messages, agentLabel, userLabel, classifyUser, projectRoot, artifacts, isAgentRunning, lastAgentExtra],
   );
 
   // Object ref for Virtualizer's scrollRef prop
@@ -432,73 +409,11 @@ export function MessageList({
         <div className="flex items-center justify-center h-full">
           <p className="font-mono text-forge-mono-sm text-text-quaternary">{emptyText}</p>
         </div>
-<<<<<<< HEAD
-      )}
-      {messages.map((msg, i) => {
-        const isLastAgent = i === lastAgentIndex;
-
-        const classification = msg.kind === "user" && classifyUser ? classifyUser(msg) : null;
-        const isHuman = classification ? classification.isHuman : true;
-        const msgLabel =
-          msg.kind === "user" ? (classification ? classification.label : userLabel) : agentLabel;
-
-        return (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: display messages have no stable IDs
-            key={`msg-${i}`}
-            className={[
-              "border-b border-border last:border-b-0",
-              msg.kind === "user"
-                ? isHuman
-                  ? "border-l-2 border-l-accent bg-surface px-6 py-3.5 pl-[22px]"
-                  : "border-l-2 border-l-border bg-canvas px-6 py-3.5 pl-[22px]"
-                : "bg-canvas px-6 py-3.5",
-            ].join(" ")}
-          >
-            <div
-              className={[
-                "font-mono text-forge-mono-label font-medium uppercase tracking-wider mb-1.5",
-                msg.kind === "user" && isHuman ? "text-accent" : "text-text-tertiary",
-              ].join(" ")}
-            >
-              {msgLabel}
-            </div>
-            {msg.kind === "agent" ? (
-              <div className="text-text-secondary">
-                <AgentEntries
-                  entries={msg.entries}
-                  projectRoot={projectRoot}
-                  artifacts={artifacts}
-                />
-              </div>
-            ) : (
-              <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
-                <ReactMarkdown
-                  remarkPlugins={richContentPlugins}
-                  components={richContentComponents}
-                >
-                  {contentFilter ? contentFilter(msg.content) : msg.content}
-                </ReactMarkdown>
-              </div>
-            )}
-
-            {isLastAgent && lastAgentExtra && <>{lastAgentExtra}</>}
-          </div>
-        );
-      })}
-
-      {isAgentRunning && (
-        <div className="flex items-center gap-2 px-6 py-3.5 text-text-quaternary">
-          <span className="w-3.5 h-3.5 border-2 border-border border-t-transparent rounded-full animate-spin shrink-0" />
-          <span className="font-mono text-forge-mono-sm">Working…</span>
-        </div>
-=======
       ) : (
         virtualItems.map((item, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
           <VirtualItemRenderer key={i} item={item} contentFilter={contentFilter} />
         ))
->>>>>>> origin/main
       )}
     </div>
   );

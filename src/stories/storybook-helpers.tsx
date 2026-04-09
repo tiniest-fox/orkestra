@@ -3,6 +3,7 @@
 import type { Decorator } from "@storybook/react";
 import type { ReactNode } from "react";
 import { AppProviders } from "../providers/AppProviders";
+import { ProjectDetailProvider } from "../providers/ProjectsProvider";
 import { useWorkflowConfigState } from "../providers/WorkflowConfigProvider";
 import { createMockWorkflowConfig } from "../test/mocks/fixtures";
 import { TransportProvider } from "../transport/TransportProvider";
@@ -64,9 +65,11 @@ export function StorybookProviders({
 }) {
   return (
     <TransportProvider transport={transport ?? createMockTransport()}>
-      <AppProviders>
-        <ConfigGate>{children}</ConfigGate>
-      </AppProviders>
+      <ProjectDetailProvider>
+        <AppProviders>
+          <ConfigGate>{children}</ConfigGate>
+        </AppProviders>
+      </ProjectDetailProvider>
     </TransportProvider>
   );
 }

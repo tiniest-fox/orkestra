@@ -1291,7 +1291,7 @@ mod tests {
 
     // -- Security headers and CORS --
 
-    fn minimal_router() -> axum::Router {
+    fn minimal_state() -> super::OrkServiceState {
         use crate::daemon_supervisor::DaemonSupervisor;
         use crate::types::ServiceConfig;
         use std::collections::HashMap;
@@ -1302,7 +1302,6 @@ mod tests {
         let conn = Arc::new(Mutex::new(
             rusqlite::Connection::open_in_memory().expect("in-memory DB"),
         ));
-
         let data_dir = std::path::PathBuf::from("/tmp");
         let supervisor = Arc::new(DaemonSupervisor::new(
             conn.clone(),
@@ -1317,16 +1316,18 @@ mod tests {
             port_range: (3850, 3899),
         });
 
-        let state = super::OrkServiceState {
+        super::OrkServiceState {
             conn,
             supervisor,
             config,
             pairing_locks: Arc::new(Mutex::new(HashMap::new())),
             provision_handles: Arc::new(Mutex::new(HashMap::new())),
             secrets_key: None,
-        };
+        }
+    }
 
-        build_router(state, None)
+    fn minimal_router() -> axum::Router {
+        build_router(minimal_state(), None)
     }
 
     #[tokio::test]
@@ -1418,36 +1419,7 @@ mod tests {
 
     #[tokio::test]
     async fn security_headers_present_on_extra_routes() {
-        use crate::daemon_supervisor::DaemonSupervisor;
-        use crate::types::ServiceConfig;
-        use std::collections::HashMap;
-        use std::sync::{Arc, Mutex};
-
-        let conn = Arc::new(Mutex::new(
-            rusqlite::Connection::open_in_memory().expect("in-memory DB"),
-        ));
-        let data_dir = std::path::PathBuf::from("/tmp");
-        let supervisor = Arc::new(DaemonSupervisor::new(
-            conn.clone(),
-            std::path::PathBuf::from("orkd"),
-            std::path::PathBuf::from("ork"),
-            data_dir.clone(),
-            (3850, 3899),
-        ));
-        let config = Arc::new(ServiceConfig {
-            data_dir,
-            port: 3847,
-            port_range: (3850, 3899),
-        });
-        let state = super::OrkServiceState {
-            conn,
-            supervisor,
-            config,
-            pairing_locks: Arc::new(Mutex::new(HashMap::new())),
-            provision_handles: Arc::new(Mutex::new(HashMap::new())),
-            secrets_key: None,
-        };
-
+        let state = minimal_state();
         let extra =
             axum::Router::new().route("/pwa/index.html", axum::routing::get(|| async { "pwa" }));
         let app = build_router(state, Some(extra));

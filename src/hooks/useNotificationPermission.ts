@@ -22,10 +22,13 @@ export function useNotificationPermission(): {
     requestTauriPermission();
   }, []);
 
+  const permissionRef = useRef(permission);
+  permissionRef.current = permission;
+
   const requestPermission = useCallback(() => {
     if (import.meta.env.TAURI_ENV_PLATFORM) return;
     if (!("Notification" in window)) return;
-    if (permission !== "default") return;
+    if (permissionRef.current !== "default") return;
     Notification.requestPermission()
       .then((result) => {
         setPermission(result);
@@ -34,7 +37,7 @@ export function useNotificationPermission(): {
       .catch((err) => {
         console.error("[notifications] Failed to request permission:", err);
       });
-  }, [permission]);
+  }, []);
 
   return { permission, requestPermission };
 }
@@ -61,6 +64,9 @@ async function requestTauriPermission() {
       );
     }
   } catch (err) {
+    // No state update needed: `permission` state is scoped to the browser path
+    // (returned by the hook). Tauri auto-requests on mount and never renders
+    // permission UI, so a stale `permission` value has no consumer.
     console.error("[notifications] Failed to request permission:", err);
   }
 }

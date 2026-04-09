@@ -10,6 +10,7 @@ import { useTasks, useWorkflowConfigState } from "../providers";
 import { FeedView } from "./Feed";
 import { FeedLoadingSkeleton } from "./Feed/FeedLoadingSkeleton";
 import { ErrorState } from "./ui";
+import { Button } from "./ui/Button";
 
 export function Orkestra({
   serviceProjectName,
@@ -28,13 +29,9 @@ export function Orkestra({
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-canvas">
         <ErrorState message="Failed to load workflow config" error={configError} />
-        <button
-          type="button"
-          onClick={configState.retry}
-          className="px-4 py-2 text-sm rounded-panel-sm bg-surface-2 text-text-secondary hover:bg-surface-3 transition-colors"
-        >
+        <Button variant="secondary" size="sm" onClick={configState.retry}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }

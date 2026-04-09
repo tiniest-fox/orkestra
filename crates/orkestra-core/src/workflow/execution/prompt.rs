@@ -151,15 +151,7 @@ pub fn resolve_stage_agent_config_for(
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
 
     // I/O: Get JSON schema (may load custom schema from disk)
-    let route_to_stages = if stage.has_agentic_gate() {
-        workflow
-            .stages_in_flow(&task.flow)
-            .into_iter()
-            .map(|s| s.name.clone())
-            .collect()
-    } else {
-        vec![]
-    };
+    let route_to_stages = workflow.route_to_stage_names(&task.flow, stage_name);
     let json_schema = get_agent_schema(stage, project_root, route_to_stages).ok_or_else(|| {
         AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
     })?;

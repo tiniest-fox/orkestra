@@ -362,23 +362,27 @@ where
     D: Deserializer<'de>,
 {
     #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct AutomatedGate {
+        command: String,
+        #[serde(default = "default_gate_timeout")]
+        timeout_seconds: u64,
+    }
+
+    #[derive(Deserialize)]
     #[serde(untagged)]
     enum GateHelper {
         Bool(bool),
-        Automated {
-            command: String,
-            #[serde(default = "default_gate_timeout")]
-            timeout_seconds: u64,
-        },
+        Automated(AutomatedGate),
     }
 
     match Option::<GateHelper>::deserialize(deserializer)? {
         None | Some(GateHelper::Bool(false)) => Ok(None),
         Some(GateHelper::Bool(true)) => Ok(Some(GateConfig::Agentic)),
-        Some(GateHelper::Automated {
+        Some(GateHelper::Automated(AutomatedGate {
             command,
             timeout_seconds,
-        }) => Ok(Some(GateConfig::Automated {
+        })) => Ok(Some(GateConfig::Automated {
             command,
             timeout_seconds,
         })),
@@ -823,6 +827,16 @@ artifact:
         assert!(
             result.is_err(),
             "Expected error when deserializing StageCapabilities with unknown field 'ask_questions'"
+        );
+    }
+
+    #[test]
+    fn test_gate_automated_rejects_unknown_fields() {
+        let yaml = "name: work\nartifact: summary\ngate:\n  command: ./checks.sh\n  retries: 3\n";
+        let result: Result<StageConfig, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "Expected error when gate has unknown field 'retries'"
         );
     }
 

@@ -435,15 +435,7 @@ fn get_stage_schema(
         .stage(&task.flow, stage)
         .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
 
-    let route_to_stages = if stage_config.has_agentic_gate() {
-        workflow
-            .stages_in_flow(&task.flow)
-            .into_iter()
-            .map(|s| s.name.clone())
-            .collect()
-    } else {
-        vec![]
-    };
+    let route_to_stages = workflow.route_to_stage_names(&task.flow, stage);
     crate::workflow::execution::get_agent_schema(
         stage_config,
         Some(prompt_service.project_root()),

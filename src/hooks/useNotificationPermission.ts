@@ -2,7 +2,7 @@
 // Browser/PWA path: exposes permission state + requestPermission() action — no auto-request.
 // Tauri path: auto-requests on mount (native OS dialogs are not flagged as abusive).
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useNotificationPermission(): {
   permission: NotificationPermission | "unsupported";
@@ -22,10 +22,10 @@ export function useNotificationPermission(): {
     requestTauriPermission();
   }, []);
 
-  const requestPermission = () => {
+  const requestPermission = useCallback(() => {
     if (import.meta.env.TAURI_ENV_PLATFORM) return;
     if (!("Notification" in window)) return;
-    if (Notification.permission !== "default") return;
+    if (permission !== "default") return;
     Notification.requestPermission()
       .then((result) => {
         setPermission(result);
@@ -34,7 +34,7 @@ export function useNotificationPermission(): {
       .catch((err) => {
         console.error("[notifications] Failed to request permission:", err);
       });
-  };
+  }, [permission]);
 
   return { permission, requestPermission };
 }

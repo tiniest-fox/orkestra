@@ -235,7 +235,7 @@ impl WorkflowApi {
     pub fn get_branch_commits(
         &self,
         task_id: &str,
-    ) -> WorkflowResult<Vec<crate::workflow::ports::CommitInfo>> {
+    ) -> WorkflowResult<crate::workflow::ports::BranchCommitsResponse> {
         let git = self
             .git_service
             .as_ref()

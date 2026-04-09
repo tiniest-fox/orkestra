@@ -206,6 +206,8 @@ pub fn handle_get_syntax_css(ctx: &Arc<CommandContext>, _params: Value) -> Value
 
 /// Handle the `get_branch_commits` method — returns commits on the task branch not on the base.
 ///
+/// Returns `{ "commits": [...], "has_uncommitted_changes": bool }`.
+///
 /// Expected params: `{ "task_id": "<id>" }`
 pub(super) async fn handle_get_branch_commits(
     ctx: Arc<CommandContext>,
@@ -215,10 +217,51 @@ pub(super) async fn handle_get_branch_commits(
     let api = Arc::clone(&ctx.api);
     tokio::task::spawn_blocking(move || {
         let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let commits = api
+        let response = api
             .get_branch_commits(&task_id)
             .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(commits).unwrap_or(Value::Array(vec![])))
+        Ok(serde_json::to_value(response).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_uncommitted_diff` method — returns highlighted uncommitted changes.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub(super) async fn handle_get_uncommitted_diff(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let api = Arc::clone(&ctx.api);
+    let highlighter = Arc::clone(&ctx.highlighter);
+
+    tokio::task::spawn_blocking(move || {
+        let (git, worktree_path) = {
+            let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+            let git = api
+                .git_service()
+                .ok_or_else(|| ErrorPayload::new("NO_GIT", "No git service configured"))?
+                .clone();
+            let task = api.get_task(&task_id).map_err(ErrorPayload::from)?;
+            let worktree_path = task
+                .worktree_path
+                .ok_or_else(|| ErrorPayload::new("NO_WORKTREE", "Task has no worktree"))?;
+            (git, worktree_path)
+        }; // lock released — git operation runs off the lock
+
+        let raw_diff = git
+            .diff_uncommitted(std::path::Path::new(&worktree_path))
+            .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
+
+        let files: Vec<_> = raw_diff
+            .files
+            .into_iter()
+            .map(|f| highlight_file_diff(f, &highlighter))
+            .collect();
+
+        Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
     })
     .await
     .map_err(|e| ErrorPayload::internal(e.to_string()))?

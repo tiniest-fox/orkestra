@@ -219,7 +219,7 @@ mod tests {
             artifact_name: "plan",
             produces_subtasks: false,
             has_approval: false,
-            route_to_stages: vec![],
+            route_to_stages: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -246,7 +246,7 @@ mod tests {
             artifact_name: "summary",
             produces_subtasks: false,
             has_approval: false,
-            route_to_stages: vec![],
+            route_to_stages: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -271,7 +271,7 @@ mod tests {
             artifact_name: "breakdown",
             produces_subtasks: true,
             has_approval: false,
-            route_to_stages: vec![],
+            route_to_stages: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -305,19 +305,19 @@ mod tests {
                 artifact_name: "plan",
                 produces_subtasks: false,
                 has_approval: false,
-                route_to_stages: vec![],
+                route_to_stages: &[],
             },
             SchemaConfig {
                 artifact_name: "breakdown",
                 produces_subtasks: true,
                 has_approval: false,
-                route_to_stages: vec![],
+                route_to_stages: &[],
             },
             SchemaConfig {
                 artifact_name: "verdict",
                 produces_subtasks: false,
                 has_approval: true,
-                route_to_stages: vec![],
+                route_to_stages: &[],
             },
         ];
 
@@ -339,7 +339,7 @@ mod tests {
             artifact_name: "verdict",
             produces_subtasks: false,
             has_approval: true,
-            route_to_stages: vec![],
+            route_to_stages: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -364,11 +364,12 @@ mod tests {
 
     #[test]
     fn test_generate_schema_with_route_to_stages() {
+        let stages = vec!["work".to_string(), "planning".to_string()];
         let config = SchemaConfig {
             artifact_name: "verdict",
             produces_subtasks: false,
             has_approval: true,
-            route_to_stages: vec!["work".to_string(), "planning".to_string()],
+            route_to_stages: &stages,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -390,7 +391,7 @@ mod tests {
             artifact_name: "verdict",
             produces_subtasks: false,
             has_approval: true,
-            route_to_stages: vec![],
+            route_to_stages: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();

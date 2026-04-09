@@ -780,7 +780,6 @@ fn test_workflow_config_from_file() {
     // Review has approval capability
     let review = api.workflow().stage("default", "review").unwrap();
     assert!(review.has_agentic_gate());
-    assert!(review.has_agentic_gate());
 
     // Integration config defaults to work
     assert_eq!(

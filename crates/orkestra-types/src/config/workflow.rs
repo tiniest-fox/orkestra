@@ -203,6 +203,7 @@ impl WorkflowConfig {
             Some(stage) if stage.has_agentic_gate() => self
                 .stages_in_flow(flow)
                 .into_iter()
+                .filter(|s| s.name != stage_name)
                 .map(|s| s.name.clone())
                 .collect(),
             _ => vec![],
@@ -1339,5 +1340,41 @@ flows:
             "planning"
         );
         assert!(workflow.is_valid());
+    }
+
+    // ========================================================================
+    // route_to_stage_names
+    // ========================================================================
+
+    #[test]
+    fn test_route_to_stage_names_with_agentic_gate() {
+        let workflow = test_default_workflow();
+        // "review" has an agentic gate — should return all other stage names
+        let names = workflow.route_to_stage_names("default", "review");
+        assert_eq!(names, vec!["planning", "breakdown", "work"]);
+        // Must not include "review" itself
+        assert!(!names.contains(&"review".to_string()));
+    }
+
+    #[test]
+    fn test_route_to_stage_names_without_gate() {
+        let workflow = test_default_workflow();
+        // "planning" has no gate — should return empty
+        let names = workflow.route_to_stage_names("default", "planning");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_route_to_stage_names_nonexistent_flow() {
+        let workflow = test_default_workflow();
+        let names = workflow.route_to_stage_names("nonexistent", "review");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_route_to_stage_names_nonexistent_stage() {
+        let workflow = test_default_workflow();
+        let names = workflow.route_to_stage_names("default", "nonexistent");
+        assert!(names.is_empty());
     }
 }

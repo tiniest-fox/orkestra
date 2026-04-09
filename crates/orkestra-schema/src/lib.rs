@@ -19,7 +19,7 @@ pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
         artifact_name: "plan",
         produces_subtasks: false,
         has_approval: false,
-        route_to_stages: vec![],
+        route_to_stages: &[],
     })
 });
 

@@ -108,7 +108,7 @@ pub fn get_agent_schema(
         artifact_name: stage_config.artifact_name(),
         produces_subtasks: stage_config.capabilities.produces_subtasks(),
         has_approval: stage_config.has_agentic_gate(),
-        route_to_stages,
+        route_to_stages: &route_to_stages,
     };
     Some(crate::prompts::generate_stage_schema(&schema_config))
 }

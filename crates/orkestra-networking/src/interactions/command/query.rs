@@ -547,11 +547,7 @@ async fn fetch_log_excerpts(
     let mut excerpts: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for ((name, _), log_result) in failing_jobs.iter().zip(log_results) {
         if let Some(excerpt) = log_result {
-            let formatted = match &excerpt.command {
-                Some(cmd) => format!("**Failed command:** `{cmd}`\n\n{}", excerpt.output),
-                None => excerpt.output,
-            };
-            excerpts.insert(name.clone(), formatted);
+            excerpts.insert(name.clone(), excerpt.format());
         }
     }
     excerpts
@@ -567,15 +563,7 @@ async fn fetch_job_log(
 ) -> Option<super::ci_log_parser::CiLogExcerpt> {
     let path = format!("repos/{owner}/{repo}/actions/jobs/{job_id}/logs");
     match run_gh(&["api", &path]).await {
-        Ok(raw_log) => {
-            // Cap input to 1MB to prevent memory spikes — errors are at the end.
-            let capped = if raw_log.len() > 1_048_576 {
-                &raw_log[raw_log.len() - 1_048_576..]
-            } else {
-                &raw_log
-            };
-            super::ci_log_parser::parse_ci_log(capped)
-        }
+        Ok(raw_log) => super::ci_log_parser::parse_ci_log(&raw_log),
         Err(e) => {
             tracing::warn!(
                 "[pr] Failed to fetch job log for job {job_id}: {}",

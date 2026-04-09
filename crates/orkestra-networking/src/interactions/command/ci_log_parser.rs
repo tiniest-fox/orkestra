@@ -17,6 +17,16 @@ pub(crate) struct CiLogExcerpt {
     pub output: String,
 }
 
+impl CiLogExcerpt {
+    /// Format the excerpt as markdown for inclusion in agent prompts.
+    pub(crate) fn format(self) -> String {
+        match &self.command {
+            Some(cmd) => format!("**Failed command:** `{cmd}`\n\n{}", self.output),
+            None => self.output,
+        }
+    }
+}
+
 /// Intermediate: a failed step's boundaries in the log.
 struct FailedStep {
     /// The command from the `##[group]Run` line.
@@ -32,16 +42,25 @@ struct FailedStep {
 /// Parse a raw GitHub Actions job log and return a concise, actionable excerpt.
 ///
 /// Returns `None` if the log is empty or produces no output after processing.
+/// Caps input to 1MB before processing — errors are at the end, so the tail is kept.
 pub(crate) fn parse_ci_log(raw_log: &str) -> Option<CiLogExcerpt> {
     if raw_log.is_empty() {
         return None;
     }
 
-    let (command, step_output) = if let Some(step) = extract_failed_step(raw_log) {
+    // Cap input to 1MB — errors are at the end, so keep the tail.
+    let log = if raw_log.len() > 1_048_576 {
+        let start = raw_log.ceil_char_boundary(raw_log.len() - 1_048_576);
+        &raw_log[start..]
+    } else {
+        raw_log
+    };
+
+    let (command, step_output) = if let Some(step) = extract_failed_step(log) {
         (step.command, step.output)
     } else {
         // No markers — use last 50 lines of the entire log.
-        let tail = last_n_lines(raw_log, 50);
+        let tail = last_n_lines(log, 50);
         (None, tail)
     };
 
@@ -51,7 +70,7 @@ pub(crate) fn parse_ci_log(raw_log: &str) -> Option<CiLogExcerpt> {
     };
 
     let stripped = strip_ansi_codes(&strip_timestamps(&error_block));
-    let capped = cap_lines(&stripped, 150);
+    let capped = last_n_lines(&stripped, 150);
 
     if capped.trim().is_empty() {
         return None;
@@ -189,7 +208,7 @@ fn strip_ansi_codes(text: &str) -> String {
         }
     }
 
-    String::from_utf8_lossy(&result).into_owned()
+    String::from_utf8(result).expect("stripping ANSI from valid UTF-8 preserves UTF-8")
 }
 
 /// Strip GitHub Actions timestamp prefixes from every line in `text`.
@@ -248,11 +267,6 @@ fn last_n_lines(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let start = lines.len().saturating_sub(n);
     lines[start..].join("\n")
-}
-
-/// Truncate `text` to at most `max_lines` lines, keeping the tail.
-fn cap_lines(text: &str, max_lines: usize) -> String {
-    last_n_lines(text, max_lines)
 }
 
 /// Merge a list of `(start, end)` ranges (inclusive) into non-overlapping spans.
@@ -424,12 +438,26 @@ normal line 5";
     fn output_capping() {
         let lines: Vec<String> = (0..200).map(|i| format!("line {i}")).collect();
         let text = lines.join("\n");
-        let capped = cap_lines(&text, 150);
+        let capped = last_n_lines(&text, 150);
         let count = capped.lines().count();
         assert_eq!(count, 150);
         // Should be the tail.
         assert!(capped.contains("line 199"));
         assert!(!capped.contains("line 49\n"));
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. Input capping respects UTF-8 boundaries
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn input_capping_respects_utf8_boundaries() {
+        // Build a string just over 1MB with multi-byte chars near the cut point.
+        let padding = "x".repeat(1_048_576 - 10);
+        // Place 3-byte UTF-8 chars (e.g., '€') right where naive slicing would split.
+        let log = format!("{padding}€€€€ final line");
+        // Should not panic.
+        let _ = parse_ci_log(&log);
     }
 
     // -------------------------------------------------------------------------

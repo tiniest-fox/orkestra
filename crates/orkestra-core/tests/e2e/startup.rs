@@ -70,27 +70,6 @@ flows:
 }
 
 #[test]
-fn test_startup_with_invalid_approval_rejection_stage() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
-
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan"),
-        StageConfig::new("review", "verdict")
-            .with_capabilities(StageCapabilities::with_approval(Some("nonexistent".into()))),
-    ]);
-
-    let errors = workflow.validate();
-
-    assert!(!errors.is_empty(), "Should have validation errors");
-    assert!(
-        errors
-            .iter()
-            .any(|e| e.contains("rejection_stage") && e.contains("not in flow")),
-        "Should mention invalid rejection_stage: {errors:?}"
-    );
-}
-
-#[test]
 fn test_startup_with_invalid_integration_on_failure() {
     use orkestra_core::workflow::config::{IntegrationConfig, StageConfig};
 
@@ -156,25 +135,3 @@ fn test_startup_with_missing_file_returns_error() {
 // =============================================================================
 // Error Message Quality Tests
 // =============================================================================
-
-#[test]
-fn test_approval_error_shows_valid_options() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
-
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan"),
-        StageConfig::new("work", "summary"),
-        StageConfig::new("review", "verdict")
-            .with_capabilities(StageCapabilities::with_approval(Some("nonexistent".into()))),
-    ]);
-
-    let errors = workflow.validate();
-    assert!(!errors.is_empty());
-    let error = &errors[0];
-
-    // Should list valid stages
-    assert!(
-        error.contains("planning") || error.contains("work") || error.contains("review"),
-        "Should show valid stage options: {error}"
-    );
-}

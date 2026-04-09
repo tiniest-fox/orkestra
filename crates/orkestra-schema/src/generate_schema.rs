@@ -11,7 +11,7 @@ use crate::types::SchemaConfig;
 /// Artifact schema component - generic artifact with content field.
 const ARTIFACT_COMPONENT: &str = include_str!("schemas/components/artifact.json");
 
-/// Questions schema component - for stages with `ask_questions` capability.
+/// Questions schema component - included in all stage schemas.
 const QUESTIONS_COMPONENT: &str = include_str!("schemas/components/questions.json");
 
 /// Subtasks schema component - for stages with subtask capabilities.
@@ -36,7 +36,7 @@ const RESOURCES_COMPONENT: &str = include_str!("schemas/components/resources.jso
 /// that includes all valid output types for the stage:
 /// - The stage's artifact (type = `artifact_name`)
 /// - Terminal states: failed, blocked
-/// - Questions (if `ask_questions`)
+/// - Questions (always included — any agent can ask for clarification)
 /// - Subtasks (if `produces_subtasks`)
 /// - Approval (if `has_approval` — replaces normal artifact type)
 ///
@@ -61,9 +61,8 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
     if !config.produces_subtasks && !config.has_approval {
         type_enum.insert(0, config.artifact_name.to_string());
     }
-    if config.ask_questions {
-        type_enum.push("questions".to_string());
-    }
+    // Questions are always available — agents can ask for clarification at any stage.
+    type_enum.push("questions".to_string());
     if config.produces_subtasks {
         type_enum.push("subtasks".to_string());
     }
@@ -111,12 +110,10 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
         }
     }
 
-    // Add questions property if capability enabled
-    if config.ask_questions {
-        if let Some(q_props) = questions.get("properties") {
-            if let Some(q) = q_props.get("questions") {
-                properties["questions"] = q.clone();
-            }
+    // Add questions property — always included.
+    if let Some(q_props) = questions.get("properties") {
+        if let Some(q) = q_props.get("questions") {
+            properties["questions"] = q.clone();
         }
     }
 
@@ -147,6 +144,18 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
             if let Some(al) = a_props.get("activity_log") {
                 properties["activity_log"] = al.clone();
             }
+            if let Some(rt) = a_props.get("route_to") {
+                properties["route_to"] = rt.clone();
+            }
+        }
+
+        // Add route_to enum if specific stage names are provided
+        if !config.route_to_stages.is_empty() {
+            properties["route_to"] = json!({
+                "type": "string",
+                "enum": config.route_to_stages,
+                "description": "Stage to route to on rejection. If omitted, routes to the previous stage in the flow."
+            });
         }
     }
 
@@ -205,9 +214,9 @@ mod tests {
     fn test_generate_schema_basic() {
         let config = SchemaConfig {
             artifact_name: "plan",
-            ask_questions: false,
             produces_subtasks: false,
             has_approval: false,
+            route_to_stages: vec![],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -219,18 +228,22 @@ mod tests {
         assert!(type_enum.iter().any(|v| v == "failed"));
         assert!(type_enum.iter().any(|v| v == "blocked"));
 
-        // Should NOT have questions or completed (no capability, completed removed)
-        assert!(!type_enum.iter().any(|v| v == "questions"));
+        // Questions always included
+        assert!(type_enum.iter().any(|v| v == "questions"));
+        assert!(parsed.get("properties").unwrap().get("questions").is_some());
+
+        // completed is not a valid type
         assert!(!type_enum.iter().any(|v| v == "completed"));
     }
 
     #[test]
-    fn test_generate_schema_with_questions() {
+    fn test_generate_schema_always_includes_questions() {
+        // Questions are always present — no ask_questions flag needed
         let config = SchemaConfig {
-            artifact_name: "plan",
-            ask_questions: true,
+            artifact_name: "summary",
             produces_subtasks: false,
             has_approval: false,
+            route_to_stages: vec![],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -245,10 +258,7 @@ mod tests {
             .as_array()
             .unwrap();
 
-        // Should have questions
         assert!(type_enum.iter().any(|v| v == "questions"));
-
-        // Should have questions property
         assert!(parsed.get("properties").unwrap().get("questions").is_some());
     }
 
@@ -256,9 +266,9 @@ mod tests {
     fn test_generate_schema_with_subtasks() {
         let config = SchemaConfig {
             artifact_name: "breakdown",
-            ask_questions: false,
             produces_subtasks: true,
             has_approval: false,
+            route_to_stages: vec![],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -290,21 +300,21 @@ mod tests {
         let configs = [
             SchemaConfig {
                 artifact_name: "plan",
-                ask_questions: false,
                 produces_subtasks: false,
                 has_approval: false,
+                route_to_stages: vec![],
             },
             SchemaConfig {
                 artifact_name: "breakdown",
-                ask_questions: false,
                 produces_subtasks: true,
                 has_approval: false,
+                route_to_stages: vec![],
             },
             SchemaConfig {
                 artifact_name: "verdict",
-                ask_questions: false,
                 produces_subtasks: false,
                 has_approval: true,
+                route_to_stages: vec![],
             },
         ];
 
@@ -324,9 +334,9 @@ mod tests {
     fn test_generate_schema_with_approval() {
         let config = SchemaConfig {
             artifact_name: "verdict",
-            ask_questions: false,
             produces_subtasks: false,
             has_approval: true,
+            route_to_stages: vec![],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -347,5 +357,50 @@ mod tests {
         assert!(!type_enum.iter().any(|v| v == "verdict"));
         assert!(parsed.get("properties").unwrap().get("decision").is_some());
         assert!(parsed.get("properties").unwrap().get("content").is_some());
+    }
+
+    #[test]
+    fn test_generate_schema_with_route_to_stages() {
+        let config = SchemaConfig {
+            artifact_name: "verdict",
+            produces_subtasks: false,
+            has_approval: true,
+            route_to_stages: vec!["work".to_string(), "planning".to_string()],
+        };
+        let schema = execute(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        let props = parsed.get("properties").unwrap();
+        let route_to = props.get("route_to").unwrap();
+
+        // Should be a string enum with the given stage names
+        assert_eq!(route_to["type"], "string");
+        let enum_vals = route_to["enum"].as_array().unwrap();
+        assert!(enum_vals.iter().any(|v| v == "work"));
+        assert!(enum_vals.iter().any(|v| v == "planning"));
+    }
+
+    #[test]
+    fn test_generate_schema_route_to_absent_when_no_stages() {
+        // When route_to_stages is empty, no route_to property
+        let config = SchemaConfig {
+            artifact_name: "verdict",
+            produces_subtasks: false,
+            has_approval: true,
+            route_to_stages: vec![],
+        };
+        let schema = execute(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        // route_to from approval.json may be present as a plain string type (no enum)
+        // but not as an enum-constrained property
+        let props = parsed.get("properties").unwrap();
+        if let Some(route_to) = props.get("route_to") {
+            // If present, it should NOT have an enum constraint (just a plain string)
+            assert!(
+                route_to.get("enum").is_none(),
+                "route_to should not have enum when no stages provided"
+            );
+        }
     }
 }

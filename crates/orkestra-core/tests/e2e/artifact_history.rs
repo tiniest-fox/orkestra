@@ -10,7 +10,7 @@
 use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
     workflow::{
-        config::{StageCapabilities, StageConfig, WorkflowConfig},
+        config::{GateConfig, StageConfig, WorkflowConfig},
         domain::{IterationTrigger, LogEntry},
         execution::SubtaskOutput,
         ports::WorkflowStore,
@@ -30,7 +30,7 @@ use crate::helpers::{workflows, MockAgentOutput, TestEnv};
 fn approval_workflow() -> WorkflowConfig {
     WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_capabilities(StageCapabilities::with_approval(None))])
+        .with_gate(GateConfig::Agentic)])
 }
 
 /// Seed a fake `claude_session_id` so `send_chat_message` can resume.
@@ -238,12 +238,17 @@ fn test_subtask_artifact_snapshot() {
 
 #[test]
 fn test_approval_rejection_artifact_snapshot() {
-    // Needs an explicit rejection_stage so handle_approval can resolve the target.
-    // A self-loop ("work" rejects back to "work") is the minimal setup.
-    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
-        .with_prompt("worker.md")
-        .with_capabilities(StageCapabilities::with_approval(Some("work".into())))]);
-    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    // Two-stage workflow: planning → work.
+    // The work agent can reject back to planning (previous stage).
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
 
     let task = ctx.create_task(
         "Rejection snapshot",
@@ -252,7 +257,22 @@ fn test_approval_rejection_artifact_snapshot() {
     );
     let task_id = task.id.clone();
 
-    // Agent produces a reject decision directly
+    // Advance through planning stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan for implementation".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn planner
+    ctx.advance(); // process plan → AwaitingApproval
+    ctx.api().approve(&task_id).expect("approve planning");
+    ctx.advance(); // commit pipeline → advance to work
+
+    // Work agent produces a reject decision
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -262,7 +282,7 @@ fn test_approval_rejection_artifact_snapshot() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn agent
+    ctx.advance(); // spawn work agent
     ctx.advance(); // process rejection output
 
     let task = ctx.api().get_task(&task_id).unwrap();

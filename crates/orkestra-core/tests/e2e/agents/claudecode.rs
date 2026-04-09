@@ -139,7 +139,7 @@ fn claudecode_bad_model_fails_fast() {
 fn claudecode_questions_output() {
     let env = helpers::AgentTestEnv::with_capabilities(
         "claudecode/haiku",
-        StageCapabilities::with_questions(),
+        StageCapabilities::default(),
         "You MUST respond with the \"questions\" output type. Ask exactly ONE question: \
          \"What programming language should be used?\" with two options: \"Python\" and \"Rust\". \
          Do NOT attempt any work — ONLY ask the question.",

@@ -217,7 +217,7 @@ fn opencode_bad_model_fails_fast() {
 fn opencode_questions_output() {
     let env = helpers::AgentTestEnv::with_capabilities(
         "opencode/kimi-k2.5",
-        StageCapabilities::with_questions(),
+        StageCapabilities::default(),
         "You MUST respond with the \"questions\" output type. Ask exactly ONE question: \
          \"What programming language should be used?\" with two options: \"Python\" and \"Rust\". \
          Do NOT attempt any work — ONLY ask the question.",

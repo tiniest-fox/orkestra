@@ -204,11 +204,11 @@ impl WorkflowApi {
         &self.iteration_service
     }
 
-    /// Check if a stage is automated.
+    /// Check if a stage has an automated gate.
     pub fn is_stage_automated(&self, flow: &str, stage: &str) -> bool {
         self.workflow
             .stage(flow, stage)
-            .is_some_and(|s| s.is_automated)
+            .is_some_and(|s| s.automated_gate_config().is_some())
     }
 
     /// Get the next stage in a flow after the given stage.
@@ -319,20 +319,20 @@ impl WorkflowApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::config::{FlowConfig, IntegrationConfig, StageCapabilities, StageConfig};
+    use crate::workflow::config::{FlowConfig, GateConfig, IntegrationConfig, StageConfig};
     use crate::workflow::InMemoryWorkflowStore;
     use indexmap::IndexMap;
     use std::sync::Arc;
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("breakdown", "subtasks"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Automated {
+                command: "checks.sh".into(),
+                timeout_seconds: 600,
+            }),
         ])
         .with_integration(IntegrationConfig::new("work"))
     }
@@ -401,8 +401,7 @@ mod tests {
             "quick".to_string(),
             FlowConfig {
                 stages: vec![
-                    StageConfig::new("planning", "plan")
-                        .with_capabilities(StageCapabilities::with_questions()),
+                    StageConfig::new("planning", "plan"),
                     StageConfig::new("work", "summary"),
                 ],
                 integration: IntegrationConfig::new("planning"),
@@ -410,13 +409,13 @@ mod tests {
         );
 
         let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("breakdown", "subtasks"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Automated {
+                command: "checks.sh".into(),
+                timeout_seconds: 600,
+            }),
         ])
         .with_integration(IntegrationConfig::new("work"))
         .with_flows(flows);

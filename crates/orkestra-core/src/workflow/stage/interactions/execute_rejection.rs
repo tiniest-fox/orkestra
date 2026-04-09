@@ -36,20 +36,12 @@ pub fn resolve_rejection_target(
     current_stage: &str,
     flow: &str,
 ) -> WorkflowResult<String> {
-    let stage_config = workflow.stage(flow, current_stage).ok_or_else(|| {
-        WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
-    })?;
-
-    if let Some(target) = stage_config.capabilities.rejection_stage() {
-        return Ok(target.to_string());
-    }
-
     workflow
         .previous_stage(flow, current_stage)
         .map(|s| s.name.clone())
         .ok_or_else(|| {
             WorkflowError::InvalidTransition(format!(
-                "Stage {current_stage} has no rejection_stage configured and no previous stage in flow"
+                "Stage {current_stage} has no previous stage in flow"
             ))
         })
 }

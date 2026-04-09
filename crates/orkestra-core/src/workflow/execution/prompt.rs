@@ -99,9 +99,9 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
     // Generate schema dynamically based on stage config
     let schema_config = crate::prompts::SchemaConfig {
         artifact_name: stage_config.artifact_name(),
-        ask_questions: stage_config.capabilities.ask_questions,
         produces_subtasks: stage_config.capabilities.produces_subtasks(),
-        has_approval: stage_config.capabilities.has_approval(),
+        has_approval: stage_config.has_agentic_gate(),
+        route_to_stages: vec![],
     };
     Some(crate::prompts::generate_stage_schema(&schema_config))
 }
@@ -202,20 +202,16 @@ pub fn determine_resume_type(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::config::{
-        FlowConfig, IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
-    };
+    use crate::workflow::config::{FlowConfig, IntegrationConfig, StageConfig, WorkflowConfig};
     use crate::workflow::stage::types::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
     use indexmap::IndexMap;
 
     fn test_workflow() -> WorkflowConfig {
+        use orkestra_types::config::GateConfig;
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ])
     }
 
@@ -275,8 +271,7 @@ mod tests {
 
         assert_eq!(ctx.stage.name, "review");
         assert!(ctx.has_input_artifacts);
-        assert!(ctx.stage.capabilities.has_approval());
-        assert_eq!(ctx.stage.capabilities.rejection_stage(), Some("work"));
+        assert!(ctx.stage.has_agentic_gate());
     }
 
     #[test]
@@ -365,7 +360,7 @@ mod tests {
             .build_context("planning", &task, &[], None, None, false, &[], None)
             .unwrap();
 
-        assert!(ctx.stage.capabilities.ask_questions);
+        assert_eq!(ctx.stage.name, "planning");
     }
 
     #[test]
@@ -390,7 +385,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(ctx.stage.capabilities.has_approval());
+        assert!(ctx.stage.has_agentic_gate());
         // Verify prior stage artifacts appear in workflow stages
         assert!(ctx.has_input_artifacts);
         let plan_stage = ctx
@@ -453,19 +448,21 @@ mod tests {
 
     #[test]
     fn test_get_agent_schema_generates_dynamically() {
-        let planning = StageConfig::new("planning", "plan")
-            .with_capabilities(StageCapabilities::with_questions());
+        use orkestra_types::config::GateConfig;
+
+        // Questions are always included
+        let planning = StageConfig::new("planning", "plan");
         let schema = get_agent_schema(&planning, None).unwrap();
         assert!(schema.contains("\"plan\""));
         assert!(schema.contains("\"questions\""));
 
+        // Non-approval stages also include questions
         let work = StageConfig::new("work", "summary");
         let schema = get_agent_schema(&work, None).unwrap();
         assert!(schema.contains("\"summary\""));
-        assert!(!schema.contains("\"questions\""));
+        assert!(schema.contains("\"questions\""));
 
-        let review = StageConfig::new("review", "verdict")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())));
+        let review = StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic);
         let schema = get_agent_schema(&review, None).unwrap();
         assert!(schema.contains("\"approval\""));
         assert!(!schema.contains("\"verdict\""));

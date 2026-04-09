@@ -10,6 +10,10 @@
       "type": "string",
       "description": "Review content: on approve this becomes the artifact, on reject this becomes feedback"
     },
+    "route_to": {
+      "type": "string",
+      "description": "Stage to route to on rejection. If omitted, routes to the previous stage in the flow."
+    },
     "activity_log": {
       "type": "string",
       "description": "Terse bullet points (2-5) covering: decisions made and their rationale, significant findings that inform future stages, failed approaches ONLY when they informed a different decision. Do NOT include: routine exploration or tool use details, step-by-step implementation narrative, information already captured in the artifact content."

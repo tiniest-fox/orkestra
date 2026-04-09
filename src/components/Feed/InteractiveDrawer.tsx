@@ -4,7 +4,7 @@
 // mark as done (return to normal pipeline queue).
 
 import { Check } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import { useToast, useWorkflowConfig } from "../../providers";
@@ -246,7 +246,7 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     [transport, task.id, onClose],
   );
 
-  const displayMessages = buildDisplayMessages(logs);
+  const displayMessages = useMemo(() => buildDisplayMessages(logs), [logs]);
 
   const headerActions: DrawerAction[] = [
     {

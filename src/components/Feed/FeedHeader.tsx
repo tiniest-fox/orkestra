@@ -1,8 +1,10 @@
 // Top bar for the Feed view — logo, live task metrics, keyboard hint.
 
+import { Bell } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useNotificationPermission } from "../../hooks/useNotificationPermission";
 import { useProjects } from "../../providers";
 import { useTransport } from "../../transport";
 import type { WorkflowTaskView } from "../../types/workflow";
@@ -36,6 +38,7 @@ export function FeedHeader({
   serviceProjectName,
   showHomeLink = false,
 }: FeedHeaderProps) {
+  const { permission, requestPermission } = useNotificationPermission();
   const transport = useTransport();
   const { currentProject } = useProjects();
   const isMobile = useIsMobile();
@@ -108,6 +111,17 @@ export function FeedHeader({
               <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask} onAccent>
                 New Trak
               </Button>
+              {!import.meta.env.TAURI_ENV_PLATFORM && permission === "default" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={requestPermission}
+                  title="Enable browser notifications"
+                >
+                  <Bell size={14} />
+                  Notifications
+                </Button>
+              )}
               <Button
                 hotkey="shift+a"
                 variant="secondary"

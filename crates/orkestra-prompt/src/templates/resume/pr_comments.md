@@ -25,7 +25,7 @@ The following CI checks have failed and need to be fixed:
 {{#each checks}}
 ### {{this.name}}
 
-{{#if this.summary}}{{this.summary}}{{else}}No failure details available.{{/if}}
+{{#if this.log_excerpt}}{{this.log_excerpt}}{{else}}No failure details available.{{/if}}
 
 ---
 {{/each}}

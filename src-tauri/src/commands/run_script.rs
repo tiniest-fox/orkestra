@@ -26,10 +26,10 @@ pub fn start_run_script(
             .get_task(&task_id)
             .map_err(Into::<TauriError>::into)?;
 
-        if task.is_done() || task.is_archived() {
+        if task.is_archived() {
             return Err(TauriError::new(
                 "TASK_TERMINAL",
-                "Cannot run script on a completed or archived task",
+                "Cannot run script on an archived task",
             ));
         }
 

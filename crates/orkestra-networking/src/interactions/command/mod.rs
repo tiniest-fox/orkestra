@@ -2,6 +2,7 @@
 
 pub mod action;
 pub mod assistant;
+pub(crate) mod ci_log_parser;
 pub mod diff;
 pub mod dispatch;
 pub mod git;

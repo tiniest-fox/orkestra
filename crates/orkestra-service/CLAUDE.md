@@ -27,6 +27,17 @@ Per-project git author identity is injected into containers via `extract_git_ide
 
 **Wrapper limitation:** The `devcontainer_start_container` convenience function in `lib.rs` always passes `&[]` for secrets. Callers using this wrapper will never get per-project git identity from secrets — only the env-var fallback applies. If you add a caller that expects secret-based identity, call the underlying interaction (`start_container::execute`) directly with the decrypted secrets.
 
+## Router Middleware Ordering (`extra_routes`)
+
+Axum layers apply only to routes already merged into the router at the point the layer is added — they do not retroactively cover routes merged afterward. `build_router` in `server.rs` uses `extra_routes` (injected by callers like `service/src/main.rs`) to attach PWA/SPA routes. These **must be merged before** the security header and CORS layers are applied, or PWA routes silently bypass all security headers.
+
+The correct ordering is:
+1. Build core routes and call `.with_state(state)` to produce a `Router<()>`
+2. Merge `extra_routes` (also `Router<()>`) into the combined router
+3. Apply `SetResponseHeaderLayer`, `CorsLayer`, and other layers on the combined router
+
+Adding any new blanket middleware (rate limiting, logging, etc.) to `build_router` must follow this same pattern — add the layer after the `extra_routes` merge, not before. A test `security_headers_present_on_extra_routes` in `server.rs` verifies this for security headers.
+
 ### decrypt_all vs get/set signatures
 
 `secret::decrypt_all::execute` takes `secrets_key: Option<&str>` and returns an empty vec when the key is absent (graceful degradation for container env-var injection — containers start normally even without secrets configured).

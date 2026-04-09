@@ -1,33 +1,45 @@
-import { useEffect, useRef } from "react";
+// Hook for notification permission state and user-initiated opt-in.
+// Browser/PWA path: exposes permission state + requestPermission() action — no auto-request.
+// Tauri path: auto-requests on mount (native OS dialogs are not flagged as abusive).
 
-/**
- * Requests notification permission from the OS on first render.
- *
- * On macOS, this triggers the system dialog asking the user to allow
- * notifications for Orkestra. Should be called once the app is ready
- * (not during splash screen) so the user sees a contextual request.
- *
- * In PWA context (when TAURI_ENV_PLATFORM is not set), requests Web
- * Notification API permission instead.
- *
- * Note: On desktop platforms, the current `tauri-plugin-notification` v2
- * Rust backend always returns "granted" — the real permission check happens
- * through the JS plugin's bridge to the native notification API. This hook
- * ensures the correct permission flow regardless of backend limitations.
- */
-export function useNotificationPermission() {
-  const requested = useRef(false);
+import { useCallback, useEffect, useRef, useState } from "react";
 
+export function useNotificationPermission(): {
+  permission: NotificationPermission | "unsupported";
+  requestPermission: () => void;
+} {
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(() => {
+    if (!("Notification" in window) || !window.Notification) return "unsupported";
+    return Notification.permission;
+  });
+
+  // Tauri path: auto-request on mount (native dialogs are fine)
+  const tauriRequested = useRef(false);
   useEffect(() => {
-    if (requested.current) return;
-    requested.current = true;
-
-    if (import.meta.env.TAURI_ENV_PLATFORM) {
-      requestTauriPermission();
-    } else {
-      requestBrowserPermission();
-    }
+    if (!import.meta.env.TAURI_ENV_PLATFORM) return;
+    if (tauriRequested.current) return;
+    tauriRequested.current = true;
+    requestTauriPermission();
   }, []);
+
+  const permissionRef = useRef(permission);
+  permissionRef.current = permission;
+
+  const requestPermission = useCallback(() => {
+    if (import.meta.env.TAURI_ENV_PLATFORM) return;
+    if (!("Notification" in window)) return;
+    if (permissionRef.current !== "default") return;
+    Notification.requestPermission()
+      .then((result) => {
+        setPermission(result);
+        console.log(`[notifications] Permission ${result}`);
+      })
+      .catch((err) => {
+        console.error("[notifications] Failed to request permission:", err);
+      });
+  }, []);
+
+  return { permission, requestPermission };
 }
 
 async function requestTauriPermission() {
@@ -52,27 +64,9 @@ async function requestTauriPermission() {
       );
     }
   } catch (err) {
-    console.error("[notifications] Failed to request permission:", err);
-  }
-}
-
-async function requestBrowserPermission() {
-  if (!("Notification" in window)) {
-    console.log("[notifications] Browser notifications not supported");
-    return;
-  }
-  if (Notification.permission === "granted") {
-    console.log("[notifications] Permission already granted");
-    return;
-  }
-  if (Notification.permission === "denied") {
-    console.log("[notifications] Permission denied by user");
-    return;
-  }
-  try {
-    const result = await Notification.requestPermission();
-    console.log(`[notifications] Permission ${result}`);
-  } catch (err) {
+    // No state update needed: `permission` state is scoped to the browser path
+    // (returned by the hook). Tauri auto-requests on mount and never renders
+    // permission UI, so a stale `permission` value has no consumer.
     console.error("[notifications] Failed to request permission:", err);
   }
 }

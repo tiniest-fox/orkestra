@@ -23,6 +23,26 @@ TypeScript and TSX files use a plain `//` comment for the file-level header — 
 - Name hooks `useXxx.ts` — the hook name should describe what it provides, not what it wraps.
 - **If a hook needs shared state across components** (multiple components calling the hook must see the same data), convert it to a context provider in `providers/`. Regular hooks create isolated state per call—providers create shared state. See `TasksProvider` and `AssistantProvider` for the pattern.
 
+### Notification Permission (Browser API)
+
+Never call `Notification.requestPermission()` on component mount in browser/PWA mode — Chrome flags this as abusive and can trigger a Google Safe Browsing block on the domain. The call must be deferred to an explicit user gesture (button click).
+
+Tauri is the exception: native notification dialogs are not web API calls and are safe to request on mount. Use `import.meta.env.TAURI_ENV_PLATFORM` to distinguish: it is a non-empty string in Tauri and an empty string in browser/PWA.
+
+```ts
+const isTauri = Boolean(import.meta.env.TAURI_ENV_PLATFORM);
+
+// Auto-request only in Tauri (native dialog, not flagged by Safe Browsing)
+useEffect(() => {
+  if (isTauri) requestPermission();
+}, []);
+
+// Browser/PWA: permission is requested only on explicit user action
+const handleEnableClick = () => requestPermission();
+```
+
+See `hooks/useNotificationPermission.ts` for the canonical implementation.
+
 ### Lazy Loading Pattern (Avoiding Reactive Loops)
 
 When implementing on-demand data fetching triggered by state changes, use a `useRef<Set<T>>` to track requested items **outside the dependency array**. This prevents infinite loops where fetching updates state, which triggers the effect, which fetches again.
@@ -768,6 +788,8 @@ describe("myUtil", () => {
 ```
 
 **Example:** `optionKey.ts` / `optionKey.test.ts`.
+
+The same requirement applies to non-trivial pure functions exported from component files. If a component file exports a pure function for testability (e.g., `buildVirtualItems` exported from `MessageList.tsx`), add coverage in the component's existing test file (e.g., `MessageList.test.ts`). Pure functions exported from hook files are covered by the shared-hook pattern below.
 
 ### Default Expansion State Tests
 

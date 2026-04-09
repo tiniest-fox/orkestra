@@ -237,12 +237,12 @@ describe("canUseRunScript", () => {
     expect(canUseRunScript(task, true)).toBe(false);
   });
 
-  it("returns false when task is done", () => {
+  it("returns true when task is done (worktree still exists)", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "done" },
       worktree_path: "/some/worktree",
     });
-    expect(canUseRunScript(task, true)).toBe(false);
+    expect(canUseRunScript(task, true)).toBe(true);
   });
 
   it("returns false when task is archived", () => {

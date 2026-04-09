@@ -347,11 +347,11 @@ fn format_pr_feedback(trigger: Option<&IterationTrigger>) -> Option<String> {
                 .to_string(),
         );
         for check in checks {
-            let summary = check
-                .summary
+            let details = check
+                .log_excerpt
                 .as_deref()
                 .unwrap_or("No failure details available.");
-            parts.push(format!("### {}\n\n{summary}", check.name));
+            parts.push(format!("### {}\n\n{details}", check.name));
         }
     }
 
@@ -770,5 +770,66 @@ mod tests {
             conflict_files: vec!["src/lib.rs".to_string()],
         };
         trigger_to_resume_type(Some(&trigger));
+    }
+
+    // -------------------------------------------------------------------------
+    // format_pr_feedback tests
+    // -------------------------------------------------------------------------
+
+    use crate::workflow::domain::{PrCheckData, PrCommentData};
+
+    #[test]
+    fn format_pr_feedback_checks_without_log_excerpt() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![],
+            checks: vec![PrCheckData {
+                name: "CI".to_string(),
+                log_excerpt: None,
+            }],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(result.contains("No failure details available."));
+        assert!(result.contains("CI"));
+    }
+
+    #[test]
+    fn format_pr_feedback_checks_only_no_comments() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![],
+            checks: vec![PrCheckData {
+                name: "build".to_string(),
+                log_excerpt: Some("error: something broke".to_string()),
+            }],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(result.contains("Failed CI Checks"));
+        assert!(result.contains("error: something broke"));
+        assert!(!result.contains("PR Comments"));
+    }
+
+    #[test]
+    fn format_pr_feedback_mixed_comments_checks_guidance() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![PrCommentData {
+                author: "reviewer".to_string(),
+                body: "Please fix this".to_string(),
+                path: Some("src/lib.rs".to_string()),
+                line: Some(10),
+            }],
+            checks: vec![PrCheckData {
+                name: "CI / lint".to_string(),
+                log_excerpt: Some("clippy: 2 warnings".to_string()),
+            }],
+            guidance: Some("Focus on the lint errors first".to_string()),
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(result.contains("User guidance:"));
+        assert!(result.contains("Focus on the lint errors first"));
+        assert!(result.contains("PR Comments"));
+        assert!(result.contains("Please fix this"));
+        assert!(result.contains("Failed CI Checks"));
+        assert!(result.contains("clippy: 2 warnings"));
     }
 }

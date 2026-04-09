@@ -53,8 +53,9 @@ pub struct PrCommentData {
 pub struct PrCheckData {
     /// Name of the check (e.g., "CI / build").
     pub name: String,
-    /// Failure summary from GitHub check run output (e.g., "3 tests failed").
-    pub summary: Option<String>,
+    /// Extracted error output from the CI job log.
+    #[serde(alias = "summary")]
+    pub log_excerpt: Option<String>,
 }
 
 /// Why this iteration was created - determines the resume prompt type.
@@ -629,7 +630,7 @@ mod tests {
     fn test_pr_check_data() {
         let check = PrCheckData {
             name: "CI / build".to_string(),
-            summary: Some("3 tests failed".to_string()),
+            log_excerpt: Some("3 tests failed".to_string()),
         };
         let json = serde_json::to_string(&check).unwrap();
         assert!(json.contains("CI / build"));
@@ -640,12 +641,21 @@ mod tests {
     }
 
     #[test]
+    fn test_pr_check_data_summary_alias_backward_compat() {
+        // Old DB records with `summary` key should deserialize correctly into `log_excerpt`.
+        let old_json = r#"{"name":"CI / build","summary":"3 tests failed"}"#;
+        let parsed: PrCheckData = serde_json::from_str(old_json).unwrap();
+        assert_eq!(parsed.name, "CI / build");
+        assert_eq!(parsed.log_excerpt.as_deref(), Some("3 tests failed"));
+    }
+
+    #[test]
     fn test_iteration_trigger_pr_feedback_with_checks() {
         let trigger = IterationTrigger::PrFeedback {
             comments: vec![],
             checks: vec![PrCheckData {
                 name: "CI / lint".to_string(),
-                summary: Some("clippy: 2 warnings".to_string()),
+                log_excerpt: Some("clippy: 2 warnings".to_string()),
             }],
             guidance: None,
         };

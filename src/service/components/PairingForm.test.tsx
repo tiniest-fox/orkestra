@@ -1,6 +1,6 @@
 //! Tests for PairingForm — first-visit pairing UI.
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
 import { PairingForm } from "./PairingForm";
@@ -62,9 +62,13 @@ describe("PairingForm", () => {
 
     render(<PairingForm />);
     fireEvent.change(screen.getByPlaceholderText("000000"), { target: { value: "000000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    // Wrap in act so the async handleSubmit's state updates (setError, setLoading) flush
+    // before the assertion. Without this, React 18 may not have applied the updates yet.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
 
-    expect(await screen.findByText("Invalid code")).toBeInTheDocument();
+    expect(screen.getByText("Invalid code")).toBeInTheDocument();
   });
 
   it("submits on Enter key press", async () => {

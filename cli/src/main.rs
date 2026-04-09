@@ -1229,7 +1229,7 @@ fn fetch_failing_checks(pr_url: &str) -> Result<Vec<PrCheckData>, String> {
         })
         .map(|c| PrCheckData {
             name: c.name,
-            summary: None,
+            log_excerpt: None,
         })
         .collect())
 }
@@ -1415,8 +1415,8 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
                 write!(s, "\n    - @{}{}: {}", c.author, location, c.body).unwrap();
             }
             for c in checks {
-                let summary = c.summary.as_deref().unwrap_or("no details");
-                write!(s, "\n    - [check] {}: {}", c.name, summary).unwrap();
+                let details = c.log_excerpt.as_deref().unwrap_or("no details");
+                write!(s, "\n    - [check] {}: {}", c.name, details).unwrap();
             }
             if let Some(g) = guidance {
                 write!(s, "\n    Guidance: {g}").unwrap();

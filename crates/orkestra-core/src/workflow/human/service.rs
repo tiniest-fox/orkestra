@@ -1042,11 +1042,11 @@ mod tests {
         vec![
             PrCheckData {
                 name: "CI / build".to_string(),
-                summary: Some("3 tests failed".to_string()),
+                log_excerpt: Some("3 tests failed".to_string()),
             },
             PrCheckData {
                 name: "CI / lint".to_string(),
-                summary: None,
+                log_excerpt: None,
             },
         ]
     }
@@ -1127,7 +1127,7 @@ mod tests {
                 assert_eq!(comments[0].author, "reviewer1");
                 assert_eq!(checks.len(), 2);
                 assert_eq!(checks[0].name, "CI / build");
-                assert_eq!(checks[0].summary.as_deref(), Some("3 tests failed"));
+                assert_eq!(checks[0].log_excerpt.as_deref(), Some("3 tests failed"));
                 assert_eq!(guidance.as_deref(), Some("Fix all issues"));
             }
             other => panic!("Expected PrFeedback trigger, got {other:?}"),

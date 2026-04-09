@@ -347,11 +347,11 @@ fn format_pr_feedback(trigger: Option<&IterationTrigger>) -> Option<String> {
                 .to_string(),
         );
         for check in checks {
-            let summary = check
-                .summary
+            let details = check
+                .log_excerpt
                 .as_deref()
                 .unwrap_or("No failure details available.");
-            parts.push(format!("### {}\n\n{summary}", check.name));
+            parts.push(format!("### {}\n\n{details}", check.name));
         }
     }
 

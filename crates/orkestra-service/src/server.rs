@@ -1342,12 +1342,16 @@ mod tests {
 
         let headers = response.headers();
         assert_eq!(
-            headers.get("x-content-type-options").map(orkestra_networking::HeaderValue::as_bytes),
+            headers
+                .get("x-content-type-options")
+                .map(orkestra_networking::HeaderValue::as_bytes),
             Some(b"nosniff".as_ref()),
             "x-content-type-options must be 'nosniff'"
         );
         assert_eq!(
-            headers.get("x-frame-options").map(orkestra_networking::HeaderValue::as_bytes),
+            headers
+                .get("x-frame-options")
+                .map(orkestra_networking::HeaderValue::as_bytes),
             Some(b"DENY".as_ref()),
             "x-frame-options must be 'DENY'"
         );

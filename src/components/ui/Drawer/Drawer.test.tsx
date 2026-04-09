@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useIsMobile } from "../../../hooks/useIsMobile";
+import { ModalPanel } from "../ModalPanel";
 import { Drawer } from "./Drawer";
 
 vi.mock("../../../hooks/useIsMobile", () => ({
@@ -57,6 +58,21 @@ describe("Drawer", () => {
       </Drawer>,
     );
     fireEvent.mouseDown(document.body);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does not close drawer when clicking inside an open ModalPanel", () => {
+    render(
+      <>
+        <Drawer onClose={onClose}>
+          <span>drawer content</span>
+        </Drawer>
+        <ModalPanel isOpen onClose={() => {}}>
+          <span>modal content</span>
+        </ModalPanel>
+      </>,
+    );
+    fireEvent.mouseDown(screen.getByText("modal content"));
     expect(onClose).not.toHaveBeenCalled();
   });
 });

@@ -101,7 +101,7 @@ friendly_model_name(Some("unknown-model"))    // "unknown-model"
 `collect_model_names()` traverses workflow config respecting flow overrides. It uses `WorkflowConfig::agent_model_specs(task_flow)` which:
 - Filters to flow stages if flow specified
 - Returns effective model spec (flow override or global)
-- Skips script stages (no AI model)
+- Skips stages without AI models
 
 Always appends "Claude Haiku 4.5" (the utility model) if not already present.
 

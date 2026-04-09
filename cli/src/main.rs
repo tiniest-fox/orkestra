@@ -62,7 +62,7 @@ enum Commands {
         /// Stage name (required for viewing logs)
         #[arg(long)]
         stage: Option<String>,
-        /// Filter by log entry type (text, error, `tool_use`, `tool_result`, `script_output`, etc.)
+        /// Filter by log entry type (text, error, `tool_use`, `tool_result`, `process_exit`, etc.)
         #[arg(long, name = "type")]
         type_filter: Option<String>,
         /// Maximum number of log entries to return (default: 100)
@@ -422,7 +422,7 @@ fn handle_logs(
         logs.retain(|entry| entry.type_name() == type_name);
         if logs.is_empty() && pre_filter_count > 0 {
             eprintln!(
-                "Warning: --type \"{type_name}\" matched no entries. Valid types: text, user_message, tool_use, tool_result, subagent_tool_use, subagent_tool_result, process_exit, error, script_start, script_output, script_exit"
+                "Warning: --type \"{type_name}\" matched no entries. Valid types: text, user_message, tool_use, tool_result, subagent_tool_use, subagent_tool_result, process_exit, error"
             );
         }
     }
@@ -466,15 +466,6 @@ fn print_log_entry_pretty(entry: &LogEntry) {
         LogEntry::ToolResult { tool, content, .. } => {
             let preview = content.chars().take(100).collect::<String>();
             println!("[tool_result] {tool}: {preview}");
-        }
-        LogEntry::ScriptStart { command, stage } => println!("[script_start] {stage}: {command}"),
-        LogEntry::ScriptOutput { content } => println!("[script_output] {content}"),
-        LogEntry::ScriptExit {
-            code,
-            success,
-            timed_out,
-        } => {
-            println!("[script_exit] code={code} success={success} timed_out={timed_out}");
         }
         LogEntry::ProcessExit { code } => println!("[process_exit] code={code:?}"),
         LogEntry::UserMessage {

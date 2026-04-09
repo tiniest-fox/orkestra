@@ -106,8 +106,6 @@ pub enum IterationTrigger {
     /// Crash recovery (session interrupted).
     Interrupted,
     /// Gate script failed. The task re-queues with this error as context.
-    /// Old DB records with `script_failure` type deserialize as this variant.
-    #[serde(alias = "script_failure")]
     GateFailure { error: String },
     /// Human retried a failed task, optionally with instructions.
     RetryFailed { instructions: Option<String> },
@@ -480,18 +478,6 @@ mod tests {
         let yaml = serde_yaml::to_string(&iter).unwrap();
         // incoming_context should be omitted when None
         assert!(!yaml.contains("incoming_context"));
-    }
-
-    #[test]
-    fn test_iteration_trigger_script_failure_deserializes_as_gate_failure() {
-        // Old DB records with script_failure type should deserialize as GateFailure
-        let old_json =
-            r#"{"type":"script_failure","from_stage":"checks","error":"npm test failed"}"#;
-        let parsed: IterationTrigger = serde_json::from_str(old_json).unwrap();
-        assert!(
-            matches!(parsed, IterationTrigger::GateFailure { .. }),
-            "Expected GateFailure from script_failure alias, got: {parsed:?}"
-        );
     }
 
     #[test]

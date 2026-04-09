@@ -74,7 +74,7 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 **`ork logs <TASK_ID> --stage <STAGE> [OPTIONS]`**
 - View agent and script logs for a specific stage
 - `--stage <NAME>`: Stage name (required)
-- `--type <TYPE>`: Filter by log entry type (`text`, `error`, `tool_use`, `tool_result`, `script_output`, etc.)
+- `--type <TYPE>`: Filter by log entry type (`text`, `error`, `tool_use`, `tool_result`, etc.)
 - `--limit <N>`: Maximum number of log entries to return (default: 100)
 - `--offset <N>`: Number of log entries to skip (default: 0)
 

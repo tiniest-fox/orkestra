@@ -5174,14 +5174,14 @@ fn test_activity_log_file_reference_in_prompt() {
     );
 }
 
-/// Test activity log handling with script stages and review rejection.
+/// Test activity log handling with gate scripts and review rejection.
 ///
-/// Scenario: work(A) → checks(script) → review(R, rejects) → work(B) → checks → review
+/// Scenario: work(A) → checks(gate script) → review(R, rejects) → work(B) → checks → review
 ///
 /// Activity logs produced: work(A), review(R), work(B)
 /// Expected: All three entries preserved because review(R) intervenes between work(A) and work(B).
 ///
-/// Note: Script stages don't produce activity logs, but they don't prevent other
+/// Note: Gate scripts don't produce activity logs, but they don't prevent other
 /// stages from intervening. The review stage DOES intervene, so both work logs
 /// are preserved.
 #[test]
@@ -5205,7 +5205,7 @@ fn test_activity_log_with_script_and_review_rejection() {
 
     let task = ctx.create_task(
         "Test activity log dedup through script",
-        "Verify work logs deduplicate even with script stage in between",
+        "Verify work logs deduplicate even with gate script in between",
         None,
     );
     let task_id = task.id.clone();

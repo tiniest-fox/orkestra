@@ -142,7 +142,7 @@ ork logs <ID> --stage work --type text         # Agent text output
 ork logs <ID> --stage work --type error        # Errors
 ork logs <ID> --stage work --type tool_use     # Tool calls
 ork logs <ID> --stage work --type tool_result  # Tool results
-ork logs <ID> --stage check --type script_output  # Script stdout/stderr
+ork logs <ID> --stage check --type tool_use       # Tool calls
 
 # Pagination
 ork logs <ID> --stage work --limit 50          # First 50 entries

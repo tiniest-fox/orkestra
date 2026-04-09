@@ -621,7 +621,7 @@ mod tests {
         let tools = vec![
             ToolRestriction {
                 pattern: "Bash(cargo *)".to_string(),
-                message: Some("Use the checks script stage instead".to_string()),
+                message: Some("Use the checks gate script instead".to_string()),
             },
             ToolRestriction {
                 pattern: "Edit".to_string(),

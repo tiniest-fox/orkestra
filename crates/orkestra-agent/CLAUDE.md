@@ -11,7 +11,7 @@ src/
 ├── service.rs          # ProcessAgentRunner implementation
 ├── registry.rs         # ProviderRegistry, capabilities, aliases
 ├── types.rs            # RunConfig, RunEvent, RunResult, RunError
-├── script_handle.rs    # ScriptHandle for script stage execution
+├── script_handle.rs    # ScriptHandle for gate script execution
 ├── mock.rs             # MockAgentRunner (feature-gated)
 └── interactions/
     ├── agent/
@@ -65,7 +65,7 @@ Async execution emits events through a channel:
 
 ### Script Execution
 
-`ScriptHandle` runs shell commands for script stages:
+`ScriptHandle` runs shell commands for gate scripts:
 
 - Spawns via `sh -c` in its own process group
 - Streams stdout/stderr through channels

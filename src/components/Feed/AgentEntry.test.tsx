@@ -32,45 +32,6 @@ function makeSubagentGroup(toolCount: number): SubagentGroup {
 }
 
 // ============================================================================
-// script_exit branching
-// ============================================================================
-
-describe("AgentEntry — script_exit", () => {
-  it("renders success indicator for successful exit", () => {
-    const entry: GroupedLogEntry = {
-      type: "script_exit",
-      code: 0,
-      success: true,
-      timed_out: false,
-    };
-    render(<AgentEntry entry={entry} />);
-    expect(screen.getByText("✓ done")).toBeDefined();
-  });
-
-  it("renders failure indicator with exit code for failed exit", () => {
-    const entry: GroupedLogEntry = {
-      type: "script_exit",
-      code: 1,
-      success: false,
-      timed_out: false,
-    };
-    render(<AgentEntry entry={entry} />);
-    expect(screen.getByText("✗ exit 1")).toBeDefined();
-  });
-
-  it("appends timed_out annotation when script timed out", () => {
-    const entry: GroupedLogEntry = {
-      type: "script_exit",
-      code: 124,
-      success: false,
-      timed_out: true,
-    };
-    render(<AgentEntry entry={entry} />);
-    expect(screen.getByText("✗ exit 124 (timed out)")).toBeDefined();
-  });
-});
-
-// ============================================================================
 // subagent_group — "+N more" counter
 // ============================================================================
 

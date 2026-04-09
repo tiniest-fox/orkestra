@@ -32,7 +32,7 @@ in `crates/orkestra-agent/src/lib.rs`.
 
 This is the single composition function for env resolution. Both call sites use it:
 - `execute_agent.rs` — agent spawning
-- `spawn_script.rs` — script stage spawning
+- `spawn_script.rs` — gate script spawning
 
 Do not duplicate the SHELL→resolve→prepend pattern at call sites. Call `resolve_agent_env()`.
 

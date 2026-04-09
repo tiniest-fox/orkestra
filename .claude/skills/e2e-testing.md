@@ -295,7 +295,7 @@ let workflow = WorkflowConfig {
 
 | File | Covers |
 |------|--------|
-| `workflow.rs` | Full stage pipelines, approval/rejection loops, questions, flows, script stages, interrupt/resume |
+| `workflow.rs` | Full stage pipelines, approval/rejection loops, questions, flows, gate scripts, interrupt/resume |
 | `subtasks.rs` | Subtask creation, dependencies, parent advancement, integration |
 | `task_creation.rs` | Task setup, worktree creation, title generation, base branch handling |
 | `startup.rs` | Startup recovery (stale PIDs, orphaned worktrees, stuck integrations) |

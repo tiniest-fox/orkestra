@@ -37,9 +37,9 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 **Key domain types** (`workflow/config/`):
 
 - **`WorkflowConfig`** (`workflow.rs`) — Map of named flows. Every pipeline is a flow; there is no separate global stage list. Validated on load (unique stage/artifact names per flow).
-- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `capabilities`, optional `model` (provider/model spec like `"claudecode/sonnet"`), optional `gate` (`GateConfig` with a `command` and optional `timeout_seconds` — runs after the agent completes; non-zero exit re-queues the agent with error output as feedback), and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set. Artifacts from earlier stages are automatically available to all later stages.
+- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `capabilities`, optional `model` (provider/model spec like `"claudecode/sonnet"`), optional `gate` (`GateConfig` with a `command` and optional `timeout_seconds` — runs after the agent completes; non-zero exit re-queues the agent with error output as feedback), and a `prompt` (agent stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set. Artifacts from earlier stages are automatically available to all later stages.
 - **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `subtasks: Option<SubtaskCapabilities>` (with `flow` and `completion_stage`), `approval: Option<ApprovalCapabilities>` (with optional `rejection_stage`).
-- **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
+- **`GateConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery. Attached to an agent stage; runs after the agent produces its artifact.
 - **`FlowConfig`** (`workflow.rs`) — A complete pipeline. Has a `description`, an ordered list of `StageConfig`s (full definitions, not references), and a required `integration: IntegrationConfig` for per-flow integration settings (e.g., `on_failure`).
 
 **Runtime types** (`workflow/runtime/`, `workflow/domain/`):
@@ -50,7 +50,7 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 
 ### How Stages Execute
 
-See [`docs/flows/stage-execution.md`](flows/stage-execution.md) for the full execution flow. In brief: the `OrchestratorLoop` runs a 100ms tick loop that polls completed agents, processes their output, starts new executions for idle tasks, and triggers integration for done tasks. Agent stages get a dynamically built prompt + JSON schema; script stages run via `sh -c` in the worktree.
+See [`docs/flows/stage-execution.md`](flows/stage-execution.md) for the full execution flow. In brief: the `OrchestratorLoop` runs a 100ms tick loop that polls completed agents, processes their output, starts new executions for idle tasks, and triggers integration for done tasks. Agent stages get a dynamically built prompt + JSON schema; gate scripts run via `sh -c` in the worktree after the agent completes.
 
 ### Adding a New Stage
 

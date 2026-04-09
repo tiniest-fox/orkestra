@@ -6,7 +6,7 @@ This doc describes the **generic workflow engine mechanics**. It is independent 
 
 ## Core Concepts
 
-A **workflow** is an ordered list of stages. A **Trak** moves through stages left to right. Each stage produces a named **artifact**. Stages can be **agent stages** (spawn an AI agent) or **script stages** (run a shell command). **Capabilities** on a stage control what output types are valid and how routing works.
+A **workflow** is an ordered list of stages. A **Trak** moves through stages left to right. Each stage produces a named **artifact**. Stages are **agent stages** (spawn an AI agent). Some agent stages have an optional **gate script** (a shell command that runs after the agent completes). **Capabilities** on a stage control what output types are valid and how routing works.
 
 ```
 stage_A → stage_B → stage_C → Done
@@ -29,13 +29,13 @@ Spawn an AI agent (Claude Code, OpenCode, etc.). The agent receives a prompt wit
 - **Failed** — Agent declares it cannot complete the work. Trak is marked failed.
 - **Blocked** — Agent declares it is blocked on something external. Trak is marked blocked.
 
-### Script Stages
+### Gate Scripts
 
-Run a shell command (e.g., `cargo test`, `npm run lint`). No agent, no prompt. Binary outcome:
-- **Exit 0** — Script output stored as artifact. Always auto-advances to next stage.
-- **Non-zero exit** — Routes to `on_failure` stage if configured. Otherwise Trak fails permanently.
+Some agent stages have an optional **gate script** — a shell command (e.g., `cargo test`, `npm run lint`) that runs after the agent completes successfully. Binary outcome:
+- **Exit 0** — Gate passed. Trak advances to the next stage.
+- **Non-zero exit** — Gate failed. The agent is re-queued with the script's error output as feedback. Routes to `on_failure` stage if configured; otherwise Trak fails permanently.
 
-Script stages never pause for review, never produce questions or Subtraks.
+Gate scripts never pause for review, never produce questions or Subtraks.
 
 ## Phase Lifecycle
 
@@ -115,15 +115,15 @@ See [subtask-lifecycle.md](subtask-lifecycle.md) for details.
 
 ## Routing on Failure and Rejection
 
-### Script failure with `on_failure`
+### Gate failure with `on_failure`
 
 ```
-stage_A(script, on_failure: stage_B) ──[exit non-zero]──→ stage_B
+stage_A(gate, on_failure: stage_B) ──[exit non-zero]──→ stage_B
 ```
 
-- Current iteration ends with `ScriptFailed` outcome
-- New iteration created at `stage_B` with a `ScriptFailure` trigger
-- The `stage_B` agent receives the script's error output as feedback in a resume prompt
+- Current iteration ends with `GateFailed` outcome
+- New iteration created at `stage_B` with a `GateFailure` trigger
+- The `stage_B` agent receives the gate script's error output as feedback in a resume prompt
 - If `stage_B` was previously active in this Trak, the **same session is resumed**
 
 Without `on_failure`, the Trak is permanently failed.
@@ -156,7 +156,7 @@ Each agent stage maintains a **session** (a persistent conversation with the AI 
 | Transition | Session Behavior |
 |-----------|-----------------|
 | Agent produces artifact → next stage | New session at next stage |
-| Script fails → recovery stage | **Resume** existing session at recovery stage |
+| Gate fails → recovery stage | **Resume** existing session at recovery stage |
 | Agent rejects → rejection stage (`reset_session: false`) | **Resume** existing session at target |
 | Agent rejects → rejection stage (`reset_session: true`) | **New** session at target |
 | Human rejects → same stage retry | **Resume** existing session |
@@ -179,9 +179,9 @@ stage_B iteration #2 → approved (resume or fresh, depending on reset_session)
 stage_C iteration #2 → approved
 ```
 
-Script stages create iterations too. A script fail + recovery creates:
+Gate failures create iterations too. A gate fail + recovery creates:
 ```
-check iteration #1 → script_failed
+check iteration #1 → gate_failed
 work iteration #2  → (resumed with error feedback)
 check iteration #2 → passed
 ```
@@ -191,7 +191,7 @@ check iteration #2 → passed
 A stage auto-advances (skips `AwaitingReview`) when **any** of these are true:
 - The stage has `is_automated: true`
 - The Trak has `auto_mode: true`
-- The output is from a script stage (scripts always auto-advance on success)
+- The stage's gate script passed (gate scripts always auto-advance on success)
 
 When a stage does NOT auto-advance, it enters `AwaitingReview` and waits for a human action:
 - `approve()` — Advance to next stage
@@ -247,22 +247,22 @@ Combining all transitions:
             │                    Next stage (or Done)                        │
             └────────────────────────────────────────────────────────────────┘
 
-Script stages:
+Gate scripts (attached to agent stages):
 
-              ┌──────────────┐
-              │  Script runs  │
-              └──────┬───────┘
-                 ┌───┴───┐
-              exit 0   non-zero
-                 │         │
-           auto-advance  on_failure?
-                 │      ┌──┴──┐
-                 │    yes     no
-                 │      │      │
-                 │  recovery  FAILED
-                 │   stage
-                 ▼      ▼
-            Next stage  Recovery stage
-                        (agent resumed
-                         with error)
+              ┌──────────────────┐
+              │  Gate script runs │
+              └───────┬──────────┘
+                  ┌───┴───┐
+               exit 0   non-zero
+                  │         │
+            auto-advance  on_failure?
+                  │      ┌──┴──┐
+                  │    yes     no
+                  │      │      │
+                  │  recovery  FAILED
+                  │   stage
+                  ▼      ▼
+             Next stage  Recovery stage
+                         (agent resumed
+                          with error)
 ```

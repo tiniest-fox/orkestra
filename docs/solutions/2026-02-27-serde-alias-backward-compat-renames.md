@@ -38,10 +38,6 @@ pub enum IterationTrigger {
 - **Deserialization** accepts both `pr_feedback` and `pr_comments` (from old rows).
 - No migration needed.
 
-## Precedent in Codebase
-
-`GateFailure` (formerly `script_failure`) uses this same pattern — see `IterationTrigger::GateFailure` in `crates/orkestra-core/src/workflow/domain/iteration.rs`.
-
 ## When to Use
 
 - Internal enum variants stored in SQLite that have no external API contract

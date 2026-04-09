@@ -194,6 +194,21 @@ impl WorkflowConfig {
         }
     }
 
+    /// Get the stage names a given stage can route to (for agentic gate schema).
+    ///
+    /// Returns all stage names in the flow if the stage has an agentic gate,
+    /// empty vec otherwise.
+    pub fn route_to_stage_names(&self, flow: &str, stage_name: &str) -> Vec<String> {
+        match self.stage(flow, stage_name) {
+            Some(stage) if stage.has_agentic_gate() => self
+                .stages_in_flow(flow)
+                .into_iter()
+                .map(|s| s.name.clone())
+                .collect(),
+            _ => vec![],
+        }
+    }
+
     /// Check whether a stage name exists in the given flow.
     pub fn has_stage(&self, flow: &str, stage_name: &str) -> bool {
         self.flows

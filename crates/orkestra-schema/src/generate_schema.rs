@@ -144,13 +144,16 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
             if let Some(al) = a_props.get("activity_log") {
                 properties["activity_log"] = al.clone();
             }
-            if let Some(rt) = a_props.get("route_to") {
-                properties["route_to"] = rt.clone();
-            }
+            // route_to is NOT loaded from approval.json — always emitted from code below
         }
 
-        // Add route_to enum if specific stage names are provided
-        if !config.route_to_stages.is_empty() {
+        // route_to: enum-constrained when stage names available, plain string otherwise
+        if config.route_to_stages.is_empty() {
+            properties["route_to"] = json!({
+                "type": "string",
+                "description": "Stage to route to on rejection. If omitted, routes to the previous stage in the flow."
+            });
+        } else {
             properties["route_to"] = json!({
                 "type": "string",
                 "enum": config.route_to_stages,
@@ -381,8 +384,8 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_schema_route_to_absent_when_no_stages() {
-        // When route_to_stages is empty, no route_to property
+    fn test_generate_schema_route_to_plain_string_when_no_stages() {
+        // When route_to_stages is empty, route_to is present as a plain string (no enum)
         let config = SchemaConfig {
             artifact_name: "verdict",
             produces_subtasks: false,
@@ -392,15 +395,14 @@ mod tests {
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
 
-        // route_to from approval.json may be present as a plain string type (no enum)
-        // but not as an enum-constrained property
         let props = parsed.get("properties").unwrap();
-        if let Some(route_to) = props.get("route_to") {
-            // If present, it should NOT have an enum constraint (just a plain string)
-            assert!(
-                route_to.get("enum").is_none(),
-                "route_to should not have enum when no stages provided"
-            );
-        }
+        let route_to = props
+            .get("route_to")
+            .expect("route_to should always be present when has_approval");
+        assert_eq!(route_to["type"], "string");
+        assert!(
+            route_to.get("enum").is_none(),
+            "route_to should not have enum constraint when no stages provided"
+        );
     }
 }

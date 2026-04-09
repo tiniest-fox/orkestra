@@ -899,3 +899,9 @@ When adding a `connectionState === "connected"` guard to a polling hook, the gua
 **Components using `usePolling` that still lack connection guards** (known follow-up):
 - `src/components/Feed/LatestLogSummary.tsx`
 - `src/service/components/ProjectLatestLog.tsx`
+
+## Known Test Gaps
+
+**`AgentEntry` — missing `artifact_produced` case** (`src/components/Feed/AgentEntry.test.tsx`): The component renders an `ArtifactLogCard` when an `artifact_produced` log entry's artifact name is found in the `artifacts` map, and renders nothing otherwise. Neither path has a test. Three cases to add: (a) renders nothing when artifact name not in map, (b) renders `ArtifactLogCard` when artifact found, (c) renders nothing when `artifacts` prop is undefined.
+
+**`MessageList` — missing `artifacts` threading in `buildVirtualItems` tests** (`src/components/Feed/MessageList.test.ts`): `buildVirtualItems` tests never pass `artifacts` in opts and never assert that `agent-entry` items carry the `artifacts` value through. A pure-function test for this threading would catch regressions when the virtualization pipeline is modified.

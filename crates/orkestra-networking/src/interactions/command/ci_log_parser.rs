@@ -50,7 +50,11 @@ pub(crate) fn parse_ci_log(raw_log: &str) -> Option<CiLogExcerpt> {
 
     // Cap input to 1MB — errors are at the end, so keep the tail.
     let log = if raw_log.len() > 1_048_576 {
-        let start = raw_log.ceil_char_boundary(raw_log.len() - 1_048_576);
+        let offset = raw_log.len() - 1_048_576;
+        // Advance to the next valid UTF-8 char boundary (ceil equivalent).
+        let start = (offset..=raw_log.len())
+            .find(|&i| raw_log.is_char_boundary(i))
+            .unwrap_or(raw_log.len());
         &raw_log[start..]
     } else {
         raw_log

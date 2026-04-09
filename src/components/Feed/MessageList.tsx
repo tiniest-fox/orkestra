@@ -68,7 +68,13 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 type VirtualItem =
   | { kind: "user-block"; msg: UserMessage; label: string; isHuman: boolean; isBlockEnd: boolean }
   | { kind: "agent-header"; label: string }
-  | { kind: "agent-entry"; entry: GroupedLogEntry; projectRoot?: string; artifacts?: Record<string, WorkflowArtifact>; isBlockEnd: boolean }
+  | {
+      kind: "agent-entry";
+      entry: GroupedLogEntry;
+      projectRoot?: string;
+      artifacts?: Record<string, WorkflowArtifact>;
+      isBlockEnd: boolean;
+    }
   | { kind: "extra"; content: React.ReactNode }
   | { kind: "spinner" };
 
@@ -293,7 +299,11 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
         <div
           className={`bg-canvas px-6 text-text-secondary ${item.isBlockEnd ? "pb-3.5 border-b border-border" : ""}`}
         >
-          <AgentEntry entry={item.entry} projectRoot={item.projectRoot} artifacts={item.artifacts} />
+          <AgentEntry
+            entry={item.entry}
+            projectRoot={item.projectRoot}
+            artifacts={item.artifacts}
+          />
         </div>
       );
     case "extra":
@@ -364,7 +374,16 @@ export function MessageList({
         isAgentRunning,
         lastAgentExtra,
       }),
-    [messages, agentLabel, userLabel, classifyUser, projectRoot, artifacts, isAgentRunning, lastAgentExtra],
+    [
+      messages,
+      agentLabel,
+      userLabel,
+      classifyUser,
+      projectRoot,
+      artifacts,
+      isAgentRunning,
+      lastAgentExtra,
+    ],
   );
 
   // Object ref for Virtualizer's scrollRef prop

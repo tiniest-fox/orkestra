@@ -6,7 +6,6 @@
 
 import { useRef } from "react";
 import { useBrowserNotifications } from "../hooks/useBrowserNotifications";
-import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useTasks, useWorkflowConfigState } from "../providers";
 import { FeedView } from "./Feed";
 import { FeedLoadingSkeleton } from "./Feed/FeedLoadingSkeleton";
@@ -19,7 +18,6 @@ export function Orkestra({
   serviceProjectName?: string;
   showHomeLink?: boolean;
 }) {
-  const notificationState = useNotificationPermission();
   useBrowserNotifications();
   const configState = useWorkflowConfigState();
   const { config, error: configError } = configState;
@@ -57,8 +55,6 @@ export function Orkestra({
         tasks={tasks}
         serviceProjectName={serviceProjectName}
         showHomeLink={showHomeLink}
-        notificationPermission={notificationState.permission}
-        onRequestNotifications={notificationState.requestPermission}
       />
     </div>
   );

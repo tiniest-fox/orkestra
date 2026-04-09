@@ -7544,7 +7544,7 @@ fn test_flow_gate_override_disables_gate() {
 
 /// Build a minimal 2-stage workflow where the review stage pauses for human approval.
 ///
-/// work (summary) → review (verdict, non-automated, `rejection_stage` = work)
+/// work (summary) → review (verdict, agentic gate, defaults to rejecting to previous stage)
 fn workflow_with_non_automated_review() -> WorkflowConfig {
     use orkestra_core::workflow::config::{
         GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
@@ -8842,5 +8842,171 @@ fn test_restart_stage_from_blocked() {
         matches!(task.state, TaskState::Queued { ref stage } if stage == "planning"),
         "Task should be Queued at planning, got: {:?}",
         task.state
+    );
+}
+
+// =============================================================================
+// route_to Rejection Routing Tests
+// =============================================================================
+
+/// Three-stage workflow: planning → work → review (agentic gate).
+/// Used to test `route_to` rejection routing — reviewer can route back to any stage.
+fn workflow_with_route_to() -> WorkflowConfig {
+    WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan"),
+        StageConfig::new("work", "summary"),
+        StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
+    ])
+}
+
+/// Test that agent rejection with `route_to: Some("planning")` routes to the planning stage
+/// (skipping the default previous-stage fallback of "work").
+#[test]
+fn test_route_to_rejection_routes_to_specified_stage() {
+    use orkestra_core::workflow::execution::StageOutput;
+
+    let workflow = workflow_with_route_to();
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Test route_to routing", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through planning and work stages (no gate — auto-advance in 2 ticks each)
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan"));
+    ctx.advance(); // spawn planning
+    ctx.advance(); // process plan → enters commit pipeline → Queued(work)
+
+    ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
+    ctx.advance(); // spawn work
+    ctx.advance(); // process summary → enters commit pipeline → Queued(review)
+
+    // Review stage: agent rejects with route_to="planning" (skip work, go straight back)
+    ctx.set_output(
+        &task_id,
+        StageOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs rethinking from scratch".to_string(),
+            route_to: Some("planning".to_string()),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn review agent
+    ctx.advance(); // process rejection → auto_mode=false → AwaitingRejectionConfirmation
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+
+    // With auto_mode=false, reviewer rejection pauses at AwaitingRejectionConfirmation
+    // The pending rejection target should be "planning" (not "work", the previous stage)
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
+        "Task should be AwaitingRejectionConfirmation, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("review"));
+
+    // Confirm rejection — approve() when in AwaitingRejectionConfirmation confirms the rejection
+    ctx.api().approve(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("planning"),
+        "Task should route to planning stage (specified by route_to), got: {:?}",
+        task.state
+    );
+    assert!(matches!(task.state, TaskState::Queued { .. }));
+}
+
+/// Test that agent rejection without `route_to` falls back to the previous stage.
+#[test]
+fn test_route_to_fallback_routes_to_previous_stage() {
+    let workflow = workflow_with_route_to();
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Test route_to fallback", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through planning and work to review (no gate — auto-advance in 2 ticks each)
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan"));
+    ctx.advance(); // spawn planning
+    ctx.advance(); // process plan → enters commit pipeline → Queued(work)
+
+    ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
+    ctx.advance(); // spawn work
+    ctx.advance(); // process summary → enters commit pipeline → Queued(review)
+
+    // Review agent rejects with no route_to — should fall back to "work" (previous stage)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Implementation needs improvement".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn review
+    ctx.advance(); // process rejection
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+
+    // Pauses for human confirmation
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
+        "Expected AwaitingRejectionConfirmation, got: {:?}",
+        task.state
+    );
+
+    // approve() in AwaitingRejectionConfirmation confirms the rejection
+    ctx.api().approve(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Without route_to, should fall back to previous stage 'work', got: {:?}",
+        task.state
+    );
+}
+
+/// Test that an invalid `route_to` stage name returns `WorkflowError::InvalidTransition`.
+#[test]
+fn test_route_to_invalid_stage_returns_error() {
+    use std::sync::Arc;
+
+    use orkestra_core::workflow::execution::StageOutput;
+    use orkestra_core::workflow::ports::{WorkflowError, WorkflowStore};
+    use orkestra_core::workflow::runtime::TaskState;
+    use orkestra_core::workflow::InMemoryWorkflowStore;
+    use orkestra_core::workflow::WorkflowApi;
+
+    let workflow = workflow_with_route_to();
+    let store = Arc::new(InMemoryWorkflowStore::new());
+    let store_ref: Arc<dyn WorkflowStore> = Arc::clone(&store) as Arc<dyn WorkflowStore>;
+    let api = WorkflowApi::new(workflow, Arc::clone(&store) as Arc<dyn WorkflowStore>);
+
+    let mut task = api
+        .create_task("Test invalid route_to", "Desc", None)
+        .unwrap();
+    task.auto_mode = true;
+    task.state = TaskState::agent_working("review");
+    store_ref.save_task(&task).unwrap();
+    api.iteration_service()
+        .create_iteration(&task.id, "review", None)
+        .unwrap();
+
+    let output = StageOutput::Approval {
+        decision: "reject".to_string(),
+        content: "feedback".to_string(),
+        route_to: Some("nonexistent_stage".to_string()),
+        activity_log: None,
+        resources: vec![],
+    };
+
+    let result = api.process_agent_output(&task.id, output);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "Invalid route_to should return InvalidTransition error, got: {result:?}"
     );
 }

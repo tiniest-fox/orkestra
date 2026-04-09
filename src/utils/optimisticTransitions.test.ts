@@ -8,25 +8,23 @@ function createConfig(): WorkflowConfig {
     name: "review",
     artifact: "verdict",
     inputs: ["summary"],
-    is_automated: false,
     is_optional: false,
-    capabilities: { ask_questions: false, approval: {} },
+    capabilities: {},
+    gate: true as const,
   };
   const workStage = {
     name: "work",
     artifact: "summary",
     inputs: ["plan"],
-    is_automated: true,
     is_optional: false,
-    capabilities: { ask_questions: true },
+    capabilities: {},
   };
   const planningStage = {
     name: "planning",
     artifact: "plan",
     inputs: [],
-    is_automated: true,
     is_optional: false,
-    capabilities: { ask_questions: true },
+    capabilities: {},
   };
   return {
     version: 2,

@@ -205,9 +205,8 @@ export function createMockStageConfig(overrides?: Partial<StageConfig>): StageCo
     name: "work",
     artifact: "summary",
     inputs: [],
-    is_automated: true,
     is_optional: false,
-    capabilities: { ask_questions: true },
+    capabilities: {},
     ...overrides,
   };
 }
@@ -220,7 +219,7 @@ export function createMockFlowConfig(overrides?: Partial<FlowConfig>): FlowConfi
         name: "work",
         artifact: "summary",
         inputs: ["plan"],
-        capabilities: { ask_questions: true, subtasks: {} },
+        capabilities: { subtasks: {} },
       }),
     ],
     integration: { on_failure: "work" },

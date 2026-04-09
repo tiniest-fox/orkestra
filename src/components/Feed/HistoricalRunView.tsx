@@ -28,7 +28,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
   // Derive verdict for historical run — only show for approval-capability stages
   const stageConfig = config.flows[task.flow]?.stages.find((s) => s.name === run.stage);
   let verdict: "approved" | "rejected" | undefined;
-  if (stageConfig?.capabilities.approval != null) {
+  if (stageConfig?.gate === true) {
     const lastOutcome = run.iterations[run.iterations.length - 1]?.outcome;
     if (lastOutcome?.type === "approved") {
       verdict = "approved";

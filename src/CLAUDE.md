@@ -789,6 +789,8 @@ describe("myUtil", () => {
 
 **Example:** `optionKey.ts` / `optionKey.test.ts`.
 
+The same requirement applies to non-trivial pure functions exported from component files. If a component file exports a pure function for testability (e.g., `buildVirtualItems` exported from `MessageList.tsx`), add coverage in the component's existing test file (e.g., `MessageList.test.ts`). Pure functions exported from hook files are covered by the shared-hook pattern below.
+
 ### Default Expansion State Tests
 
 <!-- compound: modishly-courageous-beagle -->

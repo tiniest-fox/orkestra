@@ -187,10 +187,14 @@ mod tests {
         assert!(output.is_approval());
         match output {
             StageOutput::Approval {
-                decision, content, ..
+                decision,
+                content,
+                route_to,
+                ..
             } => {
                 assert_eq!(decision, "approve");
                 assert_eq!(content, "Looks good");
+                assert_eq!(route_to, None);
             }
             _ => panic!("Expected Approval"),
         }
@@ -204,10 +208,60 @@ mod tests {
 
         match output {
             StageOutput::Approval {
-                decision, content, ..
+                decision,
+                content,
+                route_to,
+                ..
             } => {
                 assert_eq!(decision, "reject");
                 assert_eq!(content, "Tests are failing");
+                assert_eq!(route_to, None);
+            }
+            _ => panic!("Expected Approval"),
+        }
+    }
+
+    #[test]
+    fn test_parse_approval_with_route_to() {
+        let schema = test_schema("plan", false);
+        let json = r#"{"type": "approval", "decision": "reject", "content": "Needs rework", "route_to": "work"}"#;
+        let output = execute(json, &schema).unwrap();
+
+        match output {
+            StageOutput::Approval {
+                decision, route_to, ..
+            } => {
+                assert_eq!(decision, "reject");
+                assert_eq!(route_to, Some("work".to_string()));
+            }
+            _ => panic!("Expected Approval"),
+        }
+    }
+
+    #[test]
+    fn test_parse_approval_without_route_to() {
+        let schema = test_schema("plan", false);
+        let json = r#"{"type": "approval", "decision": "approve", "content": "Looks good"}"#;
+        let output = execute(json, &schema).unwrap();
+
+        match output {
+            StageOutput::Approval { route_to, .. } => {
+                assert_eq!(route_to, None);
+            }
+            _ => panic!("Expected Approval"),
+        }
+    }
+
+    #[test]
+    fn test_parse_approval_with_null_route_to() {
+        let schema = test_schema("plan", false);
+        let json =
+            r#"{"type": "approval", "decision": "reject", "content": "Issues", "route_to": null}"#;
+        let output = execute(json, &schema).unwrap();
+
+        match output {
+            StageOutput::Approval { route_to, .. } => {
+                assert_eq!(route_to, None);
             }
             _ => panic!("Expected Approval"),
         }

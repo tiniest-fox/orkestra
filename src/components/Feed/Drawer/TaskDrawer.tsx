@@ -130,9 +130,6 @@ function TaskDrawerBody({
   const selectedRun = selectedRunIdx !== null ? runs[selectedRunIdx] : null;
   const reviewType = stageReviewType(task, config);
 
-  // completion_stage was removed from SubtaskCapabilities
-  const completionStage = null;
-
   const onProgressClick =
     selectedRunIdx !== null
       ? () => {
@@ -205,7 +202,6 @@ function TaskDrawerBody({
             activeTab={activeTab}
             questions={task.derived.pending_questions}
             stageReviewType={reviewType}
-            completionStage={completionStage}
             state={state}
           />
         </>

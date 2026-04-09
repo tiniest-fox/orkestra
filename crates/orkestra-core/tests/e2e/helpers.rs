@@ -771,6 +771,7 @@ pub enum MockAgentOutput {
     Approval {
         decision: String,
         content: String,
+        route_to: Option<String>,
         activity_log: Option<String>,
         resources: Vec<orkestra_core::workflow::execution::ResourceOutput>,
     },
@@ -819,12 +820,13 @@ impl From<MockAgentOutput> for StageOutput {
             MockAgentOutput::Approval {
                 decision,
                 content,
+                route_to,
                 activity_log,
                 resources,
             } => StageOutput::Approval {
                 decision,
                 content,
-                route_to: None,
+                route_to,
                 activity_log,
                 resources,
             },

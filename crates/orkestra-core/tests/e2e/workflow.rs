@@ -389,6 +389,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code style issues found - please fix formatting".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -511,6 +512,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM! All checks pass.".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -610,6 +612,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Conflict resolved correctly".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -738,6 +741,7 @@ fn test_approval_validation() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Should fail".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -1684,6 +1688,7 @@ fn test_session_reset_on_cross_stage_rejection() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code needs refactoring — extract helper methods".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -1908,6 +1913,7 @@ fn test_rejection_always_supersedes_session() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -2502,6 +2508,7 @@ fn test_rejection_review_override_then_approval() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests are incomplete — missing edge case coverage".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -2692,6 +2699,7 @@ fn test_rejection_review_confirm() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code quality is poor".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -2787,6 +2795,7 @@ fn test_automated_review_rejection_skips_human_review() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs refactoring".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -3041,6 +3050,7 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Missing integration tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -3085,6 +3095,7 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Re-evaluated: all tests adequate, implementation is solid".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -3321,6 +3332,7 @@ fn test_commit_message_generation_during_integration() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Approved! Changes look good.".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -3896,6 +3908,7 @@ fn activity_log_accumulates_across_stages() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4118,6 +4131,7 @@ fn activity_log_on_rejection_retry() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Found bug in error handling".to_string(),
+            route_to: None,
             activity_log: Some(
                 "Reviewed implementation. Tested edge cases. Found null pointer bug.".to_string(),
             ),
@@ -4219,6 +4233,7 @@ fn test_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4268,6 +4283,7 @@ fn test_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4385,6 +4401,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4427,6 +4444,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4980,6 +4998,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: Some("- Log R: review feedback".to_string()),
             resources: vec![],
         },
@@ -5030,6 +5049,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -5246,6 +5266,7 @@ fn test_activity_log_with_script_and_review_rejection() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more error handling".to_string(),
+            route_to: None,
             activity_log: Some("- Log R: review requested changes".to_string()),
             resources: vec![],
         },
@@ -5279,6 +5300,7 @@ fn test_activity_log_with_script_and_review_rejection() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -5352,6 +5374,7 @@ fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6301,6 +6324,7 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs refactoring".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6673,6 +6697,7 @@ fn test_multiple_artifacts_materialized() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6788,6 +6813,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6810,6 +6836,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -7282,6 +7309,7 @@ fn test_gate_pass_then_advances_to_next_stage() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -7754,6 +7782,7 @@ fn test_reject_with_comments_pending_rejection_review() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests are failing, fix them".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -8942,6 +8971,7 @@ fn test_route_to_fallback_routes_to_previous_stage() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Implementation needs improvement".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },

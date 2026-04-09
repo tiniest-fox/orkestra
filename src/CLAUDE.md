@@ -728,6 +728,10 @@ export default { decorators: [decorator] };
 
 See `src/stories/Demo/AppShell.stories.tsx` for the reference pattern.
 
+**Provider completeness**: `StorybookProviders` must include every context provider used by app-level components. When adding a new provider to the app, check whether any component in the `Orkestra` tree consumes it — if so, add it (or its stub variant) to `StorybookProviders` in `storybook-helpers.tsx`. Entry-point providers like `ProjectsProvider`/`ProjectDetailProvider` are easy to forget because they live outside `AppProviders`. Use `ProjectDetailProvider` (the stub) rather than the full `ProjectsProvider` — it avoids `localStorage` side effects and provides safe defaults (`projects: []`, `currentProject: null`, mutations throw).
+
+**Build limitation**: `pnpm build-storybook` only bundles JavaScript — it does not render stories, so runtime errors (missing providers, undefined hooks, broken context) are invisible to the build step and to `checks.sh`. The only way to catch these is manual story review or a dedicated Storybook test runner (not yet set up).
+
 ## Keyboard Navigation
 
 <!-- compound: beauteously-liberal-pollock -->

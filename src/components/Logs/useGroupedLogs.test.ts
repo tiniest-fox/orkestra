@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "../../types/workflow";
-import { type GroupedLogEntry, type SubagentGroup, groupLogEntries } from "./useGroupedLogs";
+import { type GroupedLogEntry, groupLogEntries, type SubagentGroup } from "./useGroupedLogs";
 
 // ============================================================================
 // Helpers
@@ -153,10 +153,7 @@ describe("groupLogEntries", () => {
 
   describe("first pass — Agent tool_result entries", () => {
     it("removes Agent tool_result entries from output", () => {
-      const logs: LogEntry[] = [
-        agentToolUse("task-1"),
-        agentToolResult("task-1"),
-      ];
+      const logs: LogEntry[] = [agentToolUse("task-1"), agentToolResult("task-1")];
       const result = groupLogEntries(logs);
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe("subagent_group");
@@ -189,10 +186,7 @@ describe("groupLogEntries", () => {
     });
 
     it("removes subagent_tool_use entries from top-level output", () => {
-      const logs: LogEntry[] = [
-        agentToolUse("task-1"),
-        subagentToolUse("sub-1", "task-1"),
-      ];
+      const logs: LogEntry[] = [agentToolUse("task-1"), subagentToolUse("sub-1", "task-1")];
       const result = groupLogEntries(logs);
       const topLevelTypes = result.map((e) => e.type);
       expect(topLevelTypes).not.toContain("subagent_tool_use");
@@ -290,11 +284,7 @@ describe("groupLogEntries", () => {
 
   describe("third pass — output ordering", () => {
     it("preserves relative order of non-agent entries and groups", () => {
-      const logs: LogEntry[] = [
-        textEntry("before"),
-        agentToolUse("task-1"),
-        textEntry("after"),
-      ];
+      const logs: LogEntry[] = [textEntry("before"), agentToolUse("task-1"), textEntry("after")];
       const result = groupLogEntries(logs);
       expect(result).toHaveLength(3);
       expect(result[0]).toEqual(textEntry("before"));
@@ -376,10 +366,7 @@ describe("groupLogEntries", () => {
 
     it("handles subagent_tool_result entries that appear without a matching subagent_tool_use", () => {
       // result arrives but no corresponding tool_use — should still be filtered out
-      const logs: LogEntry[] = [
-        agentToolUse("task-1"),
-        subagentToolResult("sub-orphan", "task-1"),
-      ];
+      const logs: LogEntry[] = [agentToolUse("task-1"), subagentToolResult("sub-orphan", "task-1")];
       const result = groupLogEntries(logs);
       expect(result).toHaveLength(1);
       const group = result[0] as SubagentGroup;

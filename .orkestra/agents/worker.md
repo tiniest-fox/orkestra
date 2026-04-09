@@ -178,7 +178,7 @@ Key testing principles:
 - **Test the behavior, not the implementation**: Name tests after what they verify, not what code they call
 
 ### Automated Quality Checks
-A separate script stage handles linting, formatting, test execution, and builds after your implementation. **Do NOT run** `cargo test`, `cargo clippy`, `cargo fmt`, `cargo build`, `pnpm build`, `pnpm lint`, or `pnpm test`.
+A separate gate script handles linting, formatting, test execution, and builds after your implementation. **Do NOT run** `cargo test`, `cargo clippy`, `cargo fmt`, `cargo build`, `pnpm build`, `pnpm lint`, or `pnpm test`.
 
 **You MAY run `cargo check`** to verify your code compiles before finishing. This catches type errors, missing fields, and wrong imports immediately — much faster than waiting for the full check script. Use it as a quick sanity check, not as a substitute for the automated checks stage.
 

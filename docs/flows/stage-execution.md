@@ -35,7 +35,7 @@ All paths relative to `crates/orkestra-core/src/`.
 
 4. **Agent runs and produces JSON output** — The agent CLI executes with provider-appropriate flags (Claude Code uses `--json-schema`; OpenCode uses `--format json` with schema in prompt). Output is one of: `Artifact`, `Questions`, `Subtasks`, `Approval`, `Failed`, `Blocked`. During execution, stdout lines are parsed in real-time by a `StreamParser` (provider-specific: `ClaudeStreamParser` or `OpenCodeStreamParser`) into `LogEntry` values and emitted as `RunEvent::LogLine` events from `runner.rs`.
 
-5. **Orchestrator polls completion and drains logs** — `orchestrator.rs::process_completed_executions()` non-blocking polls all active agents/scripts. `stage_execution.rs::poll()` drains buffered `LogLine` events and persists them to the database via `WorkflowStore::append_log_entry()`. Dispatches results to `api.process_agent_output()` or `api.process_script_success/failure()`.
+5. **Orchestrator polls completion and drains logs** — `orchestrator.rs::process_completed_executions()` non-blocking polls all active agents/scripts. `stage_execution.rs::poll()` drains buffered `LogLine` events and persists them to the database via `WorkflowStore::append_log_entry()`. Dispatches results to `api.process_agent_output()` or `api.process_gate_success/failure()`.
 
 6. **Output processing** — `agent_actions.rs::process_agent_output()` dispatches by output type: stores artifacts, records questions, stores Subtrak JSON, processes approval decisions, or marks Trak failed/blocked. Sets phase to `AwaitingReview` or auto-advances to next stage.
 
@@ -74,7 +74,7 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──────> 
 | `Feedback { feedback }` | Human rejection (`human_actions.rs::reject`) | `Feedback` |
 | `Answers { answers }` | Human answers questions (`human_actions.rs::answer_questions`) | `Answers` |
 | `Integration { message, files }` | Merge conflict (`integration.rs::integration_failed`) | `Integration` |
-| `ScriptFailure { from_stage, error }` | Script stage failed (`agent_actions.rs::process_script_failure`) | `Feedback` (formatted) |
+| `GateFailure { from_stage, error }` | Gate script failed (`agent_actions.rs::process_gate_failure`) | `Feedback` (formatted) |
 | `Rejection { from_stage, feedback }` | Agent rejected via approval (`agent_actions.rs::handle_approval_output`) | `Feedback` |
 | Stage re-entry after upstream re-run | Set by `is_stage_reentry` flag in `build_stage_prompt()` | `Recheck` |
 
@@ -83,10 +83,10 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──────> 
 - **One-tick delay for integration**: Traks that become Done in tick N are only eligible for integration in tick N+1. This prevents race conditions between output processing and integration.
 - **Trigger delivery flag**: After a resume spawn delivers the trigger to the agent, `trigger_delivered` is set to true. If the agent crashes again, the next resume uses "session was interrupted" instead of replaying the original trigger.
 - **Subtrak creation is deferred**: When an agent outputs Subtraks, only the JSON is stored. Actual Task records are created when the human approves (or auto-advance triggers). This is in `human_actions.rs::approve_with_subtask_creation`.
-- **Script failures route to recovery stage**: A failed script with `on_failure: "work"` creates a new iteration in the work stage with a `ScriptFailure` trigger. The agent receives this as feedback.
+- **Gate failures route to recovery stage**: A failed gate script with `on_failure: "work"` creates a new iteration in the work stage with a `GateFailure` trigger. The agent receives this as feedback.
 - **ANSI stripping**: Script output is stripped of ANSI escape codes before storage as artifacts, so downstream agents don't waste tokens on terminal formatting.
 - **Auto-mode**: Traks with `auto_mode: true` automatically answer questions and auto-advance through approval gates. The auto-answer text is a constant: "Make a decision based on your best understanding and highest recommendation."
 - **Artifact injection in resume prompts**: When resuming with `Recheck` (cross-session re-entry after upstream stages re-run), `build_resume_prompt()` injects the stage's input artifacts into the prompt. This ensures agents see updated artifacts when upstream stages produce new outputs between sessions. Other resume types (`Continue`, `Feedback`, `Answers`, `Integration`) don't need artifacts because they operate within a single session where artifacts are already in memory. `RetryFailed` and `RetryBlocked` could theoretically benefit if upstream stages change between retries — monitor for this pattern.
 - **Activity logs**: Agents can output an optional `activity_log` field (short summary string) alongside their main output (artifact/approval/Subtraks). The log is persisted on the iteration and injected into prompts for downstream stages via `StagePromptContext.activity_logs`. This provides summarized context of prior work without requiring agents to re-read full artifacts. Activity logs from completed iterations are included in the initial prompt template.
 - **Schema composition**: `generate_stage_schema()` in `prompts/mod.rs` builds a discriminated union from component JSON files in `prompts/schemas/components/`. The `type` field enum and properties are assembled conditionally based on `StageCapabilities` flags. To add a new capability, add a component file and a conditional block in `generate_stage_schema()`.
-- **Adding a new output type**: Add a flag to `StageCapabilities` in `config/stage.rs`, a variant to `StageOutput` in `execution/output.rs` with a parsing branch, and a handler in `agent_actions.rs::process_agent_output()`. Optionally add validation in `config/workflow.rs` (e.g., script stages cannot have agent-only capabilities).
+- **Adding a new output type**: Add a flag to `StageCapabilities` in `config/stage.rs`, a variant to `StageOutput` in `execution/output.rs` with a parsing branch, and a handler in `agent_actions.rs::process_agent_output()`.

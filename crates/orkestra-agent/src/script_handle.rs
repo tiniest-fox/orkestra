@@ -1,7 +1,8 @@
-//! Async script execution for script-based workflow stages.
+//! Async script execution for gate scripts.
 //!
-//! Script stages run shell commands instead of spawning Claude agents.
-//! This module provides async execution with timeout support and output capture.
+//! Gate scripts run shell commands after an agent completes a stage, validating
+//! the output before advancement. This module provides async execution with
+//! timeout support and output capture.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};

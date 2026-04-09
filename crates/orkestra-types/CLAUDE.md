@@ -13,7 +13,7 @@ src/
 ├── lib.rs              # Re-exports all modules
 ├── config/
 │   ├── mod.rs          # Re-exports config types
-│   ├── stage.rs        # StageConfig, StageCapabilities, ScriptStageConfig
+│   ├── stage.rs        # StageConfig, StageCapabilities, GateConfig
 │   └── workflow.rs     # WorkflowConfig, FlowConfig, IntegrationConfig
 ├── domain/
 │   ├── mod.rs          # Re-exports domain types

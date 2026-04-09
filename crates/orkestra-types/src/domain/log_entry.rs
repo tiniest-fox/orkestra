@@ -164,31 +164,6 @@ pub enum LogEntry {
     ProcessExit { code: Option<i32> },
     /// Error message.
     Error { message: String },
-
-    // =========================================================================
-    // Script Stage Logs
-    // =========================================================================
-    /// Script stage started.
-    ScriptStart {
-        /// The command being run.
-        command: String,
-        /// Stage name.
-        stage: String,
-    },
-    /// Script output (stdout/stderr combined).
-    ScriptOutput {
-        /// Output content.
-        content: String,
-    },
-    /// Script stage completed.
-    ScriptExit {
-        /// Exit code (0 = success).
-        code: i32,
-        /// Whether the script succeeded.
-        success: bool,
-        /// Whether the script was killed due to timeout.
-        timed_out: bool,
-    },
 }
 
 /// A log entry with associated database metadata.
@@ -219,9 +194,6 @@ impl LogEntry {
             LogEntry::SubagentToolResult { .. } => "subagent_tool_result",
             LogEntry::ProcessExit { .. } => "process_exit",
             LogEntry::Error { .. } => "error",
-            LogEntry::ScriptStart { .. } => "script_start",
-            LogEntry::ScriptOutput { .. } => "script_output",
-            LogEntry::ScriptExit { .. } => "script_exit",
         }
     }
 }
@@ -286,11 +258,7 @@ mod tests {
             },
         };
         assert_eq!(entry.type_name(), "tool_use");
-        let entry = LogEntry::ScriptExit {
-            code: 0,
-            success: true,
-            timed_out: false,
-        };
-        assert_eq!(entry.type_name(), "script_exit");
+        let entry = LogEntry::ProcessExit { code: Some(0) };
+        assert_eq!(entry.type_name(), "process_exit");
     }
 }

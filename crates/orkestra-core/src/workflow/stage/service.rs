@@ -294,9 +294,9 @@ impl StageExecutionService {
         None
     }
 
-    /// Block until all active executions (agents + scripts) complete, returning results.
+    /// Block until all active executions (agents + gate scripts) complete, returning results.
     ///
-    /// Used in test mode (`sync_background`) so script stages complete within
+    /// Used in test mode (`sync_background`) so gate scripts complete within
     /// a single orchestrator tick, making tests fully deterministic.
     pub fn drain_active(&self) -> Vec<ExecutionComplete> {
         let mut all_completed = Vec::new();

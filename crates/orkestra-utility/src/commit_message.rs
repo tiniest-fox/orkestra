@@ -186,7 +186,7 @@ pub fn format_commit_message(title: &str, body: &str, model_names: &[String]) ->
 
 /// Collect unique model names from a workflow configuration.
 ///
-/// Iterates all agent stages (skipping script stages), resolves effective model specs
+/// Iterates all agent stages (skipping gate scripts), resolves effective model specs
 /// using flow overrides, maps to friendly names, and deduplicates.
 ///
 /// Always appends "Claude Haiku 4.5" (the commit message generator itself) if not present.

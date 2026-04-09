@@ -522,7 +522,7 @@ impl TestEnv {
 
     /// Single orchestrator tick (spawn pending, poll completions).
     ///
-    /// Use this for script stages where you want to check state mid-execution.
+    /// Use this for gate scripts where you want to check state mid-execution.
     pub fn tick(&self) {
         self.orchestrator.tick().expect("Tick should succeed");
     }

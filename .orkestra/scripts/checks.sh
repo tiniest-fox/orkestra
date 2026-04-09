@@ -216,7 +216,7 @@ get_base_branch() {
 }
 
 get_current_branch() {
-    # Use ORKESTRA env var if set (when running as script stage)
+    # Use ORKESTRA env var if set (when running as gate script)
     if [ -n "$ORKESTRA_BRANCH" ]; then
         echo "$ORKESTRA_BRANCH"
         return
@@ -232,7 +232,7 @@ if $VERBOSE; then
     info "Base branch: $BASE_BRANCH"
     info "Current branch: $CURRENT_BRANCH"
 
-    # Show Orkestra context if running as script stage
+    # Show Orkestra context if running as gate script
     if [ -n "$ORKESTRA_TASK_ID" ]; then
         info "Orkestra task: $ORKESTRA_TASK_ID"
         [ -n "$ORKESTRA_TASK_TITLE" ] && info "Task title: $ORKESTRA_TASK_TITLE"

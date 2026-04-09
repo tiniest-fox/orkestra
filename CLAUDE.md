@@ -195,7 +195,7 @@ The core e2e tests are in `crates/orkestra-core/tests/e2e/`. They use `TestEnv` 
 
 | File | Covers |
 |------|--------|
-| `workflow.rs` | Full stage pipelines, approval/rejection loops, questions, flows, script stages, interrupt/resume |
+| `workflow.rs` | Full stage pipelines, approval/rejection loops, questions, flows, gate scripts, interrupt/resume |
 | `subtasks.rs` | Subtask creation, dependencies, parent advancement, integration |
 | `task_creation.rs` | Task setup, worktree creation, title generation, base branch handling |
 | `startup.rs` | Startup recovery (stale PIDs, orphaned worktrees, stuck integrations) |
@@ -212,6 +212,8 @@ The core e2e tests are in `crates/orkestra-core/tests/e2e/`. They use `TestEnv` 
 3. Update `SCHEMA.md` to reflect the schema changes
 
 This ensures schema documentation stays synchronized with the actual database structure.
+
+**Removing serialized enum variants:** Types stored as JSON in SQLite (e.g., `LogEntry` in the logs table) will fail to deserialize with a hard error if you remove a variant that exists in old rows. Per project policy this is acceptable — if you hit this on a local database, delete the affected rows or reset the database (`rm .orkestra/.database/orkestra.db`).
 
 ## Cross-Cutting Flow Documentation
 

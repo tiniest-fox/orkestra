@@ -11,7 +11,7 @@ import { toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { groupLogEntries } from "../Logs/useGroupedLogs";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
-import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
+import { ErrorLine, ToolLine } from "./FeedEntryComponents";
 
 // ============================================================================
 // Types
@@ -206,23 +206,6 @@ export const AgentEntry = memo(function AgentEntry({
 
     case "error":
       return <ErrorLine message={entry.message} />;
-
-    case "script_start":
-      return <ToolLine label={`sh · ${entry.stage}`} summary={entry.command} variant="script" />;
-
-    case "script_output":
-      return <ScriptOutputLine content={entry.content} />;
-
-    case "script_exit":
-      return (
-        <div
-          className={`font-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-text-quaternary" : "text-status-error"}`}
-        >
-          {entry.success
-            ? "✓ done"
-            : `✗ exit ${entry.code}${entry.timed_out ? " (timed out)" : ""}`}
-        </div>
-      );
 
     case "user_message":
     case "tool_result":

@@ -9,7 +9,6 @@ import { memo } from "react";
 export const TOOL_VARIANTS = {
   tool: "text-text-tertiary",
   task: "text-accent",
-  script: "text-text-tertiary",
 } as const;
 
 // ============================================================================
@@ -45,16 +44,6 @@ export const ErrorLine = memo(function ErrorLine({ message }: { message: string 
   return (
     <div className="font-mono text-forge-mono-sm text-status-error py-2 border-l-2 border-status-error pl-2 my-2">
       {message}
-    </div>
-  );
-});
-
-export const ScriptOutputLine = memo(function ScriptOutputLine({ content }: { content: string }) {
-  const trimmed = content.trimEnd();
-  if (!trimmed) return null;
-  return (
-    <div className="font-mono text-forge-mono-sm text-text-tertiary py-[2px] whitespace-pre-wrap">
-      {trimmed}
     </div>
   );
 });

@@ -93,16 +93,6 @@ describe("groupLogEntries", () => {
       const result = groupLogEntries(logs);
       expect(result).toEqual(logs);
     });
-
-    it("passes through script entries unchanged", () => {
-      const logs: LogEntry[] = [
-        { type: "script_start", command: "echo", stage: "build" },
-        { type: "script_output", content: "output" },
-        { type: "script_exit", code: 0, success: true, timed_out: false },
-      ];
-      const result = groupLogEntries(logs);
-      expect(result).toEqual(logs);
-    });
   });
 
   // ==========================================================================

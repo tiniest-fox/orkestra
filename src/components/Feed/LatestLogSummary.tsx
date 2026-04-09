@@ -80,8 +80,6 @@ function entrySummary(entry: LogEntry): string | null {
       const trimmed = entry.content.trim();
       return trimmed ? trimmed.slice(0, 100) : null;
     }
-    case "script_output":
-      return stripAnsi(entry.content).trim().slice(0, 100) || null;
     default:
       return null;
   }

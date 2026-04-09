@@ -1,7 +1,7 @@
 //! Unified log reading service for execution logs.
 //!
 //! This service reads execution logs from the database, which is the single
-//! source of truth for all log entries (agent and script stages alike).
+//! source of truth for all log entries (agent and gate script runs alike).
 
 use std::sync::Arc;
 

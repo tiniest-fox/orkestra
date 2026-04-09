@@ -48,3 +48,63 @@ pub fn execute(
         has_uncommitted_changes,
     })
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow::ports::{CommitInfo, InMemoryWorkflowStore, MockGitService};
+    use orkestra_types::domain::Task;
+
+    fn setup_task(store: &InMemoryWorkflowStore, task_id: &str, worktree: Option<&str>) {
+        let mut task = Task::new(task_id, "Test", "", "work", "2026-01-01T00:00:00Z");
+        task.worktree_path = worktree.map(std::string::ToString::to_string);
+        task.base_branch = "main".to_string();
+        store.save_task(&task).unwrap();
+    }
+
+    #[test]
+    fn returns_empty_when_no_worktree() {
+        let store = InMemoryWorkflowStore::new();
+        let git = MockGitService::new();
+        setup_task(&store, "t1", None);
+        let result = execute(&store, &git, "t1").unwrap();
+        assert!(result.commits.is_empty());
+        assert!(!result.has_uncommitted_changes);
+    }
+
+    #[test]
+    fn returns_commits_and_uncommitted_flag() {
+        let store = InMemoryWorkflowStore::new();
+        let git = MockGitService::new();
+        setup_task(&store, "t1", Some("/tmp/wt"));
+        git.push_branch_commits_result(Ok(vec![CommitInfo {
+            hash: "abc123".into(),
+            message: "test commit".into(),
+            body: None,
+            author: "test".into(),
+            timestamp: "2026-01-01".into(),
+            file_count: None,
+        }]));
+        git.set_has_pending_changes(true);
+        let result = execute(&store, &git, "t1").unwrap();
+        assert_eq!(result.commits.len(), 1);
+        assert_eq!(result.commits[0].hash, "abc123");
+        assert!(result.has_uncommitted_changes);
+    }
+
+    #[test]
+    fn has_uncommitted_defaults_false() {
+        let store = InMemoryWorkflowStore::new();
+        let git = MockGitService::new();
+        setup_task(&store, "t1", Some("/tmp/wt"));
+        // No commits configured → mock returns Ok(vec![]) by default.
+        // has_pending_changes is false by default.
+        let result = execute(&store, &git, "t1").unwrap();
+        assert!(result.commits.is_empty());
+        assert!(!result.has_uncommitted_changes);
+    }
+}

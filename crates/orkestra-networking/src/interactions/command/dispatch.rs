@@ -169,12 +169,12 @@ pub async fn execute(
         "get_pr_status" => run_sync(ctx, params, query::get_pr_status).await,
         "get_project_info" => run_sync(ctx, params, query::get_project_info).await,
 
-        // -- Diffs (transport-specific, unchanged) --
+        // -- Diffs --
         "get_task_diff" => diff::handle_get_task_diff(ctx, params).await,
         "get_file_content" => diff::handle_get_file_content(ctx, params).await,
         "get_syntax_css" => Ok(diff::handle_get_syntax_css(&ctx, params)),
-        "get_branch_commits" => diff::handle_get_branch_commits(ctx, params).await,
-        "get_uncommitted_diff" => diff::handle_get_uncommitted_diff(ctx, params).await,
+        "get_branch_commits" => run_sync(ctx, params, diff::get_branch_commits).await,
+        "get_uncommitted_diff" => run_sync(ctx, params, diff::get_uncommitted_diff).await,
         "get_commit_log" => diff::handle_get_commit_log(ctx, params).await,
         "get_batch_file_counts" => diff::handle_get_batch_file_counts(ctx, params).await,
         "get_commit_diff" => diff::handle_get_commit_diff(ctx, params).await,

@@ -9,6 +9,7 @@ use orkestra_types::domain::{
     AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionType,
     StageSession, Task, TaskHeader,
 };
+use orkestra_types::runtime::Artifact;
 use rusqlite::Connection;
 
 use crate::interactions;
@@ -198,6 +199,28 @@ impl WorkflowStore for SqliteWorkflowStore {
     fn delete_task_tree(&self, task_ids: &[String]) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
         interactions::task::delete_tree::execute(&conn, task_ids)
+    }
+
+    // -- Artifact --
+
+    fn save_artifact(&self, task_id: &str, artifact: &Artifact) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::save::execute(&conn, task_id, artifact)
+    }
+
+    fn get_artifact(&self, task_id: &str, name: &str) -> WorkflowResult<Option<Artifact>> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::get::execute(&conn, task_id, name)
+    }
+
+    fn get_artifacts(&self, task_id: &str) -> WorkflowResult<Vec<Artifact>> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::get_all::execute(&conn, task_id)
+    }
+
+    fn delete_artifacts(&self, task_id: &str) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::delete::execute(&conn, task_id)
     }
 
     // -- Log Entry --

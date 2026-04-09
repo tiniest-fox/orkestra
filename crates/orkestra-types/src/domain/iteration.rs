@@ -9,18 +9,6 @@ use crate::runtime::Outcome;
 
 use super::question::QuestionAnswer;
 
-/// Snapshot of the artifact produced during this iteration.
-///
-/// Stored as JSON in the database. Captures the artifact name and content
-/// at the time the agent produced output, preserving history across rejections.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ArtifactSnapshot {
-    /// Name of the artifact slot (e.g., "plan", "breakdown").
-    pub name: String,
-    /// The artifact content (markdown).
-    pub content: String,
-}
-
 /// Output from a gate script run, attached to the iteration being validated.
 ///
 /// Updated incrementally as output streams in during gate execution.
@@ -199,12 +187,6 @@ pub struct Iteration {
     /// Populated incrementally as the gate streams output; complete when `exit_code` is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gate_result: Option<GateResult>,
-
-    /// Artifact snapshot produced during this iteration.
-    /// Captures the artifact content at the time it was produced, preserving
-    /// history even when the task-level artifact is overwritten by later iterations.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub artifact_snapshot: Option<ArtifactSnapshot>,
 }
 
 impl Iteration {
@@ -229,7 +211,6 @@ impl Iteration {
             trigger_delivered: false,
             activity_log: None,
             gate_result: None,
-            artifact_snapshot: None,
         }
     }
 
@@ -258,13 +239,6 @@ impl Iteration {
     #[must_use]
     pub fn with_gate_result(mut self, gate_result: GateResult) -> Self {
         self.gate_result = Some(gate_result);
-        self
-    }
-
-    /// Builder: set artifact snapshot.
-    #[must_use]
-    pub fn with_artifact_snapshot(mut self, snapshot: ArtifactSnapshot) -> Self {
-        self.artifact_snapshot = Some(snapshot);
         self
     }
 
@@ -692,39 +666,5 @@ mod tests {
 
         let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, trigger);
-    }
-
-    #[test]
-    fn test_artifact_snapshot_serialization() {
-        let snapshot = ArtifactSnapshot {
-            name: "plan".to_string(),
-            content: "# Plan\n\nDo the thing.".to_string(),
-        };
-        let json = serde_json::to_string(&snapshot).unwrap();
-        assert!(json.contains("\"name\":\"plan\""));
-        assert!(json.contains("Do the thing."));
-
-        let parsed: ArtifactSnapshot = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, snapshot);
-    }
-
-    #[test]
-    fn test_iteration_with_artifact_snapshot() {
-        let snapshot = ArtifactSnapshot {
-            name: "breakdown".to_string(),
-            content: "## Steps\n1. Do X\n2. Do Y".to_string(),
-        };
-        let iter = Iteration::new("iter-1", "task-1", "work", 1, "now")
-            .with_artifact_snapshot(snapshot.clone());
-
-        assert_eq!(iter.artifact_snapshot, Some(snapshot));
-
-        // Serialization round-trip
-        let json = serde_json::to_string(&iter).unwrap();
-        assert!(json.contains("\"artifact_snapshot\""));
-        assert!(json.contains("\"name\":\"breakdown\""));
-
-        let parsed: Iteration = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, iter);
     }
 }

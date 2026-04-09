@@ -166,6 +166,12 @@ pub enum LogEntry {
     Error { message: String },
 
     // =========================================================================
+    // Artifact Production
+    // =========================================================================
+    /// An artifact was produced by a stage agent and written to the artifacts table.
+    ArtifactProduced { name: String, stage: String },
+
+    // =========================================================================
     // Script Stage Logs
     // =========================================================================
     /// Script stage started.
@@ -219,6 +225,7 @@ impl LogEntry {
             LogEntry::SubagentToolResult { .. } => "subagent_tool_result",
             LogEntry::ProcessExit { .. } => "process_exit",
             LogEntry::Error { .. } => "error",
+            LogEntry::ArtifactProduced { .. } => "artifact_produced",
             LogEntry::ScriptStart { .. } => "script_start",
             LogEntry::ScriptOutput { .. } => "script_output",
             LogEntry::ScriptExit { .. } => "script_exit",

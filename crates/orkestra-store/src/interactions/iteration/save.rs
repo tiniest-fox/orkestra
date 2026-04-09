@@ -25,16 +25,10 @@ pub fn execute(conn: &Connection, iteration: &Iteration) -> WorkflowResult<()> {
         .map(|g| serde_json::to_string(g).map_err(|e| WorkflowError::Storage(e.to_string())))
         .transpose()?;
 
-    let artifact_snapshot_json = iteration
-        .artifact_snapshot
-        .as_ref()
-        .map(|s| serde_json::to_string(s).map_err(|e| WorkflowError::Storage(e.to_string())))
-        .transpose()?;
-
     conn.execute(
         "INSERT OR REPLACE INTO workflow_iterations (
-            id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered, activity_log, gate_result, artifact_snapshot
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered, activity_log, gate_result
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             iteration.id,
             iteration.task_id,
@@ -48,7 +42,6 @@ pub fn execute(conn: &Connection, iteration: &Iteration) -> WorkflowResult<()> {
             iteration.trigger_delivered,
             iteration.activity_log,
             gate_result_json,
-            artifact_snapshot_json,
         ],
     )
     .map_err(|e| WorkflowError::Storage(e.to_string()))?;

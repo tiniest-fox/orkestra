@@ -1,7 +1,7 @@
 //! Handle approval output: approve stores artifact and advances, reject sends to rejection target.
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{ArtifactSnapshot, Task};
+use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, TaskState};
@@ -15,7 +15,7 @@ pub fn execute(
     decision: &str,
     content: &str,
     now: &str,
-) -> WorkflowResult<()> {
+) -> WorkflowResult<Option<String>> {
     // Verify stage has approval capability
     let stage_config = workflow.stage(&task.flow, current_stage).ok_or_else(|| {
         WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
@@ -50,16 +50,6 @@ pub fn execute(
             );
             task.artifacts
                 .set(Artifact::new(&artifact_name, content, current_stage, now));
-
-            // Snapshot rejection content on iteration before any state transition
-            iteration_service.set_artifact_snapshot(
-                &task.id,
-                current_stage,
-                ArtifactSnapshot {
-                    name: artifact_name.clone(),
-                    content: content.to_string(),
-                },
-            )?;
 
             // Resolve rejection target: explicit config → previous stage in flow
             let target = stage::execute_rejection::resolve_rejection_target(
@@ -97,7 +87,8 @@ pub fn execute(
                 task.state = TaskState::awaiting_rejection_confirmation(current_stage.to_string());
                 task.updated_at = now.to_string();
             }
-            Ok(())
+            // Reject path: artifact stored on task but not persisted to workflow_artifacts
+            Ok(None)
         }
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Invalid approval decision: {decision}"

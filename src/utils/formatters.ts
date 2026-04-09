@@ -27,7 +27,7 @@ export function formatPath(path: string, projectRoot?: string): string {
   // 2. projectRoot stripping.
   if (projectRoot) {
     const root = projectRoot.replace(/\/+$/, "");
-    if (path.startsWith(root + "/")) {
+    if (path.startsWith(`${root}/`)) {
       const relative = path.slice(root.length + 1);
       return truncateRelative(relative, maxLen);
     }

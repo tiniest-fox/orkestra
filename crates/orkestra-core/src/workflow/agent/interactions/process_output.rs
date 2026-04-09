@@ -2,7 +2,7 @@
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::Task;
+use crate::workflow::domain::{LogEntry, Task};
 use crate::workflow::execution::StageOutput;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -50,13 +50,20 @@ pub fn execute(
         iteration_service.set_activity_log(task_id, &current_stage, log)?;
     }
 
+    // Capture active iteration ID before dispatch (handlers may end the iteration).
+    let iteration_id = store
+        .get_active_iteration(task_id, &current_stage)?
+        .map(|it| it.id);
+
     dispatch_output(
+        store,
         workflow,
         iteration_service,
         &mut task,
         output,
         &current_stage,
         &now,
+        iteration_id.as_deref(),
     )?;
 
     orkestra_debug!(
@@ -77,18 +84,23 @@ pub fn execute(
 /// the task — callers handle persistence.
 ///
 /// Resources declared in the output are merged into `task.resources` before returning.
+/// After artifact-producing handlers, writes the artifact to the `workflow_artifacts`
+/// table and emits an `ArtifactProduced` log entry to the stage session.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch_output(
+    store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task: &mut Task,
     output: StageOutput,
     current_stage: &str,
     now: &str,
+    iteration_id: Option<&str>,
 ) -> WorkflowResult<()> {
     // Extract resources before the match consumes the output.
     let output_resources = output.resources().to_vec();
 
-    match output {
+    let artifact_name: Option<String> = match output {
         StageOutput::Questions { questions, .. } => {
             super::handle_questions::execute(
                 workflow,
@@ -98,43 +110,38 @@ pub(crate) fn dispatch_output(
                 current_stage,
                 now,
             )?;
+            None
         }
-        StageOutput::Artifact { content, .. } => {
-            super::handle_artifact::execute(
-                workflow,
-                iteration_service,
-                task,
-                &content,
-                current_stage,
-                now,
-            )?;
-        }
+        StageOutput::Artifact { content, .. } => super::handle_artifact::execute(
+            workflow,
+            iteration_service,
+            task,
+            &content,
+            current_stage,
+            now,
+        )?,
         StageOutput::Approval {
             decision, content, ..
-        } => {
-            super::handle_approval::execute(
-                workflow,
-                iteration_service,
-                task,
-                current_stage,
-                &decision,
-                &content,
-                now,
-            )?;
-        }
+        } => super::handle_approval::execute(
+            workflow,
+            iteration_service,
+            task,
+            current_stage,
+            &decision,
+            &content,
+            now,
+        )?,
         StageOutput::Subtasks {
             content, subtasks, ..
-        } => {
-            super::handle_subtasks::execute(
-                workflow,
-                iteration_service,
-                task,
-                &content,
-                &subtasks,
-                current_stage,
-                now,
-            )?;
-        }
+        } => super::handle_subtasks::execute(
+            workflow,
+            iteration_service,
+            task,
+            &content,
+            &subtasks,
+            current_stage,
+            now,
+        )?,
         StageOutput::Failed { error } => {
             stage::end_iteration::execute(
                 iteration_service,
@@ -145,6 +152,7 @@ pub(crate) fn dispatch_output(
             )?;
             task.state = TaskState::failed_at(current_stage, &error);
             task.updated_at = now.to_string();
+            None
         }
         StageOutput::Blocked { reason } => {
             stage::end_iteration::execute(
@@ -156,7 +164,12 @@ pub(crate) fn dispatch_output(
             )?;
             task.state = TaskState::blocked_at(current_stage, &reason);
             task.updated_at = now.to_string();
+            None
         }
+    };
+
+    if let Some(name) = artifact_name {
+        persist_and_emit_artifact(store, task, &name, current_stage, iteration_id)?;
     }
 
     // Persist any resources the agent declared into the task.
@@ -165,6 +178,37 @@ pub(crate) fn dispatch_output(
     }
 
     Ok(())
+}
+
+/// Write artifact to the `workflow_artifacts` table and emit an `ArtifactProduced` log entry.
+///
+/// Silently succeeds if the stage session is missing; fails fast if the artifact is missing.
+fn persist_and_emit_artifact(
+    store: &dyn WorkflowStore,
+    task: &Task,
+    artifact_name: &str,
+    current_stage: &str,
+    iteration_id: Option<&str>,
+) -> WorkflowResult<()> {
+    let Some(artifact) = task.artifacts.get(artifact_name) else {
+        return Err(WorkflowError::InvalidState(format!(
+            "artifact '{artifact_name}' not found on task after handler set it"
+        )));
+    };
+
+    store.save_artifact(&task.id, artifact)?;
+
+    let Some(session) = store.get_stage_session(&task.id, current_stage)? else {
+        return Ok(());
+    };
+    store.append_log_entry(
+        &session.id,
+        &LogEntry::ArtifactProduced {
+            name: artifact_name.to_string(),
+            stage: current_stage.to_string(),
+        },
+        iteration_id,
+    )
 }
 
 /// Convert parsed resource output into `Resource` entries and merge into the store.
@@ -240,12 +284,14 @@ mod tests {
         };
 
         dispatch_output(
+            store.as_ref(),
             &workflow,
             &iteration_service,
             &mut task,
             output,
             "planning",
             FIXTURE_TIMESTAMP,
+            None,
         )
         .unwrap();
 
@@ -281,12 +327,14 @@ mod tests {
         };
 
         dispatch_output(
+            store.as_ref(),
             &workflow,
             &iteration_service,
             &mut task,
             output,
             "planning",
             FIXTURE_TIMESTAMP,
+            None,
         )
         .unwrap();
 
@@ -324,12 +372,14 @@ mod tests {
         };
 
         dispatch_output(
+            store.as_ref(),
             &workflow,
             &iteration_service,
             &mut task,
             output,
             "planning",
             FIXTURE_TIMESTAMP,
+            None,
         )
         .unwrap();
 

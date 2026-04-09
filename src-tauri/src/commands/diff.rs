@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
-use orkestra_core::workflow::ports::{BranchCommitsResponse, CommitInfo, FileChangeType, FileDiff};
+use orkestra_core::workflow::ports::{CommitInfo, FileChangeType, FileDiff};
+use orkestra_networking::diff as shared_diff;
 use serde::Serialize;
+use serde_json::Value;
 use tauri::State;
 
 use crate::diff_cache::DiffCacheState;
@@ -479,11 +481,10 @@ pub fn workflow_get_branch_commits(
     registry: State<ProjectRegistry>,
     window: tauri::Window,
     task_id: String,
-) -> Result<BranchCommitsResponse, TauriError> {
+) -> Result<Value, TauriError> {
+    let params = serde_json::json!({ "task_id": task_id });
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-        api.get_branch_commits(&task_id)
-            .map_err(std::convert::Into::into)
+        shared_diff::get_branch_commits(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -493,35 +494,10 @@ pub fn workflow_get_uncommitted_diff(
     registry: State<ProjectRegistry>,
     window: tauri::Window,
     task_id: String,
-    highlighter: State<SyntaxHighlighter>,
-) -> Result<HighlightedTaskDiff, TauriError> {
+) -> Result<Value, TauriError> {
+    let params = serde_json::json!({ "task_id": task_id });
     registry.with_project(window.label(), |state| {
-        let (git, worktree_path) = {
-            let api = state.api()?;
-            let Some(git) = api.git_service() else {
-                return Ok(HighlightedTaskDiff { files: vec![] });
-            };
-            let git = Arc::clone(git);
-            let task = api.get_task(&task_id)?;
-            let worktree_path = task.worktree_path.ok_or_else(|| {
-                orkestra_core::workflow::ports::WorkflowError::GitError(
-                    "Task has no worktree".into(),
-                )
-            })?;
-            (git, worktree_path)
-        }; // mutex released — git operation runs off the lock
-
-        let raw_diff = git
-            .diff_uncommitted(std::path::Path::new(&worktree_path))
-            .map_err(|e| orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()))?;
-
-        let files = raw_diff
-            .files
-            .into_iter()
-            .map(|f| highlight_file_diff(f, &highlighter))
-            .collect();
-
-        Ok(HighlightedTaskDiff { files })
+        shared_diff::get_uncommitted_diff(state.command_context(), &params).map_err(Into::into)
     })
 }
 

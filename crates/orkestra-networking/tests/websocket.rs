@@ -1194,3 +1194,35 @@ async fn test_cors_restricted_origin() {
         "ACAO should echo the restricted origin"
     );
 }
+
+/// `get_uncommitted_diff` is wired in the dispatch table (not `METHOD_NOT_FOUND`).
+///
+/// Verifies end-to-end WebSocket routing for the shared handler.
+/// The request targets a nonexistent task, so we expect an error — but not `METHOD_NOT_FOUND`.
+#[tokio::test]
+async fn test_get_uncommitted_diff_wiring() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+    let mut ws = connect(addr).await;
+
+    let response = request(
+        &mut ws,
+        serde_json::json!({
+            "id": "req-diff",
+            "method": "get_uncommitted_diff",
+            "params": { "task_id": "nonexistent" }
+        }),
+    )
+    .await;
+
+    assert_eq!(response["id"], "req-diff");
+    assert!(
+        response.get("error").is_some(),
+        "should return an error for nonexistent task"
+    );
+    let code = response["error"]["code"].as_str().unwrap_or("");
+    assert_ne!(
+        code, "METHOD_NOT_FOUND",
+        "get_uncommitted_diff must be wired in dispatch"
+    );
+}

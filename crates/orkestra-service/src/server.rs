@@ -146,11 +146,20 @@ pub(crate) fn build_router(state: OrkServiceState, extra_routes: Option<Router>)
             require_bearer_auth,
         ));
 
-    let mut router = Router::new()
+    // Provide state to the core routes, producing Router<()>, so that extra_routes
+    // (also Router<()>) can be merged before the security header layers are applied.
+    let mut combined = Router::new()
         .route("/health", get(health_handler))
         .route("/pair", post(pair_handler))
         .route("/projects/{id}/ws", get(ws_proxy_handler))
         .merge(auth_routes)
+        .with_state(state);
+
+    if let Some(extra) = extra_routes {
+        combined = combined.merge(extra);
+    }
+
+    combined
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("content-security-policy"),
             HeaderValue::from_static("default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'"),
@@ -168,13 +177,6 @@ pub(crate) fn build_router(state: OrkServiceState, extra_routes: Option<Router>)
             HeaderValue::from_static("nosniff"),
         ))
         .layer(CorsLayer::new())
-        .with_state(state);
-
-    if let Some(extra) = extra_routes {
-        router = router.merge(extra);
-    }
-
-    router
 }
 
 // ============================================================================
@@ -1282,7 +1284,7 @@ where
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
-    use axum::http::{HeaderMap, Request};
+    use axum::http::{HeaderMap, HeaderValue, Request};
     use tower::ServiceExt;
 
     use super::{build_router, validate_project_name, ws_base_from_headers};
@@ -1344,14 +1346,12 @@ mod tests {
         assert_eq!(
             headers
                 .get("x-content-type-options")
-                .map(orkestra_networking::HeaderValue::as_bytes),
+                .map(HeaderValue::as_bytes),
             Some(b"nosniff".as_ref()),
             "x-content-type-options must be 'nosniff'"
         );
         assert_eq!(
-            headers
-                .get("x-frame-options")
-                .map(orkestra_networking::HeaderValue::as_bytes),
+            headers.get("x-frame-options").map(HeaderValue::as_bytes),
             Some(b"DENY".as_ref()),
             "x-frame-options must be 'DENY'"
         );
@@ -1414,6 +1414,63 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn security_headers_present_on_extra_routes() {
+        use crate::daemon_supervisor::DaemonSupervisor;
+        use crate::types::ServiceConfig;
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        let conn = Arc::new(Mutex::new(
+            rusqlite::Connection::open_in_memory().expect("in-memory DB"),
+        ));
+        let data_dir = std::path::PathBuf::from("/tmp");
+        let supervisor = Arc::new(DaemonSupervisor::new(
+            conn.clone(),
+            std::path::PathBuf::from("orkd"),
+            std::path::PathBuf::from("ork"),
+            data_dir.clone(),
+            (3850, 3899),
+        ));
+        let config = Arc::new(ServiceConfig {
+            data_dir,
+            port: 3847,
+            port_range: (3850, 3899),
+        });
+        let state = super::OrkServiceState {
+            conn,
+            supervisor,
+            config,
+            pairing_locks: Arc::new(Mutex::new(HashMap::new())),
+            provision_handles: Arc::new(Mutex::new(HashMap::new())),
+            secrets_key: None,
+        };
+
+        let extra =
+            axum::Router::new().route("/pwa/index.html", axum::routing::get(|| async { "pwa" }));
+        let app = build_router(state, Some(extra));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/pwa/index.html")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let headers = response.headers();
+        assert!(
+            headers.contains_key("x-content-type-options"),
+            "extra_routes must receive x-content-type-options security header"
+        );
+        assert!(
+            headers.contains_key("content-security-policy"),
+            "extra_routes must receive content-security-policy header"
+        );
     }
 
     // -- ws_base_from_headers --

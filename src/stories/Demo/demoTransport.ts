@@ -34,7 +34,7 @@ export function createDemoTransport(): Transport {
         case "get_diff":
           return resolve({ files: [] });
         case "get_branch_commits":
-          return resolve([]);
+          return resolve({ commits: [], has_uncommitted_changes: false });
         case "get_batch_file_counts":
           return resolve({});
         // Action RPCs — resolve successfully to make buttons interactive

@@ -204,13 +204,6 @@ impl WorkflowApi {
         &self.iteration_service
     }
 
-    /// Check if a stage has an automated gate.
-    pub fn is_stage_automated(&self, flow: &str, stage: &str) -> bool {
-        self.workflow
-            .stage(flow, stage)
-            .is_some_and(|s| s.automated_gate_config().is_some())
-    }
-
     /// Get the next stage in a flow after the given stage.
     pub fn next_stage_after_in_flow(&self, flow: &str, stage: &str) -> Option<&str> {
         self.workflow
@@ -344,18 +337,6 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         assert_eq!(api.workflow().stages_in_flow("default").len(), 4);
-    }
-
-    #[test]
-    fn test_is_stage_automated() {
-        let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        assert!(!api.is_stage_automated("default", "planning"));
-        assert!(!api.is_stage_automated("default", "work"));
-        assert!(api.is_stage_automated("default", "review"));
-        assert!(!api.is_stage_automated("default", "nonexistent"));
     }
 
     #[test]

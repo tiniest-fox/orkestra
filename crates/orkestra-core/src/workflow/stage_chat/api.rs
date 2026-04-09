@@ -58,7 +58,7 @@ impl WorkflowApi {
             .stage(task_flow, stage)
             .ok_or_else(|| format!("Unknown stage: {stage}"))?
             .clone();
-        let schema_str = get_agent_schema(&effective_stage, self.project_root.as_deref())
+        let schema_str = get_agent_schema(&effective_stage, self.project_root.as_deref(), vec![])
             .ok_or_else(|| format!("No schema for stage: {stage}"))?;
         let schema: serde_json::Value = serde_json::from_str(&schema_str)
             .map_err(|e| format!("Generated schema is not valid JSON: {e}"))?;

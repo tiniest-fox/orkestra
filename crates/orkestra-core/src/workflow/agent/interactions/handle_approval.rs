@@ -7,6 +7,7 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
@@ -14,6 +15,7 @@ pub fn execute(
     current_stage: &str,
     decision: &str,
     content: &str,
+    route_to: Option<&str>,
     now: &str,
 ) -> WorkflowResult<()> {
     // Verify stage has approval capability
@@ -71,11 +73,12 @@ pub fn execute(
                 },
             )?;
 
-            // Resolve rejection target: explicit config → previous stage in flow
+            // Resolve rejection target: agent route_to → previous stage in flow
             let target = stage::execute_rejection::resolve_rejection_target(
                 workflow,
                 current_stage,
                 &task.flow,
+                route_to,
             )?;
 
             if task.auto_mode {

@@ -83,7 +83,14 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 ///
 /// Generates schema dynamically based on stage configuration,
 /// or loads custom schema if specified.
-pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> Option<String> {
+///
+/// `route_to_stages` — list of valid stage names agents can route rejections to.
+/// Pass `vec![]` for contexts without workflow stage information (e.g., chat, tests).
+pub fn get_agent_schema(
+    stage_config: &StageConfig,
+    project_root: Option<&Path>,
+    route_to_stages: Vec<String>,
+) -> Option<String> {
     // Check for custom schema file first
     if let Some(schema_file) = &stage_config.schema_file {
         if let Ok(custom_schema) = load_custom_schema(project_root, schema_file) {
@@ -101,7 +108,7 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
         artifact_name: stage_config.artifact_name(),
         produces_subtasks: stage_config.capabilities.produces_subtasks(),
         has_approval: stage_config.has_agentic_gate(),
-        route_to_stages: vec![],
+        route_to_stages,
     };
     Some(crate::prompts::generate_stage_schema(&schema_config))
 }
@@ -144,7 +151,16 @@ pub fn resolve_stage_agent_config_for(
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
 
     // I/O: Get JSON schema (may load custom schema from disk)
-    let json_schema = get_agent_schema(stage, project_root).ok_or_else(|| {
+    let route_to_stages = if stage.has_agentic_gate() {
+        workflow
+            .stages_in_flow(&task.flow)
+            .into_iter()
+            .map(|s| s.name.clone())
+            .collect()
+    } else {
+        vec![]
+    };
+    let json_schema = get_agent_schema(stage, project_root, route_to_stages).ok_or_else(|| {
         AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
     })?;
 
@@ -452,18 +468,18 @@ mod tests {
 
         // Questions are always included
         let planning = StageConfig::new("planning", "plan");
-        let schema = get_agent_schema(&planning, None).unwrap();
+        let schema = get_agent_schema(&planning, None, vec![]).unwrap();
         assert!(schema.contains("\"plan\""));
         assert!(schema.contains("\"questions\""));
 
         // Non-approval stages also include questions
         let work = StageConfig::new("work", "summary");
-        let schema = get_agent_schema(&work, None).unwrap();
+        let schema = get_agent_schema(&work, None, vec![]).unwrap();
         assert!(schema.contains("\"summary\""));
         assert!(schema.contains("\"questions\""));
 
         let review = StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic);
-        let schema = get_agent_schema(&review, None).unwrap();
+        let schema = get_agent_schema(&review, None, vec![]).unwrap();
         assert!(schema.contains("\"approval\""));
         assert!(!schema.contains("\"verdict\""));
     }

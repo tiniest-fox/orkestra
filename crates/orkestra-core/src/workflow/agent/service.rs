@@ -90,7 +90,7 @@ impl WorkflowApi {
         )
     }
 
-    /// Handle gate script success. Auto-advances or pauses for review, respecting `auto_mode` and `is_automated`.
+    /// Handle gate script success. Auto-advances or pauses for review, respecting `auto_mode`.
     pub(crate) fn process_gate_success(&self, task_id: &str) -> WorkflowResult<Task> {
         agent::process_gate_success::execute(
             self.store.as_ref(),

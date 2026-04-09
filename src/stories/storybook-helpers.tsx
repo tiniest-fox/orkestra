@@ -55,9 +55,15 @@ function ConfigGate({ children }: { children: ReactNode }) {
 }
 
 // Wraps children in the full provider stack required by Orkestra components.
-export function StorybookProviders({ children }: { children: ReactNode }) {
+export function StorybookProviders({
+  children,
+  transport,
+}: {
+  children: ReactNode;
+  transport?: Transport;
+}) {
   return (
-    <TransportProvider transport={createMockTransport()}>
+    <TransportProvider transport={transport ?? createMockTransport()}>
       <AppProviders>
         <ConfigGate>{children}</ConfigGate>
       </AppProviders>

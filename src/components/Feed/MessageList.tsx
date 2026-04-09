@@ -65,7 +65,7 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 // ============================================================================
 
 type VirtualItem =
-  | { kind: "user-block"; msg: UserMessage; label: string; isHuman: boolean; isBlockEnd: true }
+  | { kind: "user-block"; msg: UserMessage; label: string; isHuman: boolean; isBlockEnd: boolean }
   | { kind: "agent-header"; label: string }
   | { kind: "agent-entry"; entry: GroupedLogEntry; projectRoot?: string; isBlockEnd: boolean }
   | { kind: "extra"; content: React.ReactNode }
@@ -75,7 +75,7 @@ type VirtualItem =
 // buildVirtualItems
 // ============================================================================
 
-function buildVirtualItems(
+export function buildVirtualItems(
   messages: DisplayMessage[],
   opts: {
     agentLabel: string;
@@ -108,11 +108,16 @@ function buildVirtualItems(
           isBlockEnd: isLast,
         });
       }
-      if (grouped.length === 0) {
-        // Empty agent block: header is block end
-        items[items.length - 1] = { ...items[items.length - 1], isBlockEnd: true } as VirtualItem;
-      }
       lastAgentBlockEndIndex = items.length - 1;
+    }
+  }
+
+  // Suppress border on the final block (matches old last:border-b-0 behavior)
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if ((item.kind === "user-block" || item.kind === "agent-entry") && item.isBlockEnd) {
+      items[i] = { ...item, isBlockEnd: false };
+      break;
     }
   }
 

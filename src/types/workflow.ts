@@ -263,7 +263,7 @@ export interface PrCommentData {
  */
 export interface PrCheckData {
   name: string;
-  summary: string | null;
+  log_excerpt: string | null;
 }
 
 /**
@@ -662,8 +662,8 @@ export interface PrCheck {
   conclusion?: string;
   /** Internal check run ID, if available. */
   id?: number;
-  /** Summary output from the check run, if available. */
-  summary?: string;
+  /** Parsed error excerpt from the CI job log, if available. */
+  log_excerpt?: string;
 }
 
 /**

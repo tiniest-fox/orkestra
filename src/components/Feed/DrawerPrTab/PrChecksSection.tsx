@@ -101,9 +101,9 @@ function FailingCheckRow({
             {check.name}
           </span>
         </div>
-        {check.summary && (
+        {check.log_excerpt && (
           <p className="font-mono text-[10px] text-text-quaternary mt-1 line-clamp-2">
-            {check.summary}
+            {check.log_excerpt}
           </p>
         )}
       </div>

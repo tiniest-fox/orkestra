@@ -3,9 +3,9 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { CommitInfo } from "../../types/workflow";
 import { relativeTime } from "../../utils/relativeTime";
+import type { DiffMode } from "./types";
 
-// "all" = all changes, "uncommitted" = uncommitted changes, string = commit hash
-export type DiffMode = "all" | "uncommitted" | string;
+export type { DiffMode };
 
 interface DiffCommitPanelProps {
   commits: CommitInfo[];

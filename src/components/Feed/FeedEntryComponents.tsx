@@ -1,4 +1,4 @@
-//! Shared log-entry display components used by FeedLogList and AssistantDrawer.
+// Shared log-entry display components used by FeedLogList and AssistantDrawer.
 
 import { memo } from "react";
 

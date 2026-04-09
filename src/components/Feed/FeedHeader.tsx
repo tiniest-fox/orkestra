@@ -4,6 +4,7 @@ import { Bell } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useNotificationPermission } from "../../hooks/useNotificationPermission";
 import { useProjects } from "../../providers";
 import { useTransport } from "../../transport";
 import type { WorkflowTaskView } from "../../types/workflow";
@@ -20,8 +21,6 @@ interface FeedHeaderProps {
   assistantActive: boolean;
   serviceProjectName?: string;
   showHomeLink?: boolean;
-  notificationPermission?: NotificationPermission | "unsupported";
-  onRequestNotifications?: () => void;
 }
 
 interface Metric {
@@ -38,9 +37,8 @@ export function FeedHeader({
   assistantActive,
   serviceProjectName,
   showHomeLink = false,
-  notificationPermission,
-  onRequestNotifications,
 }: FeedHeaderProps) {
+  const { permission, requestPermission } = useNotificationPermission();
   const transport = useTransport();
   const { currentProject } = useProjects();
   const isMobile = useIsMobile();
@@ -113,11 +111,11 @@ export function FeedHeader({
               <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask} onAccent>
                 New Trak
               </Button>
-              {notificationPermission === "default" && (
+              {!import.meta.env.TAURI_ENV_PLATFORM && permission === "default" && (
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={onRequestNotifications}
+                  onClick={requestPermission}
                   title="Enable browser notifications"
                 >
                   <Bell size={14} />

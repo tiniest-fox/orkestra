@@ -63,7 +63,7 @@ pub enum StageOutput {
     },
 
     /// Agent is asking clarifying questions.
-    /// Only valid if the stage has `ask_questions` capability.
+    /// All stages support questions.
     Questions {
         /// Questions for the user.
         questions: Vec<Question>,

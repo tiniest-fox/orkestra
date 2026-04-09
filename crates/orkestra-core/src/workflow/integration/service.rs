@@ -211,7 +211,7 @@ mod tests {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict").automated(),
+            StageConfig::new("review", "verdict"),
         ])
         .with_integration(IntegrationConfig::new("work"))
     }

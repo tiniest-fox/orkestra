@@ -11,8 +11,8 @@ pub use orkestra_types::config::stage;
 pub use orkestra_types::config::workflow;
 
 pub use orkestra_types::config::{
-    ApprovalCapabilities, FlowConfig, GateConfig, IntegrationConfig, StageCapabilities,
-    StageConfig, SubtaskCapabilities, ToolRestriction, WorkflowConfig,
+    FlowConfig, GateConfig, IntegrationConfig, StageCapabilities, StageConfig, SubtaskCapabilities,
+    ToolRestriction, WorkflowConfig,
 };
 
 // Local I/O operations

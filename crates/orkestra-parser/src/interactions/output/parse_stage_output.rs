@@ -94,6 +94,7 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .as_str()
                 .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                 .to_string(),
+            route_to: value["route_to"].as_str().map(String::from),
             activity_log: value["activity_log"].as_str().map(String::from),
             resources: parse_resources(value)?,
         }),

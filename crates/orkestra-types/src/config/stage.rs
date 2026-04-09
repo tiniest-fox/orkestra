@@ -5,7 +5,7 @@
 //! - Produces an artifact (e.g., "plan", "summary")
 //! - Has capabilities that define what it can do
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 // ============================================================================
 // Artifact Configuration
@@ -109,10 +109,6 @@ pub struct StageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_file: Option<String>,
 
-    /// Whether this stage runs automatically without human approval.
-    #[serde(default)]
-    pub is_automated: bool,
-
     /// Model identifier for this stage (e.g., "claudecode/sonnet", "opencode/kimi-k2").
     /// If not specified, uses the default provider and model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -123,9 +119,17 @@ pub struct StageConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disallowed_tools: Vec<ToolRestriction>,
 
-    /// Gate script attached to this stage.
-    /// Runs after the agent completes. On failure, re-queues the task with error feedback.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Gate attached to this stage.
+    ///
+    /// - `gate: true` — Agentic gate: agent assesses, human confirms.
+    /// - `gate: { command, timeout_seconds }` — Automated gate: script runs after agent completes.
+    ///   On failure, re-queues the task with error feedback.
+    /// - Absent or `gate: false` — No gate.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_gate_option"
+    )]
     pub gate: Option<GateConfig>,
 }
 
@@ -139,7 +143,6 @@ impl StageConfig {
             capabilities: StageCapabilities::default(),
             prompt: None, // Defaults to {name}.md via prompt_path()
             schema_file: None,
-            is_automated: false,
             model: None,
             disallowed_tools: Vec::new(),
             gate: None,
@@ -157,13 +160,6 @@ impl StageConfig {
     #[must_use]
     pub fn with_capabilities(mut self, capabilities: StageCapabilities) -> Self {
         self.capabilities = capabilities;
-        self
-    }
-
-    /// Builder: mark as automated (no human approval).
-    #[must_use]
-    pub fn automated(mut self) -> Self {
-        self.is_automated = true;
         self
     }
 
@@ -217,6 +213,22 @@ impl StageConfig {
         self.gate.as_ref()
     }
 
+    /// Whether this stage has an agentic gate (human review of agent output).
+    pub fn has_agentic_gate(&self) -> bool {
+        matches!(self.gate, Some(GateConfig::Agentic))
+    }
+
+    /// Get the automated gate command and timeout, if this stage has an automated gate.
+    pub fn automated_gate_config(&self) -> Option<(&str, u64)> {
+        match &self.gate {
+            Some(GateConfig::Automated {
+                command,
+                timeout_seconds,
+            }) => Some((command.as_str(), *timeout_seconds)),
+            _ => None,
+        }
+    }
+
     /// Get the effective prompt template path for this stage.
     ///
     /// Returns `prompt` if set, otherwise `{name}.md`.
@@ -232,28 +244,11 @@ impl StageConfig {
 
 /// Capabilities that a stage may have.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StageCapabilities {
-    /// Stage can ask clarifying questions before producing output.
-    #[serde(default)]
-    pub ask_questions: bool,
-
     /// Subtask capabilities. Presence indicates the stage can produce subtasks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtasks: Option<SubtaskCapabilities>,
-
-    /// Approval capability. When present, the stage must produce an approve/reject
-    /// decision instead of a plain artifact. On reject, the task moves to the
-    /// `rejection_stage` (or the previous stage in the flow if not specified).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval: Option<ApprovalCapabilities>,
-}
-
-/// Configuration for a stage with approval capability.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ApprovalCapabilities {
-    /// Stage to move to on rejection. If None, defaults to the previous stage in the flow.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rejection_stage: Option<String>,
 }
 
 /// Configuration for a stage that produces subtasks.
@@ -263,44 +258,13 @@ pub struct SubtaskCapabilities {
     /// If None, subtasks use the default (full) pipeline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flow: Option<String>,
-
-    /// Stage the parent resumes at after subtasks complete.
-    /// If None, parent advances to the default next stage.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub completion_stage: Option<String>,
 }
 
 impl StageCapabilities {
-    /// Create capabilities with questions enabled.
-    pub fn with_questions() -> Self {
-        Self {
-            ask_questions: true,
-            ..Default::default()
-        }
-    }
-
     /// Create capabilities with subtask production enabled.
     pub fn with_subtasks() -> Self {
         Self {
             subtasks: Some(SubtaskCapabilities::default()),
-            ..Default::default()
-        }
-    }
-
-    /// Create capabilities with both questions and subtasks.
-    pub fn all() -> Self {
-        Self {
-            ask_questions: true,
-            subtasks: Some(SubtaskCapabilities::default()),
-            approval: None,
-        }
-    }
-
-    /// Create capabilities with approval (approve/reject decision).
-    pub fn with_approval(rejection_stage: Option<String>) -> Self {
-        Self {
-            approval: Some(ApprovalCapabilities { rejection_stage }),
-            ..Default::default()
         }
     }
 
@@ -313,21 +277,6 @@ impl StageCapabilities {
     pub fn subtask_flow(&self) -> Option<&str> {
         self.subtasks.as_ref()?.flow.as_deref()
     }
-
-    /// The stage the parent resumes at after subtasks complete, if configured.
-    pub fn completion_stage(&self) -> Option<&str> {
-        self.subtasks.as_ref()?.completion_stage.as_deref()
-    }
-
-    /// Whether this stage has approval capability.
-    pub fn has_approval(&self) -> bool {
-        self.approval.is_some()
-    }
-
-    /// The explicit rejection stage, if configured.
-    pub fn rejection_stage(&self) -> Option<&str> {
-        self.approval.as_ref()?.rejection_stage.as_deref()
-    }
 }
 
 impl SubtaskCapabilities {
@@ -337,31 +286,27 @@ impl SubtaskCapabilities {
         self.flow = Some(flow.into());
         self
     }
-
-    /// Builder: set the completion stage.
-    #[must_use]
-    pub fn with_completion_stage(mut self, stage: impl Into<String>) -> Self {
-        self.completion_stage = Some(stage.into());
-        self
-    }
 }
 
 // ============================================================================
 // Gate Configuration
 // ============================================================================
 
-/// Configuration for a gate script attached to an agent stage.
+/// Gate attached to a workflow stage.
 ///
-/// After the agent completes, the gate script runs. If it passes, the task
-/// enters the commit pipeline. If it fails, the task re-queues with error feedback.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct GateConfig {
-    /// Shell command to execute (runs via `sh -c`).
-    pub command: String,
-
-    /// Timeout in seconds. Defaults to 300 (5 minutes).
-    #[serde(default = "default_gate_timeout")]
-    pub timeout_seconds: u64,
+/// - `Agentic` — agent assesses work and produces an approve/reject output.
+///   Human confirms before advancing. YAML: `gate: true`
+/// - `Automated` — shell script runs after the agent completes.
+///   On failure, the task re-queues with error feedback. YAML: `gate: { command, timeout_seconds }`
+#[derive(Debug, Clone, PartialEq)]
+pub enum GateConfig {
+    /// Agentic gate: agent assesses, human confirms. YAML: `gate: true`
+    Agentic,
+    /// Automated gate: script runs after agent completes. YAML: `gate: { command, timeout_seconds }`
+    Automated {
+        command: String,
+        timeout_seconds: u64,
+    },
 }
 
 fn default_gate_timeout() -> u64 {
@@ -369,19 +314,74 @@ fn default_gate_timeout() -> u64 {
 }
 
 impl GateConfig {
-    /// Create a new gate configuration.
-    pub fn new(command: impl Into<String>) -> Self {
-        Self {
+    /// Create a new automated gate configuration with the default timeout (300s).
+    pub fn new_automated(command: impl Into<String>) -> Self {
+        Self::Automated {
             command: command.into(),
             timeout_seconds: default_gate_timeout(),
         }
     }
 
-    /// Builder: set timeout in seconds.
+    /// Builder: set timeout in seconds. Only meaningful for `Automated` variant.
     #[must_use]
-    pub fn with_timeout(mut self, seconds: u64) -> Self {
-        self.timeout_seconds = seconds;
-        self
+    pub fn with_timeout(self, seconds: u64) -> Self {
+        match self {
+            Self::Automated { command, .. } => Self::Automated {
+                command,
+                timeout_seconds: seconds,
+            },
+            other @ Self::Agentic => other,
+        }
+    }
+}
+
+impl Serialize for GateConfig {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            GateConfig::Agentic => serializer.serialize_bool(true),
+            GateConfig::Automated {
+                command,
+                timeout_seconds,
+            } => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("command", command)?;
+                map.serialize_entry("timeout_seconds", timeout_seconds)?;
+                map.end()
+            }
+        }
+    }
+}
+
+/// Deserialize `Option<GateConfig>` from YAML gate field.
+///
+/// - Absent / `false` / `null` → `None`
+/// - `true` → `Some(GateConfig::Agentic)`
+/// - `{ command, timeout_seconds }` → `Some(GateConfig::Automated { ... })`
+fn deserialize_gate_option<'de, D>(deserializer: D) -> Result<Option<GateConfig>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum GateHelper {
+        Bool(bool),
+        Automated {
+            command: String,
+            #[serde(default = "default_gate_timeout")]
+            timeout_seconds: u64,
+        },
+    }
+
+    match Option::<GateHelper>::deserialize(deserializer)? {
+        None | Some(GateHelper::Bool(false)) => Ok(None),
+        Some(GateHelper::Bool(true)) => Ok(Some(GateConfig::Agentic)),
+        Some(GateHelper::Automated {
+            command,
+            timeout_seconds,
+        }) => Ok(Some(GateConfig::Automated {
+            command,
+            timeout_seconds,
+        })),
     }
 }
 
@@ -409,7 +409,7 @@ mod tests {
         let stage = StageConfig::new("planning", "plan");
         assert_eq!(stage.name, "planning");
         assert_eq!(stage.artifact_name(), "plan");
-        assert!(!stage.is_automated);
+        assert!(stage.gate.is_none());
     }
 
     #[test]
@@ -431,95 +431,37 @@ mod tests {
     #[test]
     fn test_capabilities_default() {
         let caps = StageCapabilities::default();
-        assert!(!caps.ask_questions);
         assert!(!caps.produces_subtasks());
     }
 
     #[test]
-    fn test_capabilities_builders() {
-        let with_questions = StageCapabilities::with_questions();
-        assert!(with_questions.ask_questions);
-        assert!(!with_questions.produces_subtasks());
-
-        let with_subtasks = StageCapabilities::with_subtasks();
-        assert!(!with_subtasks.ask_questions);
-        assert!(with_subtasks.produces_subtasks());
-
-        let all = StageCapabilities::all();
-        assert!(all.ask_questions);
-        assert!(all.produces_subtasks());
+    fn test_capabilities_with_subtasks() {
+        let caps = StageCapabilities::with_subtasks();
+        assert!(caps.produces_subtasks());
+        assert_eq!(caps.subtask_flow(), None);
     }
 
     #[test]
-    fn test_stage_config_serialization() {
-        let stage = StageConfig::new("planning", "plan")
-            .with_capabilities(StageCapabilities::with_questions());
+    fn test_stage_config_serialization_no_capabilities() {
+        // Default capabilities should produce no capabilities field in YAML
+        let stage = StageConfig::new("planning", "plan");
 
         let yaml = serde_yaml::to_string(&stage).unwrap();
         assert!(yaml.contains("name: planning"));
         assert!(yaml.contains("artifact: plan"));
-        assert!(yaml.contains("ask_questions: true"));
 
         let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, stage);
     }
 
     #[test]
-    fn test_capabilities_with_approval() {
-        let caps = StageCapabilities::with_approval(Some("work".into()));
-        assert!(caps.has_approval());
-        assert_eq!(caps.rejection_stage(), Some("work"));
-        assert!(!caps.ask_questions);
-        assert!(!caps.produces_subtasks());
-    }
-
-    #[test]
-    fn test_capabilities_approval_default_rejection() {
-        let caps = StageCapabilities::with_approval(None);
-        assert!(caps.has_approval());
-        assert_eq!(caps.rejection_stage(), None);
-    }
-
-    #[test]
-    fn test_capabilities_approval_default_none() {
-        let caps = StageCapabilities::default();
-        assert!(!caps.has_approval());
-        assert_eq!(caps.rejection_stage(), None);
-    }
-
-    #[test]
-    fn test_capabilities_approval_serialization() {
-        let caps = StageCapabilities::with_approval(Some("work".into()));
-        let yaml = serde_yaml::to_string(&caps).unwrap();
-        assert!(yaml.contains("approval"));
-        assert!(yaml.contains("rejection_stage: work"));
-
-        let parsed: StageCapabilities = serde_yaml::from_str(&yaml).unwrap();
-        assert!(parsed.has_approval());
-        assert_eq!(parsed.rejection_stage(), Some("work"));
-    }
-
-    #[test]
-    fn test_capabilities_approval_skipped_when_none() {
-        let caps = StageCapabilities::default();
-        let yaml = serde_yaml::to_string(&caps).unwrap();
-        assert!(!yaml.contains("approval"));
-    }
-
-    #[test]
     fn test_subtask_capabilities() {
         let caps = StageCapabilities {
-            subtasks: Some(
-                SubtaskCapabilities::default()
-                    .with_flow("quick")
-                    .with_completion_stage("review"),
-            ),
-            ..Default::default()
+            subtasks: Some(SubtaskCapabilities::default().with_flow("quick")),
         };
 
         assert!(caps.produces_subtasks());
         assert_eq!(caps.subtask_flow(), Some("quick"));
-        assert_eq!(caps.completion_stage(), Some("review"));
     }
 
     #[test]
@@ -527,14 +469,12 @@ mod tests {
         let caps = StageCapabilities::default();
         assert!(!caps.produces_subtasks());
         assert_eq!(caps.subtask_flow(), None);
-        assert_eq!(caps.completion_stage(), None);
     }
 
     #[test]
     fn test_subtask_capabilities_serialization() {
         let caps = StageCapabilities {
             subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
-            ..Default::default()
         };
         let yaml = serde_yaml::to_string(&caps).unwrap();
         assert!(yaml.contains("subtasks"));
@@ -746,36 +686,94 @@ artifact:
     // -- Gate config tests --
 
     #[test]
-    fn test_gate_config_defaults() {
-        let gate = GateConfig::new("./run_checks.sh");
-        assert_eq!(gate.command, "./run_checks.sh");
-        assert_eq!(gate.timeout_seconds, 300);
+    fn test_gate_agentic_deserializes_from_true() {
+        let yaml = "name: review\nartifact: verdict\ngate: true\n";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(stage.gate, Some(GateConfig::Agentic));
+        assert!(stage.has_agentic_gate());
     }
 
     #[test]
-    fn test_gate_config_builder() {
-        let gate = GateConfig::new("./run.sh").with_timeout(60);
-        assert_eq!(gate.timeout_seconds, 60);
+    fn test_gate_false_deserializes_to_none() {
+        let yaml = "name: work\nartifact: summary\ngate: false\n";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(stage.gate.is_none());
+        assert!(!stage.has_agentic_gate());
     }
 
     #[test]
-    fn test_gate_config_serialization() {
-        let gate = GateConfig::new("./checks.sh").with_timeout(120);
-        let yaml = serde_yaml::to_string(&gate).unwrap();
+    fn test_gate_absent_is_none() {
+        let yaml = "name: work\nartifact: summary\n";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(stage.gate.is_none());
+    }
+
+    #[test]
+    fn test_gate_automated_deserializes_from_map() {
+        let yaml = "name: work\nartifact: summary\ngate:\n  command: ./checks.sh\n  timeout_seconds: 600\n";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            stage.gate,
+            Some(GateConfig::Automated {
+                command: "./checks.sh".to_string(),
+                timeout_seconds: 600,
+            })
+        );
+        assert!(!stage.has_agentic_gate());
+        assert_eq!(stage.automated_gate_config(), Some(("./checks.sh", 600)));
+    }
+
+    #[test]
+    fn test_gate_automated_default_timeout() {
+        let yaml = "name: work\nartifact: summary\ngate:\n  command: ./checks.sh\n";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            stage.gate,
+            Some(GateConfig::Automated {
+                command: "./checks.sh".to_string(),
+                timeout_seconds: 300, // default
+            })
+        );
+    }
+
+    #[test]
+    fn test_gate_agentic_serializes_to_true() {
+        let stage = StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic);
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        assert!(yaml.contains("gate: true"));
+    }
+
+    #[test]
+    fn test_gate_automated_serializes_to_map() {
+        let stage = StageConfig::new("work", "summary")
+            .with_gate(GateConfig::new_automated("./checks.sh").with_timeout(120));
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        assert!(yaml.contains("gate:"));
         assert!(yaml.contains("command: ./checks.sh"));
         assert!(yaml.contains("timeout_seconds: 120"));
-
-        let parsed: GateConfig = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(parsed.command, "./checks.sh");
-        assert_eq!(parsed.timeout_seconds, 120);
     }
 
     #[test]
-    fn test_stage_with_gate() {
-        let gate = GateConfig::new("./gate.sh");
-        let stage = StageConfig::new("work", "summary").with_gate(gate.clone());
+    fn test_gate_agentic_roundtrip() {
+        let stage = StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic);
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.gate, Some(GateConfig::Agentic));
+    }
 
-        assert_eq!(stage.gate_config().unwrap().command, "./gate.sh");
+    #[test]
+    fn test_gate_automated_roundtrip() {
+        let stage = StageConfig::new("work", "summary")
+            .with_gate(GateConfig::new_automated("./checks.sh").with_timeout(600));
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(
+            parsed.gate,
+            Some(GateConfig::Automated {
+                command: "./checks.sh".to_string(),
+                timeout_seconds: 600,
+            })
+        );
     }
 
     #[test]
@@ -786,14 +784,68 @@ artifact:
     }
 
     #[test]
-    fn test_gate_serialized_when_present() {
-        let stage = StageConfig::new("work", "summary").with_gate(GateConfig::new("./checks.sh"));
-        let yaml = serde_yaml::to_string(&stage).unwrap();
-        assert!(yaml.contains("gate:"));
-        assert!(yaml.contains("command: ./checks.sh"));
+    fn test_automated_gate_config_returns_none_for_agentic() {
+        let stage = StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic);
+        assert!(stage.automated_gate_config().is_none());
+    }
 
-        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(parsed.gate_config().unwrap().command, "./checks.sh");
+    #[test]
+    fn test_gate_config_new_automated_defaults() {
+        let gate = GateConfig::new_automated("./run_checks.sh");
+        assert_eq!(
+            gate,
+            GateConfig::Automated {
+                command: "./run_checks.sh".to_string(),
+                timeout_seconds: 300,
+            }
+        );
+    }
+
+    #[test]
+    fn test_gate_config_with_timeout() {
+        let gate = GateConfig::new_automated("./run.sh").with_timeout(60);
+        assert_eq!(
+            gate,
+            GateConfig::Automated {
+                command: "./run.sh".to_string(),
+                timeout_seconds: 60,
+            }
+        );
+    }
+
+    // -- StageCapabilities deny_unknown_fields regression tests --
+
+    #[test]
+    fn test_stage_capabilities_rejects_unknown_fields() {
+        // Old field `ask_questions` should be rejected
+        let yaml = "ask_questions: true\n";
+        let result: Result<StageCapabilities, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "Expected error when deserializing StageCapabilities with unknown field 'ask_questions'"
+        );
+    }
+
+    #[test]
+    fn test_stage_capabilities_rejects_approval_field() {
+        // Old field `approval` should be rejected
+        let yaml = "approval:\n  rejection_stage: work\n";
+        let result: Result<StageCapabilities, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "Expected error when deserializing StageCapabilities with unknown field 'approval'"
+        );
+    }
+
+    #[test]
+    fn test_stage_config_rejects_is_automated_field() {
+        // Old field `is_automated` on StageConfig should be rejected
+        let yaml = "name: compound\nartifact: learnings\nis_automated: true\n";
+        let result: Result<StageConfig, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "Expected error when deserializing StageConfig with unknown field 'is_automated'"
+        );
     }
 
     #[test]

@@ -1,6 +1,5 @@
 //! Auto-approve and advance if the stage/task allows it, otherwise pause for review.
 
-use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
@@ -26,15 +25,11 @@ pub fn execute(
 // -- Helpers --
 
 fn should_auto_advance(task: &Task, stage: &str, workflow: &WorkflowConfig) -> bool {
-    let is_automated = if let Some(s) = workflow.stage(&task.flow, stage) {
-        s.is_automated
-    } else {
-        orkestra_debug!(
-            "action",
-            "should_auto_advance: stage {:?} not found in workflow config, defaulting to non-automated",
-            stage
-        );
-        false
-    };
-    task.auto_mode || is_automated
+    // Any gate (agentic or automated script) pauses for human review unless auto_mode is set.
+    // This function is called after a gate passes — the gate already ran; the question is
+    // whether human confirmation is required before advancing.
+    let has_any_gate = workflow
+        .stage(&task.flow, stage)
+        .is_some_and(|s| s.gate.is_some());
+    task.auto_mode || !has_any_gate
 }

@@ -688,9 +688,9 @@ impl TestEnv {
     ///
     /// # Arguments
     /// * `artifact` - The artifact name this stage produces (e.g., "plan", "summary", "verdict")
-    /// * `can_ask_questions` - Whether the stage has `ask_questions` capability
+    /// * `_can_ask_questions` - Unused; questions are always included in all stage prompts
     /// * `has_approval` - Whether the stage has approval capability
-    pub fn assert_full_prompt(&self, artifact: &str, can_ask_questions: bool, has_approval: bool) {
+    pub fn assert_full_prompt(&self, artifact: &str, _can_ask_questions: bool, has_approval: bool) {
         let calls = self.runner.calls();
         let call = calls.last().expect("No agent calls recorded");
 
@@ -726,13 +726,11 @@ impl TestEnv {
                 &sys[..sys.len().min(500)]
             );
 
-            // Check questions capability in system prompt
-            if can_ask_questions {
-                assert!(
-                    sys.contains("\"questions\"") || sys.contains("questions"),
-                    "System prompt for stage with ask_questions should mention questions output type"
-                );
-            }
+            // Questions are always included in all stage prompts
+            assert!(
+                sys.contains("\"questions\"") || sys.contains("questions"),
+                "System prompt should always mention questions output type"
+            );
 
             // Check approval capability in system prompt
             if has_approval {
@@ -826,6 +824,7 @@ impl From<MockAgentOutput> for StageOutput {
             } => StageOutput::Approval {
                 decision,
                 content,
+                route_to: None,
                 activity_log,
                 resources,
             },
@@ -862,7 +861,7 @@ pub mod workflows {
     /// advance three ticks before the gate PID is recorded in the session.
     pub fn sleep_script() -> WorkflowConfig {
         WorkflowConfig::new(vec![StageConfig::new("work", "output")
-            .with_gate(GateConfig::new("sleep 60").with_timeout(120))])
+            .with_gate(GateConfig::new_automated("sleep 60").with_timeout(120))])
         .with_integration(IntegrationConfig::new("work"))
     }
 
@@ -871,18 +870,19 @@ pub mod workflows {
     /// planning → breakdown → work → review
     /// Plus a "subtask" flow: work → review
     pub fn with_subtasks() -> WorkflowConfig {
-        use orkestra_core::workflow::config::{FlowConfig, StageCapabilities};
+        use orkestra_core::workflow::config::{FlowConfig, GateConfig as HelpersGateConfig};
 
         let mut flows = indexmap::IndexMap::new();
         flows.insert(
             "subtask".to_string(),
             FlowConfig {
                 stages: vec![
-                    StageConfig::new("work", "summary").with_prompt("worker.md"),
+                    StageConfig::new("work", "summary")
+                        .with_prompt("worker.md")
+                        .with_gate(HelpersGateConfig::Agentic),
                     StageConfig::new("review", "verdict")
                         .with_prompt("reviewer.md")
-                        .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                        .automated(),
+                        .with_gate(HelpersGateConfig::Agentic),
                 ],
                 integration: IntegrationConfig::new("work"),
             },
@@ -891,27 +891,22 @@ pub mod workflows {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
                 .with_prompt("planner.md")
-                .with_capabilities(
-                    orkestra_core::workflow::config::StageCapabilities::with_questions(),
-                ),
+                .with_gate(HelpersGateConfig::Agentic),
             StageConfig::new("breakdown", "breakdown")
                 .with_prompt("breakdown.md")
+                .with_gate(HelpersGateConfig::Agentic)
                 .with_capabilities(orkestra_core::workflow::config::StageCapabilities {
                     subtasks: Some(
                         orkestra_core::workflow::config::SubtaskCapabilities::default()
                             .with_flow("subtask"),
                     ),
-                    ..Default::default()
                 }),
-            StageConfig::new("work", "summary").with_prompt("worker.md"),
+            StageConfig::new("work", "summary")
+                .with_prompt("worker.md")
+                .with_gate(HelpersGateConfig::Agentic),
             StageConfig::new("review", "verdict")
                 .with_prompt("reviewer.md")
-                .with_capabilities(
-                    orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
-                        "work".into(),
-                    )),
-                )
-                .automated(),
+                .with_gate(HelpersGateConfig::Agentic),
         ])
         .with_integration(IntegrationConfig::new("work"))
         .with_flows(flows)
@@ -924,7 +919,7 @@ pub mod workflows {
     /// Tests must pre-load mock output via `set_output()` before advancing.
     pub fn instant_script() -> WorkflowConfig {
         WorkflowConfig::new(vec![StageConfig::new("work", "output")
-            .with_gate(GateConfig::new("echo hello").with_timeout(10))])
+            .with_gate(GateConfig::new_automated("echo hello").with_timeout(10))])
         .with_integration(IntegrationConfig::new("work"))
     }
 }

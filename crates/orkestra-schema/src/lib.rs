@@ -17,9 +17,9 @@ pub use types::SchemaConfig;
 pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
     generate_stage_schema(&SchemaConfig {
         artifact_name: "plan",
-        ask_questions: true,
         produces_subtasks: false,
         has_approval: false,
+        route_to_stages: vec![],
     })
 });
 

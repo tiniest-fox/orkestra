@@ -1183,11 +1183,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     // Build a workflow: "default" (auto_merge: false) and "hotfix" (auto_merge: true)
     // Both flows have a single automated "work" stage — no human approval required,
     // so tasks advance straight to Done when the agent outputs its artifact.
-    let work_stage = || {
-        StageConfig::new("work", "summary")
-            .with_prompt("worker.md")
-            .automated()
-    };
+    let work_stage = || StageConfig::new("work", "summary").with_prompt("worker.md");
 
     let mut flows = IndexMap::new();
     flows.insert(

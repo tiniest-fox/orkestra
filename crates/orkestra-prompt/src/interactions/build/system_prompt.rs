@@ -67,14 +67,13 @@ struct OutputFormatContext {
 
 /// Build the output format context with schema-validated examples.
 fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatContext {
-    let questions_example = if ctx.stage.capabilities.ask_questions {
+    // Questions are always available — any agent can ask for clarification.
+    let questions_example = {
         let examples = vec![question_example(
             "Which approach should we take?",
             &["Option A", "Option B"],
         )];
         Some(questions_output_example(&examples))
-    } else {
-        None
     };
 
     let subtasks_example = if ctx.stage.capabilities.produces_subtasks() {
@@ -102,11 +101,11 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
 
     OutputFormatContext {
         artifact_name: ctx.stage.artifact_name().to_owned(),
-        can_ask_questions: ctx.stage.capabilities.ask_questions,
+        can_ask_questions: true,
         questions_example,
         can_produce_subtasks: ctx.stage.capabilities.produces_subtasks(),
         subtasks_example,
-        has_approval: ctx.stage.capabilities.has_approval(),
+        has_approval: ctx.stage.has_agentic_gate(),
         show_direct_structured_output_hint: ctx.show_direct_structured_output_hint,
     }
 }
@@ -166,7 +165,7 @@ fn render_agent_definition(template: &str, ctx: &StagePromptContext<'_>) -> Stri
 mod tests {
     use super::*;
     use crate::interactions::build::context::PromptBuilder;
-    use orkestra_types::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_types::config::{GateConfig, StageConfig, WorkflowConfig};
     use orkestra_types::domain::Task;
 
     fn test_templates() -> Handlebars<'static> {
@@ -187,12 +186,9 @@ mod tests {
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ])
     }
 

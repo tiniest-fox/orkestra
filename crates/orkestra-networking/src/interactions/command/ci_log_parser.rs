@@ -4,10 +4,6 @@
 //! `##[endgroup]`, `##[error]`) to scope to the failed step, then ANSI red code
 //! detection to extract the relevant error lines.
 
-// The public API is consumed by the sibling subtask (mongoose) that wires log
-// fetching into `fetch_pr_status`. Until then, allow unused-code lints.
-#![allow(dead_code)]
-
 // ============================================================================
 // Types
 // ============================================================================

@@ -374,11 +374,11 @@ mod tests {
         let checks = vec![
             PrCheckContext {
                 name: "CI / build".to_string(),
-                summary: Some("3 tests failed".to_string()),
+                log_excerpt: Some("3 tests failed".to_string()),
             },
             PrCheckContext {
                 name: "CI / lint".to_string(),
-                summary: None,
+                log_excerpt: None,
             },
         ];
         let prompt = execute(
@@ -411,7 +411,7 @@ mod tests {
         }];
         let checks = vec![PrCheckContext {
             name: "CI / build".to_string(),
-            summary: Some("Build failed".to_string()),
+            log_excerpt: Some("Build failed".to_string()),
         }];
         let prompt = execute(
             "work",

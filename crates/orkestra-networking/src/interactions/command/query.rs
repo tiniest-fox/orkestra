@@ -337,12 +337,6 @@ struct GhCheckRunsResponse {
 struct GhCheckRun {
     id: i64,
     name: String,
-    output: Option<GhCheckRunOutput>,
-}
-
-#[derive(Deserialize)]
-struct GhCheckRunOutput {
-    summary: Option<String>,
 }
 
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -434,27 +428,21 @@ pub async fn fetch_pr_status(pr_url: &str) -> Result<PrStatus, ErrorPayload> {
         }
     );
 
-    let check_enrichments: std::collections::HashMap<String, (i64, Option<String>)> =
-        match check_runs_result {
-            Ok(api_stdout) => {
-                let parsed: GhCheckRunsResponse =
-                    serde_json::from_str(&api_stdout).unwrap_or_else(|e| {
-                        tracing::warn!("Failed to parse check-runs JSON: {e}");
-                        GhCheckRunsResponse::default()
-                    });
-                parsed
-                    .check_runs
-                    .into_iter()
-                    .map(|cr| (cr.name, (cr.id, cr.output.and_then(|o| o.summary))))
-                    .collect()
-            }
-            Err(e) => {
-                tracing::warn!("[pr] Failed to fetch check-runs: {}", e.message);
-                std::collections::HashMap::new()
-            }
-        };
+    let check_enrichments = parse_check_enrichments(check_runs_result);
 
-    let checks = map_checks(response.status_check_rollup.iter(), check_enrichments);
+    let log_excerpts = fetch_log_excerpts(
+        owner,
+        repo,
+        &check_enrichments,
+        &response.status_check_rollup,
+    )
+    .await;
+
+    let checks = map_checks(
+        response.status_check_rollup.iter(),
+        check_enrichments,
+        &log_excerpts,
+    );
 
     let reviews = match reviews_result {
         Ok(api_stdout) => map_reviews(&api_stdout),
@@ -494,9 +482,114 @@ pub async fn fetch_pr_status(pr_url: &str) -> Result<PrStatus, ErrorPayload> {
 
 // -- Helpers --
 
+/// Parse check-runs API response into a name → job-ID mapping.
+fn parse_check_enrichments(
+    result: Result<String, ErrorPayload>,
+) -> std::collections::HashMap<String, i64> {
+    match result {
+        Ok(api_stdout) => {
+            let parsed: GhCheckRunsResponse =
+                serde_json::from_str(&api_stdout).unwrap_or_else(|e| {
+                    tracing::warn!("Failed to parse check-runs JSON: {e}");
+                    GhCheckRunsResponse::default()
+                });
+            parsed
+                .check_runs
+                .into_iter()
+                .map(|cr| (cr.name, cr.id))
+                .collect()
+        }
+        Err(e) => {
+            tracing::warn!("[pr] Failed to fetch check-runs: {}", e.message);
+            std::collections::HashMap::new()
+        }
+    }
+}
+
+/// Fetch CI job logs for all failing checks in parallel.
+///
+/// Returns a map from check name to formatted log excerpt. Checks without a
+/// job ID (non-GitHub-Actions checks) are skipped. Log fetch failures produce
+/// a warning and result in no entry — they never block the PR status response.
+async fn fetch_log_excerpts(
+    owner: &str,
+    repo: &str,
+    check_enrichments: &std::collections::HashMap<String, i64>,
+    rollup: &[GhStatusCheck],
+) -> std::collections::HashMap<String, String> {
+    let failing_jobs: Vec<(String, i64)> = check_enrichments
+        .iter()
+        .filter(|(name, _)| {
+            rollup.iter().any(|sc| {
+                let check_name = sc
+                    .name
+                    .as_deref()
+                    .or(sc.context.as_deref())
+                    .unwrap_or_default();
+                check_name == name.as_str()
+                    && orkestra_types::domain::classify_check(
+                        sc.status.as_deref(),
+                        sc.conclusion.as_deref(),
+                    )
+                    .is_failing()
+            })
+        })
+        .map(|(name, id)| (name.clone(), *id))
+        .collect();
+
+    let log_results = futures_util::future::join_all(
+        failing_jobs
+            .iter()
+            .map(|(_, id)| fetch_job_log(owner, repo, *id)),
+    )
+    .await;
+
+    let mut excerpts: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for ((name, _), log_result) in failing_jobs.iter().zip(log_results) {
+        if let Some(excerpt) = log_result {
+            let formatted = match &excerpt.command {
+                Some(cmd) => format!("**Failed command:** `{cmd}`\n\n{}", excerpt.output),
+                None => excerpt.output,
+            };
+            excerpts.insert(name.clone(), formatted);
+        }
+    }
+    excerpts
+}
+
+/// Fetch the raw log for a GitHub Actions job and parse it into an excerpt.
+///
+/// Returns the parsed log excerpt, or None if fetching or parsing fails.
+async fn fetch_job_log(
+    owner: &str,
+    repo: &str,
+    job_id: i64,
+) -> Option<super::ci_log_parser::CiLogExcerpt> {
+    let path = format!("repos/{owner}/{repo}/actions/jobs/{job_id}/logs");
+    match run_gh(&["api", &path]).await {
+        Ok(raw_log) => {
+            // Cap input to 1MB to prevent memory spikes — errors are at the end.
+            let capped = if raw_log.len() > 1_048_576 {
+                &raw_log[raw_log.len() - 1_048_576..]
+            } else {
+                &raw_log
+            };
+            super::ci_log_parser::parse_ci_log(capped)
+        }
+        Err(e) => {
+            tracing::warn!(
+                "[pr] Failed to fetch job log for job {job_id}: {}",
+                e.message
+            );
+            None
+        }
+    }
+}
+
 fn map_checks<'a>(
     status_checks: impl Iterator<Item = &'a GhStatusCheck>,
-    mut check_enrichments: std::collections::HashMap<String, (i64, Option<String>)>,
+    mut check_enrichments: std::collections::HashMap<String, i64>,
+    log_excerpts: &std::collections::HashMap<String, String>,
 ) -> Vec<PrCheck> {
     status_checks
         .map(|check| {
@@ -505,9 +598,9 @@ fn map_checks<'a>(
                 .clone()
                 .or_else(|| check.context.clone())
                 .unwrap_or_default();
-            let enrichment = check_enrichments.remove(&name);
+            let id = check_enrichments.remove(&name);
             PrCheck {
-                name,
+                name: name.clone(),
                 status: orkestra_types::domain::classify_check(
                     check.status.as_deref(),
                     check.conclusion.as_deref(),
@@ -515,8 +608,8 @@ fn map_checks<'a>(
                 .as_str()
                 .to_string(),
                 conclusion: check.conclusion.clone(),
-                id: enrichment.as_ref().map(|(id, _)| *id),
-                summary: enrichment.and_then(|(_, s)| s),
+                id,
+                log_excerpt: log_excerpts.get(&name).cloned(),
             }
         })
         .collect()

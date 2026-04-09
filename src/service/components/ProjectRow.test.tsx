@@ -115,6 +115,10 @@ describe("ProjectRow", () => {
     Element.prototype.scrollIntoView = vi.fn();
     vi.restoreAllMocks();
     vi.mocked(useIsMobile).mockReturnValue(false); // reset to desktop default after restoreAllMocks
+    // Resolve immediately so usePolling's run() completes — a never-resolving promise
+    // leaves an unresolved async operation that causes Vitest to wait indefinitely.
+    // Must be after vi.restoreAllMocks() which would otherwise clear this mock implementation.
+    mockFetchLogs.mockResolvedValue([]);
   });
 
   // -- Rendering --
@@ -176,7 +180,6 @@ describe("ProjectRow", () => {
   });
 
   it("shows no inline action buttons for transitioning projects", () => {
-    mockFetchLogs.mockReturnValue(new Promise(() => {})); // never resolves
     renderRow(
       { id: "p1", name: "transitioning-repo", status: "starting" },
       { effectiveStatus: "starting" },
@@ -375,7 +378,6 @@ describe("ProjectRow", () => {
   });
 
   it("shows only Cancel, View Logs, and Remove in overflow menu for transitioning project", () => {
-    mockFetchLogs.mockReturnValue(new Promise(() => {}));
     renderRow(
       { id: "p1", name: "transitioning-repo", status: "starting" },
       { effectiveStatus: "starting" },
@@ -397,7 +399,6 @@ describe("ProjectRow", () => {
   });
 
   it("shows Cancel in overflow menu for starting project and calls onCancel", () => {
-    mockFetchLogs.mockReturnValue(new Promise(() => {}));
     const onCancel = vi.fn();
     renderRow(
       { id: "p1", name: "starting-repo", status: "starting" },
@@ -420,7 +421,6 @@ describe("ProjectRow", () => {
 
   it("shows mobile log row below project info for transitioning project on mobile", () => {
     vi.mocked(useIsMobile).mockReturnValue(true);
-    mockFetchLogs.mockReturnValue(new Promise(() => {}));
     renderRow(
       { id: "p1", name: "transitioning-repo", status: "starting" },
       { effectiveStatus: "starting" },

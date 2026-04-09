@@ -71,7 +71,7 @@ pub struct PrCheck {
     pub status: String,
     pub conclusion: Option<String>,
     pub id: Option<i64>,
-    pub summary: Option<String>,
+    pub log_excerpt: Option<String>,
 }
 
 /// A single review status.

@@ -106,7 +106,7 @@ export function DrawerPrTab({
         .filter((c) => selectedCheckNames.has(c.name))
         .map((c) => ({
           name: c.name,
-          summary: c.summary ?? null,
+          log_excerpt: c.log_excerpt ?? null,
         }));
       onPrStateChange({
         type: "feedback_selected",

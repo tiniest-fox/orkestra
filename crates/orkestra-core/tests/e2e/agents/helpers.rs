@@ -270,11 +270,11 @@ impl AgentTestEnv {
     ///
     /// Checks that at least one `Text` or `ToolUse` entry exists.
     pub fn assert_has_logs(&self, task_id: &str, stage: &str) {
-        let logs = self
+        let (logs, _cursor) = self
             .api
             .lock()
             .unwrap()
-            .get_task_logs(task_id, Some(stage), None)
+            .get_task_logs(task_id, Some(stage), None, None)
             .expect("get logs");
 
         let text_count = logs
@@ -336,8 +336,9 @@ impl AgentTestEnv {
         self.api
             .lock()
             .unwrap()
-            .get_task_logs(task_id, Some(stage), None)
+            .get_task_logs(task_id, Some(stage), None, None)
             .expect("get_task_logs should succeed")
+            .0
     }
 
     /// Get the number of log entries for a task+stage.
@@ -345,8 +346,9 @@ impl AgentTestEnv {
         self.api
             .lock()
             .unwrap()
-            .get_task_logs(task_id, Some(stage), None)
+            .get_task_logs(task_id, Some(stage), None, None)
             .expect("get_task_logs should succeed")
+            .0
             .len()
     }
 

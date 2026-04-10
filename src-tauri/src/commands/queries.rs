@@ -136,16 +136,19 @@ pub fn workflow_list_branches(
     })
 }
 
-/// Get log entries for a task's stage or a specific session.
+/// Get log entries for a task's stage or a specific session with optional cursor-based pagination.
 ///
 /// # Arguments
 /// * `task_id` - The task ID
 /// * `stage` - Optional stage name. If None, uses the task's current stage.
 /// * `session_id` - Optional session ID. If provided, fetches logs for that
 ///   specific session directly (takes precedence over `stage`).
+/// * `cursor` - Optional sequence_number cursor. If provided, only entries with
+///   sequence_number > cursor are returned, enabling incremental fetching.
 ///
 /// # Returns
-/// `Vec` of `LogEntry` representing agent activity (tool uses, text output, etc.)
+/// `{ entries: Vec<LogEntry>, cursor: u64 | null }` — entries since the cursor, plus
+/// the new cursor value for the next incremental fetch.
 #[tauri::command]
 pub fn workflow_get_logs(
     registry: State<ProjectRegistry>,
@@ -153,12 +156,14 @@ pub fn workflow_get_logs(
     task_id: String,
     stage: Option<String>,
     session_id: Option<String>,
+    cursor: Option<u64>,
 ) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
         let params = serde_json::json!({
             "task_id": task_id,
             "stage": stage,
             "session_id": session_id,
+            "cursor": cursor,
         });
         query::get_logs(state.command_context(), &params).map_err(Into::into)
     })

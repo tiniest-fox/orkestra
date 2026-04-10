@@ -30,6 +30,19 @@ impl LogService {
         self.store.get_log_entries(stage_session_id)
     }
 
+    /// Get log entries with `sequence_number` greater than `after_sequence`.
+    ///
+    /// Returns the entries and the max `sequence_number` as a cursor for the next fetch.
+    /// When `after_sequence` is 0, returns all entries.
+    pub fn get_logs_after(
+        &self,
+        stage_session_id: &str,
+        after_sequence: u64,
+    ) -> WorkflowResult<(Vec<LogEntry>, Option<u64>)> {
+        self.store
+            .get_log_entries_after(stage_session_id, after_sequence)
+    }
+
     /// Check if a stage session has any log entries in the database.
     pub fn has_logs(&self, stage_session_id: &str) -> WorkflowResult<bool> {
         let entries = self.store.get_log_entries(stage_session_id)?;

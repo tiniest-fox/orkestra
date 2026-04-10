@@ -233,6 +233,24 @@ export default defineConfig(async ({ mode, command }) => {
   // biome-ignore lint/suspicious/noExplicitAny: vite-plugin-pwa is optional dep, loaded dynamically
   const plugins: any[] = [
     react(),
+    // Inject the standalone React DevTools hook in dev only (pnpm devtools).
+    // Never included in production builds — command === 'build' skips this.
+    ...(command === "serve"
+      ? [
+          {
+            name: "inject-react-devtools",
+            transformIndexHtml: {
+              order: "pre" as const,
+              handler(html: string) {
+                return html.replace(
+                  '<script>window.__htmlLoadTime',
+                  '<script src="http://localhost:8097"></script>\n    <script>window.__htmlLoadTime',
+                );
+              },
+            },
+          },
+        ]
+      : []),
     // Stub virtual:pwa-register in non-PWA modes so the dev server can resolve
     // the dynamic import in main.tsx. In PWA mode, VitePWA provides the real module.
     ...(mode !== "pwa"

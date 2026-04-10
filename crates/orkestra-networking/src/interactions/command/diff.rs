@@ -22,6 +22,7 @@ use super::dispatch::CommandContext;
 /// Uses two-tier caching: SHA check (Tier 1) and per-file content hash (Tier 2).
 ///
 /// Expected params: `{ "task_id": "<id>", "context_lines": <n> }`
+#[allow(clippy::too_many_lines)]
 pub(super) async fn handle_get_task_diff(
     ctx: Arc<CommandContext>,
     params: Value,
@@ -32,6 +33,10 @@ pub(super) async fn handle_get_task_diff(
         .and_then(serde_json::Value::as_u64)
         .and_then(|n| u32::try_from(n).ok())
         .unwrap_or(3);
+    let last_sha = params
+        .get("last_sha")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let api = Arc::clone(&ctx.api);
     let highlighter = Arc::clone(&ctx.highlighter);
     let diff_cache = Arc::clone(&ctx.diff_cache);
@@ -65,10 +70,16 @@ pub(super) async fn handle_get_task_diff(
                 } else {
                     format!("{}:{}", wt_state.head_sha, context_lines)
                 };
+                // ETag short-circuit: unchanged since last poll.
+                if last_sha.as_deref() == Some(&cache_sha) {
+                    return Ok(serde_json::json!({ "unchanged": true, "diff_sha": cache_sha }));
+                }
                 if let Some(files) = diff_cache.get_all_if_clean(&task_id, &cache_sha) {
-                    return Ok(
-                        serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null)
-                    );
+                    return Ok(serde_json::to_value(HighlightedTaskDiff {
+                        files,
+                        diff_sha: Some(cache_sha),
+                    })
+                    .unwrap_or(Value::Null));
                 }
             }
 
@@ -87,6 +98,13 @@ pub(super) async fn handle_get_task_diff(
                 .iter()
                 .map(|f| (f.path.clone(), file_content_hash(f)))
                 .collect();
+            let diff_sha = combined_diff_sha(&file_hashes, context_lines);
+
+            // ETag short-circuit for dirty worktrees (or clean Tier 1 miss).
+            if last_sha.as_deref() == Some(&diff_sha) {
+                return Ok(serde_json::json!({ "unchanged": true, "diff_sha": diff_sha }));
+            }
+
             let mut cached_files = diff_cache.get_files_by_hash(&task_id, &file_hashes);
 
             let mut to_store: Vec<(String, u64, HighlightedFileDiff)> = Vec::new();
@@ -107,7 +125,11 @@ pub(super) async fn handle_get_task_diff(
                 .collect();
 
             diff_cache.store(&task_id, &cache_sha, to_store);
-            return Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null));
+            return Ok(serde_json::to_value(HighlightedTaskDiff {
+                files,
+                diff_sha: Some(diff_sha),
+            })
+            .unwrap_or(Value::Null));
         }
 
         // get_worktree_state failed — fall back to direct diff with no caching.
@@ -121,7 +143,11 @@ pub(super) async fn handle_get_task_diff(
             .map(|file| highlight_file_diff(file, &highlighter))
             .collect();
 
-        Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
+        Ok(serde_json::to_value(HighlightedTaskDiff {
+            files,
+            diff_sha: None,
+        })
+        .unwrap_or(Value::Null))
     })
     .await
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
@@ -233,7 +259,11 @@ pub fn get_uncommitted_diff(ctx: &CommandContext, params: &Value) -> Result<Valu
         .into_iter()
         .map(|f| highlight_file_diff(f, &ctx.highlighter))
         .collect();
-    Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
+    Ok(serde_json::to_value(HighlightedTaskDiff {
+        files,
+        diff_sha: None,
+    })
+    .unwrap_or(Value::Null))
 }
 
 /// Handle the `get_commit_log` method — returns the 20 most recent commits.
@@ -319,8 +349,11 @@ pub(super) async fn handle_get_commit_diff(
         let git = {
             let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
             let Some(git) = api.git_service() else {
-                return Ok(serde_json::to_value(HighlightedTaskDiff { files: vec![] })
-                    .unwrap_or(Value::Null));
+                return Ok(serde_json::to_value(HighlightedTaskDiff {
+                    files: vec![],
+                    diff_sha: None,
+                })
+                .unwrap_or(Value::Null));
             };
             Arc::clone(git)
         }; // lock released — git subprocess runs off the lock
@@ -335,7 +368,11 @@ pub(super) async fn handle_get_commit_diff(
             .map(|f| highlight_file_diff(f, &highlighter))
             .collect();
 
-        Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
+        Ok(serde_json::to_value(HighlightedTaskDiff {
+            files,
+            diff_sha: None,
+        })
+        .unwrap_or(Value::Null))
     })
     .await
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
@@ -344,6 +381,19 @@ pub(super) async fn handle_get_commit_diff(
 // ============================================================================
 // Diff parsing and highlighting
 // ============================================================================
+
+/// Combine per-file content hashes into a single diff fingerprint.
+fn combined_diff_sha(file_hashes: &[(String, u64)], context_lines: u32) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    for (path, hash) in file_hashes {
+        path.hash(&mut h);
+        hash.hash(&mut h);
+    }
+    context_lines.hash(&mut h);
+    format!("{:x}", h.finish())
+}
 
 /// Stable content hash for a `FileDiff` entry.
 fn file_content_hash(file: &FileDiff) -> u64 {
@@ -532,5 +582,46 @@ mod tests {
     fn parse_hunk_header_invalid() {
         assert_eq!(parse_hunk_header("not a header"), None);
         assert_eq!(parse_hunk_header(""), None);
+    }
+
+    #[test]
+    fn combined_diff_sha_consistent() {
+        let hashes = vec![("src/main.rs".to_string(), 12345u64)];
+        let a = combined_diff_sha(&hashes, 3);
+        let b = combined_diff_sha(&hashes, 3);
+        assert_eq!(a, b, "same inputs should produce same fingerprint");
+    }
+
+    #[test]
+    fn combined_diff_sha_changes_with_file_hash() {
+        let hashes_a = vec![("src/main.rs".to_string(), 12345u64)];
+        let hashes_b = vec![("src/main.rs".to_string(), 99999u64)];
+        assert_ne!(
+            combined_diff_sha(&hashes_a, 3),
+            combined_diff_sha(&hashes_b, 3),
+            "different file content should produce different fingerprint"
+        );
+    }
+
+    #[test]
+    fn combined_diff_sha_changes_with_context_lines() {
+        let hashes = vec![("src/main.rs".to_string(), 12345u64)];
+        assert_ne!(
+            combined_diff_sha(&hashes, 3),
+            combined_diff_sha(&hashes, 10),
+            "different context_lines should produce different fingerprint"
+        );
+    }
+
+    #[test]
+    fn combined_diff_sha_sensitive_to_file_order() {
+        let hashes_ab = vec![("a.rs".to_string(), 1u64), ("b.rs".to_string(), 2u64)];
+        let hashes_ba = vec![("b.rs".to_string(), 2u64), ("a.rs".to_string(), 1u64)];
+        // Order matters — files are hashed in iteration order.
+        assert_ne!(
+            combined_diff_sha(&hashes_ab, 3),
+            combined_diff_sha(&hashes_ba, 3),
+            "file order affects the fingerprint"
+        );
     }
 }

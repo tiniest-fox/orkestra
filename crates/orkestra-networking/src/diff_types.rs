@@ -56,6 +56,8 @@ pub struct HighlightedFileDiff {
 #[derive(Debug, Serialize)]
 pub struct HighlightedTaskDiff {
     pub files: Vec<HighlightedFileDiff>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff_sha: Option<String>,
 }
 
 /// Syntax CSS for light and dark themes.

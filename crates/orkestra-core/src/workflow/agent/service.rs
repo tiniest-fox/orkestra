@@ -90,7 +90,7 @@ impl WorkflowApi {
         )
     }
 
-    /// Handle gate script success. Auto-advances or pauses for review, respecting `auto_mode` and `is_automated`.
+    /// Handle gate script success. Auto-advances or pauses for review, respecting `auto_mode`.
     pub(crate) fn process_gate_success(&self, task_id: &str) -> WorkflowResult<Task> {
         agent::process_gate_success::execute(
             self.store.as_ref(),
@@ -115,7 +115,7 @@ impl WorkflowApi {
 mod tests {
     use std::sync::Arc;
 
-    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Question;
     use crate::workflow::ports::WorkflowError;
     use crate::workflow::runtime::{Outcome, TaskState};
@@ -133,12 +133,9 @@ mod tests {
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan").with_gate(GateConfig::Agentic),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ])
     }
 
@@ -221,13 +218,19 @@ mod tests {
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Move to review stage
+        // Move to review stage (agentic gate). Use auto_mode so rejection routes
+        // directly without pausing for human confirmation.
+        task.auto_mode = true;
         task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
+        api.iteration_service
+            .create_iteration(&task.id, "review", None)
+            .unwrap();
 
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests failing".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         };
@@ -246,12 +249,11 @@ mod tests {
 
     #[test]
     fn test_rejection_pauses_for_review_on_non_automated_stage() {
-        // Non-automated review stage: rejection should pause for human review
+        // Agentic gate: rejection should pause for human review
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ]);
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
@@ -266,6 +268,7 @@ mod tests {
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests failing, please fix".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         };
@@ -303,12 +306,11 @@ mod tests {
 
     #[test]
     fn test_rejection_auto_executes_for_auto_mode_task() {
-        // Non-automated review stage but task has auto_mode — should auto-execute
+        // Agentic gate but task has auto_mode — should auto-execute
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ]);
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
@@ -324,6 +326,7 @@ mod tests {
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests failing".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         };
@@ -342,19 +345,23 @@ mod tests {
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Move to review stage (automated)
+        // Move to review stage (agentic gate)
         task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
+        api.iteration_service
+            .create_iteration(&task.id, "review", None)
+            .unwrap();
 
         let output = StageOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good, well implemented".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Should enter commit pipeline (automated stage auto-advances via Finishing)
+        // Reviewer's approval is final — enters commit pipeline directly (no extra human step)
         assert!(matches!(task.state, TaskState::Finishing { .. }));
         assert_eq!(task.current_stage(), Some("review"));
         // Content should be stored as artifact
@@ -369,7 +376,11 @@ mod tests {
 
     #[test]
     fn test_process_approval_no_capability() {
-        let workflow = test_workflow();
+        // Workflow where planning does NOT have an agentic gate
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
+        ]);
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
@@ -380,6 +391,7 @@ mod tests {
         let output = StageOutput::Approval {
             decision: "approve".to_string(),
             content: "Should fail".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         };
@@ -423,25 +435,30 @@ mod tests {
     }
 
     #[test]
-    fn test_automated_stage_auto_approves() {
-        let workflow = test_workflow();
+    fn test_stage_without_gate_auto_advances() {
+        // A stage with no gate auto-advances after artifact output (no human confirmation needed)
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+            StageConfig::new("review", "verdict"),
+        ]);
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Move to review stage (automated)
+        // Move to review stage (no gate — auto-advances)
         task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
 
         let output = StageOutput::Artifact {
-            content: "Approved".to_string(),
+            content: "Work done".to_string(),
             activity_log: None,
             resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Should enter commit pipeline (automated stage auto-advances via Finishing)
+        // No gate → should enter commit pipeline directly
         assert!(matches!(task.state, TaskState::Finishing { .. }));
         assert_eq!(task.current_stage(), Some("review"));
     }
@@ -473,7 +490,12 @@ mod tests {
 
     #[test]
     fn test_gate_success_pauses_for_review_on_non_automated_stage() {
-        let workflow = test_workflow();
+        // Work stage has agentic gate: after gate passes, should pause for human review
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary").with_gate(GateConfig::Agentic),
+            StageConfig::new("review", "verdict"),
+        ]);
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 

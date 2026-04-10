@@ -13,20 +13,8 @@
  * Stage capabilities - what actions a stage can perform.
  */
 export interface StageCapabilities {
-  /** Whether the stage can ask clarifying questions. */
-  ask_questions: boolean;
   /** Subtask capabilities. Presence indicates the stage can produce subtasks. */
   subtasks?: SubtaskCapabilities;
-  /** Approval capability. Presence indicates the stage produces approve/reject decisions. */
-  approval?: ApprovalCapabilities;
-}
-
-/**
- * Configuration for a stage that produces approval decisions.
- */
-export interface ApprovalCapabilities {
-  /** Stage to return to on rejection (defaults to previous stage if omitted). */
-  rejection_stage?: string;
 }
 
 /**
@@ -35,8 +23,6 @@ export interface ApprovalCapabilities {
 export interface SubtaskCapabilities {
   /** Named flow that subtasks should use. */
   flow?: string;
-  /** Stage the parent resumes at after subtasks complete. */
-  completion_stage?: string;
 }
 
 /**
@@ -52,13 +38,17 @@ export function artifactName(artifact: ArtifactConfig): string {
 
 /**
  * Gate configuration for a workflow stage.
+ * - `true` — agentic gate (agent produces approve/reject decision)
+ * - `{ command, timeout_seconds }` — automated script gate
  */
-export interface GateConfig {
-  /** Shell command to run as the gate. */
-  command: string;
-  /** Timeout in seconds for the gate process. */
-  timeout_seconds: number;
-}
+export type GateConfig =
+  | true
+  | {
+      /** Shell command to run as the gate. */
+      command: string;
+      /** Timeout in seconds for the gate process. */
+      timeout_seconds: number;
+    };
 
 /**
  * Configuration for a single workflow stage.
@@ -70,13 +60,11 @@ export interface StageConfig {
   artifact: ArtifactConfig;
   /** Artifacts required as inputs from previous stages. */
   inputs: string[];
-  /** Whether this stage is automated (no human review required). */
-  is_automated: boolean;
   /** Whether this stage is optional (can be skipped). */
   is_optional: boolean;
   /** Stage capabilities. */
   capabilities: StageCapabilities;
-  /** Gate script config — runs after agent completes, before advancing. */
+  /** Gate config — runs after agent completes, before advancing. `true` = agentic gate. */
   gate?: GateConfig | null;
 }
 

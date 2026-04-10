@@ -5,7 +5,7 @@
 //!
 //! - **Stage**: A named step in the workflow (e.g., "planning", "review")
 //! - **Artifact**: Named output from a stage (e.g., "plan", "summary")
-//! - **Capabilities**: What a stage can do (ask questions, produce subtasks)
+//! - **Capabilities**: What a stage can do (produce subtasks)
 //! - **Workflow**: Ordered collection of stages with transition rules
 //!
 //! # Example Configuration
@@ -14,8 +14,10 @@
 //! stages:
 //!   - name: planning
 //!     artifact: plan
-//!     capabilities:
-//!       ask_questions: true
+//!
+//!   - name: review
+//!     artifact: verdict
+//!     gate: true
 //!
 //!   - name: work
 //!     artifact: summary

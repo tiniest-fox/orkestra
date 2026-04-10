@@ -231,9 +231,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use crate::workflow::config::{
-        IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
-    };
+    use crate::workflow::config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig};
     use crate::workflow::domain::{IterationTrigger, Question};
     use crate::workflow::ports::WorkflowError;
     use crate::workflow::runtime::{Artifact, Outcome, TaskState};
@@ -244,10 +242,9 @@ mod tests {
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict").automated(),
+            StageConfig::new("review", "verdict"),
         ])
         .with_integration(IntegrationConfig::new("work"))
     }
@@ -546,11 +543,9 @@ mod tests {
     /// Workflow with a non-automated review stage (rejection pauses for human review).
     fn test_workflow_with_review() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ])
     }
 
@@ -575,6 +570,7 @@ mod tests {
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests are failing, fix them".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         };
@@ -680,18 +676,15 @@ mod tests {
         let output = StageOutput::Approval {
             decision: "approve".to_string(),
             content: "On re-evaluation, the implementation looks good".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Step 4: Should pause at AwaitingReview (standard approval review, non-automated stage)
-        assert!(matches!(task.state, TaskState::AwaitingApproval { .. }));
-        assert_eq!(task.current_stage(), Some("review"));
-
-        // Step 5: Human approves → enters commit pipeline (advancement happens in finalize_stage_advancement)
-        let task = api.approve(&task.id).unwrap();
+        // Step 4: Reviewer's approval is final — enters commit pipeline directly (no extra human step)
         assert!(matches!(task.state, TaskState::Finishing { .. }));
+        assert_eq!(task.current_stage(), Some("review"));
     }
 
     // ========================================================================

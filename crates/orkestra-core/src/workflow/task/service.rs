@@ -126,7 +126,7 @@ impl WorkflowApi {
 #[cfg(test)]
 #[allow(clippy::similar_names)] // task1/task2/tasks are clear in test context
 mod tests {
-    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::config::{StageConfig, WorkflowConfig};
     use crate::workflow::runtime::TaskState;
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
@@ -135,8 +135,7 @@ mod tests {
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
         ])
     }

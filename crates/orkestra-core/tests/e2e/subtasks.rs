@@ -125,9 +125,15 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
         );
     }
     env.advance(); // spawns review agents (completions ready)
-    env.advance(); // processes review outputs → auto-approve → Done
+    env.advance(); // processes review outputs → AwaitingApproval (GateConfig::Agentic, auto_mode=false)
 
-    // 4. Verify all are Done or Archived
+    // 4. Approve review stage for all subtasks (GateConfig::Agentic pauses for human sign-off)
+    for &id in subtask_ids {
+        env.api().approve(id).expect("Should approve review stage");
+    }
+    env.advance(); // commit pipeline: Finishing → Finished → Done
+
+    // 5. Verify all are Done or Archived
     for &id in subtask_ids {
         let task = env.api().get_task(id).unwrap();
         assert!(
@@ -972,7 +978,12 @@ fn test_subtask_integration_conflict() {
         );
     }
     env.advance(); // spawns review agents (completions ready)
-    env.advance(); // processes reviews → auto-approve → Done
+    env.advance(); // processes review outputs → AwaitingApproval (GateConfig::Agentic)
+                   // Approve review stage for both subtasks
+    for id in [&id_a, &id_b] {
+        env.api().approve(id).expect("Should approve review stage");
+    }
+    env.advance(); // commit pipeline → Done
                    // Integration is sync: one task per advance. After review, tasks are Done.
                    // First integration may conflict, triggering recovery → work agent spawn.
     env.advance(); // integrates first task (sync); may spawn recovery agent
@@ -1122,7 +1133,11 @@ fn test_archived_subtasks_included_in_views_and_progress() {
     );
 
     env.advance(); // spawns review agents for A and B
-    env.advance(); // processes review outputs → Done
+    env.advance(); // processes review outputs → AwaitingApproval (GateConfig::Agentic)
+                   // Approve review stage for A and B (C is not being advanced through review)
+    env.api().approve(id_a).unwrap();
+    env.api().approve(id_b).unwrap();
+    env.advance(); // commit pipeline → Done
     env.advance(); // integrates A → Archived
     env.advance(); // integrates B → Archived
 

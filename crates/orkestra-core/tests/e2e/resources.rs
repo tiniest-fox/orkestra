@@ -6,7 +6,7 @@
 //! - Inherited by subtasks from their parent task (merged into inline list)
 //! - Upserted correctly when a stage re-runs (name collision → newer URL wins)
 
-use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
+use orkestra_core::workflow::config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig};
 use orkestra_core::workflow::execution::{ResourceOutput, SubtaskOutput};
 
 use crate::helpers::{workflows, MockAgentOutput, TestEnv};
@@ -16,9 +16,13 @@ use crate::helpers::{workflows, MockAgentOutput, TestEnv};
 // =============================================================================
 
 /// Build a simple two-stage workflow (planning → work).
+///
+/// Planning has `GateConfig::Agentic` so it pauses for human approval before advancing.
 fn two_stage_workflow() -> WorkflowConfig {
     WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ])
     .with_integration(IntegrationConfig::new("work"))

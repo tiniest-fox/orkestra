@@ -176,7 +176,7 @@ fn spawn_chat_agent(
         .stage(task_flow, stage)
         .ok_or_else(|| WorkflowError::InvalidState(format!("Unknown stage: {stage}")))?
         .clone();
-    let schema_str = get_agent_schema(&effective_stage, Some(project_root))
+    let schema_str = get_agent_schema(&effective_stage, Some(project_root), &[])
         .ok_or_else(|| WorkflowError::InvalidState(format!("No schema for stage: {stage}")))?;
     let schema: serde_json::Value = serde_json::from_str(&schema_str).map_err(|e| {
         WorkflowError::InvalidState(format!("Generated schema is not valid JSON: {e}"))

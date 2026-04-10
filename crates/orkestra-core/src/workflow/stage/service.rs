@@ -556,7 +556,13 @@ impl StageExecutionService {
             stage: stage.to_string(),
             pid,
             is_script: true,
-            command: Some(gate_config.command.clone()),
+            command: if let crate::workflow::config::GateConfig::Automated { command, .. } =
+                gate_config
+            {
+                Some(command.clone())
+            } else {
+                None
+            },
         })
     }
 

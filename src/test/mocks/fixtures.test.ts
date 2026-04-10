@@ -147,13 +147,14 @@ describe("composition", () => {
       stages: [
         createMockStageConfig({
           name: "review",
-          capabilities: { ask_questions: false, approval: {} },
+          gate: true,
+          capabilities: {},
         }),
       ],
     });
     expect(flow.stages).toHaveLength(1);
     expect(flow.stages[0].name).toBe("review");
-    expect(flow.stages[0].capabilities.approval).toBeDefined();
+    expect(flow.stages[0].gate).toBe(true);
   });
 });
 

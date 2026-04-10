@@ -25,8 +25,8 @@ pub const FIXTURE_TIMESTAMP: &str = "2025-01-24T10:00:00Z";
 /// "subtask" flow for child tasks.
 pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
     use crate::workflow::config::{
-        FlowConfig, IntegrationConfig, StageCapabilities, StageConfig, SubtaskCapabilities,
-        WorkflowConfig,
+        FlowConfig, GateConfig, IntegrationConfig, StageCapabilities, StageConfig,
+        SubtaskCapabilities, WorkflowConfig,
     };
     use indexmap::IndexMap;
 
@@ -35,11 +35,12 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
         "subtask".to_string(),
         FlowConfig {
             stages: vec![
-                StageConfig::new("work", "summary").with_prompt("worker.md"),
+                StageConfig::new("work", "summary")
+                    .with_prompt("worker.md")
+                    .with_gate(GateConfig::Agentic),
                 StageConfig::new("review", "verdict")
                     .with_prompt("reviewer.md")
-                    .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                    .automated(),
+                    .with_gate(GateConfig::Agentic),
             ],
             integration: IntegrationConfig::new("work"),
         },
@@ -48,18 +49,19 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
     WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("breakdown", "breakdown")
             .with_prompt("breakdown.md")
+            .with_gate(GateConfig::Agentic)
             .with_capabilities(StageCapabilities {
                 subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
-                ..Default::default()
             }),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ])
     .with_integration(IntegrationConfig::new("work"))
     .with_flows(flows)

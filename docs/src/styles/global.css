@@ -286,3 +286,25 @@
   font-size: inherit;
   color: inherit;
 }
+
+/* Forge animation keyframes used by app components rendered in the live demo */
+@keyframes forge-pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes pipe-active-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin-bounce {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(390deg); }
+  38% { transform: rotate(360deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-spin-bounce {
+  animation: spin-bounce 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}

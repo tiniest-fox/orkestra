@@ -359,7 +359,7 @@ export function MessageList({
             <p className="font-mono text-forge-mono-sm text-text-quaternary">{emptyText}</p>
           </div>
         ) : (
-          <Virtualizer scrollRef={scrollObjectRef}>
+          <Virtualizer scrollRef={scrollObjectRef} overscan={12}>
             {virtualItems.map((item, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: append-only list, no reordering
               <VirtualItemRenderer key={i} item={item} contentFilter={contentFilter} />

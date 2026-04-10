@@ -1,7 +1,9 @@
 /**
  * Provider for git commit history and branch info.
  *
- * Fetches commit log and branch data with 2-second polling. File counts are lazy-loaded separately via batch endpoint.
+ * Polls every 2s and refetches immediately on task_updated events.
+ * File counts are lazy-loaded separately via batch endpoint.
+ * State updates are fingerprinted — consumers only re-render when data actually changes.
  */
 
 import {
@@ -19,6 +21,7 @@ import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
 import { useStalenessTimer } from "../hooks/useStalenessTimer";
 import { useConnectionState, useTransport } from "../transport";
+import { useTransportListener } from "../transport/useTransportListener";
 import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
 import { extractErrorMessage } from "../utils/errors";
 import { isDisconnectError } from "../utils/transportErrors";
@@ -106,10 +109,29 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
         transport.call<BranchList>("list_branches"),
         transport.call<SyncStatus | null>("git_sync_status"),
       ]);
-      setCommits(commitResult);
-      setCurrentBranch(branchResult.current);
-      setBranches(branchResult.branches);
-      setSyncStatus(syncResult);
+      // Fingerprint each value — return prev reference when unchanged so
+      // React 18 batching produces zero re-renders on a quiet poll.
+      setCommits((prev) => {
+        if (
+          prev.length === commitResult.length &&
+          prev.every((c, i) => c.hash === commitResult[i].hash)
+        )
+          return prev;
+        return commitResult;
+      });
+      setCurrentBranch((prev) => (prev === branchResult.current ? prev : branchResult.current));
+      setBranches((prev) => {
+        if (
+          prev.length === branchResult.branches.length &&
+          prev.every((b, i) => b === branchResult.branches[i])
+        )
+          return prev;
+        return branchResult.branches;
+      });
+      setSyncStatus((prev) => {
+        if (prev?.ahead === syncResult?.ahead && prev?.behind === syncResult?.behind) return prev;
+        return syncResult;
+      });
       gitCacheMap.set(projectUrl, {
         commits: commitResult,
         currentBranch: branchResult.current,
@@ -180,7 +202,15 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const connectionState = useConnectionState();
   const canPoll = isVisible && connectionState === "connected";
 
-  usePolling(canPoll ? fetchCommits : null, 2000);
+  // 2s poll — repo state can change from manual commits, agent worktrees, or
+  // external pushes. Fingerprinting makes quiet polls cheap (no re-renders).
+  // task_updated also triggers an immediate refetch for integration completions.
+  const { reset: resetPolling } = usePolling(canPoll ? fetchCommits : null, 2_000);
+
+  useTransportListener("task_updated", () => {
+    fetchCommits();
+    resetPolling();
+  });
 
   // Pre-warm the diff cache for the most recent commit so the first open is instant.
   useEffect(() => {
@@ -230,24 +260,44 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     };
   }, [currentBranch, syncStatus]);
 
-  const value: GitHistoryContextValue = {
-    commits,
-    fileCounts,
-    currentBranch,
-    branches,
-    loading,
-    error,
-    isStale,
-    syncStatus,
-    operationError,
-    pushLoading,
-    pullLoading,
-    fetchLoading,
-    pushToOrigin,
-    pullFromOrigin,
-    fetchFromOrigin,
-    ...syncControls,
-  };
+  const value = useMemo(
+    (): GitHistoryContextValue => ({
+      commits,
+      fileCounts,
+      currentBranch,
+      branches,
+      loading,
+      error,
+      isStale,
+      syncStatus,
+      operationError,
+      pushLoading,
+      pullLoading,
+      fetchLoading,
+      pushToOrigin,
+      pullFromOrigin,
+      fetchFromOrigin,
+      ...syncControls,
+    }),
+    [
+      commits,
+      fileCounts,
+      currentBranch,
+      branches,
+      loading,
+      error,
+      isStale,
+      syncStatus,
+      operationError,
+      pushLoading,
+      pullLoading,
+      fetchLoading,
+      pushToOrigin,
+      pullFromOrigin,
+      fetchFromOrigin,
+      syncControls,
+    ],
+  );
 
   return <GitHistoryContext.Provider value={value}>{children}</GitHistoryContext.Provider>;
 }

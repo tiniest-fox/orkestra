@@ -143,8 +143,8 @@ pub fn workflow_list_branches(
 /// * `stage` - Optional stage name. If None, uses the task's current stage.
 /// * `session_id` - Optional session ID. If provided, fetches logs for that
 ///   specific session directly (takes precedence over `stage`).
-/// * `cursor` - Optional sequence_number cursor. If provided, only entries with
-///   sequence_number > cursor are returned, enabling incremental fetching.
+/// * `cursor` - Optional `sequence_number` cursor. If provided, only entries with
+///   `sequence_number` > cursor are returned, enabling incremental fetching.
 ///
 /// # Returns
 /// `{ entries: Vec<LogEntry>, cursor: u64 | null }` — entries since the cursor, plus

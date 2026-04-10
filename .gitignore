@@ -75,3 +75,6 @@ LOCAL.md
 # Internal planning (not for public repo)
 docs/marketing/
 docs/design-proposals/
+
+# Astro generated files
+docs/.astro/

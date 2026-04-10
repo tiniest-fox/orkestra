@@ -1,0 +1,70 @@
+---
+title: Traks
+description: A Trak is the unit of work in Orkestra — one feature, one fix, one isolated git worktree, one pipeline run.
+order: 2
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+Software work needs identity, isolation, and traceability. Each Trak is a self-contained unit of work — one feature, one bug fix, one documentation update — running in its own git worktree, following its own pipeline, accumulating its own context.
+
+## Trak identity
+
+Every Trak gets a randomly generated, permanent ID: a three-word slug like `only-decisive-chiffchaff` or `darkly-concrete-dobsonfly`. The ID appears in CLI commands, log paths, and the git branch name (`task/{trak-id}`).
+
+A Trak also carries a **title** and **description** written by the human who created it. These are passed to every agent in the pipeline as the root context for the work.
+
+## Flows
+
+When a Trak is created, it is assigned a **flow** — a named pipeline of [stages](/docs/core-concepts/stages) defined in `workflow.yaml`. A project typically defines a `default` flow used for most work, and may add shorter flows like `hotfix` for smaller tasks.
+
+A Trak's flow is fixed at creation time. It cannot change mid-execution.
+
+## Worktree isolation
+
+Each Trak gets its own isolated git worktree at `.orkestra/.worktrees/{trak-id}`, branched from the base branch. Agents work exclusively inside this worktree.
+
+Parallel Traks never touch each other's files. You can run multiple Traks simultaneously without conflicts.
+
+## Artifacts and context
+
+Each [stage](/docs/core-concepts/stages) in a Trak produces a named **artifact** — text output stored in `.orkestra/.artifacts/`. Artifacts from earlier stages are automatically injected into the prompt of every later stage.
+
+A `work` stage receives the `plan` artifact. A `review` stage receives both `plan` and `summary`. The pipeline builds cumulative context rather than starting fresh at each step.
+
+## Lifecycle
+
+A Trak moves through phases as it runs:
+
+**Setup** — Orkestra creates the worktree and branch. The `worktree_setup.sh` script runs if configured.
+
+**Running** — An agent or script is executing.
+
+**Awaiting Approval** — Output has been produced and a human needs to act. Depending on context, this means answering questions, reviewing a Subtrak breakdown, or approving or rejecting an artifact.
+
+**Waiting on Subtraks** — A breakdown stage decomposed the Trak into child Traks. The parent waits for all children to complete. Any child failure immediately fails the parent.
+
+**Done** — The final stage completed. Orkestra rebases and merges the Trak's branch to the base branch.
+
+**Failed** — An agent declared it cannot complete the work, or a fatal error occurred.
+
+## Automated Traks
+
+By default, each stage pauses for human approval after producing output. Stages configured with `is_automated: true` in `workflow.yaml` skip this pause. A Trak where every stage is automated runs hands-off from creation to merge.
+
+<Callout type="note">
+There is no single "auto mode" toggle on a Trak. Full automation emerges from each stage having <code>is_automated: true</code>. See <a href="/docs/core-concepts/stages">Stages</a> for details.
+</Callout>
+
+## Subtraks
+
+A Trak can decompose into child Traks called **Subtraks** when a stage has the `subtasks` [capability](/docs/core-concepts/capabilities). Subtraks:
+
+- Have their own worktrees, branched from the parent's branch
+- Run through their own assigned flow
+- Execute in parallel when they have no dependencies on each other
+- Merge back into the parent's branch, not the main branch
+
+## What's next
+
+See [Stages](/docs/core-concepts/stages) to understand how each step in a Trak's pipeline is structured.

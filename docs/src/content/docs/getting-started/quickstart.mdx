@@ -1,0 +1,156 @@
+---
+title: Quickstart
+description: Install Orkestra, set up a project, and run your first Trak.
+order: 3
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+import Steps from "../../../components/docs/Steps.astro";
+import GitHubButton from "../../../components/docs/GitHubButton.astro";
+
+This guide gets Orkestra running in a real project. By the end, you'll have created a Trak, watched an agent implement code in an isolated worktree, and approved the result.
+
+**Prerequisites:** [Rust](https://rustup.rs) (latest stable) with Cargo, and at least one AI coding agent CLI — either [Claude Code](https://claude.ai/code) or [OpenCode](https://opencode.ai) — installed and authenticated. Git is required.
+
+## Install Orkestra
+
+<Steps>
+1. **Clone the repository and build the binary**
+
+   ```bash
+   git clone https://github.com/tiniest-fox/orkestra.git
+   cd orkestra
+   cargo build --release
+   ```
+
+   The binary is produced at `target/release/ork`.
+
+2. **Make `ork` available globally**
+
+   Copy the binary to a directory in your PATH:
+
+   ```bash
+   cp target/release/ork /usr/local/bin/ork
+   ```
+
+3. **Verify the install**
+
+   ```bash
+   ork --version
+   ```
+</Steps>
+
+## Set up a project
+
+Any Git repository can be an Orkestra project. Orkestra bootstraps itself the first time you run an `ork` command in a repo.
+
+<Steps>
+1. **Go to your project**
+
+   ```bash
+   cd /path/to/your-project
+   ```
+
+2. **Bootstrap the `.orkestra/` directory**
+
+   ```bash
+   ork trak list
+   ```
+
+   On first run, Orkestra creates `.orkestra/` with a default workflow, prompt templates, and gate scripts. If no Traks exist yet, you'll see an empty list — that's expected.
+
+3. **Commit the configuration**
+
+   ```bash
+   git add .orkestra/
+   git commit -m "Add Orkestra config"
+   ```
+
+   Orkestra appends entries to `.gitignore` that exclude runtime state (the database, logs, and worktrees). Only the config files go into version control.
+</Steps>
+
+## Customize your gate script
+
+The gate script runs automatically after each agent work stage to verify quality. The default is a placeholder — replace it with your project's actual checks.
+
+Open `.orkestra/scripts/checks.sh` and edit it:
+
+```bash
+#!/bin/bash
+set -e
+cd "$ORKESTRA_WORKTREE_PATH"
+
+# Replace with your project's checks:
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run typecheck
+pnpm test
+```
+
+<Callout type="note">
+`ORKESTRA_WORKTREE_PATH` is the path to the Trak's isolated worktree. Always run checks against this path — not your main working directory.
+</Callout>
+
+The gate's exit code determines what happens next. Exit zero: the work passes and moves to approval. Non-zero: Orkestra sends the agent back with the script's output as feedback, and it retries.
+
+## Create your first Trak
+
+<Steps>
+1. **Create a Trak**
+
+   ```bash
+   ork trak create \
+     -t "Add input validation to the login form" \
+     -d "The login form accepts any input without validation. Add client-side and server-side validation for email format and password length (minimum 8 characters)." \
+     --flow subtask
+   ```
+
+   Orkestra creates an isolated git branch and worktree, then starts the first stage.
+
+   <Callout type="tip">
+   The `--flow subtask` flag uses the work → review flow (two stages). The default flow includes planning and breakdown stages before work begins — better for larger tasks, but more steps for your first run.
+   </Callout>
+
+2. **Check the status**
+
+   The Trak ID appears in the output when you create the Trak — it looks like `only-decisive-chiffchaff`. Use it to check what's happening:
+
+   ```bash
+   ork trak show <your-trak-id> --pretty
+   ```
+
+   An AI agent is reading your description, implementing changes in its isolated worktree, and running your gate script. If the gate fails, the agent retries automatically.
+</Steps>
+
+## Review and approve
+
+When a stage finishes, you review the output and decide whether to advance or send the agent back.
+
+Check `ork trak show <your-trak-id> --pretty` periodically. Once the stage is awaiting your input, run approve or reject.
+
+<Callout type="tip">
+The `subtask` flow has two stages: work and review. You'll be prompted to approve each one in sequence.
+</Callout>
+
+**Approve the current stage:**
+
+```bash
+ork trak approve <your-trak-id>
+```
+
+**Reject with feedback:**
+
+```bash
+ork trak reject <your-trak-id> --feedback "Validation runs on blur, but it should also run on form submit. Fix the submit handler."
+```
+
+Rejection sends your feedback to the agent. It revises and you review again. When the final stage is approved, the Trak is complete and the branch is ready to merge.
+
+## What's next
+
+- [Core Concepts](/docs/core-concepts) — the full model: flows, stages, gates, capabilities, and prompt templates.
+- [Workflow Configuration](/docs/configuration/workflow) — configure custom flows for different task types.
+- [Gates](/docs/core-concepts/gates) — environment variables available to gate scripts and how to write effective checks.
+- [Prompt Templates](/docs/core-concepts/prompt-templates) — customize how agents behave at each stage.
+
+<GitHubButton href="https://github.com/tiniest-fox/orkestra" />

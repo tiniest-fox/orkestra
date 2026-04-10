@@ -3,6 +3,7 @@ import { getCollection } from "astro:content";
 import ArrowLeft from "../components/icons/ArrowLeft.astro";
 import ArrowRight from "../components/icons/ArrowRight.astro";
 import Header from "../components/Header.astro";
+import TocList from "../components/TocList.astro";
 import Layout from "./Layout.astro";
 
 interface Props {
@@ -233,20 +234,7 @@ const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
             <p class="text-forge-mono-label font-semibold tracking-widest uppercase text-text-quaternary mb-3">
               On this page
             </p>
-            <ul class="space-y-1">
-              {tocHeadings.map((h) => (
-                <li>
-                  <a
-                    href={`#${h.slug}`}
-                    class={`block text-xs leading-relaxed transition-colors text-text-tertiary hover:text-text-primary [&[data-active]]:text-accent [&[data-active]]:font-medium ${
-                      h.depth === 3 ? "pl-3" : ""
-                    }`}
-                  >
-                    {h.text}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <TocList headings={tocHeadings} />
           </nav>
         </aside>
       )}
@@ -296,20 +284,7 @@ const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
                   </svg>
                 </button>
               </div>
-              <ul class="space-y-1">
-                {tocHeadings.map((h) => (
-                  <li>
-                    <a
-                      href={`#${h.slug}`}
-                      class={`block text-xs leading-relaxed transition-colors text-text-tertiary hover:text-text-primary [&[data-active]]:text-accent [&[data-active]]:font-medium ${
-                        h.depth === 3 ? "pl-3" : ""
-                      }`}
-                    >
-                      {h.text}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <TocList headings={tocHeadings} />
             </nav>
           </aside>
         </div>

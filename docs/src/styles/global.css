@@ -1,13 +1,17 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+/* Scans the main app's src/ tree so Tailwind detects classes used by React
+   components rendered via LiveDemo.tsx. The Orkestra component tree imports
+   from components/, hooks/, providers/, utils/, transport/, types/, and
+   stories/ — narrowing to specific subdirs would be fragile and incomplete. */
 @source "../../../src";
 @import "../../../src/styles/forge-tokens.css";
 
 /* ============================================================================
- * Tailwind 4 Theme
+ * Tailwind 4 Theme — mirrors tailwind.config.js
  * ============================================================================
- * Maps forge tokens to Tailwind utility classes. Defined here so they
- * respond to the light/dark CSS variable overrides above automatically.
+ * Maps forge tokens to Tailwind utility classes. Keep in sync with
+ * tailwind.config.js until the main app migrates to Tailwind v4.
  */
 
 @theme {

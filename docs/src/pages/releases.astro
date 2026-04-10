@@ -80,6 +80,54 @@ import Layout from "../layouts/Layout.astro";
     assets: Asset[];
   }
 
+  function renderAssetRow(asset: Asset): string {
+    return `
+      <a
+        href="${asset.browser_download_url}"
+        class="flex items-center justify-between gap-4 px-4 py-2.5 rounded-panel-sm bg-surface-2 hover:bg-surface-hover transition-colors group"
+      >
+        <span class="text-sm font-mono text-text-primary truncate">${asset.name}</span>
+        <span class="text-xs text-text-tertiary shrink-0">${formatBytes(asset.size)}</span>
+      </a>`;
+  }
+
+  function renderReleaseCard(release: Release, isLatest: boolean): string {
+    const badges = [
+      isLatest
+        ? `<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-accent/10 text-accent">Latest</span>`
+        : "",
+      release.prerelease
+        ? `<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-surface-2 text-text-tertiary border border-border">Pre-release</span>`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("");
+
+    const assetRows = release.assets.length
+      ? release.assets.map(renderAssetRow).join("")
+      : `<p class="text-sm text-text-tertiary px-1">No binary assets — <a href="${release.html_url}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">view on GitHub</a>.</p>`;
+
+    return `
+      <div class="rounded-panel border border-border bg-surface p-6">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-base font-semibold text-text-primary">${release.tag_name}</span>
+          ${badges}
+        </div>
+        <p class="text-xs text-text-tertiary mb-4">${formatDate(release.published_at)}</p>
+        <div class="space-y-1.5">
+          ${assetRows}
+        </div>
+        <a
+          href="${release.html_url}"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-block mt-4 text-xs text-text-tertiary hover:text-accent transition-colors"
+        >
+          Release notes →
+        </a>
+      </div>`;
+  }
+
   async function loadReleases() {
     const loading = document.getElementById("releases-loading")!;
     const error = document.getElementById("releases-error")!;
@@ -105,54 +153,7 @@ import Layout from "../layouts/Layout.astro";
       }
 
       content.innerHTML = visible
-        .map((release, i) => {
-          const isLatest = i === 0 && !release.prerelease;
-          const badges = [
-            isLatest
-              ? `<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-accent/10 text-accent">Latest</span>`
-              : "",
-            release.prerelease
-              ? `<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-surface-2 text-text-tertiary border border-border">Pre-release</span>`
-              : "",
-          ]
-            .filter(Boolean)
-            .join("");
-
-          const assetRows = release.assets.length
-            ? release.assets
-                .map(
-                  (asset) => `
-                <a
-                  href="${asset.browser_download_url}"
-                  class="flex items-center justify-between gap-4 px-4 py-2.5 rounded-panel-sm bg-surface-2 hover:bg-surface-hover transition-colors group"
-                >
-                  <span class="text-sm font-mono text-text-primary truncate">${asset.name}</span>
-                  <span class="text-xs text-text-tertiary shrink-0">${formatBytes(asset.size)}</span>
-                </a>`,
-                )
-                .join("")
-            : `<p class="text-sm text-text-tertiary px-1">No binary assets — <a href="${release.html_url}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">view on GitHub</a>.</p>`;
-
-          return `
-            <div class="rounded-panel border border-border bg-surface p-6">
-              <div class="flex items-center gap-2 mb-1">
-                <span class="text-base font-semibold text-text-primary">${release.tag_name}</span>
-                ${badges}
-              </div>
-              <p class="text-xs text-text-tertiary mb-4">${formatDate(release.published_at)}</p>
-              <div class="space-y-1.5">
-                ${assetRows}
-              </div>
-              <a
-                href="${release.html_url}"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-block mt-4 text-xs text-text-tertiary hover:text-accent transition-colors"
-              >
-                Release notes →
-              </a>
-            </div>`;
-        })
+        .map((release, i) => renderReleaseCard(release, i === 0 && !release.prerelease))
         .join("");
 
       loading.classList.add("hidden");

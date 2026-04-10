@@ -26,47 +26,28 @@ export const demoConfig = createMockWorkflowConfig({
           name: "plan",
           artifact: "plan",
           inputs: [],
-<<<<<<< HEAD
           capabilities: {},
-=======
-          is_automated: false,
-          capabilities: { ask_questions: true },
->>>>>>> origin/main
         }),
         createMockStageConfig({
           name: "breakdown",
           artifact: "breakdown",
           inputs: ["plan"],
           capabilities: {
-<<<<<<< HEAD
             subtasks: { flow: "hotfix" },
-=======
-            ask_questions: true,
-            subtasks: { flow: "hotfix", completion_stage: "work" },
->>>>>>> origin/main
           },
         }),
         createMockStageConfig({
           name: "work",
           artifact: "summary",
           inputs: ["plan"],
-<<<<<<< HEAD
           capabilities: {},
-=======
-          capabilities: { ask_questions: true },
->>>>>>> origin/main
         }),
         createMockStageConfig({
           name: "review",
           artifact: "verdict",
           inputs: ["summary"],
-<<<<<<< HEAD
           capabilities: {},
           gate: true,
-=======
-          is_automated: false,
-          capabilities: { ask_questions: false, approval: { rejection_stage: "work" } },
->>>>>>> origin/main
         }),
       ],
     }),

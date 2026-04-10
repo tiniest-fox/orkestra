@@ -67,17 +67,11 @@ export function StorybookProviders({
 }) {
   return (
     <TransportProvider transport={transport ?? createMockTransport()}>
-<<<<<<< HEAD
-      <AppProviders>
-        <ConfigGate>{children}</ConfigGate>
-      </AppProviders>
-=======
       <ProjectDetailProvider>
         <AppProviders>
           <ConfigGate>{children}</ConfigGate>
         </AppProviders>
       </ProjectDetailProvider>
->>>>>>> origin/main
     </TransportProvider>
   );
 }

@@ -3,7 +3,7 @@ import ArrowRight from "../components/icons/ArrowRight.astro";
 import GitHub from "../components/icons/GitHub.astro";
 import Orkestra from "../components/icons/Orkestra.astro";
 import Layout from "../layouts/Layout.astro";
-import Storybook from "../components/Storybook.astro";
+import LiveDemo from "../components/LiveDemo";
 ---
 
 <Layout title="Orkestra — AI-powered Trak orchestration" description="Structured AI development workflows — parallel by default, human when it matters.">
@@ -48,7 +48,7 @@ import Storybook from "../components/Storybook.astro";
 
     <!-- Demo embed -->
     <div class="px-6 pb-20 max-w-6xl mx-auto w-full">
-      <Storybook story="demo-app-shell--default" />
+      <LiveDemo client:load />
     </div>
 
   </main>

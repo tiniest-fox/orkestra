@@ -1,0 +1,65 @@
+---
+title: Gates
+description: A gate is a shell script that runs after an agent completes a stage. Failure sends the agent back to fix the problem automatically.
+order: 4
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+Agents don't always get it right on the first pass. Quality gates catch failures automatically and send the agent back to fix them — without you having to watch.
+
+A gate is a shell script attached to a [stage](/docs/core-concepts/stages). After the agent produces output, the gate runs in the [Trak's](/docs/core-concepts/traks) worktree. Exit zero means the work passes. A non-zero exit means the agent retries with the script's output as feedback.
+
+## The retry loop
+
+1. The agent completes its work and produces an artifact.
+2. The gate script runs in the Trak's worktree.
+3. **Exit 0** — the gate passes. The artifact proceeds to human review (or auto-advances if the stage is automated).
+4. **Non-zero exit** — the gate fails. The script's output (stdout and stderr) is sent back to the agent as feedback. The agent retries.
+5. The loop continues until the gate passes.
+
+The agent session is resumed on each retry — the agent sees its full conversation history including every previous gate failure and the feedback it produced.
+
+## What gates check
+
+Gates run whatever your project needs. The default `checks.sh` created by `ork init` is a template you replace with your project's actual quality bar. Common uses:
+
+- **Build verification** — does the code compile?
+- **Linting and formatting** — does it pass `eslint`, `cargo clippy`, or `biome check`?
+- **Tests** — does the test suite pass?
+- **Type checking** — does `tsc` or `mypy` succeed?
+
+Gates don't need to do all of this. A gate that runs only the fastest checks keeps the feedback loop tight. Slower checks can be deferred to CI.
+
+## Environment variables
+
+Gate scripts run in the Trak's worktree and have access to these environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `ORKESTRA_WORKTREE_PATH` | Absolute path to the Trak's worktree |
+| `ORKESTRA_PROJECT_ROOT` | Absolute path to the project root |
+| `ORKESTRA_TASK_ID` | The Trak ID |
+| `ORKESTRA_TASK_TITLE` | The Trak title |
+| `ORKESTRA_BASE_BRANCH` | The branch the Trak was created from |
+| `ORKESTRA_BRANCH` | The Trak's git branch name |
+| `ORKESTRA_PARENT_ID` | Parent Trak ID (only set for Subtraks) |
+
+## Agentic Gates
+
+The shell-script gate described here is a deterministic check — the exit code determines the verdict. Orkestra also supports a second form: an **Agentic Gate**, where an AI agent evaluates the work and produces a pass or fail verdict. Agentic Gates are configured with the `approval` [capability](/docs/core-concepts/capabilities) on a review stage.
+
+<Callout type="note">
+Gates (shell scripts) trigger automatic retries with no human involvement. Agentic Gates produce a verdict that a human reviews before the Trak is routed. They are different mechanisms that serve different needs.
+</Callout>
+
+## Constraints
+
+- Gates only apply to agent stages. Script stages cannot have a gate.
+- Gate scripts run in the Trak's **worktree** directory, not the project root.
+- A gate that times out is treated as a failure (non-zero exit).
+- Gates run after the agent produces output — they do not interrupt mid-execution.
+
+## What's next
+
+See [Capabilities](/docs/core-concepts/capabilities) to understand how stages can be extended with questions, agentic verdicts, and Subtrak decomposition.

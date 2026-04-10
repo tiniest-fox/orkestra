@@ -1,0 +1,22 @@
+---
+interface Props {
+  headings: { depth: number; slug: string; text: string }[];
+}
+
+const { headings } = Astro.props;
+---
+
+<ul class="space-y-1">
+  {headings.map((h) => (
+    <li>
+      <a
+        href={`#${h.slug}`}
+        class={`block text-xs leading-relaxed transition-colors text-text-tertiary hover:text-text-primary [&[data-active]]:text-accent [&[data-active]]:font-medium ${
+          h.depth === 3 ? "pl-3" : ""
+        }`}
+      >
+        {h.text}
+      </a>
+    </li>
+  ))}
+</ul>

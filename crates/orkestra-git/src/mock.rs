@@ -34,6 +34,7 @@ pub struct MockGitService {
     pull_branch_in_calls: Mutex<Vec<PathBuf>>,
     pull_branch_in_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
     has_pending_changes: Mutex<bool>,
+    has_pending_changes_error: Mutex<Option<GitError>>,
     commit_pending_changes_calls: Mutex<Vec<(PathBuf, String)>>,
     force_push_calls: Mutex<Vec<String>>,
     force_push_error: Mutex<Option<GitError>>,
@@ -66,6 +67,7 @@ impl MockGitService {
             pull_branch_in_calls: Mutex::new(Vec::new()),
             pull_branch_in_results: Mutex::new(std::collections::VecDeque::new()),
             has_pending_changes: Mutex::new(false),
+            has_pending_changes_error: Mutex::new(None),
             commit_pending_changes_calls: Mutex::new(Vec::new()),
             force_push_calls: Mutex::new(Vec::new()),
             force_push_error: Mutex::new(None),
@@ -77,6 +79,11 @@ impl MockGitService {
     /// Configure whether `has_pending_changes` returns `true` or `false`.
     pub fn set_has_pending_changes(&self, value: bool) {
         *self.has_pending_changes.lock().unwrap() = value;
+    }
+
+    /// Configure an error to return from the next `has_pending_changes` call.
+    pub fn set_has_pending_changes_error(&self, err: GitError) {
+        *self.has_pending_changes_error.lock().unwrap() = Some(err);
     }
 
     /// Set the result for the next merge operation.
@@ -315,6 +322,9 @@ impl GitService for MockGitService {
     // -- Commit --
 
     fn has_pending_changes(&self, _worktree_path: &Path) -> Result<bool, GitError> {
+        if let Some(err) = self.has_pending_changes_error.lock().unwrap().take() {
+            return Err(err);
+        }
         Ok(*self.has_pending_changes.lock().unwrap())
     }
 

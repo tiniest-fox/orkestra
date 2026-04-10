@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use orkestra_core::workflow::ports::{CommitInfo, FileChangeType, FileDiff};
+use orkestra_networking::diff as shared_diff;
 use serde::Serialize;
+use serde_json::Value;
 use tauri::State;
 
 use crate::diff_cache::DiffCacheState;
@@ -472,16 +474,30 @@ fn parse_range(range: &str) -> Option<(u32, u32)> {
 // =============================================================================
 
 /// Get commits on a task's branch since it diverged from the base branch.
+///
+/// Returns commits plus whether the worktree has uncommitted changes.
 #[tauri::command]
 pub fn workflow_get_branch_commits(
     registry: State<ProjectRegistry>,
     window: tauri::Window,
     task_id: String,
-) -> Result<Vec<CommitInfo>, TauriError> {
+) -> Result<Value, TauriError> {
+    let params = serde_json::json!({ "task_id": task_id });
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-        api.get_branch_commits(&task_id)
-            .map_err(std::convert::Into::into)
+        shared_diff::get_branch_commits(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
+/// Get the syntax-highlighted diff of uncommitted changes in a task's worktree.
+#[tauri::command]
+pub fn workflow_get_uncommitted_diff(
+    registry: State<ProjectRegistry>,
+    window: tauri::Window,
+    task_id: String,
+) -> Result<Value, TauriError> {
+    let params = serde_json::json!({ "task_id": task_id });
+    registry.with_project(window.label(), |state| {
+        shared_diff::get_uncommitted_diff(state.command_context(), &params).map_err(Into::into)
     })
 }
 

@@ -715,6 +715,23 @@ export default { decorators: [storybookDecorator] };
 
 When adding a new RPC method to the mock, verify the return shape against the `transport.call<T>()` call at the usage site — the `<T>` type parameter is the authoritative expected shape. A shape mismatch (e.g., returning `{ entries: [], cursor: null }` when the hook expects `LogEntry[]`) causes silent type coercion that only surfaces as a story crash at render time.
 
+**Custom transport stories**: When a story group needs a transport with different stage names, data, or RPC behaviour than the global mock, every story file in that group must explicitly wrap with `StorybookProviders` passing the custom transport — **do not rely on the global `storybookDecorator`**, which injects the default mock transport and will cause stage name mismatches:
+
+```tsx
+const decorator = (Story: React.ComponentType) => (
+  <StorybookProviders transport={createDemoTransport()}>
+    <Story />
+  </StorybookProviders>
+);
+export default { decorators: [decorator] };
+```
+
+See `src/stories/Demo/AppShell.stories.tsx` for the reference pattern.
+
+**Provider completeness**: `StorybookProviders` must include every context provider used by app-level components. When adding a new provider to the app, check whether any component in the `Orkestra` tree consumes it — if so, add it (or its stub variant) to `StorybookProviders` in `storybook-helpers.tsx`. Entry-point providers like `ProjectsProvider`/`ProjectDetailProvider` are easy to forget because they live outside `AppProviders`. Use `ProjectDetailProvider` (the stub) rather than the full `ProjectsProvider` — it avoids `localStorage` side effects and provides safe defaults (`projects: []`, `currentProject: null`, mutations throw).
+
+**Build limitation**: `pnpm build-storybook` only bundles JavaScript — it does not render stories, so runtime errors (missing providers, undefined hooks, broken context) are invisible to the build step and to `checks.sh`. The only way to catch these is manual story review or a dedicated Storybook test runner (not yet set up).
+
 ## Keyboard Navigation
 
 <!-- compound: beauteously-liberal-pollock -->

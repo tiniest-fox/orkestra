@@ -3,6 +3,7 @@
 import type { Decorator } from "@storybook/react";
 import type { ReactNode } from "react";
 import { AppProviders } from "../providers/AppProviders";
+import { ProjectDetailProvider } from "../providers/ProjectsProvider";
 import { useWorkflowConfigState } from "../providers/WorkflowConfigProvider";
 import { createMockWorkflowConfig } from "../test/mocks/fixtures";
 import { TransportProvider } from "../transport/TransportProvider";
@@ -37,7 +38,9 @@ export function createMockTransport(): Transport {
         case "get_diff":
           return resolve({ files: [] });
         case "get_branch_commits":
-          return resolve([]);
+          return resolve({ commits: [], has_uncommitted_changes: false });
+        case "get_uncommitted_diff":
+          return resolve({ files: [] });
         case "get_batch_file_counts":
           return resolve({});
         default:
@@ -64,9 +67,17 @@ export function StorybookProviders({
 }) {
   return (
     <TransportProvider transport={transport ?? createMockTransport()}>
+<<<<<<< HEAD
       <AppProviders>
         <ConfigGate>{children}</ConfigGate>
       </AppProviders>
+=======
+      <ProjectDetailProvider>
+        <AppProviders>
+          <ConfigGate>{children}</ConfigGate>
+        </AppProviders>
+      </ProjectDetailProvider>
+>>>>>>> origin/main
     </TransportProvider>
   );
 }

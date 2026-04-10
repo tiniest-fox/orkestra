@@ -118,12 +118,19 @@ The `Repository` is wrapped in `Mutex<Repository>` because git2's `Repository` i
 
 Unit tests live inline in `service.rs` and `mock.rs`. Tests create real git repositories in temp directories.
 
-For integration tests in other crates, use `MockGitService` (requires `testutil` feature):
+For integration tests in other crates, use `MockGitService` (requires `testutil` feature). Two patterns exist for injecting errors:
 
+**One-shot result override** (`set_next_*`) — for methods that may be called multiple times but only need a single error on one call:
 ```rust
-use orkestra_git::MockGitService;
-
 let mock = MockGitService::new();
 mock.set_next_merge_result(Err(GitError::MergeConflict { ... }));
-// ... test code that calls merge_to_branch
 ```
+
+**Persistent error injection** (mutex+take, the `force_push_error` pattern) — for methods that need to return an error on the next call, used when adding new error paths to the mock:
+```rust
+// In mock.rs: add a field and setter following force_push_error
+mock.set_has_pending_changes_error(GitError::Other("...".into()));
+// next call to has_pending_changes() takes the error and returns Err(...)
+```
+
+Use the mutex+take pattern when extending the mock with a new error-injectable method.

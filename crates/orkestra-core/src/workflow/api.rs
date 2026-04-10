@@ -228,12 +228,28 @@ impl WorkflowApi {
     pub fn get_branch_commits(
         &self,
         task_id: &str,
-    ) -> WorkflowResult<Vec<crate::workflow::ports::CommitInfo>> {
+    ) -> WorkflowResult<crate::workflow::ports::BranchCommitsResponse> {
         let git = self
             .git_service
             .as_ref()
             .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
         crate::workflow::query::interactions::branch_commits::execute(
+            self.store.as_ref(),
+            git.as_ref(),
+            task_id,
+        )
+    }
+
+    /// Get the uncommitted diff for a task's worktree (staged + unstaged vs HEAD).
+    pub fn get_uncommitted_diff(
+        &self,
+        task_id: &str,
+    ) -> WorkflowResult<crate::workflow::ports::TaskDiff> {
+        let git = self
+            .git_service
+            .as_ref()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+        crate::workflow::query::interactions::uncommitted_diff::execute(
             self.store.as_ref(),
             git.as_ref(),
             task_id,

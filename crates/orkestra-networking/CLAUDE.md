@@ -55,6 +55,14 @@ Event payloads include pre-formatted `notification_title` and `notification_body
 
 When adding a new notification type: add a `format_*_notification` function in `types.rs`, call it from the relevant `Event::*()` constructor to embed it in the payload, and update the Tauri `TaskNotifier` to call the same function.
 
+## Testing Interactions
+
+New interactions in `interactions/command/` require inline unit tests (`#[cfg(test)]` mod). Cover at minimum: the happy path, task-not-found, and any error fallback paths (e.g., git errors that fall back to a default via `unwrap_or`).
+
+**Error injection in MockGitService** — To make a mock method return an error, add a `field_error: Mutex<Option<GitError>>` field, a `set_field_error()` setter, and check-and-take at the top of the method impl. Follow the `force_push_error` pattern in `orkestra-git/src/mock.rs` as the template.
+
+**Shared handler return types** — Commands that use shared handlers (dispatched via `run_sync`) return `Result<Value, TauriError>` instead of a typed result. This is intentional: it allows Tauri and WebSocket transports to share one handler without duplicating deserialization. Don't try to restore typed returns — reviewers will flag that as inconsistency with the pattern.
+
 ## Async Handler Conventions
 
 When writing async HTTP handlers (axum, actix, etc.), **never call blocking operations directly** — process management, synchronous I/O, heavy computation, or anything that holds a lock while doing I/O. Blocking the async runtime starves all other requests on the thread.

@@ -63,6 +63,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_pr_status",
     "get_project_info",
     "get_branch_commits",
+    "get_uncommitted_diff",
     // Git sync
     "git_sync_status",
     "git_push",

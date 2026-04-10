@@ -21,7 +21,8 @@ export function MermaidBlock({ content }: MermaidBlockProps) {
     let cancelled = false;
 
     mermaid
-      .render(id, content)
+      .parse(content)
+      .then(() => mermaid.render(id, content))
       .then(({ svg: renderedSvg }) => {
         if (!cancelled) {
           setSvg(renderedSvg);

@@ -96,7 +96,9 @@ pub fn combined_diff_sha(file_hashes: &[(String, u64)], context_lines: u32) -> S
     format!("{:x}", h.finish())
 }
 
-/// Stable content hash for a `FileDiff` entry.
+/// Content hash for a `FileDiff` entry, used for cache-key comparison within a single session.
+///
+/// `DefaultHasher` is not stable across Rust versions — never persist these values.
 pub fn file_content_hash(file: &FileDiff) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};

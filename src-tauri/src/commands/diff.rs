@@ -205,6 +205,7 @@ pub async fn workflow_get_syntax_css(
 
 /// Run Tier 2 per-file highlight caching: compare file content hashes, reuse cached
 /// highlights for unchanged files, re-highlight only changed files, then store results.
+#[allow(clippy::too_many_arguments)]
 fn highlight_with_tier2_cache(
     raw_diff: orkestra_core::workflow::ports::TaskDiff,
     context_lines: u32,

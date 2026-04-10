@@ -135,9 +135,9 @@ fn test_send_message_enters_chat_mode_during_awaiting_approval() {
     );
 
     // Verify: UserMessage log entry stored with resume_type "chat"
-    let logs = ctx
+    let (logs, _cursor) = ctx
         .api()
-        .get_task_logs(&task_id, Some("work"), None)
+        .get_task_logs(&task_id, Some("work"), None, None)
         .unwrap();
     let has_user_message = logs.iter().any(|e| {
         matches!(
@@ -373,9 +373,9 @@ fn test_send_message_during_interrupted() {
     );
 
     // Verify log entry with resume_type "chat"
-    let logs = ctx
+    let (logs, _cursor) = ctx
         .api()
-        .get_task_logs(&task_id, Some("work"), None)
+        .get_task_logs(&task_id, Some("work"), None, None)
         .unwrap();
     let has_user_message = logs.iter().any(|e| {
         matches!(

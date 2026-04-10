@@ -93,9 +93,10 @@ pub use config::{
     FlowConfig, IntegrationConfig, LoadError, StageCapabilities, StageConfig, WorkflowConfig,
 };
 pub use domain::{
-    AssistantSession, DerivedTaskState, Iteration, LogEntry, OrkAction, PrCheckData, PrCommentData,
-    Question, QuestionAnswer, QuestionOption, SessionLogInfo, SessionState, StageLogInfo,
-    StageSession, Task, TaskCreationMode, TaskView, TodoItem, ToolInput,
+    AssistantSession, DerivedTaskState, Iteration, LogEntry, LogNotification, OrkAction,
+    PrCheckData, PrCommentData, Question, QuestionAnswer, QuestionOption, SessionLogInfo,
+    SessionState, StageLogInfo, StageSession, Task, TaskCreationMode, TaskView, TodoItem,
+    ToolInput,
 };
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
 pub use ports::{

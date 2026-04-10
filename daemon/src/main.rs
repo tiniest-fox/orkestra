@@ -23,7 +23,8 @@ use orkestra_core::workflow::execution::{
 };
 use orkestra_core::workflow::ports::ProcessSpawner;
 use orkestra_core::workflow::{
-    AgentKiller, OrchestratorLoop, StageExecutionService, WorkflowApi, WorkflowStore,
+    AgentKiller, LogNotification, OrchestratorLoop, StageExecutionService, WorkflowApi,
+    WorkflowStore,
 };
 use orkestra_core::{ensure_orkestra_project, orkestra_debug};
 use orkestra_networking::{
@@ -265,17 +266,25 @@ async fn run(
         Arc::clone(api_lock.iteration_service())
     };
 
-    let stage_executor = Arc::new(StageExecutionService::new(
+    // Log notification channel — forwards log-write events from stage execution and chat
+    // to WebSocket clients as `log_entry_appended` events.
+    let (log_tx, log_rx) = std::sync::mpsc::channel::<LogNotification>();
+
+    let mut stage_executor_inner = StageExecutionService::new(
         workflow.clone(),
         project_root.clone(),
         Arc::clone(&store),
         iteration_service,
-    ));
+    );
+    stage_executor_inner.set_log_notify_tx(log_tx.clone());
+    let stage_executor = Arc::new(stage_executor_inner);
 
     // Inject AgentKiller so that interrupt() can kill the agent process.
+    // Also wire the log notification sender for stage chat.
     {
         let mut api_lock = api.lock().expect("API mutex poisoned during init");
         api_lock.set_agent_killer(Arc::clone(&stage_executor) as Arc<dyn AgentKiller>);
+        api_lock.set_log_notify_tx(log_tx);
     }
 
     // -- Event channel --
@@ -289,6 +298,20 @@ async fn run(
         provider_registry,
         Arc::clone(&store),
     ));
+
+    // -- Log notification listener thread --
+    // Reads LogNotification values from the mpsc channel and broadcasts
+    // `log_entry_appended` events to all connected WebSocket clients.
+    // The thread exits when all senders (stage_executor + api) are dropped.
+    let event_tx_for_log = event_tx.clone();
+    std::thread::spawn(move || {
+        while let Ok(notification) = log_rx.recv() {
+            let _ = event_tx_for_log.send(Event::log_entry_appended(
+                notification.task_id,
+                notification.session_id,
+            ));
+        }
+    });
 
     // -- Orchestrator thread --
     let stop_flag = Arc::new(AtomicBool::new(false));

@@ -8873,6 +8873,100 @@ fn test_restart_stage_from_blocked() {
     );
 }
 
+/// Test cursor-based incremental log fetching.
+///
+/// Verifies that:
+/// - `get_task_logs` with `cursor: None` returns all entries + a cursor
+/// - `get_task_logs` with the returned cursor returns no new entries + `cursor: None`
+/// - A second agent run adds new entries visible when fetching with the previous cursor
+#[test]
+fn test_cursor_based_incremental_log_fetch() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task(
+        "Test cursor fetch",
+        "A task to test cursor-based log fetching",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Run the planner with activity so log entries are written
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Initial plan".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns planner agent (emits LogLine before Completed)
+    ctx.advance(); // processes artifact output
+
+    // Fetch all entries with cursor=None (returns everything from sequence 0)
+    let (entries, cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, None)
+        .expect("get_task_logs should succeed");
+
+    assert!(
+        !entries.is_empty(),
+        "should have log entries after agent run with activity"
+    );
+    assert!(
+        cursor.is_some(),
+        "cursor should be set when entries are returned"
+    );
+
+    // Fetch again with the returned cursor — no new entries since last fetch
+    let (new_entries, new_cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, cursor)
+        .expect("get_task_logs with cursor should succeed");
+
+    assert!(
+        new_entries.is_empty(),
+        "no new entries since cursor was issued"
+    );
+    assert!(
+        new_cursor.is_none(),
+        "cursor should be None when no entries returned"
+    );
+
+    // Reject to trigger a retry — the new iteration writes additional log entries
+    ctx.api().reject(&task_id, "Needs more detail").unwrap();
+
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Improved plan".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns agent for retry (emits LogLine before Completed)
+    ctx.advance(); // processes artifact output
+
+    // Fetch with the original cursor — should see only entries from the new iteration
+    let (incremental_entries, new_cursor2) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, cursor)
+        .expect("incremental fetch with old cursor should succeed");
+
+    assert!(
+        !incremental_entries.is_empty(),
+        "should return new entries written during the second agent run"
+    );
+    assert!(
+        new_cursor2 > cursor,
+        "new cursor should advance beyond the previous cursor"
+    );
+}
+
 // =============================================================================
 // route_to Rejection Routing Tests
 // =============================================================================

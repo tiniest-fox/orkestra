@@ -503,6 +503,22 @@ export interface WorkflowTaskView extends WorkflowTask {
 }
 
 // =============================================================================
+// Log Pagination
+// =============================================================================
+
+/**
+ * Response shape for cursor-based incremental log fetching.
+ * Returned by `get_logs` when using cursor-based pagination.
+ */
+export interface LogPage {
+  /** Log entries returned since the last cursor. */
+  entries: LogEntry[];
+  /** Max sequence_number of the returned entries — use as cursor for the next fetch.
+   * Null when no entries were returned. */
+  cursor: number | null;
+}
+
+// =============================================================================
 // Session Log Types
 // =============================================================================
 

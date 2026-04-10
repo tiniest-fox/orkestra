@@ -417,18 +417,26 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
         api_lock.iteration_service().clone()
     };
 
-    let stage_executor = std::sync::Arc::new(orkestra_core::workflow::StageExecutionService::new(
+    // Log notification channel — emitted by StageExecutionService (agent path) and WorkflowApi
+    // (chat path). A listener thread forwards these to the Tauri window as push events.
+    let (log_tx, log_rx) = std::sync::mpsc::channel::<orkestra_core::workflow::LogNotification>();
+
+    let mut stage_executor_inner = orkestra_core::workflow::StageExecutionService::new(
         config.clone(),
         project_root.clone(),
         store.clone(),
         iteration_service,
-    ));
+    );
+    stage_executor_inner.set_log_notify_tx(log_tx.clone());
+    let stage_executor = std::sync::Arc::new(stage_executor_inner);
 
-    // Inject AgentKiller into WorkflowApi so interrupt() can kill agents internally
+    // Inject AgentKiller into WorkflowApi so interrupt() can kill agents internally.
+    // Also wire the log notification sender for stage chat.
     {
         let mut api_lock = api.lock().unwrap();
         api_lock.set_agent_killer(std::sync::Arc::clone(&stage_executor)
             as std::sync::Arc<dyn orkestra_core::workflow::AgentKiller>);
+        api_lock.set_log_notify_tx(log_tx);
     }
 
     let app_handle = app_handle.clone();
@@ -449,6 +457,23 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
             orch_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        // Forward log notifications to the Tauri window as push events.
+        // The thread exits when log_rx's senders are dropped (orchestrator + chat teardown).
+        let window_for_log = app_handle.get_webview_window(&window_label_owned).clone();
+        std::thread::spawn(move || {
+            while let Ok(notification) = log_rx.recv() {
+                if let Some(ref window) = window_for_log {
+                    let _ = window.emit(
+                        "log-entry-appended",
+                        serde_json::json!({
+                            "task_id": notification.task_id,
+                            "session_id": notification.session_id,
+                        }),
+                    );
+                }
+            }
         });
 
         orchestrator.run(move |event| {

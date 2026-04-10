@@ -14,7 +14,7 @@ use orkestra_types::domain::{
 
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
 
-type LogEntryRecord = (String, i32, LogEntry, Option<String>);
+type LogEntryRecord = (String, i64, LogEntry, Option<String>);
 
 /// In-memory implementation of `WorkflowStore` for testing.
 pub struct InMemoryWorkflowStore {
@@ -391,6 +391,34 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .collect();
         result.sort_by_key(|(_, seq, _, _)| *seq);
         Ok(result.into_iter().map(|(_, _, entry, _)| entry).collect())
+    }
+
+    fn get_log_entries_after(
+        &self,
+        stage_session_id: &str,
+        after_sequence: u64,
+    ) -> WorkflowResult<(Vec<LogEntry>, Option<u64>)> {
+        let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = entries
+            .iter()
+            .filter(|(sid, seq, _, _)| {
+                sid == stage_session_id
+                    && u64::try_from(*seq).expect("sequence numbers must be non-negative")
+                        > after_sequence
+            })
+            .cloned()
+            .collect();
+        result.sort_by_key(|(_, seq, _, _)| *seq);
+        let max_seq = result
+            .iter()
+            .map(|(_, seq, _, _)| {
+                u64::try_from(*seq).expect("sequence numbers must be non-negative")
+            })
+            .max();
+        Ok((
+            result.into_iter().map(|(_, _, entry, _)| entry).collect(),
+            max_seq,
+        ))
     }
 
     fn get_annotated_log_entries(

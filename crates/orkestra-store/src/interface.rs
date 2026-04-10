@@ -203,6 +203,17 @@ pub trait WorkflowStore: Send + Sync {
     /// Get all log entries for a stage session, ordered by sequence number.
     fn get_log_entries(&self, stage_session_id: &str) -> WorkflowResult<Vec<LogEntry>>;
 
+    /// Get log entries with `sequence_number` greater than `after_sequence`.
+    ///
+    /// Returns the entries and the max `sequence_number` of the returned entries (as cursor).
+    /// When `after_sequence` is 0, returns all entries.
+    /// Returns `(entries, Some(max_seq))` when entries exist, `(vec![], None)` when empty.
+    fn get_log_entries_after(
+        &self,
+        stage_session_id: &str,
+        after_sequence: u64,
+    ) -> WorkflowResult<(Vec<LogEntry>, Option<u64>)>;
+
     /// Get log entries with iteration metadata for a stage session.
     fn get_annotated_log_entries(
         &self,

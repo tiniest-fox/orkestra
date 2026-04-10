@@ -18,7 +18,10 @@ export function createDemoTransport(): Transport {
           return resolve(demoTasks);
         case "get_logs": {
           const sessionId = params?.session_id as string | undefined;
-          return resolve(sessionId ? (demoLogsBySession[sessionId] ?? []) : []);
+          return resolve({
+            entries: sessionId ? (demoLogsBySession[sessionId] ?? []) : [],
+            cursor: null,
+          });
         }
         case "get_project_info":
           return resolve({ project_root: "/workspace/my-project", project_name: "my-project" });

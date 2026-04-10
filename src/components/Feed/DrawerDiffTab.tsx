@@ -1,6 +1,6 @@
-//! Self-contained diff tab — file list sidebar + syntax-highlighted content pane.
-//! Handles all scroll tracking, file jumping, and collapse state internally.
-//! Registers c / ] / [ / j·k hotkeys when active.
+// Self-contained diff tab — file list sidebar + syntax-highlighted content pane.
+// Handles all scroll tracking, file jumping, and collapse state internally.
+// Registers c / ] / [ / j·k hotkeys when active.
 
 import { GitCommit, GitCompare } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,6 +9,8 @@ import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
+import { useTransport } from "../../transport";
+import { isDisconnectError } from "../../utils/transportErrors";
 import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
@@ -25,6 +27,7 @@ import { useNavHandler } from "../ui/HotkeyScope";
 import type { ExpandPosition } from "./applySplice";
 import { DiffCommitPanel } from "./DiffCommitPanel";
 import { useDrawerDiff } from "./DrawerTaskProvider";
+import type { DiffMode } from "./types";
 
 interface DrawerDiffTabProps {
   /** Whether this tab is currently visible — controls data loading and hotkey registration. */
@@ -51,16 +54,24 @@ export function DrawerDiffTab({
     fileContextLines,
     expandContext,
     branchCommits: commits,
+    hasUncommittedChanges,
+    taskId,
   } = useDrawerDiff();
+  const transport = useTransport();
   const { css } = useSyntaxCss();
   const isMobile = useIsMobile();
   const [activePath, setActivePath] = useState<string | null>(null);
   const [fileListOpen, setFileListOpen] = useState(false);
   const diffContentRef = useRef<DiffContentHandle>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
+  const [diffMode, setDiffMode] = useState<DiffMode>("all");
   const [commitPanelCollapsed, setCommitPanelCollapsed] = useState(true);
   const [commitOverlayOpen, setCommitOverlayOpen] = useState(false);
+
+  const isAllMode = diffMode === "all";
+  const isUncommittedMode = diffMode === "uncommitted";
+  const isPerCommitMode = !isAllMode && !isUncommittedMode;
+  const selectedCommitHash = isPerCommitMode ? diffMode : null;
 
   // -- Active comment line (local state) --
   const [activeCommentLine, setActiveCommentLine] = useState<{
@@ -82,13 +93,56 @@ export function DrawerDiffTab({
     }
   }, [hasDrafts, liveDiff]);
 
+  // -- Uncommitted diff fetching --
+  const [uncommittedDiff, setUncommittedDiff] = useState<HighlightedTaskDiff | null>(null);
+  const [uncommittedDiffLoading, setUncommittedDiffLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isUncommittedMode) {
+      setUncommittedDiff(null);
+      return;
+    }
+    let cancelled = false;
+    setUncommittedDiffLoading(true);
+    transport
+      .call<HighlightedTaskDiff>("get_uncommitted_diff", { task_id: taskId })
+      .then((result) => {
+        if (!cancelled) {
+          setUncommittedDiff(result);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled && !isDisconnectError(err)) {
+          console.error("Failed to fetch uncommitted diff:", err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setUncommittedDiffLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isUncommittedMode, transport, taskId]);
+
   const { diff: commitDiff, loading: commitDiffLoading } = useCommitDiff(selectedCommitHash);
 
   // Per-commit mode: use commit diff directly (immutable, no snapshot needed).
+  // Uncommitted mode: use the fetched uncommitted diff.
   // All-changes mode: use frozen snapshot if drafts exist (preserves line refs).
-  const isPerCommitMode = selectedCommitHash !== null;
-  const rawDiff = isPerCommitMode ? commitDiff : hasDrafts ? diffSnapshotRef.current : liveDiff;
-  const activeDiffLoading = isPerCommitMode ? commitDiffLoading : diffLoading;
+  const rawDiff = isPerCommitMode
+    ? commitDiff
+    : isUncommittedMode
+      ? uncommittedDiff
+      : hasDrafts
+        ? diffSnapshotRef.current
+        : liveDiff;
+  const activeDiffLoading = isPerCommitMode
+    ? commitDiffLoading
+    : isUncommittedMode
+      ? uncommittedDiffLoading
+      : diffLoading;
 
   // Memoize sorted files so useAutoCollapsePaths doesn't re-run on every render.
   const diff = useMemo(
@@ -123,17 +177,20 @@ export function DrawerDiffTab({
 
   // If selected commit disappears from list (rebase), reset to all-changes.
   useEffect(() => {
-    if (
-      selectedCommitHash &&
-      commits.length > 0 &&
-      !commits.some((c) => c.hash === selectedCommitHash)
-    ) {
-      setSelectedCommitHash(null);
+    if (isPerCommitMode && commits.length > 0 && !commits.some((c) => c.hash === diffMode)) {
+      setDiffMode("all");
     }
-  }, [selectedCommitHash, commits]);
+  }, [diffMode, isPerCommitMode, commits]);
+
+  // If uncommitted changes disappear while viewing, reset to all-changes.
+  useEffect(() => {
+    if (isUncommittedMode && !hasUncommittedChanges) {
+      setDiffMode("all");
+    }
+  }, [isUncommittedMode, hasUncommittedChanges]);
 
   // Reset per-commit state when selection changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedCommitHash is the intentional trigger; closeFindBar and resetInteraction are stable useCallback references that never change identity
+  // biome-ignore lint/correctness/useExhaustiveDependencies: diffMode is the intentional trigger; closeFindBar and resetInteraction are stable useCallback references that never change identity
   useEffect(() => {
     setActivePath(null);
     setActiveCommentLine(null);
@@ -141,7 +198,7 @@ export function DrawerDiffTab({
     setCommitOverlayOpen(false);
     closeFindBar();
     resetInteraction();
-  }, [selectedCommitHash]);
+  }, [diffMode]);
 
   function handleToggleCollapsed(path: string) {
     toggleCollapsed(path);
@@ -220,6 +277,10 @@ export function DrawerDiffTab({
     if (prev) handleJumpTo(prev);
   });
   const isCommentingEnabled = !!onAddDraftComment;
+  // Only per-commit diffs are immutable; all-changes and uncommitted allow draft comments.
+  const isImmutableMode = isPerCommitMode;
+  // Context expansion only makes sense for all-changes mode (has base-branch context).
+  const supportsContextExpansion = isAllMode;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden relative">
@@ -272,15 +333,20 @@ export function DrawerDiffTab({
             >
               <DiffCommitPanel
                 commits={commits}
-                selectedHash={selectedCommitHash}
+                diffMode={diffMode}
                 onSelectHash={(hash) => {
-                  setSelectedCommitHash(hash);
+                  setDiffMode(hash);
                   setCommitOverlayOpen(false);
                 }}
                 onSelectAll={() => {
-                  setSelectedCommitHash(null);
+                  setDiffMode("all");
                   setCommitOverlayOpen(false);
                 }}
+                onSelectUncommitted={() => {
+                  setDiffMode("uncommitted");
+                  setCommitOverlayOpen(false);
+                }}
+                hasUncommittedChanges={hasUncommittedChanges}
               />
             </MobileSlidePanel>
           )}
@@ -288,9 +354,11 @@ export function DrawerDiffTab({
           {!isMobile && (
             <DiffCommitPanel
               commits={commits}
-              selectedHash={selectedCommitHash}
-              onSelectHash={setSelectedCommitHash}
-              onSelectAll={() => setSelectedCommitHash(null)}
+              diffMode={diffMode}
+              onSelectHash={(hash) => setDiffMode(hash)}
+              onSelectAll={() => setDiffMode("all")}
+              onSelectUncommitted={() => setDiffMode("uncommitted")}
+              hasUncommittedChanges={hasUncommittedChanges}
               collapsed={commitPanelCollapsed}
               onToggleCollapsed={() => setCommitPanelCollapsed((c) => !c)}
             />
@@ -322,24 +390,28 @@ export function DrawerDiffTab({
                 scrollRef={scrollRef}
                 onActivePathChange={setActivePath}
                 onToggleCollapsed={handleToggleCollapsed}
-                onLineClick={isCommentingEnabled && !isPerCommitMode ? handleLineClick : undefined}
-                draftComments={isPerCommitMode ? undefined : draftComments}
-                activeCommentLine={isPerCommitMode ? null : activeCommentLine}
-                onSaveDraft={isCommentingEnabled && !isPerCommitMode ? handleSaveDraft : undefined}
+                onLineClick={isCommentingEnabled && !isImmutableMode ? handleLineClick : undefined}
+                draftComments={isImmutableMode ? undefined : draftComments}
+                activeCommentLine={isImmutableMode ? null : activeCommentLine}
+                onSaveDraft={isCommentingEnabled && !isImmutableMode ? handleSaveDraft : undefined}
                 onCancelDraft={
-                  isCommentingEnabled && !isPerCommitMode ? handleDismissCommentInput : undefined
+                  isCommentingEnabled && !isImmutableMode ? handleDismissCommentInput : undefined
                 }
-                onDeleteDraft={isPerCommitMode ? undefined : onRemoveDraftComment}
+                onDeleteDraft={isImmutableMode ? undefined : onRemoveDraftComment}
                 draftBody={draftBody}
                 onDraftBodyChange={setDraftBody}
                 matches={search.matches}
                 currentMatch={search.currentMatch}
-                onExpandContext={isPerCommitMode ? undefined : handleExpandContext}
-                fileContextLines={isPerCommitMode ? new Map() : fileContextLines}
+                onExpandContext={supportsContextExpansion ? handleExpandContext : undefined}
+                fileContextLines={supportsContextExpansion ? fileContextLines : new Map()}
               />
             </div>
           </div>
         </>
+      ) : isUncommittedMode ? (
+        <div className="flex-1 flex items-center justify-center">
+          <EmptyState icon={GitCompare} message="No uncommitted changes found." />
+        </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
           <EmptyState icon={GitCompare} message="No changes." />

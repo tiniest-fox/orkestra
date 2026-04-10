@@ -14,6 +14,9 @@ pub use orkestra_git::{
 pub use pr_service::{PrError, PrService};
 pub use store::{WorkflowError, WorkflowResult, WorkflowStore};
 
+// Query response types
+pub use crate::workflow::query::interactions::branch_commits::BranchCommitsResponse;
+
 // Process types re-exported from orkestra-process
 pub use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 

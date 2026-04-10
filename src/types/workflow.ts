@@ -747,6 +747,14 @@ export interface CommitInfo {
   file_count: number | null;
 }
 
+/**
+ * Response shape for get_branch_commits — includes uncommitted change flag.
+ */
+export interface BranchCommitsResponse {
+  commits: CommitInfo[];
+  has_uncommitted_changes: boolean;
+}
+
 // =============================================================================
 // Assistant Sessions
 // =============================================================================

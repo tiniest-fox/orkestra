@@ -192,7 +192,7 @@ pub(super) async fn handle_get_file_content(
 // ============================================================================
 
 /// Handle the `get_syntax_css` method — returns CSS for light and dark themes.
-pub fn handle_get_syntax_css(ctx: &Arc<CommandContext>, _params: Value) -> Value {
+pub(super) fn handle_get_syntax_css(ctx: &Arc<CommandContext>, _params: Value) -> Value {
     let css = SyntaxCss {
         light: ctx.highlighter.light_css.clone(),
         dark: ctx.highlighter.dark_css.clone(),
@@ -204,24 +204,36 @@ pub fn handle_get_syntax_css(ctx: &Arc<CommandContext>, _params: Value) -> Value
 // Commit history
 // ============================================================================
 
-/// Handle the `get_branch_commits` method — returns commits on the task branch not on the base.
+/// Shared handler for `get_branch_commits`.
+///
+/// Returns `{ "commits": [...], "has_uncommitted_changes": bool }`.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub(super) async fn handle_get_branch_commits(
-    ctx: Arc<CommandContext>,
-    params: Value,
-) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(&params)?;
-    let api = Arc::clone(&ctx.api);
-    tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
-        let commits = api
-            .get_branch_commits(&task_id)
-            .map_err(ErrorPayload::from)?;
-        Ok(serde_json::to_value(commits).unwrap_or(Value::Array(vec![])))
-    })
-    .await
-    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+pub fn get_branch_commits(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let response = api
+        .get_branch_commits(&task_id)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(response).unwrap_or(Value::Null))
+}
+
+/// Shared handler for `get_uncommitted_diff` — returns highlighted uncommitted changes.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub fn get_uncommitted_diff(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let raw_diff = {
+        let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        api.get_uncommitted_diff(&task_id)
+            .map_err(ErrorPayload::from)?
+    }; // lock released — highlighting runs off the lock
+    let files: Vec<_> = raw_diff
+        .files
+        .into_iter()
+        .map(|f| highlight_file_diff(f, &ctx.highlighter))
+        .collect();
+    Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
 }
 
 /// Handle the `get_commit_log` method — returns the 20 most recent commits.

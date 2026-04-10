@@ -11,3 +11,4 @@ pub mod sessions;
 pub mod task_sync_status;
 pub mod task_views;
 pub mod tasks_needing_agents;
+pub mod uncommitted_diff;

@@ -106,7 +106,7 @@ pub struct SyntaxCss {
 /// - Tier 1: If HEAD SHA matches and worktree is clean, return cached result immediately.
 /// - Tier 2: Run git diff, but only re-highlight files whose content hash changed.
 ///
-/// Accepts an optional `last_sha` ETag parameter. When `last_sha` matches the current
+/// Accepts an optional `last_sha` `ETag` parameter. When `last_sha` matches the current
 /// diff fingerprint, returns `{ "unchanged": true, "diff_sha": "..." }` immediately.
 /// Full diff responses include a `diff_sha` field for use as `last_sha` on the next poll.
 #[allow(clippy::too_many_lines)]

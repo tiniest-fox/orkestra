@@ -77,6 +77,21 @@ useEffect(() => {
 - Remove failed items from the ref so they retry on next trigger
 - See `GitHistoryProvider.tsx` for the canonical example
 
+### Resetting Refs on Prop Change
+
+When a hook has multiple refs tracking internal request or display state (e.g., `hasFetchedOnceRef`, `diffShaRef`, `requestedIdsRef`), **all of them must be reset** in the same effect that reacts to the key prop (e.g., `taskId`) changing. Partial resets cause stale state from the previous value to bleed through — for instance, suppressing the loading spinner on the first fetch of a new task or briefly flashing the old data.
+
+```ts
+useEffect(() => {
+  // Reset ALL tracking refs, not just the data ref
+  diffShaRef.current = null;
+  hasFetchedOnceRef.current = false;
+  setDiff(null);
+}, [taskId]);
+```
+
+Pattern: collect every ref that tracks "have I fetched / what did I fetch last" and reset them together as a unit when the identity prop changes.
+
 ### DOM Observation Pattern (Callback Ref + useState)
 
 When building hooks that observe DOM elements (auto-scroll, resize detection, mutation tracking), use a **callback ref + useState** to track the element reference. This makes `useEffect` re-run when the element changes, which is critical for attaching/detaching observers.

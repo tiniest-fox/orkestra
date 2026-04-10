@@ -16,12 +16,19 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Resolves the login-shell environment for the given project root.
 ///
-/// Runs `shell -l -c 'env -0'` with `current_dir` set to `project_root`
+/// Runs `shell -l -i -c 'env -0'` with `current_dir` set to `project_root`
 /// and parses the NUL-delimited output. Returns `None` on any failure.
+///
+/// The `-i` flag enables interactive mode so that `~/.zshrc` is sourced in
+/// addition to `~/.zprofile`. This is required for tool managers like mise and
+/// nvm whose binaries are added to PATH only in `~/.zshrc`, not `~/.zprofile`.
+/// Without `-i`, Tauri's lean inherited PATH means those managers can't be
+/// found and their shims are never activated.
+///
 /// PATH patching (prepending the ork CLI directory) is the caller's responsibility.
 pub fn execute(project_root: &Path, shell: &str) -> Option<HashMap<String, String>> {
     let mut cmd = Command::new(shell);
-    cmd.args(["-l", "-c", "env -0"])
+    cmd.args(["-l", "-i", "-c", "env -0"])
         .current_dir(project_root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -36,7 +43,7 @@ pub fn execute(project_root: &Path, shell: &str) -> Option<HashMap<String, Strin
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[orkestra] Failed to spawn shell '{shell}': {e}");
+            orkestra_debug!("env", "Failed to spawn shell '{}': {}", shell, e);
             return None;
         }
     };
@@ -68,7 +75,7 @@ pub fn execute(project_root: &Path, shell: &str) -> Option<HashMap<String, Strin
             return None;
         }
         Err(_) => {
-            eprintln!("[orkestra] Shell env resolution timed out after 5 seconds");
+            orkestra_debug!("env", "Shell env resolution timed out after {:?}", TIMEOUT);
             #[cfg(unix)]
             {
                 let pid = child.id();
@@ -103,6 +110,21 @@ pub fn execute(project_root: &Path, shell: &str) -> Option<HashMap<String, Strin
     }
 
     let env = parse_env_output(&output_bytes);
+
+    let path_preview = env.get("PATH").map(|p| {
+        let truncated: String = p.chars().take(80).collect();
+        if p.len() > 80 {
+            format!("{truncated}...")
+        } else {
+            truncated
+        }
+    });
+    orkestra_debug!(
+        "env",
+        "Resolved {} vars, PATH={}",
+        env.len(),
+        path_preview.as_deref().unwrap_or("<not set>")
+    );
 
     Some(env)
 }

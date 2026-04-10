@@ -141,6 +141,24 @@ pub(crate) fn execute(
         std::env::var("SHELL").ok().as_deref(),
     );
 
+    match &resolved_env {
+        Some(env) => {
+            orkestra_debug!(
+                "stage",
+                "Env resolution for {}: {} vars resolved",
+                task.id,
+                env.len()
+            );
+        }
+        None => {
+            orkestra_debug!(
+                "stage",
+                "Env resolution for {}: fell back to inherited env",
+                task.id
+            );
+        }
+    }
+
     // 9. Build run config with session info, model spec, system prompt, and env
     let stage_config = ResolvedStageConfig {
         user_prompt,

@@ -171,7 +171,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
     use crate::workflow::domain::{Question, Task};
     use crate::workflow::execution::StageOutput;
     use crate::workflow::query::interactions::task_views::topological_sort;
@@ -191,8 +191,7 @@ mod tests {
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan").with_gate(GateConfig::Agentic),
             StageConfig::new("work", "summary"),
         ])
     }

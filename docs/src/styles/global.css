@@ -1,0 +1,155 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+/* Scans the main app's src/ tree so Tailwind detects classes used by React
+   components rendered via LiveDemo.tsx. The Orkestra component tree imports
+   from components/, hooks/, providers/, utils/, transport/, types/, and
+   stories/ — narrowing to specific subdirs would be fragile and incomplete. */
+@source "../../../src";
+@import "../../../src/styles/forge-tokens.css";
+
+/* ============================================================================
+ * Tailwind 4 Theme — mirrors tailwind.config.js
+ * ============================================================================
+ * Maps forge tokens to Tailwind utility classes. Keep in sync with
+ * tailwind.config.js until the main app migrates to Tailwind v4.
+ */
+
+@theme {
+  /* Backgrounds */
+  --color-canvas: var(--forge-canvas);
+  --color-surface: var(--forge-surface);
+  --color-surface-raised: var(--forge-surface-raised);
+  --color-surface-2: var(--forge-surface-2);
+  --color-surface-3: var(--forge-surface-3);
+  --color-surface-hover: var(--forge-surface-hover);
+
+  /* Text */
+  --color-text-primary: var(--forge-text-primary);
+  --color-text-secondary: var(--forge-text-secondary);
+  --color-text-tertiary: var(--forge-text-tertiary);
+  --color-text-quaternary: var(--forge-text-quaternary);
+
+  /* Border */
+  --color-border: var(--forge-border);
+
+  /* Accent — forge-tokens.css stores this as RGB channels for Tailwind v3 opacity
+     modifier support; wrap in rgb() so Tailwind v4 receives a valid CSS color. */
+  --color-accent: rgb(var(--forge-accent));
+  --color-accent-soft: var(--forge-accent-soft);
+  --color-accent-hover: var(--forge-accent-hover);
+
+  /* Status — same RGB-channel wrapping as accent above */
+  --color-status-success: rgb(var(--forge-status-success));
+  --color-status-success-bg: var(--forge-status-success-bg);
+  --color-status-error: rgb(var(--forge-status-error));
+  --color-status-error-hover: var(--forge-status-error-hover);
+  --color-status-error-bg: var(--forge-status-error-bg);
+  --color-status-warning: rgb(var(--forge-status-warning));
+  --color-status-warning-bg: var(--forge-status-warning-bg);
+  --color-status-info: rgb(var(--forge-status-info));
+  --color-status-info-hover: var(--forge-status-info-hover);
+  --color-status-info-bg: var(--forge-status-info-bg);
+  --color-status-purple: var(--forge-status-purple);
+  --color-status-purple-bg: var(--forge-status-purple-bg);
+  --color-status-pink: var(--forge-status-pink);
+  --color-status-pink-bg: var(--forge-status-pink-bg);
+  --color-status-cyan: var(--forge-status-cyan);
+  --color-status-cyan-bg: var(--forge-status-cyan-bg);
+  --color-status-orange: var(--forge-status-orange);
+  --color-status-orange-bg: var(--forge-status-orange-bg);
+
+  /* Workflow — same RGB-channel wrapping as accent above */
+  --color-violet: rgb(var(--forge-violet));
+  --color-violet-hover: var(--forge-violet-hover);
+  --color-teal: rgb(var(--forge-teal));
+  --color-teal-hover: var(--forge-teal-hover);
+  --color-merge: rgb(var(--forge-merge));
+  --color-merge-hover: var(--forge-merge-hover);
+
+  /* Typography */
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", "Cascadia Code", monospace;
+
+  /* Custom font sizes */
+  --text-forge-mono-sm: 11px;
+  --text-forge-mono-sm--line-height: 16px;
+  --text-forge-mono-md: 12px;
+  --text-forge-mono-md--line-height: 18px;
+  --text-forge-mono-label: 10px;
+  --text-forge-mono-label--line-height: 14px;
+  --text-forge-body: 13px;
+  --text-forge-body--line-height: 20px;
+  --text-forge-body-md: 14px;
+  --text-forge-body-md--line-height: 20px;
+  --text-forge-body-lg: 15px;
+  --text-forge-body-lg--line-height: 22px;
+
+  /* Border radius */
+  --radius-panel: 12px;
+  --radius-panel-sm: 8px;
+
+  /* Shadows */
+  --shadow-panel: var(--forge-shadow-panel);
+  --shadow-panel-hover: var(--forge-shadow-panel-hover);
+  --shadow-panel-press: var(--forge-shadow-panel-press);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  /* Give the first column of prose tables a comfortable minimum width
+     so short terms/labels aren't squeezed too narrow. */
+  .prose table th:first-child,
+  .prose table td:first-child {
+    min-width: 6rem;
+    padding-right: 2rem;
+  }
+}
+
+/* ============================================================================
+ * Code block overrides — outside @layer so they beat Tailwind prose utilities
+ * and Shiki's inline style="background-color:..." attributes.
+ * ============================================================================ */
+
+/* Mermaid diagram container */
+.mermaid {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+  background-color: var(--forge-surface-2);
+  border: 1px solid var(--forge-border);
+  border-radius: var(--radius-panel-sm);
+  overflow-x: auto;
+  margin-block: 1.5rem;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Shiki injects inline background-color on <pre> — !important overrides it. */
+.prose pre {
+  background-color: var(--forge-surface-2) !important;
+}
+
+/* Reset the <code> inside <pre>: prose-code:* utilities apply a background,
+   padding, and rounded corners suited for inline code, which double-up inside
+   a code block and cause the light-stripe banding. */
+.prose pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+}
+

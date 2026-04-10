@@ -110,7 +110,10 @@ pub(crate) fn dispatch_output(
             )?;
         }
         StageOutput::Approval {
-            decision, content, ..
+            decision,
+            content,
+            route_to,
+            ..
         } => {
             super::handle_approval::execute(
                 workflow,
@@ -119,6 +122,7 @@ pub(crate) fn dispatch_output(
                 current_stage,
                 &decision,
                 &content,
+                route_to.as_deref(),
                 now,
             )?;
         }

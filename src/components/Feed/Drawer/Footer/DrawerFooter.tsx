@@ -23,7 +23,6 @@ interface DrawerFooterProps {
   activeTab: DrawerTabId;
   questions: WorkflowQuestion[];
   stageReviewType: "violet" | "teal";
-  completionStage: string | null | undefined;
   state: TaskDrawerState;
 }
 
@@ -36,7 +35,6 @@ export function DrawerFooter({
   activeTab,
   questions,
   stageReviewType,
-  completionStage,
   state,
 }: DrawerFooterProps) {
   const progress = task.derived.subtask_progress;
@@ -156,7 +154,7 @@ export function DrawerFooter({
     );
   }
   if (task.derived.is_waiting_on_children && progress) {
-    return <WaitingFooter progress={progress} completionStage={completionStage} />;
+    return <WaitingFooter progress={progress} />;
   }
 
   return null;

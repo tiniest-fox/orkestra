@@ -56,6 +56,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },

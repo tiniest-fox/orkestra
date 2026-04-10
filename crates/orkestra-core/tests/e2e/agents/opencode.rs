@@ -209,15 +209,15 @@ fn opencode_bad_model_fails_fast() {
 
 /// Questions output: agent asks a clarifying question instead of producing an artifact.
 ///
-/// Exercises: capabilities with `ask_questions`, schema embedded in prompt (`OpenCode`
-/// doesn't support `--json-schema`), agent outputs questions JSON, parser extracts
+/// Exercises: questions are always included in all stage schemas, schema embedded in prompt
+/// (`OpenCode` doesn't support `--json-schema`), agent outputs questions JSON, parser extracts
 /// it from text fallback, task transitions to `AwaitingReview` with pending questions.
 #[test]
 #[ignore = "requires opencode installed + API key"]
 fn opencode_questions_output() {
     let env = helpers::AgentTestEnv::with_capabilities(
         "opencode/kimi-k2.5",
-        StageCapabilities::with_questions(),
+        StageCapabilities::default(),
         "You MUST respond with the \"questions\" output type. Ask exactly ONE question: \
          \"What programming language should be used?\" with two options: \"Python\" and \"Rust\". \
          Do NOT attempt any work — ONLY ask the question.",

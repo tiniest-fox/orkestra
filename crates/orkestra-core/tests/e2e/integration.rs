@@ -60,6 +60,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -603,6 +604,7 @@ fn advance_both_through_stage(
             MockAgentOutput::Approval {
                 decision: "approve".to_string(),
                 content: "LGTM".to_string(),
+                route_to: None,
                 activity_log: None,
                 resources: vec![],
             },
@@ -612,6 +614,7 @@ fn advance_both_through_stage(
             MockAgentOutput::Approval {
                 decision: "approve".to_string(),
                 content: "LGTM".to_string(),
+                route_to: None,
                 activity_log: None,
                 resources: vec![],
             },
@@ -1183,11 +1186,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     // Build a workflow: "default" (auto_merge: false) and "hotfix" (auto_merge: true)
     // Both flows have a single automated "work" stage — no human approval required,
     // so tasks advance straight to Done when the agent outputs its artifact.
-    let work_stage = || {
-        StageConfig::new("work", "summary")
-            .with_prompt("worker.md")
-            .automated()
-    };
+    let work_stage = || StageConfig::new("work", "summary").with_prompt("worker.md");
 
     let mut flows = IndexMap::new();
     flows.insert(

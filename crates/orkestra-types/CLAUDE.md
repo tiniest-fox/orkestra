@@ -36,7 +36,7 @@ src/
 ### Config Types (from YAML)
 - **WorkflowConfig**: Map of named flows (each flow owns its stages and integration config)
 - **StageConfig**: Stage definition (name, artifact, capabilities, prompt/script)
-- **StageCapabilities**: Feature flags (ask_questions, subtasks, approval)
+- **StageCapabilities**: Feature flags (subtasks)
 - **FlowConfig**: Named pipeline with its own stages and integration config
 
 ### Domain Types (runtime entities)

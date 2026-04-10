@@ -435,8 +435,13 @@ fn get_stage_schema(
         .stage(&task.flow, stage)
         .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
 
-    crate::workflow::execution::get_agent_schema(stage_config, Some(prompt_service.project_root()))
-        .ok_or_else(|| ExecutionError::ConfigError(format!("No schema for agent stage: {stage}")))
+    let route_to_stages = workflow.route_to_stage_names(&task.flow, stage);
+    crate::workflow::execution::get_agent_schema(
+        stage_config,
+        Some(prompt_service.project_root()),
+        &route_to_stages,
+    )
+    .ok_or_else(|| ExecutionError::ConfigError(format!("No schema for agent stage: {stage}")))
 }
 
 /// Apply provider-specific fallbacks for system prompt and schema enforcement.

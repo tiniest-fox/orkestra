@@ -1,6 +1,6 @@
 //! Advance a single parent task whose subtasks have all completed.
 
-use crate::workflow::config::{StageCapabilities, WorkflowConfig};
+use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -26,22 +26,11 @@ pub fn execute(
     let breakdown_stage = find_breakdown_stage(workflow, &parent);
 
     if let Some(stage) = breakdown_stage {
-        // `find_breakdown_stage` found this stage via `stages_in_flow`, so `workflow.stage()`
-        // will always return `Some` here. `default_caps` is an unreachable fallback.
-        let default_caps = StageCapabilities::default();
-        let caps = workflow
-            .stage(&parent.flow, &stage)
-            .map_or(&default_caps, |s| &s.capabilities);
-
-        let next_state = if let Some(target) = caps.completion_stage() {
-            TaskState::queued(target)
-        } else {
-            super::finalize_advancement::compute_next_state_on_approve(
-                workflow,
-                &parent.flow,
-                &stage,
-            )
-        };
+        let next_state = super::finalize_advancement::compute_next_state_on_approve(
+            workflow,
+            &parent.flow,
+            &stage,
+        );
         let now = chrono::Utc::now().to_rfc3339();
 
         if let Some(new_stage) = next_state.stage() {

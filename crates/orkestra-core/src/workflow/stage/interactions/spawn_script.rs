@@ -25,8 +25,15 @@ pub(crate) fn execute(
     gate_config: &GateConfig,
     iteration_id: Option<&str>,
 ) -> Result<ActiveScript, ScriptError> {
-    let command = gate_config.command.clone();
-    let timeout = Duration::from_secs(gate_config.timeout_seconds);
+    let GateConfig::Automated {
+        command,
+        timeout_seconds,
+    } = gate_config
+    else {
+        return Err(ScriptError::SpawnFailed("gate is not automated".into()));
+    };
+    let command = command.clone();
+    let timeout = Duration::from_secs(*timeout_seconds);
     let working_dir = task
         .worktree_path
         .as_ref()

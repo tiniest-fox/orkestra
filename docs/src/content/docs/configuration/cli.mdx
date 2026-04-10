@@ -1,0 +1,245 @@
+---
+title: CLI Reference
+description: Complete reference for the ork command-line interface.
+order: 4
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+All `ork` commands output JSON by default. Pass `--pretty` for human-readable output. Run `ork --help` or `ork trak --help` for inline usage.
+
+## Global flags
+
+| Flag | Description |
+|------|-------------|
+| `--pretty` | Human-readable output. Applies to all commands. Without this flag, output is JSON. |
+| `--version` | Print the installed version and exit. |
+| `--help` | Show help for any command or subcommand. |
+
+## ork trak
+
+Trak management commands. `ork task` is an accepted alias for all `ork trak` subcommands.
+
+### ork trak list
+
+List all Traks in the project. Bootstraps `.orkestra/` on first run if it doesn't exist.
+
+```bash
+ork trak list [--status <STATUS>] [--parent <PARENT_ID>] [--depends_on <TRAK_ID>]
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--status` | string | Filter by status: `active`, `done`, `failed`, `blocked`, or `archived`. |
+| `--parent` | string | List Subtraks of the specified parent Trak. |
+| `--depends_on` | string | List Traks that depend on the specified Trak. |
+
+### ork trak create
+
+Create a new Trak and start its first stage.
+
+```bash
+ork trak create -t <TITLE> -d <DESCRIPTION> [--flow <FLOW>] [--base_branch <BRANCH>]
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--title` / `-t` | Yes | Trak title. |
+| `--description` / `-d` | Yes | Trak description. Passed to the agent as its task. |
+| `--flow` | No | Flow to assign the Trak to. Defaults to `default`. |
+| `--base_branch` / `-b` | No | Branch to base the Trak's worktree on. Defaults to the current branch. |
+
+### ork trak show
+
+Show the current state of a Trak.
+
+```bash
+ork trak show <TRAK_ID> [--iterations] [--sessions] [--git]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--iterations` | Include iteration history (stages, outcomes, feedback). |
+| `--sessions` | Include stage session history (spawning, PIDs, state). |
+| `--git` | Include git state (branch, HEAD, dirty status). |
+
+### ork trak approve
+
+Approve the current stage's output. The Trak advances to the next stage.
+
+```bash
+ork trak approve <TRAK_ID>
+```
+
+### ork trak reject
+
+Reject the current stage's output with feedback. The feedback is sent to the agent, which retries.
+
+```bash
+ork trak reject <TRAK_ID> --feedback <FEEDBACK>
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--feedback` / `-f` | Yes | Explanation of what needs to change. |
+
+### ork trak skip
+
+Skip the current stage and advance to the next one without agent output.
+
+```bash
+ork trak skip <TRAK_ID> --message <MESSAGE>
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--message` / `-m` | Yes | Explanation of why the stage is being skipped. |
+
+### ork trak send-to-stage
+
+Route a Trak to a specific stage by name.
+
+```bash
+ork trak send-to-stage <TRAK_ID> --stage <STAGE> --message <MESSAGE>
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--stage` / `-s` | Yes | Target stage name (must exist in the Trak's flow). |
+| `--message` / `-m` | Yes | Explanation of why the Trak is being redirected. |
+
+### ork trak restart
+
+Restart the current stage with a fresh agent session.
+
+```bash
+ork trak restart <TRAK_ID> --message <MESSAGE>
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--message` / `-m` | Yes | Explanation of why the stage is being restarted. |
+
+### ork trak retry
+
+Retry a failed or blocked Trak.
+
+```bash
+ork trak retry <TRAK_ID> [--instructions <INSTRUCTIONS>]
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--instructions` / `-i` | No | Optional instructions for the agent on retry. |
+
+### ork trak address-feedback
+
+Resume a Trak to address CI failures or review feedback after the branch has been pushed.
+
+```bash
+ork trak address-feedback <TRAK_ID> [--guidance <GUIDANCE>]
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--guidance` | No | Optional guidance for the agent. |
+
+### ork trak merge
+
+Merge a completed Trak's branch directly into its base branch.
+
+```bash
+ork trak merge <TRAK_ID>
+```
+
+The Trak must be in the `done` state. See also `ork trak open-pr` if you prefer a pull request.
+
+### ork trak open-pr
+
+Create a pull request for a completed Trak's branch.
+
+```bash
+ork trak open-pr <TRAK_ID>
+```
+
+### ork trak push-pr
+
+Push updated changes to an existing open pull request.
+
+```bash
+ork trak push-pr <TRAK_ID>
+```
+
+### ork trak pull-pr
+
+Pull remote changes into the local worktree for an existing open pull request.
+
+```bash
+ork trak pull-pr <TRAK_ID>
+```
+
+### ork trak retry-pr
+
+Recover from a failed PR creation attempt. Transitions the Trak back to `done` so `ork trak open-pr` can be retried.
+
+```bash
+ork trak retry-pr <TRAK_ID>
+```
+
+## ork logs
+
+View agent and script logs for a stage.
+
+```bash
+ork logs <TRAK_ID> --stage <STAGE> [--type <TYPE>] [--limit <N>] [--offset <N>]
+```
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--stage` | Yes | — | Stage name to view logs for. |
+| `--type` | No | — | Filter by entry type. See [Log entry types](#log-entry-types) below. |
+| `--limit` | No | `100` | Maximum number of log entries to return. |
+| `--offset` | No | `0` | Number of entries to skip (for pagination). |
+
+### Log entry types
+
+| Type | Description |
+|------|-------------|
+| `text` | Plain text output from the agent. |
+| `error` | Error output from the agent or scripts. |
+| `tool_use` | A tool call made by the main stage agent. |
+| `tool_result` | The result returned from a tool call by the main stage agent. |
+| `subagent_tool_use` | A tool call made by a subagent spawned during the stage. |
+| `subagent_tool_result` | The result returned from a tool call by a subagent. |
+| `process_exit` | Script or process exit event, including exit code. |
+| `user_message` | A message sent to the agent by the user (e.g., rejection feedback). |
+
+## ork play
+
+Run a Trak through all workflow stages non-interactively. Useful for fully automated pipelines.
+
+```bash
+ork play <DESCRIPTION> [--title <TITLE>] [--flow <FLOW>] [--base_branch <BRANCH>] [--no_integrate] [--no_pr]
+```
+
+`description` is a required positional argument — pass it directly without a flag name.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--title` / `-t` | No | Trak title. Defaults to the description if omitted. |
+| `--flow` | No | Flow to use. Defaults to `default`. |
+| `--base_branch` / `-b` | No | Base branch for the worktree. |
+| `--no_integrate` | No | Skip merging the branch after all stages complete. |
+| `--no_pr` | No | Merge directly to the base branch instead of opening a pull request. |
+
+<Callout type="note">
+`ork play` runs all stages without pausing for human approval. Use it for automated pipelines or for fully-automated flows where all stages are marked `is_automated: true`. `ork play` halts if a gate fails or an agentic gate produces a reject verdict. Inspect the Trak with `ork trak show` after a failed run.
+</Callout>
+
+## ork pair
+
+Generate a pairing code for daemon access. Used to connect external tools or interfaces to a running Orkestra daemon.
+
+```bash
+ork pair
+```

@@ -1,0 +1,168 @@
+---
+import Header from "../components/Header.astro";
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Releases — Orkestra" description="Download the latest Orkestra release for your platform.">
+  <div class="min-h-screen bg-canvas text-text-primary flex flex-col">
+
+    <!-- Top bar -->
+    <Header activePage="releases" />
+
+    <main class="max-w-3xl mx-auto w-full px-6 py-12">
+      <h1 class="text-2xl font-bold tracking-tight text-text-primary mb-1">Releases</h1>
+      <p class="text-text-tertiary mb-8">Download the latest Orkestra release for your platform.</p>
+
+      <div id="releases-list">
+        <!-- Loading state -->
+        <div id="releases-loading" class="space-y-4">
+          {[1, 2, 3].map(() => (
+            <div class="rounded-panel border border-border bg-surface p-6 animate-pulse">
+              <div class="h-4 w-24 bg-surface-3 rounded mb-3"></div>
+              <div class="h-3 w-40 bg-surface-2 rounded mb-4"></div>
+              <div class="space-y-2">
+                <div class="h-8 w-full bg-surface-2 rounded"></div>
+                <div class="h-8 w-3/4 bg-surface-2 rounded"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- Error state (hidden by default) -->
+        <div id="releases-error" class="hidden rounded-panel border border-border bg-surface p-8 text-center">
+          <p class="text-text-secondary mb-3">Failed to load releases.</p>
+          <a
+            href="https://github.com/tiniest-fox/orkestra/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-accent hover:text-accent-hover transition-colors"
+          >
+            View releases on GitHub →
+          </a>
+        </div>
+
+        <!-- Releases (populated by JS) -->
+        <div id="releases-content" class="hidden space-y-4"></div>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function formatDate(iso: string): string {
+    return new Date(iso).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  }
+
+  interface Asset {
+    name: string;
+    size: number;
+    download_count: number;
+    browser_download_url: string;
+  }
+
+  interface Release {
+    tag_name: string;
+    name: string;
+    published_at: string;
+    prerelease: boolean;
+    draft: boolean;
+    html_url: string;
+    assets: Asset[];
+  }
+
+  function renderAssetRow(asset: Asset): string {
+    return `
+      <a
+        href="${asset.browser_download_url}"
+        class="flex items-center justify-between gap-4 px-4 py-2.5 rounded-panel-sm bg-surface-2 hover:bg-surface-hover transition-colors group"
+      >
+        <span class="text-sm font-mono text-text-primary truncate">${asset.name}</span>
+        <span class="text-xs text-text-tertiary shrink-0">${formatBytes(asset.size)}</span>
+      </a>`;
+  }
+
+  function renderReleaseCard(release: Release, isLatest: boolean): string {
+    const badges = [
+      isLatest
+        ? `<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-accent/10 text-accent">Latest</span>`
+        : "",
+      release.prerelease
+        ? `<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-surface-2 text-text-tertiary border border-border">Pre-release</span>`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("");
+
+    const assetRows = release.assets.length
+      ? release.assets.map(renderAssetRow).join("")
+      : `<p class="text-sm text-text-tertiary px-1">No binary assets — <a href="${release.html_url}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">view on GitHub</a>.</p>`;
+
+    return `
+      <div class="rounded-panel border border-border bg-surface p-6">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-base font-semibold text-text-primary">${release.tag_name}</span>
+          ${badges}
+        </div>
+        <p class="text-xs text-text-tertiary mb-4">${formatDate(release.published_at)}</p>
+        <div class="space-y-1.5">
+          ${assetRows}
+        </div>
+        <a
+          href="${release.html_url}"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-block mt-4 text-xs text-text-tertiary hover:text-accent transition-colors"
+        >
+          Release notes →
+        </a>
+      </div>`;
+  }
+
+  async function loadReleases() {
+    const loading = document.getElementById("releases-loading")!;
+    const error = document.getElementById("releases-error")!;
+    const content = document.getElementById("releases-content")!;
+
+    try {
+      const res = await fetch("/api/releases");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data: unknown = await res.json();
+      if (!Array.isArray(data)) {
+        console.error("Unexpected releases response:", data);
+        throw new Error("Unexpected response format");
+      }
+      const releases = data as Release[];
+      const visible = releases.filter((r) => !r.draft);
+
+      if (visible.length === 0) {
+        error.querySelector("p")!.textContent = "No releases published yet.";
+        loading.classList.add("hidden");
+        error.classList.remove("hidden");
+        return;
+      }
+
+      content.innerHTML = visible
+        .map((release, i) => renderReleaseCard(release, i === 0 && !release.prerelease))
+        .join("");
+
+      loading.classList.add("hidden");
+      content.classList.remove("hidden");
+    } catch {
+      loading.classList.add("hidden");
+      error.classList.remove("hidden");
+    }
+  }
+
+  loadReleases();
+</script>

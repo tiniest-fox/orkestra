@@ -30,26 +30,27 @@ pub fn execute(
 
 /// Resolve the rejection target for a stage with approval capability.
 ///
-/// Priority: explicit `rejection_stage` in config → previous stage in flow.
+/// Priority: agent-provided `route_to` → previous stage in flow.
 pub fn resolve_rejection_target(
     workflow: &WorkflowConfig,
     current_stage: &str,
     flow: &str,
+    route_to: Option<&str>,
 ) -> WorkflowResult<String> {
-    let stage_config = workflow.stage(flow, current_stage).ok_or_else(|| {
-        WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
-    })?;
-
-    if let Some(target) = stage_config.capabilities.rejection_stage() {
-        return Ok(target.to_string());
+    if let Some(target) = route_to {
+        if workflow.has_stage(flow, target) {
+            return Ok(target.to_string());
+        }
+        return Err(WorkflowError::InvalidTransition(format!(
+            "Agent specified route_to=\"{target}\" but stage does not exist in flow \"{flow}\""
+        )));
     }
-
     workflow
         .previous_stage(flow, current_stage)
         .map(|s| s.name.clone())
         .ok_or_else(|| {
             WorkflowError::InvalidTransition(format!(
-                "Stage {current_stage} has no rejection_stage configured and no previous stage in flow"
+                "Stage {current_stage} has no previous stage in flow and agent did not specify route_to"
             ))
         })
 }

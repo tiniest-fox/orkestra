@@ -63,7 +63,7 @@ pub enum StageOutput {
     },
 
     /// Agent is asking clarifying questions.
-    /// Only valid if the stage has `ask_questions` capability.
+    /// All stages support questions.
     Questions {
         /// Questions for the user.
         questions: Vec<Question>,
@@ -73,12 +73,14 @@ pub enum StageOutput {
     },
 
     /// Agent produced an approval decision (approve or reject).
-    /// Only valid if the stage has `approval` capability.
+    /// Only valid if the stage has an agentic gate (`gate: true`).
     Approval {
         /// The decision: "approve" or "reject".
         decision: String,
         /// Review content: becomes artifact on approve, feedback on reject.
         content: String,
+        /// Stage to route to on rejection. If None, routes to the previous stage in the flow.
+        route_to: Option<String>,
         /// Optional activity log.
         activity_log: Option<String>,
         /// Resources registered by the agent.
@@ -261,6 +263,7 @@ impl StageOutput {
                     .as_str()
                     .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
+                route_to: value["route_to"].as_str().map(String::from),
                 activity_log: value["activity_log"].as_str().map(String::from),
                 resources: parse_resources(&value)?,
             }),

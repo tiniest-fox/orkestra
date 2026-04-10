@@ -1,0 +1,55 @@
+---
+title: Stages
+description: A stage is a single step in a Trak's pipeline — an agent or a script that produces a named artifact.
+order: 3
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+A single agent pass is rarely enough for complex work. Planning before implementation, verification after — these are distinct responsibilities that benefit from separate prompts and separate context. Stages divide a [Trak's](/docs/core-concepts/traks) pipeline into sequential steps, each with a focused goal and its own output.
+
+## Two types of stages
+
+**Agent stages** spawn an AI [agent](/docs/core-concepts/agents) that reads a prompt, does work, and produces structured output. This is where coding, planning, reviewing, and other reasoning-heavy tasks happen.
+
+**Script stages** run a shell command with no agent involvement. They always advance automatically on success. Use them for deterministic operations like formatting, dependency installation, or any task better expressed as a command than a prompt.
+
+A stage must be one or the other — not both.
+
+## Artifacts
+
+Every stage produces a **named artifact**: text output stored in `.orkestra/.artifacts/`. Artifact names are unique within a flow.
+
+Artifacts from earlier stages are automatically injected into the prompt of every later agent stage. A `review` stage sees the `plan` and `summary` artifacts without any manual wiring. The pipeline accumulates context as it advances.
+
+<Callout type="warning">
+Artifact names must be unique within a flow. Two stages with the same artifact name will conflict.
+</Callout>
+
+## Iterations and rejection
+
+When a human reviews a stage's output and rejects it, the stage creates a new **iteration** — the agent session is resumed with the rejection feedback. The agent retains its full conversation history and does not start over.
+
+Iterations are numbered starting from 1. A stage approved on the first try has one iteration. Two rejections before approval creates three iterations.
+
+Multiple rounds of rejection are supported. Each round adds feedback to the agent's context, narrowing down what needs to change.
+
+## Gate integration
+
+[Gates](/docs/core-concepts/gates) are configured per stage and run automatically after the agent produces output. A gate that exits non-zero sends the error back to the agent and triggers a retry — all before the output reaches human review.
+
+Gates only apply to agent stages. Script stages cannot have a gate.
+
+## Automated stages
+
+By default, a stage pauses after producing output and waits for a human to approve or reject. Setting `is_automated: true` skips this pause and advances immediately to the next stage.
+
+Automated stages are still subject to gate checks. Automation only skips the human review step — not quality enforcement.
+
+## Capabilities
+
+Agent stages can be extended with [capabilities](/docs/core-concepts/capabilities) that change what output the agent is allowed to produce and how the Trak is routed based on that output. Capabilities cover: asking clarifying questions, producing an approval verdict, and decomposing the Trak into Subtraks.
+
+## What's next
+
+See [Gates](/docs/core-concepts/gates) to understand how automated quality checks work within a stage.

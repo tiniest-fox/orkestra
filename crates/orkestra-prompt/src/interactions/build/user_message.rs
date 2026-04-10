@@ -70,7 +70,7 @@ struct UserMessageContext<'a> {
 mod tests {
     use super::*;
     use crate::interactions::build::context::PromptBuilder;
-    use orkestra_types::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_types::config::{GateConfig, StageConfig, WorkflowConfig};
     use orkestra_types::domain::Task;
 
     fn test_templates() -> Handlebars<'static> {
@@ -86,12 +86,9 @@ mod tests {
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ])
     }
 

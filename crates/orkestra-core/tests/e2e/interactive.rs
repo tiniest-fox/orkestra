@@ -5,7 +5,7 @@
 //! not try to advance interactive tasks.
 
 use orkestra_core::workflow::{
-    config::{StageCapabilities, StageConfig, WorkflowConfig},
+    config::{GateConfig, StageConfig, WorkflowConfig},
     domain::IterationTrigger,
     runtime::TaskState,
 };
@@ -20,7 +20,7 @@ use crate::helpers::{MockAgentOutput, TestEnv};
 fn interactive_test_workflow() -> WorkflowConfig {
     WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_capabilities(StageCapabilities::with_approval(None))])
+        .with_gate(GateConfig::Agentic)])
 }
 
 // =============================================================================
@@ -671,7 +671,7 @@ fn test_exit_interactive_rejects_stage_not_in_flow() {
         FlowConfig {
             stages: vec![StageConfig::new("work", "summary")
                 .with_prompt("worker.md")
-                .with_capabilities(StageCapabilities::with_approval(None))],
+                .with_gate(GateConfig::Agentic)],
             integration: IntegrationConfig::new("work"),
         },
     );
@@ -679,10 +679,10 @@ fn test_exit_interactive_rejects_stage_not_in_flow() {
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_capabilities(StageCapabilities::with_approval(None)),
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(None)),
+            .with_gate(GateConfig::Agentic),
     ])
     .with_flows(flows);
 

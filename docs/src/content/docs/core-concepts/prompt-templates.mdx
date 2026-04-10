@@ -1,0 +1,69 @@
+---
+title: Prompt Templates
+description: Prompt templates are Markdown files in .orkestra/agents/ that define what each agent does and how it should behave.
+order: 7
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+Every [stage](/docs/core-concepts/stages) that runs an [agent](/docs/core-concepts/agents) needs an identity — what role is this agent playing, what should it focus on, what does a good output look like? Prompt templates answer those questions. They're Markdown files committed to your repo that shape agent behavior for every Trak that passes through a stage.
+
+## Location and naming
+
+Templates live in `.orkestra/agents/`. By default, a stage named `work` uses the template at `.orkestra/agents/work.md`. The filename matches the stage name.
+
+You can override the default path with the `prompt` field in `workflow.yaml`, pointing to a different file relative to the agents directory.
+
+## Default templates
+
+`ork init` creates a set of default templates that match the default flow:
+
+| File | Stage | What the agent does |
+|------|-------|---------------------|
+| `planner.md` | planning | Clarifies requirements; produces a lightweight plan |
+| `breakdown.md` | breakdown | Researches the codebase; breaks the plan into Subtraks |
+| `worker.md` | work | Implements code changes; produces a work summary |
+| `reviewer.md` | review | Reviews completed work; approves or rejects with feedback |
+| `compound.md` | compound | Captures learnings; updates documentation for future agents |
+
+These are starting points. You're expected to customize them for your project.
+
+## What Orkestra injects
+
+You don't write the Trak's context into the template — Orkestra injects it automatically at runtime:
+
+- **Trak title and description** — the human's original request
+- **Prior artifacts** — outputs from earlier stages (e.g., the `plan` artifact is available to `work`)
+- **Feedback** — rejection notes from previous iterations of this stage
+- **Question answers** — if the stage asked questions, the answers are injected when the session resumes
+- **Activity logs** — short summaries of what prior stages did
+
+The template defines the agent's role and rules. The injected context provides the specific task.
+
+## Writing a custom template
+
+Templates are plain Markdown. Treat them like a system prompt for a coding agent. Four things to cover:
+
+**Role** — Who is this agent? What is their job in this pipeline?
+
+**Input** — What artifacts will be injected, and what do they mean? Naming the artifacts explicitly helps the agent orient to what it received.
+
+**Output** — What should the artifact contain? The JSON schema is injected automatically by Orkestra, but a natural-language description of the expected output tends to improve quality.
+
+**Rules** — Project-specific constraints: architectural guidelines, style requirements, patterns to follow or avoid, tools to prefer.
+
+<Callout type="tip">
+Project-specific rules in templates are more effective than trying to express them in the Trak description each time. Committed to the repo, they apply consistently to every agent that runs on your project.
+</Callout>
+
+## When to customize
+
+**Modify the default templates** when you want to change behavior for all Traks on a project — adding architectural guidelines to `worker.md`, adjusting the reviewer's criteria, or tuning the planner's output format.
+
+**Add stage-specific templates** when a flow needs specialist behavior — a `security-review.md` focused on OWASP guidelines, or a `docs-writer.md` for a documentation-specific flow.
+
+Templates are committed to the repo, so customizations affect all agents working on your project, including teammates and CI runs.
+
+## What's next
+
+The Configuration Reference covers the full `workflow.yaml` schema — how flows, stages, gates, and capabilities are wired together in config.

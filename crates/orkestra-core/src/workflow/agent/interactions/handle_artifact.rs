@@ -1,6 +1,6 @@
 //! Handle artifact output: store artifact, check gate, auto-approve or await review.
 
-use crate::workflow::config::WorkflowConfig;
+use crate::workflow::config::{GateConfig, WorkflowConfig};
 use crate::workflow::domain::{ArtifactSnapshot, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::WorkflowResult;
@@ -30,13 +30,13 @@ pub fn execute(
         },
     )?;
 
-    // If the stage has a gate configured, transition to AwaitingGate instead of
-    // entering the commit pipeline or awaiting review. The orchestrator will spawn
-    // the gate script and handle the pass/fail outcome.
+    // If the stage has an automated (script) gate, transition to AwaitingGate so the
+    // orchestrator can spawn and track the script. Agentic gates fall through to
+    // auto_advance_or_review, which sets AwaitingApproval for human confirmation.
     if workflow
         .stage(&task.flow, stage_name)
         .and_then(|s| s.gate.as_ref())
-        .is_some()
+        .is_some_and(|g| matches!(g, GateConfig::Automated { .. }))
     {
         task.state = TaskState::awaiting_gate(stage_name);
         task.updated_at = now.to_string();

@@ -1,0 +1,38 @@
+---
+title: Core Concepts
+description: The building blocks of Orkestra — how Projects, Traks, Stages, Gates, Capabilities, Agents, and Prompt Templates fit together.
+order: 2
+---
+
+Orkestra coordinates AI agents through your codebase using a small set of composable pieces. Each piece has one job, and together they form a pipeline that takes a task from description to merged code.
+
+## The building blocks
+
+A **[Project](/docs/core-concepts/projects)** is a repository that Orkestra manages. Running `ork init` in a repo creates an `.orkestra/` directory that holds all configuration and runtime state.
+
+**[Traks](/docs/core-concepts/traks)** are units of work — one Trak per feature, bug fix, or task. Each Trak runs in an isolated git worktree and follows a named pipeline of steps called a **flow**.
+
+Each flow is made up of **[Stages](/docs/core-concepts/stages)**. A stage is a single step in the pipeline. It either runs an AI agent or executes a shell script. Each stage produces a named **artifact** — text output that gets passed forward as context to later stages.
+
+**[Gates](/docs/core-concepts/gates)** are automated quality checks attached to a stage. A gate is a shell script: exit zero means the work passes; a non-zero exit sends the agent back to fix the problem automatically.
+
+**[Capabilities](/docs/core-concepts/capabilities)** extend what a stage can do. A stage with capabilities can ask clarifying questions before acting, produce an approval verdict for the human to review, or decompose the Trak into parallel child Traks called Subtraks.
+
+**[Agents](/docs/core-concepts/agents)** are the AI coding assistants Orkestra spawns for each agent stage. They receive a structured prompt built from the stage's template and the Trak's accumulated context, then produce structured output that Orkestra routes through the pipeline.
+
+**[Prompt Templates](/docs/core-concepts/prompt-templates)** define how each agent behaves. They're Markdown files in `.orkestra/agents/` that you write and commit to your repo. Orkestra injects the Trak's title, description, prior artifacts, and feedback at runtime.
+
+## How a Trak flows through a pipeline
+
+```
+Project: my-app
+└── Flow: default
+    ├── Stage: planning   → artifact: plan
+    ├── Stage: work       → artifact: summary   (gate: checks.sh)
+    ├── Stage: review     → artifact: verdict   (capability: approval)
+    └── Stage: compound   → artifact: learnings
+```
+
+A Trak is created with a description. It enters the first stage, where an agent reads the prompt template and any prior context. The agent produces output. If a gate is configured, it runs. If the stage is not automated, a human reviews and approves. Then the next stage starts — receiving all prior artifacts as context.
+
+This continues until the last stage completes, at which point Orkestra merges the Trak's branch back to the base branch.

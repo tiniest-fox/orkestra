@@ -305,6 +305,7 @@ fn test_integration_squashes_commits_for_non_subtask() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -464,6 +465,7 @@ fn test_subtask_integration_squashes_commits() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Subtask looks good".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -642,6 +644,7 @@ fn test_conflict_recovery_squashes_all_commits() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -723,6 +726,7 @@ fn test_conflict_recovery_squashes_all_commits() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Conflict resolved".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -823,6 +827,7 @@ fn test_integration_with_no_commits_succeeds() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -934,6 +939,7 @@ fn test_merge_task_squashes_commits() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },

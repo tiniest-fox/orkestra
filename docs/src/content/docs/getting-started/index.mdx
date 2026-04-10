@@ -1,0 +1,56 @@
+---
+title: Getting Started
+description: What Orkestra is, how its pieces fit together, and what a Trak looks like from start to finish.
+order: 1
+---
+
+import Pipeline from "../../../components/docs/Pipeline.astro";
+
+AI coding agents can write code. The harder problem is coordinating them — deciding what to build, verifying the result, looping back when checks fail, and keeping a human in the loop without making every step manual. Orkestra handles that coordination.
+
+You describe a task. Orkestra spawns agents to plan it, implement it, and review it — each in an isolated git worktree. Automated gate scripts catch failures before they reach you. At each stage, you read the output and approve or reject. When everything passes, the branch merges.
+
+## The pieces
+
+**[Projects](/docs/core-concepts/projects)** are repositories Orkestra manages. The first time you run an `ork` command in a repo, Orkestra creates an `.orkestra/` directory that holds your workflow config, prompt templates, and gate scripts — all committed to version control.
+
+**[Traks](/docs/core-concepts/traks)** are units of work — one per feature, bug fix, or task. Each Trak gets an isolated git worktree and branch, so multiple Traks can run in parallel without conflicts.
+
+**[Flows](/docs/configuration/workflow)** are named pipelines of stages defined in `workflow.yaml`. You define flows to match your project's needs — a documentation fix might need just work and review; a complex feature might need planning, implementation, and review. You assign a flow when creating a Trak.
+
+**[Stages](/docs/core-concepts/stages)** are the individual steps in a flow. A stage spawns an AI agent or runs a shell script. Every stage produces a named **artifact** — the agent's output — passed forward as context to all later stages.
+
+**[Gates](/docs/core-concepts/gates)** are automated quality checks attached to a stage. A gate is a shell script. Exit zero: the work passes. Non-zero: the agent gets the error output as feedback and retries automatically.
+
+**[Agents](/docs/core-concepts/agents)** are the AI coding assistants Orkestra spawns. Supported: Claude Code and OpenCode. Each agent receives a prompt built from a stage's [prompt template](/docs/core-concepts/prompt-templates) plus all artifacts from prior stages.
+
+## How a Trak flows
+
+Stages run in sequence, each ending with a gate — a checkpoint that determines whether the work advances or loops back. This three-stage example shows all three gate types:
+
+1. **Planning** — An agent asks clarifying questions and produces a plan. A human review gate lets you approve or send the agent back with feedback.
+2. **Work** — An agent implements the changes. An automated gate script runs first — a non-zero exit sends the agent back with the script output as feedback. Then a human review gate lets you approve or reject the result.
+3. **Review** — An agent evaluates the completed work and produces a pass/fail verdict. You confirm or override. On rejection, the Trak routes back to Work.
+
+<Pipeline
+  stages={[
+    { name: "Planning", gate: { kind: "approval" } },
+    { name: "Work", gate: [{ kind: "check" }, { kind: "approval" }] },
+    { name: "Review", gate: { kind: "verdict", onApproveFail: "Work" } },
+  ]}
+  terminal="Ready for PR / Merge"
+/>
+
+The stages and gates in your flow are defined in `workflow.yaml`. The bootstrapped default runs five stages — planning, a breakdown stage that spawns Subtraks, work, review, and a compound stage. See [Workflow Configuration](/docs/configuration/workflow) for the full config and how to add flows for different task types.
+
+## What you configure
+
+Orkestra adapts to your project through three committed files:
+
+- **`.orkestra/agents/*.md`** — Prompt templates that define how each agent behaves. Edit these to shape what agents focus on and what good output looks like for your codebase.
+- **`.orkestra/scripts/checks.sh`** — Your gate script. Runs after agent work at the work stage. Replace the default placeholder with your project's actual checks: tests, linting, type checking.
+- **`.orkestra/workflow.yaml`** — Your flow definitions. Add flows for different task types, configure gates, or mark stages as automated to run without human approval.
+
+## Next
+
+[Quickstart →](/docs/getting-started/quickstart) — Install Orkestra, set up a project, and run your first Trak.

@@ -23,8 +23,6 @@ flows:
         description: Produces a high-level implementation plan after clarifying requirements
         artifact: plan
         prompt: planner.md
-        capabilities:
-          ask_questions: true
 
       # Breakdown: research the codebase and split the plan into subtasks.
       # Subtasks are assigned to the "subtask" flow (work → review only).
@@ -54,18 +52,15 @@ flows:
         description: Reviews completed work and produces an approval or rejection verdict with feedback
         artifact: verdict
         prompt: reviewer.md
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true
 
       # Compound: capture documentation improvements from completed work.
-      # Runs automatically after review. Most Traks result in no changes.
+      # Most Traks result in no changes.
       - &compound_stage
         name: compound
         description: Captures learnings from the completed Trak to improve future work
         artifact: learnings
         prompt: compound.md
-        is_automated: true
 
     # Where to send the task when merging its branch fails (e.g., conflict).
     integration:

@@ -1,0 +1,620 @@
+---
+/**
+ * Renders a linear pipeline flow diagram with named stages and inline gate nodes.
+ *
+ * Gates appear as distinct nodes between stages. Each gate shows:
+ *   - A red ✕ circle on the left for the fail/reject path
+ *   - A green ✓ circle below for the pass/approve path
+ *
+ * Rejection paths are drawn as dashed arrows back to their target stage.
+ *
+ * Gate kinds:
+ *   "check"   — automated gate; onFail defaults to re-running the preceding stage.
+ *   "approval"— human reviews output; onFail defaults to re-running the preceding stage.
+ *   "verdict" — agent produces a pass/fail verdict, then a human confirms it.
+ *               Expands to two gates: an automated Verdict gate and a Human review gate.
+ *               onReject    — where to go when the human rejects either verdict (default: re-run stage).
+ *               onApproveFail — where to go when the human approves a Fail verdict (default: re-run stage).
+ *
+ * Usage:
+ *   <Pipeline
+ *     stages={[
+ *       { name: "Planning", gate: { kind: "approval" } },
+ *       { name: "Work", gate: [{ kind: "check" }, { kind: "approval" }] },
+ *       { name: "Review", gate: { kind: "verdict", onApproveFail: "Breakdown" } },
+ *       { name: "Compound", auto: true },
+ *     ]}
+ *     terminal="Branch merged"
+ *   />
+ */
+
+type Gate =
+  | { kind: "check"; onFail?: string }
+  | { kind: "approval"; onFail?: string }
+  | {
+      kind: "verdict";
+      /** Where to go when the human rejects either verdict. Defaults to re-running the stage. */
+      onReject?: string;
+      /** Where to go when the human approves a Fail verdict. Defaults to re-running the stage. */
+      onApproveFail?: string;
+    };
+
+/** Flattened gate used internally for rendering — verdict expands to two of these. */
+interface RenderedGate {
+  kind: "check" | "approval" | "verdict-result";
+  label: string;
+  onFail: string;
+}
+
+interface Stage {
+  name: string;
+  description?: string;
+  /** Stage runs without human interaction. Renders with a muted background and an "Automatic" badge. */
+  auto?: boolean;
+  /** Gate or ordered list of gates that run after this stage before advancing. */
+  gate?: Gate | Gate[];
+}
+
+interface Props {
+  stages: Stage[];
+  /** Label for the terminal endpoint node. Defaults to "Done". */
+  terminal?: string;
+}
+
+const { stages, terminal = "Done" } = Astro.props;
+
+import Bot from "../icons/Bot.astro";
+import MessageSquare from "../icons/MessageSquare.astro";
+import ThumbsUp from "../icons/ThumbsUp.astro";
+import UserRound from "../icons/UserRound.astro";
+import Zap from "../icons/Zap.astro";
+
+// Unique ID per instance so SVG marker IDs don't collide if multiple components render.
+const uid = `pl${Math.random().toString(36).slice(2, 7)}`;
+const markerId = `${uid}-arrow`;
+
+function normalizeGates(stage: Stage): RenderedGate[] {
+  if (!stage.gate) return [];
+  const raw = Array.isArray(stage.gate) ? stage.gate : [stage.gate];
+  return raw.flatMap((gate): RenderedGate[] => {
+    if (gate.kind === "verdict") {
+      return [
+        { kind: "approval", label: "Human review", onFail: gate.onReject ?? stage.name },
+        {
+          kind: "verdict-result",
+          label: "Agent verdict",
+          onFail: gate.onApproveFail ?? stage.name,
+        },
+      ];
+    }
+    return [
+      {
+        kind: gate.kind,
+        label: gate.kind === "check" ? "Gate script" : "Human review",
+        onFail: gate.onFail ?? stage.name,
+      },
+    ];
+  });
+}
+---
+
+<div class="pipeline not-prose" id={uid}>
+  {/* SVG overlay — JS draws dashed rejection arrows into this */}
+  <svg class="pipeline-svg" aria-hidden="true">
+    <defs>
+      <marker
+        id={markerId}
+        markerWidth="6"
+        markerHeight="4"
+        refX="5"
+        refY="2"
+        orient="auto"
+      >
+        <polygon points="0 0, 6 2, 0 4" class="arrow-marker" />
+      </marker>
+    </defs>
+  </svg>
+
+  {stages.map((stage) => {
+    const gates = normalizeGates(stage);
+    return (
+      <div class="pipeline-item">
+        {/* Stage card */}
+        <div class="stage-card" data-stage-name={stage.name}>
+          <div class="stage-info">
+            <span class="stage-name">{stage.name}</span>
+            {stage.description && <span class="stage-desc">{stage.description}</span>}
+          </div>
+          {stage.auto && <span class="badge badge--auto">Automatic</span>}
+        </div>
+
+        {/* Gates — lead connector (with ✕), gate node, trail connector (with ✓) */}
+        {gates.map((gate, gateIdx) => {
+          const onFail = gate.onFail ?? stage.name;
+          const isLastGate = gateIdx === gates.length - 1;
+          const nodeClass =
+            gate.kind === "check"
+              ? "gate-node--check"
+              : gate.kind === "verdict-result"
+                ? "gate-node--verdict"
+                : "gate-node--approval";
+          return (
+            <div class="gate-section" data-gate-onfail={onFail} data-gate-parent={stage.name}>
+              {/* Lead: plain line into gate */}
+              <div class="gate-lead" />
+              {/* Gate node with return/fail icon pinned to its left side */}
+              <div class="gate-node-wrap">
+                <div
+                  class={`outcome-icon ${gate.kind === "approval" ? "outcome-icon--return" : "outcome-icon--fail"} gate-fail-icon`}
+                >
+                  {gate.kind === "approval" ? (
+                    <MessageSquare size={13} strokeWidth={2.5} />
+                  ) : "✕"}
+                </div>
+                <div class={`gate-node ${nodeClass}`}>
+                  {gate.kind === "check" && <Zap size={12} />}
+                  {gate.kind === "approval" && <UserRound size={12} />}
+                  {gate.kind === "verdict-result" && <Bot size={12} />}
+                  {gate.label}
+                </div>
+              </div>
+              {/* Trail: pass icon overlaid on the connector line below the gate */}
+              <div class={`icon-connector${isLastGate ? " icon-connector--arrow" : ""}`}>
+                <div class="icon-connector-line" />
+                <div class={`outcome-icon outcome-icon--pass`}>
+                  {gate.kind === "approval" ? (
+                    <ThumbsUp size={13} strokeWidth={2.5} />
+                  ) : "✓"}
+                </div>
+                {isLastGate && <div class="icon-connector-arrow" />}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Simple unlabeled connector for stages with no gate */}
+        {gates.length === 0 && (
+          <div class="connector">
+            <div class="connector-line" />
+            <div class="connector-arrow" />
+          </div>
+        )}
+      </div>
+    );
+  })}
+
+  {/* Terminal node */}
+  <div class="terminal">
+    <div class="terminal-dot" />
+    <span class="terminal-label">{terminal}</span>
+  </div>
+</div>
+
+<script>
+  /**
+   * Measures gate and stage positions, then draws dashed L-shaped rejection
+   * arrows in the SVG overlay connecting each ✕ icon back to its target stage.
+   *
+   * Rails are staggered so overlapping arrows are visually distinct:
+   *   - Self-loops (gate returns to its own stage) share the innermost rail.
+   *   - Cross-stage arrows each get a unique rail, sorted by target stage position
+   *     (earlier target = further left rail).
+   */
+  function drawRejectionArrows(pipeline: HTMLElement) {
+    const svg = pipeline.querySelector(".pipeline-svg") as SVGSVGElement | null;
+    if (!svg) return;
+
+    // Size the SVG to match the pipeline's rendered dimensions.
+    const pr = pipeline.getBoundingClientRect();
+    svg.setAttribute("width", String(pr.width));
+    svg.setAttribute("height", String(pr.height));
+    svg.setAttribute("viewBox", `0 0 ${pr.width} ${pr.height}`);
+
+    // Clear previously drawn paths before redrawing (e.g. on resize).
+    svg.querySelectorAll(".rejection-path").forEach((el) => el.remove());
+
+    const markerId = `${pipeline.id}-arrow`;
+
+    // Collect all gates with their fail targets and whether they're self-loops.
+    interface GateInfo {
+      el: HTMLElement;
+      onFail: string;
+      parentStage: string;
+      isSelfLoop: boolean;
+      failIcon: HTMLElement;
+      targetStage: HTMLElement;
+      targetY: number;
+    }
+
+    const gates: GateInfo[] = [];
+    pipeline.querySelectorAll<HTMLElement>("[data-gate-onfail]").forEach((gate) => {
+      const onFail = gate.getAttribute("data-gate-onfail");
+      const parentStage = gate.getAttribute("data-gate-parent");
+      if (!onFail || !parentStage) return;
+
+      const failIcon = gate.querySelector<HTMLElement>(".gate-fail-icon");
+      const targetStage = pipeline.querySelector<HTMLElement>(
+        `[data-stage-name="${CSS.escape(onFail)}"]`,
+      );
+      if (!failIcon || !targetStage) return;
+
+      gates.push({
+        el: gate,
+        onFail,
+        parentStage,
+        isSelfLoop: onFail === parentStage,
+        failIcon,
+        targetStage,
+        targetY: targetStage.getBoundingClientRect().top,
+      });
+    });
+
+    // Determine the left edge of the stage cards (used as the rail anchor).
+    const firstStage = pipeline.querySelector<HTMLElement>("[data-stage-name]");
+    const stageLeft = firstStage
+      ? firstStage.getBoundingClientRect().left - pr.left
+      : 0;
+
+    // Rail assignment:
+    //   Self-loops → innermost rail (stageLeft - 14)
+    //   Cross-stage → sorted by target Y ascending (earlier target = further left)
+    //                 each unique cross-stage target gets its own rail
+    const SELF_LOOP_RAIL = stageLeft - 14;
+    const CROSS_BASE = stageLeft - 28;
+    const CROSS_STEP = 14;
+
+    // Collect unique cross-stage targets sorted by position (top of page first = earlier stage).
+    const crossTargets = Array.from(
+      new Set(
+        gates
+          .filter((g) => !g.isSelfLoop)
+          .sort((a, b) => a.targetY - b.targetY)
+          .map((g) => g.onFail),
+      ),
+    );
+
+    const railForTarget = (onFail: string, isSelfLoop: boolean): number => {
+      if (isSelfLoop) return SELF_LOOP_RAIL;
+      const idx = crossTargets.indexOf(onFail);
+      // Earlier targets (higher up) get rails further to the left.
+      return CROSS_BASE - idx * CROSS_STEP;
+    };
+
+    gates.forEach(({ failIcon, targetStage, onFail, isSelfLoop }) => {
+      const fir = failIcon.getBoundingClientRect();
+      const tsr = targetStage.getBoundingClientRect();
+
+      // Convert to coordinates relative to the pipeline container.
+      const startX = fir.left - pr.left + fir.width / 2;
+      const startY = fir.top - pr.top + fir.height / 2;
+      const endX = tsr.left - pr.left;
+      const endY = tsr.top - pr.top + tsr.height / 2;
+
+      const railX = railForTarget(onFail, isSelfLoop);
+
+      // L-shaped path: ✕ → left rail → up to stage level → stage left edge.
+      const d = `M ${startX} ${startY} L ${railX} ${startY} L ${railX} ${endY} L ${endX} ${endY}`;
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", d);
+      path.setAttribute("class", "rejection-path");
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke-width", "1.5");
+      path.setAttribute("stroke-dasharray", "4 3");
+      path.setAttribute("marker-end", `url(#${markerId})`);
+
+      svg.appendChild(path);
+    });
+  }
+
+  function initAll() {
+    document.querySelectorAll<HTMLElement>(".pipeline[id]").forEach(drawRejectionArrows);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAll);
+  } else {
+    initAll();
+  }
+
+  window.addEventListener("resize", initAll);
+</script>
+
+<style>
+  .pipeline {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-block: 2rem;
+    /* Symmetric padding keeps content centered; left side provides rail space for SVG arrows. */
+    padding-inline: 4rem;
+  }
+
+  /* SVG sits over the pipeline; paths are drawn via JS */
+  .pipeline-svg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  /* Rejection arrow paths — stroke color set via currentColor so dark mode works */
+  .pipeline :global(.rejection-path) {
+    stroke: var(--forge-border);
+  }
+
+  .pipeline :global(.arrow-marker) {
+    fill: var(--forge-border);
+  }
+
+  /* ── Pipeline item (stage card + gates) ── */
+
+  .pipeline-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 30rem;
+  }
+
+  /* ── Stage card ── */
+
+  .stage-card {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background-color: var(--forge-surface);
+    border: 1px solid var(--forge-border);
+    border-radius: var(--radius-panel-sm);
+  }
+
+  .stage-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .stage-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--forge-text-primary);
+    line-height: 1.4;
+  }
+
+  .stage-desc {
+    font-size: 0.75rem;
+    color: var(--forge-text-tertiary);
+    line-height: 1.4;
+  }
+
+  /* ── Automatic badge (stage card only) ── */
+
+  .badge {
+    position: absolute;
+    top: 50%;
+    right: 0.75rem;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .badge--auto {
+    background-color: var(--forge-status-success-bg);
+    color: var(--color-status-success);
+    border-color: color-mix(in srgb, var(--color-status-success) 35%, transparent);
+  }
+
+  /* ── Simple connector (stages with no gate) ── */
+
+  .connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 1rem;
+  }
+
+  .connector-line {
+    width: 1px;
+    flex: 1;
+    background-color: var(--forge-border);
+  }
+
+  .connector-arrow {
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--forge-border);
+  }
+
+  /* ── Gate section ── */
+
+  .gate-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+  }
+
+  /* ── Gate node ── */
+
+  .gate-node {
+    display: inline-grid;
+    grid-template-columns: 0.75rem 1fr;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3125rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid;
+    white-space: nowrap;
+    min-width: 8rem;
+    text-align: center;
+  }
+
+  .gate-node--check {
+    background-color: var(--forge-status-warning-bg);
+    color: var(--color-status-warning);
+    border-color: color-mix(in srgb, var(--color-status-warning) 35%, transparent);
+  }
+
+  .gate-node--approval {
+    background-color: var(--forge-status-info-bg);
+    color: var(--color-status-info);
+    border-color: color-mix(in srgb, var(--color-status-info) 35%, transparent);
+  }
+
+  .gate-node--verdict {
+    background-color: var(--forge-status-purple-bg);
+    color: var(--color-status-purple);
+    border-color: color-mix(in srgb, var(--color-status-purple) 35%, transparent);
+  }
+
+  /* ── Plain lead line into gate ── */
+
+  .gate-lead {
+    width: 1px;
+    height: 0.625rem;
+    background-color: var(--forge-border);
+  }
+
+  /* Gate node wrapper — ✕ is absolutely positioned relative to this */
+  .gate-node-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .gate-node-wrap .outcome-icon--fail,
+  .gate-node-wrap .outcome-icon--return {
+    position: absolute;
+    right: calc(100% + 1rem);
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  /* Dashed connector from icon right edge to gate pill left edge */
+  .gate-node-wrap::before {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    width: 1rem;
+    border-top: 1px dashed var(--forge-border);
+    transform: translateY(-50%);
+  }
+
+  /* ── Icon connector: line with single ✓ overlaid at center ── */
+
+  .icon-connector {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 1.5rem;
+    width: 100%;
+  }
+
+  /* More space on the final connector before the next stage */
+  .icon-connector--arrow {
+    height: 2.5rem;
+  }
+
+  .icon-connector-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background-color: var(--forge-border);
+  }
+
+  .icon-connector--arrow .icon-connector-line {
+    bottom: 5px;
+  }
+
+  .icon-connector-arrow {
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--forge-border);
+    flex-shrink: 0;
+  }
+
+  /* ── Outcome icons ── */
+
+  .outcome-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    line-height: 1;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .outcome-icon--fail {
+    background-color: var(--color-status-error);
+  }
+
+  /* Human approval return path — amber signals "feedback" not "error" */
+  .outcome-icon--return {
+    background-color: var(--color-status-warning);
+  }
+
+  .outcome-icon--pass {
+    background-color: var(--color-status-success);
+  }
+
+
+  /* ✓ inside the icon-connector sits centered on the line */
+  .icon-connector .outcome-icon--pass {
+    position: absolute;
+    top: 70%;
+    transform: translateY(-50%);
+    z-index: 1;
+  }
+
+  .icon-connector--arrow .outcome-icon--pass {
+    top: 40%;
+  }
+
+  /* ── Terminal node ── */
+
+  .terminal {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .terminal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background-color: var(--forge-text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .terminal-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--forge-text-secondary);
+  }
+</style>

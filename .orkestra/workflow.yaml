@@ -13,8 +13,6 @@ flows:
         artifact: plan
         prompt: planner.md
         model: opus
-        capabilities:
-          ask_questions: true
 
       - name: task
         description: Breaks down the plan into actionable subtasks with technical and implementation guidance
@@ -22,10 +20,8 @@ flows:
         prompt: breakdown.md
         model: opus
         capabilities:
-          ask_questions: true
           subtasks:
             flow: hotfix
-            completion_stage: work
 
       - &work_stage
         name: work
@@ -60,9 +56,7 @@ flows:
         disallowed_tools:
           - pattern: "Bash(*cargo *)"
             message: "All automated checks have passed and all tests pass as-is — focus on code review, not re-running checks"
-        capabilities:
-          approval:
-            rejection_stage: task
+        gate: true
 
       - &compound_stage
         name: compound
@@ -70,7 +64,6 @@ flows:
         artifact: learnings
         prompt: compound.md
         model: sonnet
-        is_automated: true
 
     integration:
       on_failure: task
@@ -82,17 +75,13 @@ flows:
         artifact: plan
         prompt: quick_planner.md
         model: opus
-        capabilities:
-          ask_questions: true
       - *work_stage
       - name: review
         description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: reviewer.md
         model: opus
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true
       - *compound_stage
     integration:
       on_failure: work
@@ -127,9 +116,7 @@ flows:
         artifact: verdict
         prompt: subtask-reviewer.md
         model: opus
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true
     integration:
       on_failure: work
 

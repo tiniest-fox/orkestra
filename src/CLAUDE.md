@@ -77,6 +77,21 @@ useEffect(() => {
 - Remove failed items from the ref so they retry on next trigger
 - See `GitHistoryProvider.tsx` for the canonical example
 
+### Cursor Ref + Array State Must Reset Together
+
+When a hook maintains a cursor or position ref alongside a data array, clearing the array (e.g., on error via `setState([])`) **must also reset the cursor ref to its initial value**. If only the array is cleared, the next fetch requests entries "after cursor X" — which returns nothing because the local state was reset but the cursor still points past everything — leaving a permanent display gap until new entries advance the cursor beyond that position.
+
+```ts
+// WRONG — cursor ref left at old position after clearing
+setLogs([]);
+
+// CORRECT — reset cursor when clearing the data array
+setLogs([]);
+cursorRef.current = 0; // or undefined / null — whatever the initial value is
+```
+
+This applies to any hook that pairs `useRef` position tracking with a state array: log streams, infinite scroll, paginated lists.
+
 ### DOM Observation Pattern (Callback Ref + useState)
 
 When building hooks that observe DOM elements (auto-scroll, resize detection, mutation tracking), use a **callback ref + useState** to track the element reference. This makes `useEffect` re-run when the element changes, which is critical for attaching/detaching observers.
@@ -193,6 +208,14 @@ Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvide
 - Polled providers (tasks, git history) self-heal after reconnect via natural polling resumption — **do not add explicit reconnect invalidation** to them.
 - One-shot providers (workflow config) **must** explicitly clear their cache and re-fetch on reconnect; polling won't do it for them.
 - Maps accumulate entries for every project URL visited during the session (no implicit eviction). This is fine in practice — sessions visit few projects — but worth noting if memory becomes a concern.
+
+### `demoTransport.ts` Must Stay in Sync with Response Shapes
+
+`src/stories/Demo/demoTransport.ts` is a hardcoded demo implementation of the transport interface for Storybook. Every command returns a static value. When a command's **response shape changes** (e.g., `get_logs` switching from a plain array to a `{ logs, cursor }` envelope), update `demoTransport.ts` too.
+
+TypeScript won't catch this — transport methods return `Promise<unknown>`, so the mismatch compiles silently. The break only surfaces at runtime in Storybook or when a reviewer traces the response path.
+
+**Rule:** Any time you change what a backend command returns, `demoTransport.ts` is in scope for that change.
 
 ## Styling
 

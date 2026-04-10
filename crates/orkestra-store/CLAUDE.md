@@ -159,6 +159,8 @@ This allows using the last word as a readable short display ID in the UI.
 
 4. **Session state filtering** — `get_stage_session()` excludes `Superseded` sessions by design.
 
+5. **`sequence_number` integer widths** — The log entry `sequence_number` column is `i64` in SQLite. When fetching it, use `.get::<_, i64>(col)`. When exposing it in the public API (e.g., as a cursor), convert with `u64::try_from(seq).map_err(...)` — never `.cast_unsigned()` or `seq as u64`, which silently wrap negative values. The `InMemoryWorkflowStore` mock should use `i64` internally for sequence tracking to match SQLite's type; tests that need the cursor value should apply the same `try_from` conversion as the real store.
+
 ## Anti-Patterns
 
 - **Don't add business logic here** — This crate is pure persistence. Validation, state transitions, and orchestration belong in orkestra-core.

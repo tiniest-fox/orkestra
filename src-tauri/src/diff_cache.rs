@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::commands::HighlightedFileDiff;
+use orkestra_networking::diff_types::HighlightedFileDiff;
 
 // ============================================================================
 // Cache Types

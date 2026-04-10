@@ -2,11 +2,12 @@
 
 use std::sync::Arc;
 
-use orkestra_core::workflow::ports::FileDiff;
 use serde_json::Value;
 
+use crate::diff_cache::DiffCacheState;
 use crate::diff_types::{
-    HighlightedFileDiff, HighlightedHunk, HighlightedLine, HighlightedTaskDiff, LineType, SyntaxCss,
+    cache_key_for_sha, combined_diff_sha, file_content_hash, highlight_file_diff,
+    HighlightedFileDiff, HighlightedLine, HighlightedTaskDiff, LineType, SyntaxCss,
 };
 use crate::highlight::SyntaxHighlighter;
 use crate::types::ErrorPayload;
@@ -32,6 +33,10 @@ pub(super) async fn handle_get_task_diff(
         .and_then(serde_json::Value::as_u64)
         .and_then(|n| u32::try_from(n).ok())
         .unwrap_or(3);
+    let last_sha = params
+        .get("last_sha")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let api = Arc::clone(&ctx.api);
     let highlighter = Arc::clone(&ctx.highlighter);
     let diff_cache = Arc::clone(&ctx.diff_cache);
@@ -60,54 +65,50 @@ pub(super) async fn handle_get_task_diff(
         // Tier 1: clean worktree + matching SHA → return full cached result.
         if let Ok(wt_state) = git.get_worktree_state(worktree_path) {
             if !wt_state.is_dirty {
-                let cache_sha = if context_lines == 3 {
-                    wt_state.head_sha.clone()
-                } else {
-                    format!("{}:{}", wt_state.head_sha, context_lines)
-                };
-                if let Some(files) = diff_cache.get_all_if_clean(&task_id, &cache_sha) {
-                    return Ok(
-                        serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null)
-                    );
+                let cache_sha = cache_key_for_sha(&wt_state.head_sha, context_lines);
+                // ETag short-circuit: unchanged since last poll.
+                if last_sha.as_deref() == Some(&cache_sha) {
+                    return Ok(serde_json::json!({ "unchanged": true, "diff_sha": cache_sha }));
                 }
+                if let Some(files) = diff_cache.get_all_if_clean(&task_id, &cache_sha) {
+                    return Ok(serde_json::to_value(HighlightedTaskDiff {
+                        files,
+                        diff_sha: Some(cache_sha),
+                    })
+                    .unwrap_or(Value::Null));
+                }
+
+                // Tier 1 miss — run git diff subprocess then apply Tier 2 caching.
+                let raw_diff = git
+                    .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
+                    .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
+
+                return Ok(highlight_with_tier2_cache(
+                    raw_diff,
+                    context_lines,
+                    last_sha.as_deref(),
+                    &cache_sha,
+                    &task_id,
+                    &highlighter,
+                    &diff_cache,
+                ));
             }
 
-            let cache_sha = if context_lines == 3 {
-                wt_state.head_sha.clone()
-            } else {
-                format!("{}:{}", wt_state.head_sha, context_lines)
-            };
+            // Worktree is dirty — run git diff subprocess without Tier 1 caching.
+            let cache_sha = cache_key_for_sha(&wt_state.head_sha, context_lines);
             let raw_diff = git
                 .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                 .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
 
-            // Tier 2: per-file content hash — only re-highlight changed files.
-            let file_hashes: Vec<(String, u64)> = raw_diff
-                .files
-                .iter()
-                .map(|f| (f.path.clone(), file_content_hash(f)))
-                .collect();
-            let mut cached_files = diff_cache.get_files_by_hash(&task_id, &file_hashes);
-
-            let mut to_store: Vec<(String, u64, HighlightedFileDiff)> = Vec::new();
-            let files: Vec<HighlightedFileDiff> = raw_diff
-                .files
-                .into_iter()
-                .zip(file_hashes.iter())
-                .map(|(file, (path, hash))| {
-                    if let Some(Some(cached)) = cached_files.remove(path) {
-                        to_store.push((path.clone(), *hash, cached.clone()));
-                        cached
-                    } else {
-                        let result = highlight_file_diff(file, &highlighter);
-                        to_store.push((path.clone(), *hash, result.clone()));
-                        result
-                    }
-                })
-                .collect();
-
-            diff_cache.store(&task_id, &cache_sha, to_store);
-            return Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null));
+            return Ok(highlight_with_tier2_cache(
+                raw_diff,
+                context_lines,
+                last_sha.as_deref(),
+                &cache_sha,
+                &task_id,
+                &highlighter,
+                &diff_cache,
+            ));
         }
 
         // get_worktree_state failed — fall back to direct diff with no caching.
@@ -118,13 +119,70 @@ pub(super) async fn handle_get_task_diff(
         let files = raw_diff
             .files
             .into_iter()
-            .map(|file| highlight_file_diff(file, &highlighter))
+            .map(|file| {
+                highlight_file_diff(file, &|line, ext| highlighter.highlight_line(line, ext))
+            })
             .collect();
 
-        Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
+        Ok(serde_json::to_value(HighlightedTaskDiff {
+            files,
+            diff_sha: None,
+        })
+        .unwrap_or(Value::Null))
     })
     .await
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Run Tier 2 per-file highlight caching: compare file content hashes, reuse cached
+/// highlights for unchanged files, re-highlight only changed files, then store results.
+fn highlight_with_tier2_cache(
+    raw_diff: orkestra_core::workflow::ports::TaskDiff,
+    context_lines: u32,
+    last_sha: Option<&str>,
+    store_key: &str,
+    task_id: &str,
+    highlighter: &SyntaxHighlighter,
+    diff_cache: &DiffCacheState,
+) -> Value {
+    let file_hashes: Vec<(String, u64)> = raw_diff
+        .files
+        .iter()
+        .map(|f| (f.path.clone(), file_content_hash(f)))
+        .collect();
+    let diff_sha = combined_diff_sha(&file_hashes, context_lines);
+
+    // ETag short-circuit.
+    if last_sha == Some(&diff_sha) {
+        return serde_json::json!({ "unchanged": true, "diff_sha": diff_sha });
+    }
+
+    let mut cached_files = diff_cache.get_files_by_hash(task_id, &file_hashes);
+
+    let mut to_store: Vec<(String, u64, HighlightedFileDiff)> = Vec::new();
+    let files: Vec<HighlightedFileDiff> = raw_diff
+        .files
+        .into_iter()
+        .zip(file_hashes.iter())
+        .map(|(file, (path, hash))| {
+            if let Some(Some(cached)) = cached_files.remove(path) {
+                to_store.push((path.clone(), *hash, cached.clone()));
+                cached
+            } else {
+                let result =
+                    highlight_file_diff(file, &|line, ext| highlighter.highlight_line(line, ext));
+                to_store.push((path.clone(), *hash, result.clone()));
+                result
+            }
+        })
+        .collect();
+
+    diff_cache.store(task_id, store_key, to_store);
+    serde_json::to_value(HighlightedTaskDiff {
+        files,
+        diff_sha: Some(diff_sha),
+    })
+    .unwrap_or(Value::Null)
 }
 
 // ============================================================================
@@ -231,9 +289,13 @@ pub fn get_uncommitted_diff(ctx: &CommandContext, params: &Value) -> Result<Valu
     let files: Vec<_> = raw_diff
         .files
         .into_iter()
-        .map(|f| highlight_file_diff(f, &ctx.highlighter))
+        .map(|f| highlight_file_diff(f, &|line, ext| ctx.highlighter.highlight_line(line, ext)))
         .collect();
-    Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
+    Ok(serde_json::to_value(HighlightedTaskDiff {
+        files,
+        diff_sha: None,
+    })
+    .unwrap_or(Value::Null))
 }
 
 /// Handle the `get_commit_log` method — returns the 20 most recent commits.
@@ -319,8 +381,11 @@ pub(super) async fn handle_get_commit_diff(
         let git = {
             let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
             let Some(git) = api.git_service() else {
-                return Ok(serde_json::to_value(HighlightedTaskDiff { files: vec![] })
-                    .unwrap_or(Value::Null));
+                return Ok(serde_json::to_value(HighlightedTaskDiff {
+                    files: vec![],
+                    diff_sha: None,
+                })
+                .unwrap_or(Value::Null));
             };
             Arc::clone(git)
         }; // lock released — git subprocess runs off the lock
@@ -332,158 +397,17 @@ pub(super) async fn handle_get_commit_diff(
         let files = task_diff
             .files
             .into_iter()
-            .map(|f| highlight_file_diff(f, &highlighter))
+            .map(|f| highlight_file_diff(f, &|line, ext| highlighter.highlight_line(line, ext)))
             .collect();
 
-        Ok(serde_json::to_value(HighlightedTaskDiff { files }).unwrap_or(Value::Null))
+        Ok(serde_json::to_value(HighlightedTaskDiff {
+            files,
+            diff_sha: None,
+        })
+        .unwrap_or(Value::Null))
     })
     .await
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
-}
-
-// ============================================================================
-// Diff parsing and highlighting
-// ============================================================================
-
-/// Stable content hash for a `FileDiff` entry.
-fn file_content_hash(file: &FileDiff) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    file.path.hash(&mut h);
-    file.old_path.hash(&mut h);
-    file.change_type.hash(&mut h);
-    file.is_binary.hash(&mut h);
-    file.diff_content.hash(&mut h);
-    h.finish()
-}
-
-/// Convert a raw `FileDiff` into a highlighted `HighlightedFileDiff` with parsed hunks.
-fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> HighlightedFileDiff {
-    let hunks = match file.diff_content {
-        Some(ref content) if !file.is_binary => {
-            parse_and_highlight_diff(content, &file.path, highlighter)
-        }
-        _ => vec![],
-    };
-
-    HighlightedFileDiff {
-        path: file.path,
-        change_type: file.change_type,
-        old_path: file.old_path,
-        additions: file.additions,
-        deletions: file.deletions,
-        is_binary: file.is_binary,
-        hunks,
-        total_new_lines: file.total_new_lines,
-    }
-}
-
-/// Parse unified diff content and highlight each line.
-fn parse_and_highlight_diff(
-    diff_content: &str,
-    file_path: &str,
-    highlighter: &SyntaxHighlighter,
-) -> Vec<HighlightedHunk> {
-    let extension = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-
-    let mut hunks = Vec::new();
-    let mut current_hunk: Option<HighlightedHunk> = None;
-    let mut old_line = 0u32;
-    let mut new_line = 0u32;
-
-    for line in diff_content.lines() {
-        if line.starts_with("@@") {
-            if let Some(hunk) = current_hunk.take() {
-                hunks.push(hunk);
-            }
-            if let Some((old_start, old_count, new_start, new_count)) = parse_hunk_header(line) {
-                old_line = old_start;
-                new_line = new_start;
-                current_hunk = Some(HighlightedHunk {
-                    old_start,
-                    old_count,
-                    new_start,
-                    new_count,
-                    lines: Vec::new(),
-                });
-            }
-            continue;
-        }
-
-        if line.starts_with("diff --git")
-            || line.starts_with("index ")
-            || line.starts_with("---")
-            || line.starts_with("+++")
-        {
-            continue;
-        }
-
-        if let Some(ref mut hunk) = current_hunk {
-            let (line_type, content, old_num, new_num) =
-                if let Some(content) = line.strip_prefix('+') {
-                    let num = new_line;
-                    new_line += 1;
-                    (LineType::Add, content, None, Some(num))
-                } else if let Some(content) = line.strip_prefix('-') {
-                    let num = old_line;
-                    old_line += 1;
-                    (LineType::Delete, content, Some(num), None)
-                } else if let Some(content) = line.strip_prefix(' ') {
-                    let old_num = old_line;
-                    let new_num = new_line;
-                    old_line += 1;
-                    new_line += 1;
-                    (LineType::Context, content, Some(old_num), Some(new_num))
-                } else {
-                    continue;
-                };
-
-            let content_with_newline = format!("{content}\n");
-            let html = highlighter.highlight_line(&content_with_newline, extension);
-
-            hunk.lines.push(HighlightedLine {
-                line_type,
-                content: content.to_string(),
-                html,
-                old_line_number: old_num,
-                new_line_number: new_num,
-            });
-        }
-    }
-
-    if let Some(hunk) = current_hunk {
-        hunks.push(hunk);
-    }
-
-    hunks
-}
-
-/// Parse a hunk header line: `@@ -old_start,old_count +new_start,new_count @@`.
-fn parse_hunk_header(line: &str) -> Option<(u32, u32, u32, u32)> {
-    let parts: Vec<&str> = line.split("@@").collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let ranges = parts[1].trim();
-    let mut iter = ranges.split_whitespace();
-    let old_range = iter.next()?.strip_prefix('-')?;
-    let (old_start, old_count) = parse_range(old_range)?;
-    let new_range = iter.next()?.strip_prefix('+')?;
-    let (new_start, new_count) = parse_range(new_range)?;
-    Some((old_start, old_count, new_start, new_count))
-}
-
-/// Parse a range like `"1,5"` or `"1"` (count defaults to 1).
-fn parse_range(range: &str) -> Option<(u32, u32)> {
-    if let Some((start, count)) = range.split_once(',') {
-        Some((start.parse().ok()?, count.parse().ok()?))
-    } else {
-        Some((range.parse().ok()?, 1))
-    }
 }
 
 // ============================================================================
@@ -493,44 +417,159 @@ fn parse_range(range: &str) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diff_types::{combined_diff_sha, file_content_hash};
+    use orkestra_core::workflow::ports::{FileChangeType, FileDiff, TaskDiff};
 
-    #[test]
-    fn parse_range_with_count() {
-        assert_eq!(parse_range("10,5"), Some((10, 5)));
+    fn make_task_diff(path: &str, content: &str) -> TaskDiff {
+        TaskDiff {
+            files: vec![FileDiff {
+                path: path.to_string(),
+                change_type: FileChangeType::Modified,
+                old_path: None,
+                additions: 1,
+                deletions: 0,
+                is_binary: false,
+                diff_content: Some(content.to_string()),
+                total_new_lines: None,
+            }],
+        }
     }
 
     #[test]
-    fn parse_range_single_line() {
-        assert_eq!(parse_range("42"), Some((42, 1)));
+    fn tier2_etag_match_returns_unchanged() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
+        let diff = make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n");
+
+        let file_hashes: Vec<(String, u64)> = diff
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), file_content_hash(f)))
+            .collect();
+        let expected_sha = combined_diff_sha(&file_hashes, 3);
+
+        let result = highlight_with_tier2_cache(
+            diff,
+            3,
+            Some(&expected_sha),
+            &expected_sha,
+            "task-1",
+            &highlighter,
+            &cache,
+        );
+
+        assert_eq!(result["unchanged"], true);
+        assert_eq!(result["diff_sha"], expected_sha);
+        assert!(
+            result.get("files").is_none(),
+            "unchanged response should not include files"
+        );
     }
 
     #[test]
-    fn parse_range_invalid() {
-        assert_eq!(parse_range("abc"), None);
-        assert_eq!(parse_range(""), None);
+    fn tier2_no_last_sha_returns_full_diff() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
+        let diff = make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n");
+
+        let file_hashes: Vec<(String, u64)> = diff
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), file_content_hash(f)))
+            .collect();
+        let store_key = combined_diff_sha(&file_hashes, 3);
+
+        let result =
+            highlight_with_tier2_cache(diff, 3, None, &store_key, "task-2", &highlighter, &cache);
+
+        assert!(
+            result.get("files").is_some(),
+            "full diff response should include files"
+        );
+        assert!(
+            result["files"].as_array().is_some_and(|a| !a.is_empty()),
+            "files array should be non-empty"
+        );
+        assert!(result["diff_sha"].is_string(), "diff_sha should be present");
+        assert!(
+            result.get("unchanged").is_none(),
+            "unchanged field should not be present"
+        );
     }
 
     #[test]
-    fn parse_hunk_header_standard() {
-        let result = parse_hunk_header("@@ -1,3 +1,4 @@");
-        assert_eq!(result, Some((1, 3, 1, 4)));
+    fn tier2_different_sha_returns_full_diff() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
+        let diff = make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n");
+
+        let file_hashes: Vec<(String, u64)> = diff
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), file_content_hash(f)))
+            .collect();
+        let store_key = combined_diff_sha(&file_hashes, 3);
+
+        let result = highlight_with_tier2_cache(
+            diff,
+            3,
+            Some("wrong-sha-value"),
+            &store_key,
+            "task-3",
+            &highlighter,
+            &cache,
+        );
+
+        assert!(
+            result.get("files").is_some(),
+            "full diff response should include files"
+        );
+        assert!(
+            result["files"].as_array().is_some_and(|a| !a.is_empty()),
+            "files array should be non-empty"
+        );
+        assert!(result["diff_sha"].is_string(), "diff_sha should be present");
+        assert!(
+            result.get("unchanged").is_none(),
+            "unchanged field should not be present"
+        );
     }
 
     #[test]
-    fn parse_hunk_header_single_line() {
-        let result = parse_hunk_header("@@ -1 +1 @@");
-        assert_eq!(result, Some((1, 1, 1, 1)));
-    }
+    fn tier2_diff_sha_is_consistent() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
 
-    #[test]
-    fn parse_hunk_header_with_context() {
-        let result = parse_hunk_header("@@ -10,5 +12,7 @@ fn main() {");
-        assert_eq!(result, Some((10, 5, 12, 7)));
-    }
+        let file_hashes: Vec<(String, u64)> =
+            make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n")
+                .files
+                .iter()
+                .map(|f| (f.path.clone(), file_content_hash(f)))
+                .collect();
+        let store_key = combined_diff_sha(&file_hashes, 3);
 
-    #[test]
-    fn parse_hunk_header_invalid() {
-        assert_eq!(parse_hunk_header("not a header"), None);
-        assert_eq!(parse_hunk_header(""), None);
+        let result1 = highlight_with_tier2_cache(
+            make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n"),
+            3,
+            None,
+            &store_key,
+            "task-4",
+            &highlighter,
+            &cache,
+        );
+        let result2 = highlight_with_tier2_cache(
+            make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n"),
+            3,
+            None,
+            &store_key,
+            "task-4",
+            &highlighter,
+            &cache,
+        );
+
+        assert_eq!(
+            result1["diff_sha"], result2["diff_sha"],
+            "same inputs should produce the same diff_sha"
+        );
     }
 }

@@ -77,6 +77,22 @@ useEffect(() => {
 - Remove failed items from the ref so they retry on next trigger
 - See `GitHistoryProvider.tsx` for the canonical example
 
+<<<<<<< task/sonorously-defiant-pipit
+### Resetting Refs on Prop Change
+
+When a hook has multiple refs tracking internal request or display state (e.g., `hasFetchedOnceRef`, `diffShaRef`, `requestedIdsRef`), **all of them must be reset** in the same effect that reacts to the key prop (e.g., `taskId`) changing. Partial resets cause stale state from the previous value to bleed through — for instance, suppressing the loading spinner on the first fetch of a new task or briefly flashing the old data.
+
+```ts
+useEffect(() => {
+  // Reset ALL tracking refs, not just the data ref
+  diffShaRef.current = null;
+  hasFetchedOnceRef.current = false;
+  setDiff(null);
+}, [taskId]);
+```
+
+Pattern: collect every ref that tracks "have I fetched / what did I fetch last" and reset them together as a unit when the identity prop changes.
+=======
 ### Cursor Ref + Array State Must Reset Together
 
 When a hook maintains a cursor or position ref alongside a data array, clearing the array (e.g., on error via `setState([])`) **must also reset the cursor ref to its initial value**. If only the array is cleared, the next fetch requests entries "after cursor X" — which returns nothing because the local state was reset but the cursor still points past everything — leaving a permanent display gap until new entries advance the cursor beyond that position.
@@ -91,6 +107,7 @@ cursorRef.current = 0; // or undefined / null — whatever the initial value is
 ```
 
 This applies to any hook that pairs `useRef` position tracking with a state array: log streams, infinite scroll, paginated lists.
+>>>>>>> main
 
 ### DOM Observation Pattern (Callback Ref + useState)
 

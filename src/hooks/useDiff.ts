@@ -5,7 +5,7 @@
  * Fetches when the task ID changes and polls every 2 seconds while active.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useConnectionState, useTransport } from "../transport";
 import { usePolling } from "./usePolling";
 
@@ -38,29 +38,20 @@ export interface HighlightedFileDiff {
 
 export interface HighlightedTaskDiff {
   files: HighlightedFileDiff[];
+  diff_sha?: string;
 }
+
+interface DiffUnchangedResponse {
+  unchanged: true;
+  diff_sha: string;
+}
+
+type DiffResponse = HighlightedTaskDiff | DiffUnchangedResponse;
 
 interface UseDiffResult {
   diff: HighlightedTaskDiff | null;
   loading: boolean;
   error: unknown;
-}
-
-/**
- * Compute a fingerprint for change detection.
- *
- * Includes hunk boundary content so that edits that preserve line counts
- * (e.g. typo fixes) are still detected as changes.
- */
-export function buildDiffFingerprint(files: HighlightedFileDiff[]): string {
-  return JSON.stringify(
-    files.map((f) => [
-      f.path,
-      f.additions,
-      f.deletions,
-      f.hunks.map((h) => [h.lines[0]?.content ?? "", h.lines[h.lines.length - 1]?.content ?? ""]),
-    ]),
-  );
 }
 
 export function useDiff(taskId: string | null, contextLines = 3): UseDiffResult {
@@ -69,10 +60,16 @@ export function useDiff(taskId: string | null, contextLines = 3): UseDiffResult 
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const fingerprintRef = useRef<string>("");
+  const diffShaRef = useRef<string | null>(null);
   // Tracks whether the first fetch has completed to guard the loading state.
   // Using a ref (not state) avoids adding it as a useCallback dependency.
   const hasFetchedOnceRef = useRef(false);
+
+  // Reset when task changes to avoid sending a stale last_sha for a different task.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: taskId is intentional — effect fires on task change to reset the ref
+  useEffect(() => {
+    diffShaRef.current = null;
+  }, [taskId]);
 
   const fetchDiff = useCallback(async () => {
     if (!taskId) return;
@@ -82,16 +79,21 @@ export function useDiff(taskId: string | null, contextLines = 3): UseDiffResult 
       if (!hasFetchedOnceRef.current) setLoading(true);
       hasFetchedOnceRef.current = true;
       setError(null);
-      const result = await transport.call<HighlightedTaskDiff>("get_task_diff", {
+      const result = await transport.call<DiffResponse>("get_task_diff", {
         task_id: taskId,
         context_lines: contextLines,
+        ...(diffShaRef.current ? { last_sha: diffShaRef.current } : {}),
       });
-      // Skip state update when content hasn't changed, preventing re-renders and flash.
-      const fingerprint = buildDiffFingerprint(result.files);
-      if (fingerprint !== fingerprintRef.current) {
-        fingerprintRef.current = fingerprint;
-        setDiff(result);
+
+      if ("unchanged" in result && result.unchanged) {
+        // Backend confirmed nothing changed — keep existing diff state.
+        return;
       }
+
+      // Full diff response — update state and store fingerprint.
+      const fullResult = result as HighlightedTaskDiff;
+      diffShaRef.current = fullResult.diff_sha ?? null;
+      setDiff(fullResult);
     } catch (err) {
       console.error("Failed to fetch diff:", err);
       setError(err);

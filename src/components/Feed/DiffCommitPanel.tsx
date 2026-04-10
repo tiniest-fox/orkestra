@@ -5,8 +5,6 @@ import type { CommitInfo } from "../../types/workflow";
 import { relativeTime } from "../../utils/relativeTime";
 import type { DiffMode } from "./types";
 
-export type { DiffMode };
-
 interface DiffCommitPanelProps {
   commits: CommitInfo[];
   diffMode: DiffMode;

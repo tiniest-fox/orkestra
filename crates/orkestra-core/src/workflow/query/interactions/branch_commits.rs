@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn has_uncommitted_defaults_false() {
+    fn no_pending_changes_returns_false() {
         let store = InMemoryWorkflowStore::new();
         let git = MockGitService::new();
         setup_task(&store, "t1", Some("/tmp/wt"));
@@ -105,6 +105,19 @@ mod tests {
         // has_pending_changes is false by default.
         let result = execute(&store, &git, "t1").unwrap();
         assert!(result.commits.is_empty());
+        assert!(!result.has_uncommitted_changes);
+    }
+
+    #[test]
+    fn has_uncommitted_defaults_false_on_error() {
+        let store = InMemoryWorkflowStore::new();
+        let git = MockGitService::new();
+        setup_task(&store, "t1", Some("/tmp/wt"));
+        git.set_has_pending_changes_error(orkestra_git::GitError::Other(
+            "simulated failure".into(),
+        ));
+        let result = execute(&store, &git, "t1").unwrap();
+        // The unwrap_or(false) fallback should kick in.
         assert!(!result.has_uncommitted_changes);
     }
 }

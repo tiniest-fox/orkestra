@@ -51,7 +51,7 @@ pub fn execute(
         DevcontainerConfig::Default
         | DevcontainerConfig::Image { .. }
         | DevcontainerConfig::Build { .. } => {
-            docker_run(project_id, image, repo_path, port, secrets)
+            docker_run(project_id, image, repo_path, port, override_dir, secrets)
         }
         DevcontainerConfig::Compose {
             compose_file,
@@ -184,21 +184,38 @@ fn docker_run(
     image: &str,
     repo_path: &Path,
     port: u16,
+    override_dir: &Path,
     secrets: &[(String, String)],
 ) -> Result<String, ServiceError> {
     let container_name = format!("orkestra-{project_id}");
 
-    // Mount the host Claude auth directory if the operator has specified one.
-    // In DooD, bind mounts use HOST paths, so the env var must hold the path
-    // on the host filesystem (not the service container's filesystem).
-    // Set CLAUDE_AUTH_DIR on the service container to enable this.
+    // Prefer a per-project Claude auth directory over the global fallback.
+    //
+    // Per-project: {override_dir}/.claude  — created by the operator via:
+    //   CLAUDE_CONFIG_DIR={override_dir}/.claude claude login
+    //
+    // Global fallback: CLAUDE_AUTH_DIR env var (set to the HOST path in DooD
+    // deployments where the service runs inside its own container, since Docker
+    // bind mounts require host-side paths).
+    //
+    // Note: {override_dir} is the service-container path. In non-DooD deployments
+    // it equals the host path and works as a volume source. In DooD, use the
+    // global CLAUDE_AUTH_DIR instead — per-project auth is not supported there.
     //
     // Target is /home/orkestra/.claude because orkd runs as uid 1000 (orkestra)
     // and claude CLI resolves config from $HOME/.claude.
     // Mount read-write so claude can refresh tokens and write session state.
-    let claude_auth_mount = std::env::var("CLAUDE_AUTH_DIR")
-        .ok()
-        .map(|dir| format!("{dir}:/home/orkestra/.claude"));
+    let project_claude_dir = override_dir.join(".claude");
+    let claude_auth_mount = if project_claude_dir.exists() {
+        Some(format!(
+            "{}:/home/orkestra/.claude",
+            project_claude_dir.display()
+        ))
+    } else {
+        std::env::var("CLAUDE_AUTH_DIR")
+            .ok()
+            .map(|dir| format!("{dir}:/home/orkestra/.claude"))
+    };
     let workspace_mount = format!("{}:/workspace", repo_path.display());
     let port_bind = format!("127.0.0.1:{port}:{port}");
 
@@ -262,7 +279,11 @@ fn compose_up(
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
     let override_path = override_dir.join("orkestra-override.yml");
-    let override_content = build_compose_override(service, port, secrets);
+    let project_claude_dir = override_dir.join(".claude");
+    let claude_config_dir = project_claude_dir
+        .exists()
+        .then_some(project_claude_dir.as_path());
+    let override_content = build_compose_override(service, port, secrets, claude_config_dir);
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 
@@ -398,14 +419,25 @@ fn resolve_compose_container_id(
 /// Mirrors the mounts and environment variables that `docker_run` sets for
 /// non-compose containers: toolbox volume, Claude auth directory, git identity,
 /// `HOME`, and `GH_TOKEN`.
-fn build_compose_override(service: &str, port: u16, secrets: &[(String, String)]) -> String {
+///
+/// `claude_config_dir` — when `Some`, mounts this host path at
+/// `/home/orkestra/.claude` (per-project auth). When `None`, falls back to the
+/// global `CLAUDE_AUTH_DIR` env var.
+fn build_compose_override(
+    service: &str,
+    port: u16,
+    secrets: &[(String, String)],
+    claude_config_dir: Option<&std::path::Path>,
+) -> String {
     const I: &str = "      "; // 6-space indent for items under a 4-space key
 
     // Project secrets GIT_USER_EMAIL / GIT_USER_NAME take precedence over
     // service-wide env vars. They are removed from the regular secrets list
     // to prevent double-injection as plain env vars.
     let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
-    let claude_auth_dir = std::env::var("CLAUDE_AUTH_DIR").ok();
+    let claude_auth_dir = claude_config_dir
+        .map(|p| p.display().to_string())
+        .or_else(|| std::env::var("CLAUDE_AUTH_DIR").ok());
     let gh_token = std::env::var("GH_TOKEN").ok();
 
     let mut volumes = String::new();
@@ -487,7 +519,7 @@ mod tests {
             ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets);
+        let yaml = build_compose_override("app", 3000, &secrets, None);
 
         // Plain value is quoted but not escaped.
         assert!(yaml.contains("PLAIN: \"simple_value\""));
@@ -507,7 +539,7 @@ mod tests {
             "PEM_KEY".to_string(),
             "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
         )];
-        let yaml = build_compose_override("app", 3000, &secrets);
+        let yaml = build_compose_override("app", 3000, &secrets, None);
         // Literal newlines must be escaped as \n in the YAML double-quoted string.
         assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
         // The value must NOT contain unescaped literal newlines.
@@ -516,7 +548,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_no_secrets_produces_valid_structure() {
-        let yaml = build_compose_override("myservice", 8080, &[]);
+        let yaml = build_compose_override("myservice", 8080, &[], None);
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("myservice:"));

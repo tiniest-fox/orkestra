@@ -2,10 +2,12 @@
 
 use std::sync::Arc;
 
-use orkestra_core::workflow::ports::{CommitInfo, FileChangeType, FileDiff};
+use orkestra_core::workflow::ports::CommitInfo;
 use orkestra_networking::diff as shared_diff;
-use orkestra_networking::diff_types::{cache_key_for_sha, combined_diff_sha, file_content_hash};
-use serde::Serialize;
+use orkestra_networking::diff_types::{
+    cache_key_for_sha, combined_diff_sha, file_content_hash, highlight_file_diff,
+    HighlightedFileDiff, HighlightedLine, HighlightedTaskDiff, LineType, SyntaxCss,
+};
 use serde_json::Value;
 use tauri::State;
 
@@ -13,88 +15,6 @@ use crate::diff_cache::DiffCacheState;
 use crate::error::TauriError;
 use crate::highlight::SyntaxHighlighter;
 use crate::project_registry::ProjectRegistry;
-
-// =============================================================================
-// Response Types
-// =============================================================================
-
-/// Type of diff line (add/delete/context).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LineType {
-    Add,
-    Delete,
-    Context,
-}
-
-/// A single highlighted line in a diff hunk.
-#[derive(Debug, Clone, Serialize)]
-pub struct HighlightedLine {
-    /// Type of line (add/delete/context).
-    pub line_type: LineType,
-    /// Raw text content (for copy/paste).
-    pub content: String,
-    /// Pre-highlighted HTML with CSS classes.
-    pub html: String,
-    /// Line number in old file (None for added lines).
-    pub old_line_number: Option<u32>,
-    /// Line number in new file (None for deleted lines).
-    pub new_line_number: Option<u32>,
-}
-
-/// A parsed hunk from a unified diff.
-#[derive(Debug, Clone, Serialize)]
-pub struct HighlightedHunk {
-    /// Starting line in old file.
-    pub old_start: u32,
-    /// Number of lines in old file.
-    pub old_count: u32,
-    /// Starting line in new file.
-    pub new_start: u32,
-    /// Number of lines in new file.
-    pub new_count: u32,
-    /// Lines in this hunk (with highlighting).
-    pub lines: Vec<HighlightedLine>,
-}
-
-/// File diff with highlighted hunks.
-#[derive(Debug, Clone, Serialize)]
-pub struct HighlightedFileDiff {
-    /// File path (new path if renamed).
-    pub path: String,
-    /// Type of change.
-    pub change_type: FileChangeType,
-    /// Original path (only for renames).
-    pub old_path: Option<String>,
-    /// Number of lines added.
-    pub additions: usize,
-    /// Number of lines deleted.
-    pub deletions: usize,
-    /// Whether the file is binary.
-    pub is_binary: bool,
-    /// Parsed and highlighted hunks.
-    pub hunks: Vec<HighlightedHunk>,
-    /// Total lines in the new version of the file (None for deleted/binary).
-    pub total_new_lines: Option<u32>,
-}
-
-/// Complete task diff with highlighting.
-#[derive(Debug, Serialize)]
-pub struct HighlightedTaskDiff {
-    /// Files with highlighted diffs.
-    pub files: Vec<HighlightedFileDiff>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub diff_sha: Option<String>,
-}
-
-/// Syntax CSS for light and dark themes.
-#[derive(Debug, Serialize)]
-pub struct SyntaxCss {
-    /// CSS for light theme.
-    pub light: String,
-    /// CSS for dark theme.
-    pub dark: String,
-}
 
 // =============================================================================
 // Tauri Commands
@@ -188,12 +108,13 @@ pub async fn workflow_get_task_diff(
                     orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string())
                 })?;
 
-            // Store with dirty-state SHA (no Tier 1 key) for Tier 2 re-use only.
+            // Store with dirty-state cache key for Tier 2 re-use only.
+            let dirty_cache_key = cache_key_for_sha(&wt_state.head_sha, context_lines);
             return Ok(highlight_with_tier2_cache(
                 raw_diff,
                 context_lines,
                 last_sha.as_deref(),
-                &wt_state.head_sha,
+                &dirty_cache_key,
                 window.label(),
                 &task_id,
                 &highlighter,
@@ -209,7 +130,9 @@ pub async fn workflow_get_task_diff(
         let files = raw_diff
             .files
             .into_iter()
-            .map(|file| highlight_file_diff(file, &highlighter))
+            .map(|file| {
+                highlight_file_diff(file, &|line, ext| highlighter.highlight_line(line, ext))
+            })
             .collect();
 
         Ok(serde_json::to_value(HighlightedTaskDiff {
@@ -316,7 +239,8 @@ fn highlight_with_tier2_cache(
                 to_store.push((path.clone(), *hash, cached.clone()));
                 cached
             } else {
-                let result = highlight_file_diff(file, highlighter);
+                let result =
+                    highlight_file_diff(file, &|line, ext| highlighter.highlight_line(line, ext));
                 to_store.push((path.clone(), *hash, result.clone()));
                 result
             }
@@ -329,158 +253,6 @@ fn highlight_with_tier2_cache(
         diff_sha: Some(diff_sha),
     })
     .unwrap_or(Value::Null))
-}
-
-/// Convert a raw `FileDiff` into a highlighted `FileDiff` with parsed hunks.
-fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> HighlightedFileDiff {
-    let hunks = if let Some(ref content) = file.diff_content {
-        if file.is_binary {
-            vec![]
-        } else {
-            parse_and_highlight_diff(content, &file.path, highlighter)
-        }
-    } else {
-        vec![]
-    };
-
-    HighlightedFileDiff {
-        path: file.path,
-        change_type: file.change_type,
-        old_path: file.old_path,
-        additions: file.additions,
-        deletions: file.deletions,
-        is_binary: file.is_binary,
-        hunks,
-        total_new_lines: file.total_new_lines,
-    }
-}
-
-/// Parse unified diff content and highlight each line.
-fn parse_and_highlight_diff(
-    diff_content: &str,
-    file_path: &str,
-    highlighter: &SyntaxHighlighter,
-) -> Vec<HighlightedHunk> {
-    let extension = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-
-    let mut hunks = Vec::new();
-    let mut current_hunk: Option<HighlightedHunk> = None;
-    let mut old_line = 0u32;
-    let mut new_line = 0u32;
-
-    for line in diff_content.lines() {
-        // Hunk header: @@ -old_start,old_count +new_start,new_count @@
-        if line.starts_with("@@") {
-            // Save previous hunk
-            if let Some(hunk) = current_hunk.take() {
-                hunks.push(hunk);
-            }
-
-            // Parse hunk header
-            if let Some((old_start, old_count, new_start, new_count)) = parse_hunk_header(line) {
-                old_line = old_start;
-                new_line = new_start;
-                current_hunk = Some(HighlightedHunk {
-                    old_start,
-                    old_count,
-                    new_start,
-                    new_count,
-                    lines: Vec::new(),
-                });
-            }
-            continue;
-        }
-
-        // Skip diff metadata lines
-        if line.starts_with("diff --git")
-            || line.starts_with("index ")
-            || line.starts_with("---")
-            || line.starts_with("+++")
-        {
-            continue;
-        }
-
-        // Process hunk lines
-        if let Some(ref mut hunk) = current_hunk {
-            let (line_type, content, old_num, new_num) =
-                if let Some(content) = line.strip_prefix('+') {
-                    let num = new_line;
-                    new_line += 1;
-                    (LineType::Add, content, None, Some(num))
-                } else if let Some(content) = line.strip_prefix('-') {
-                    let num = old_line;
-                    old_line += 1;
-                    (LineType::Delete, content, Some(num), None)
-                } else if let Some(content) = line.strip_prefix(' ') {
-                    let old_num = old_line;
-                    let new_num = new_line;
-                    old_line += 1;
-                    new_line += 1;
-                    (LineType::Context, content, Some(old_num), Some(new_num))
-                } else {
-                    // Unknown line type, skip
-                    continue;
-                };
-
-            let content_with_newline = format!("{content}\n");
-            let html = highlighter.highlight_line(&content_with_newline, extension);
-
-            hunk.lines.push(HighlightedLine {
-                line_type,
-                content: content.to_string(),
-                html,
-                old_line_number: old_num,
-                new_line_number: new_num,
-            });
-        }
-    }
-
-    // Save last hunk
-    if let Some(hunk) = current_hunk {
-        hunks.push(hunk);
-    }
-
-    hunks
-}
-
-/// Parse a hunk header line.
-///
-/// Format: `@@ -old_start,old_count +new_start,new_count @@`
-/// Returns (`old_start`, `old_count`, `new_start`, `new_count`).
-fn parse_hunk_header(line: &str) -> Option<(u32, u32, u32, u32)> {
-    // Extract the part between @@ and @@
-    let parts: Vec<&str> = line.split("@@").collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    let ranges = parts[1].trim();
-    let mut parts = ranges.split_whitespace();
-
-    // Parse old range: -old_start,old_count
-    let old_range = parts.next()?.strip_prefix('-')?;
-    let (old_start, old_count) = parse_range(old_range)?;
-
-    // Parse new range: +new_start,new_count
-    let new_range = parts.next()?.strip_prefix('+')?;
-    let (new_start, new_count) = parse_range(new_range)?;
-
-    Some((old_start, old_count, new_start, new_count))
-}
-
-/// Parse a range like "1,5" or just "1" (implies count=1).
-fn parse_range(range: &str) -> Option<(u32, u32)> {
-    if let Some((start, count)) = range.split_once(',') {
-        let start = start.parse().ok()?;
-        let count = count.parse().ok()?;
-        Some((start, count))
-    } else {
-        let start = range.parse().ok()?;
-        Some((start, 1))
-    }
 }
 
 // =============================================================================
@@ -588,8 +360,8 @@ pub fn workflow_get_commit_diff(
 
         let files = task_diff
             .files
-            .iter()
-            .map(|f| highlight_file_diff(f.clone(), &highlighter))
+            .into_iter()
+            .map(|f| highlight_file_diff(f, &|line, ext| highlighter.highlight_line(line, ext)))
             .collect();
 
         Ok(HighlightedTaskDiff {

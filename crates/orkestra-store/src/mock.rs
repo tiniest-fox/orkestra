@@ -401,11 +401,20 @@ impl WorkflowStore for InMemoryWorkflowStore {
         let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         let mut result: Vec<_> = entries
             .iter()
-            .filter(|(sid, seq, _, _)| sid == stage_session_id && *seq as u64 > after_sequence)
+            .filter(|(sid, seq, _, _)| {
+                sid == stage_session_id
+                    && u64::try_from(*seq).expect("sequence numbers must be non-negative")
+                        > after_sequence
+            })
             .cloned()
             .collect();
         result.sort_by_key(|(_, seq, _, _)| *seq);
-        let max_seq = result.iter().map(|(_, seq, _, _)| *seq as u64).max();
+        let max_seq = result
+            .iter()
+            .map(|(_, seq, _, _)| {
+                u64::try_from(*seq).expect("sequence numbers must be non-negative")
+            })
+            .max();
         Ok((
             result.into_iter().map(|(_, _, entry, _)| entry).collect(),
             max_seq,

@@ -40,7 +40,8 @@ pub fn execute(
         let entry: LogEntry =
             serde_json::from_str(&json).map_err(|e| WorkflowError::Storage(e.to_string()))?;
         entries.push(entry);
-        let seq = seq.cast_unsigned();
+        let seq = u64::try_from(seq)
+            .map_err(|_| WorkflowError::Storage("negative sequence_number in database".into()))?;
         max_seq = Some(max_seq.map_or(seq, |m| m.max(seq)));
     }
 

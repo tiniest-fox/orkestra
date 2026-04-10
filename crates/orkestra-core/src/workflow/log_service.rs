@@ -45,8 +45,7 @@ impl LogService {
 
     /// Check if a stage session has any log entries in the database.
     pub fn has_logs(&self, stage_session_id: &str) -> WorkflowResult<bool> {
-        let entries = self.store.get_log_entries(stage_session_id)?;
-        Ok(!entries.is_empty())
+        Ok(self.store.get_latest_log_entry(stage_session_id)?.is_some())
     }
 }
 

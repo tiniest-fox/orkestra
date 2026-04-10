@@ -411,6 +411,13 @@ fn read_chat_output(
             "Failed to append ProcessExit log entry: {}",
             e
         );
+    } else if let Some(tx) = &log_notify_tx {
+        if let Err(e) = tx.send(LogNotification {
+            task_id: task_id.to_string(),
+            session_id: session_id.to_string(),
+        }) {
+            orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
+        }
     }
 
     // Clear PID on session (skip if detection already handled session cleanup via exit_chat).

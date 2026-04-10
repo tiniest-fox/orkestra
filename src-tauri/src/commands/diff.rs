@@ -82,6 +82,8 @@ pub struct HighlightedFileDiff {
 pub struct HighlightedTaskDiff {
     /// Files with highlighted diffs.
     pub files: Vec<HighlightedFileDiff>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff_sha: Option<String>,
 }
 
 /// Syntax CSS for light and dark themes.
@@ -103,16 +105,21 @@ pub struct SyntaxCss {
 ///
 /// - Tier 1: If HEAD SHA matches and worktree is clean, return cached result immediately.
 /// - Tier 2: Run git diff, but only re-highlight files whose content hash changed.
+///
+/// Accepts an optional `last_sha` ETag parameter. When `last_sha` matches the current
+/// diff fingerprint, returns `{ "unchanged": true, "diff_sha": "..." }` immediately.
+/// Full diff responses include a `diff_sha` field for use as `last_sha` on the next poll.
 #[allow(clippy::too_many_lines)]
 #[tauri::command]
 pub async fn workflow_get_task_diff(
     task_id: String,
     context_lines: Option<u32>,
+    last_sha: Option<String>,
     registry: tauri::State<'_, ProjectRegistry>,
     window: tauri::Window,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
     diff_cache: tauri::State<'_, DiffCacheState>,
-) -> Result<HighlightedTaskDiff, TauriError> {
+) -> Result<Value, TauriError> {
     let context_lines = context_lines.unwrap_or(3);
     registry.with_project(window.label(), |state| {
         let (task, git) = {
@@ -145,13 +152,21 @@ pub async fn workflow_get_task_diff(
                 } else {
                     format!("{}:{}", wt_state.head_sha, context_lines)
                 };
+                // ETag short-circuit: unchanged since last poll.
+                if last_sha.as_deref() == Some(&cache_sha) {
+                    return Ok(serde_json::json!({ "unchanged": true, "diff_sha": cache_sha }));
+                }
                 if let Some(files) =
                     diff_cache.get_all_if_clean(window.label(), &task_id, &cache_sha)
                 {
-                    return Ok(HighlightedTaskDiff { files });
+                    return Ok(serde_json::to_value(HighlightedTaskDiff {
+                        files,
+                        diff_sha: Some(cache_sha),
+                    })
+                    .unwrap_or(Value::Null));
                 }
 
-                // Tier 1 miss or dirty — run git diff subprocess.
+                // Tier 1 miss — run git diff subprocess.
                 let raw_diff = git
                     .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                     .map_err(|e| {
@@ -164,6 +179,13 @@ pub async fn workflow_get_task_diff(
                     .iter()
                     .map(|f| (f.path.clone(), file_content_hash(f)))
                     .collect();
+                let diff_sha = combined_diff_sha(&file_hashes, context_lines);
+
+                // ETag short-circuit for clean Tier 1 miss.
+                if last_sha.as_deref() == Some(&diff_sha) {
+                    return Ok(serde_json::json!({ "unchanged": true, "diff_sha": diff_sha }));
+                }
+
                 let mut cached_files =
                     diff_cache.get_files_by_hash(window.label(), &task_id, &file_hashes);
 
@@ -185,7 +207,11 @@ pub async fn workflow_get_task_diff(
                     .collect();
 
                 diff_cache.store(window.label(), &task_id, &cache_sha, to_store);
-                return Ok(HighlightedTaskDiff { files });
+                return Ok(serde_json::to_value(HighlightedTaskDiff {
+                    files,
+                    diff_sha: Some(diff_sha),
+                })
+                .unwrap_or(Value::Null));
             }
 
             // Worktree is dirty — run git diff subprocess without Tier 1 caching.
@@ -201,6 +227,13 @@ pub async fn workflow_get_task_diff(
                 .iter()
                 .map(|f| (f.path.clone(), file_content_hash(f)))
                 .collect();
+            let diff_sha = combined_diff_sha(&file_hashes, context_lines);
+
+            // ETag short-circuit for dirty worktrees.
+            if last_sha.as_deref() == Some(&diff_sha) {
+                return Ok(serde_json::json!({ "unchanged": true, "diff_sha": diff_sha }));
+            }
+
             let mut cached_files =
                 diff_cache.get_files_by_hash(window.label(), &task_id, &file_hashes);
 
@@ -223,7 +256,11 @@ pub async fn workflow_get_task_diff(
 
             // Store with dirty-state SHA (no Tier 1 key) for Tier 2 re-use only.
             diff_cache.store(window.label(), &task_id, &wt_state.head_sha, to_store);
-            return Ok(HighlightedTaskDiff { files });
+            return Ok(serde_json::to_value(HighlightedTaskDiff {
+                files,
+                diff_sha: Some(diff_sha),
+            })
+            .unwrap_or(Value::Null));
         }
 
         // get_worktree_state failed — fall back to direct diff with no caching.
@@ -237,8 +274,25 @@ pub async fn workflow_get_task_diff(
             .map(|file| highlight_file_diff(file, &highlighter))
             .collect();
 
-        Ok(HighlightedTaskDiff { files })
+        Ok(serde_json::to_value(HighlightedTaskDiff {
+            files,
+            diff_sha: None,
+        })
+        .unwrap_or(Value::Null))
     })
+}
+
+/// Combine per-file content hashes into a single diff fingerprint.
+fn combined_diff_sha(file_hashes: &[(String, u64)], context_lines: u32) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    for (path, hash) in file_hashes {
+        path.hash(&mut h);
+        hash.hash(&mut h);
+    }
+    context_lines.hash(&mut h);
+    format!("{:x}", h.finish())
 }
 
 /// Stable content hash for a file diff entry.
@@ -561,7 +615,10 @@ pub fn workflow_get_commit_diff(
         let git = {
             let api = state.api()?;
             let Some(git) = api.git_service() else {
-                return Ok(HighlightedTaskDiff { files: vec![] });
+                return Ok(HighlightedTaskDiff {
+                    files: vec![],
+                    diff_sha: None,
+                });
             };
             Arc::clone(git)
         }; // mutex released here — git subprocess runs off the lock
@@ -575,6 +632,9 @@ pub fn workflow_get_commit_diff(
             .map(|f| highlight_file_diff(f.clone(), &highlighter))
             .collect();
 
-        Ok(HighlightedTaskDiff { files })
+        Ok(HighlightedTaskDiff {
+            files,
+            diff_sha: None,
+        })
     })
 }

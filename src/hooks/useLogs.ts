@@ -74,6 +74,10 @@ export function useLogs(
 
   // Cursor tracking for incremental fetching — resets when stage/session changes
   const cursorRef = useRef<number | null>(null);
+  // In-flight lock: prevents concurrent fetches from both reading the same cursor and appending duplicates.
+  // If a fetch arrives while one is in progress, needsReFetchRef is set so we re-fetch once the current one completes.
+  const isFetchingRef = useRef(false);
+  const needsReFetchRef = useRef(false);
 
   // Clear stale logs and cursor immediately when stage or session changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: deps are intentional triggers, not values used inside
@@ -81,6 +85,8 @@ export function useLogs(
     setLogs([]);
     setError(null);
     cursorRef.current = null;
+    isFetchingRef.current = false;
+    needsReFetchRef.current = false;
   }, [activeLogStage, activeSessionId]);
 
   // Track activeLogStage and activeSessionId in refs for race condition protection
@@ -92,6 +98,14 @@ export function useLogs(
   // Fetch logs for active stage with cursor-based incremental fetching
   const fetchLogs = useCallback(async () => {
     if (!activeLogStage) return;
+
+    // Prevent concurrent fetches: if one is already in flight, mark a pending re-fetch and return.
+    // The in-flight fetch will trigger a follow-up once it completes.
+    if (isFetchingRef.current) {
+      needsReFetchRef.current = true;
+      return;
+    }
+    isFetchingRef.current = true;
 
     const stageToFetch = activeLogStage;
     const sessionToFetch = activeSessionId;
@@ -129,7 +143,13 @@ export function useLogs(
         }
       }
     } finally {
+      isFetchingRef.current = false;
       setIsLoading(false);
+      // If a push/poll arrived while this fetch was in flight, run another fetch now.
+      if (needsReFetchRef.current) {
+        needsReFetchRef.current = false;
+        void fetchLogs();
+      }
     }
   }, [transport, task.id, activeLogStage, activeSessionId]);
 

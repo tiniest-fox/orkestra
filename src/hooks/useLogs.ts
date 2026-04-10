@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useConnectionState, useTransport } from "../transport";
+import { useConnectionState, useTransport, useTransportListener } from "../transport";
 import type { LogEntry, LogPage, StageLogInfo, WorkflowTaskView } from "../types/workflow";
 import { isDisconnectError } from "../utils/transportErrors";
 import { usePageVisibility } from "./usePageVisibility";
@@ -153,7 +153,37 @@ export function useLogs(
     activeLogStage === task.derived.current_stage &&
     !error;
 
-  usePolling(shouldPoll ? fetchLogs : null, 2000);
+  const { reset } = usePolling(shouldPoll ? fetchLogs : null, 2000);
+
+  // Debounce timer ref — cleared and reset on each push event to coalesce rapid notifications.
+  const pushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Push subscription: react to log_entry_appended events and trigger an immediate fetch.
+  // Filters to the currently active task/session so events for other tasks are ignored.
+  useTransportListener<{ task_id: string; session_id: string }>(
+    "log_entry_appended",
+    useCallback(
+      (data) => {
+        if (data.task_id !== task.id) return;
+        if (data.session_id !== activeSessionIdRef.current) return;
+
+        // Debounce: cancel any pending trigger, schedule a new one after 100ms.
+        if (pushTimeoutRef.current !== null) clearTimeout(pushTimeoutRef.current);
+        pushTimeoutRef.current = setTimeout(() => {
+          pushTimeoutRef.current = null;
+          reset();
+        }, 100);
+      },
+      [task.id, reset],
+    ),
+  );
+
+  // Clean up debounce timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (pushTimeoutRef.current !== null) clearTimeout(pushTimeoutRef.current);
+    };
+  }, []);
 
   return {
     logs,

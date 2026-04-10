@@ -7,7 +7,7 @@ use crate::commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator
 use crate::pr_description::{ClaudePrDescriptionGenerator, PrDescriptionGenerator};
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::Task;
+use crate::workflow::domain::{LogNotification, Task};
 use crate::workflow::execution::ProviderRegistry;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
@@ -53,6 +53,8 @@ pub struct WorkflowApi {
     pub(crate) agent_killer: Option<Arc<dyn AgentKiller>>,
     pub(crate) provider_registry: Option<Arc<ProviderRegistry>>,
     pub(crate) project_root: Option<PathBuf>,
+    /// Optional channel for push-based log notifications from stage chat.
+    pub(crate) log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
 }
 
 impl WorkflowApi {
@@ -84,6 +86,7 @@ impl WorkflowApi {
             agent_killer: None,
             provider_registry: None,
             project_root: None,
+            log_notify_tx: None,
         }
     }
 
@@ -120,6 +123,7 @@ impl WorkflowApi {
             agent_killer: None,
             provider_registry: None,
             project_root: None,
+            log_notify_tx: None,
         }
     }
 
@@ -168,6 +172,11 @@ impl WorkflowApi {
     /// Set the agent killer (used by interrupt to kill active agents).
     pub fn set_agent_killer(&mut self, killer: Arc<dyn AgentKiller>) {
         self.agent_killer = Some(killer);
+    }
+
+    /// Set the log notification channel (used by stage chat to push log events).
+    pub fn set_log_notify_tx(&mut self, tx: std::sync::mpsc::Sender<LogNotification>) {
+        self.log_notify_tx = Some(tx);
     }
 
     /// Set the provider registry (required for stage chat).

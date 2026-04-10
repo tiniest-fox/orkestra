@@ -118,6 +118,7 @@ const EVENT_MAP: Record<string, string> = {
   review_ready: "review-ready",
   startup_data: "startup-data",
   startup_error: "startup-error",
+  log_entry_appended: "log-entry-appended",
 };
 
 // ============================================================================

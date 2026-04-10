@@ -83,7 +83,7 @@ pub(super) async fn handle_get_task_diff(
                     .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                     .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
 
-                return highlight_with_tier2_cache(
+                return Ok(highlight_with_tier2_cache(
                     raw_diff,
                     context_lines,
                     last_sha.as_deref(),
@@ -91,7 +91,7 @@ pub(super) async fn handle_get_task_diff(
                     &task_id,
                     &highlighter,
                     &diff_cache,
-                );
+                ));
             }
 
             // Worktree is dirty — run git diff subprocess without Tier 1 caching.
@@ -100,7 +100,7 @@ pub(super) async fn handle_get_task_diff(
                 .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                 .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
 
-            return highlight_with_tier2_cache(
+            return Ok(highlight_with_tier2_cache(
                 raw_diff,
                 context_lines,
                 last_sha.as_deref(),
@@ -108,7 +108,7 @@ pub(super) async fn handle_get_task_diff(
                 &task_id,
                 &highlighter,
                 &diff_cache,
-            );
+            ));
         }
 
         // get_worktree_state failed — fall back to direct diff with no caching.
@@ -144,7 +144,7 @@ fn highlight_with_tier2_cache(
     task_id: &str,
     highlighter: &SyntaxHighlighter,
     diff_cache: &DiffCacheState,
-) -> Result<Value, ErrorPayload> {
+) -> Value {
     let file_hashes: Vec<(String, u64)> = raw_diff
         .files
         .iter()
@@ -154,7 +154,7 @@ fn highlight_with_tier2_cache(
 
     // ETag short-circuit.
     if last_sha == Some(&diff_sha) {
-        return Ok(serde_json::json!({ "unchanged": true, "diff_sha": diff_sha }));
+        return serde_json::json!({ "unchanged": true, "diff_sha": diff_sha });
     }
 
     let mut cached_files = diff_cache.get_files_by_hash(task_id, &file_hashes);
@@ -178,11 +178,11 @@ fn highlight_with_tier2_cache(
         .collect();
 
     diff_cache.store(task_id, store_key, to_store);
-    Ok(serde_json::to_value(HighlightedTaskDiff {
+    serde_json::to_value(HighlightedTaskDiff {
         files,
         diff_sha: Some(diff_sha),
     })
-    .unwrap_or(Value::Null))
+    .unwrap_or(Value::Null)
 }
 
 // ============================================================================

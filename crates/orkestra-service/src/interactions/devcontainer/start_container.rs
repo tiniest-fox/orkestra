@@ -623,7 +623,7 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets);
+        let yaml = build_compose_override("app", 3000, &secrets, None);
 
         // Git identity env vars use the secret values.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -646,7 +646,7 @@ mod tests {
             "project@example.com".to_string(),
         )];
 
-        let yaml = build_compose_override("app", 3000, &secrets);
+        let yaml = build_compose_override("app", 3000, &secrets, None);
 
         // Email uses the secret value.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));

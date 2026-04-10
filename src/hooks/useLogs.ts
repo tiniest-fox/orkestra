@@ -1,13 +1,13 @@
 /**
- * Hook for fetching and managing session logs.
+ * Hook for fetching and managing session logs with cursor-based incremental fetching.
  *
  * Stage presence comes from the task view's derived.stages_with_logs (synchronous).
- * Log content is fetched asynchronously on-demand.
+ * Log content is fetched asynchronously on-demand, appending only new entries on each poll.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConnectionState, useTransport } from "../transport";
-import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../types/workflow";
+import type { LogEntry, LogPage, StageLogInfo, WorkflowTaskView } from "../types/workflow";
 import { isDisconnectError } from "../utils/transportErrors";
 import { usePageVisibility } from "./usePageVisibility";
 import { usePolling } from "./usePolling";
@@ -72,16 +72,15 @@ export function useLogs(
   const [isLoading, setIsLoading] = useState(() => activeLogStage !== null);
   const [error, setError] = useState<unknown>(null);
 
-  // Fingerprint the last-known logs to skip setLogs when data hasn't changed.
-  // Logs are append-only: length catches new entries; last-entry JSON catches streaming updates.
-  const logsFingerprintRef = useRef<string>("");
+  // Cursor tracking for incremental fetching — resets when stage/session changes
+  const cursorRef = useRef<number | null>(null);
 
-  // Clear stale logs immediately when stage or session changes.
+  // Clear stale logs and cursor immediately when stage or session changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: deps are intentional triggers, not values used inside
   useEffect(() => {
     setLogs([]);
     setError(null);
-    logsFingerprintRef.current = "";
+    cursorRef.current = null;
   }, [activeLogStage, activeSessionId]);
 
   // Track activeLogStage and activeSessionId in refs for race condition protection
@@ -90,30 +89,31 @@ export function useLogs(
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
-  // Fetch logs for active stage with race condition protection
+  // Fetch logs for active stage with cursor-based incremental fetching
   const fetchLogs = useCallback(async () => {
     if (!activeLogStage) return;
 
     const stageToFetch = activeLogStage;
     const sessionToFetch = activeSessionId;
+    const cursorToFetch = cursorRef.current ?? 0;
 
     setIsLoading(true);
     setError(null);
     try {
-      const result = await transport.call<LogEntry[]>("get_logs", {
+      const result = await transport.call<LogPage>("get_logs", {
         task_id: task.id,
         stage: stageToFetch,
         session_id: sessionToFetch,
+        cursor: cursorToFetch,
       });
       // Only update state if the stage/session hasn't changed during the fetch
       if (
         activeLogStageRef.current === stageToFetch &&
         activeSessionIdRef.current === sessionToFetch
       ) {
-        const fingerprint = `${result.length}:${result.length > 0 ? JSON.stringify(result[result.length - 1]) : ""}`;
-        if (fingerprint !== logsFingerprintRef.current) {
-          logsFingerprintRef.current = fingerprint;
-          setLogs(result);
+        if (result.entries.length > 0) {
+          cursorRef.current = result.cursor;
+          setLogs((prev) => [...prev, ...result.entries]);
         }
       }
     } catch (err) {
@@ -135,7 +135,9 @@ export function useLogs(
   const isVisible = usePageVisibility();
   const connectionState = useConnectionState();
 
-  // Fetch logs when stage/session changes (handles non-polling cases and initial load)
+  // Fetch logs when stage/session changes (handles non-polling cases and initial load).
+  // connectionState dependency handles reconnection: triggers a fetch with the saved cursor,
+  // which catches up on missed entries.
   useEffect(() => {
     if (!isActive || !activeLogStage || !isVisible || connectionState !== "connected") return;
     fetchLogs();

@@ -408,8 +408,8 @@ fn handle_logs(
     };
 
     // Get logs for the specified stage
-    let mut logs = match api.get_task_logs(task_id, Some(&stage_name), None) {
-        Ok(logs) => logs,
+    let mut logs = match api.get_task_logs(task_id, Some(&stage_name), None, None) {
+        Ok((logs, _cursor)) => logs,
         Err(e) => {
             eprintln!("Error getting logs: {e}");
             std::process::exit(1);

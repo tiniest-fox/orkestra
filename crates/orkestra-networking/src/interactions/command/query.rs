@@ -186,9 +186,10 @@ pub fn list_branches(ctx: &CommandContext, _params: &Value) -> Result<Value, Err
 // Log queries
 // ============================================================================
 
-/// Returns log entries for a task's stage/session.
+/// Returns log entries for a task's stage/session with optional cursor-based pagination.
 ///
-/// Expected params: `{ "task_id": "<id>", "stage": "<stage>" (opt), "session_id": "<id>" (opt) }`
+/// Expected params: `{ "task_id": "<id>", "stage": "<stage>" (opt), "session_id": "<id>" (opt), "cursor": <u64> (opt) }`
+/// Returns `{ "entries": [...], "cursor": <u64> | null }`.
 pub fn get_logs(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(params)?;
     let stage = params
@@ -199,12 +200,13 @@ pub fn get_logs(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayl
         .get("session_id")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
+    let cursor = params.get("cursor").and_then(serde_json::Value::as_u64);
 
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let logs = api
-        .get_task_logs(&task_id, stage.as_deref(), session_id.as_deref())
+    let (entries, cursor_out) = api
+        .get_task_logs(&task_id, stage.as_deref(), session_id.as_deref(), cursor)
         .map_err(ErrorPayload::from)?;
-    Ok(serde_json::to_value(logs).unwrap_or(Value::Array(vec![])))
+    Ok(serde_json::json!({ "entries": entries, "cursor": cursor_out }))
 }
 
 /// Returns the most recent log entry for a task.

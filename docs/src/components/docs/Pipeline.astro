@@ -410,8 +410,8 @@ function normalizeGates(stage: Stage): RenderedGate[] {
 
   .badge--auto {
     background-color: var(--forge-status-success-bg);
-    color: var(--forge-status-success);
-    border-color: color-mix(in srgb, var(--forge-status-success) 35%, transparent);
+    color: var(--color-status-success);
+    border-color: color-mix(in srgb, var(--color-status-success) 35%, transparent);
   }
 
   /* ── Simple connector (stages with no gate) ── */
@@ -465,20 +465,20 @@ function normalizeGates(stage: Stage): RenderedGate[] {
 
   .gate-node--check {
     background-color: var(--forge-status-warning-bg);
-    color: var(--forge-status-warning);
-    border-color: color-mix(in srgb, var(--forge-status-warning) 35%, transparent);
+    color: var(--color-status-warning);
+    border-color: color-mix(in srgb, var(--color-status-warning) 35%, transparent);
   }
 
   .gate-node--approval {
     background-color: var(--forge-status-info-bg);
-    color: var(--forge-status-info);
-    border-color: color-mix(in srgb, var(--forge-status-info) 35%, transparent);
+    color: var(--color-status-info);
+    border-color: color-mix(in srgb, var(--color-status-info) 35%, transparent);
   }
 
   .gate-node--verdict {
     background-color: var(--forge-status-purple-bg);
-    color: var(--forge-status-purple);
-    border-color: color-mix(in srgb, var(--forge-status-purple) 35%, transparent);
+    color: var(--color-status-purple);
+    border-color: color-mix(in srgb, var(--color-status-purple) 35%, transparent);
   }
 
   /* ── Plain lead line into gate ── */
@@ -571,16 +571,16 @@ function normalizeGates(stage: Stage): RenderedGate[] {
   }
 
   .outcome-icon--fail {
-    background-color: var(--forge-status-error);
+    background-color: var(--color-status-error);
   }
 
   /* Human approval return path — amber signals "feedback" not "error" */
   .outcome-icon--return {
-    background-color: var(--forge-status-warning);
+    background-color: var(--color-status-warning);
   }
 
   .outcome-icon--pass {
-    background-color: var(--forge-status-success);
+    background-color: var(--color-status-success);
   }
 
 

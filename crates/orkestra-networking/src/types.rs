@@ -266,6 +266,20 @@ impl Event {
         )
     }
 
+    /// `log_entry_appended` event signaling new log entries for a session.
+    ///
+    /// Carries only identifiers — clients use these to trigger a cursor-based fetch
+    /// for the actual new entries rather than receiving the content directly.
+    pub fn log_entry_appended(task_id: impl Into<String>, session_id: impl Into<String>) -> Self {
+        Self::new(
+            "log_entry_appended",
+            serde_json::json!({
+                "task_id": task_id.into(),
+                "session_id": session_id.into(),
+            }),
+        )
+    }
+
     /// `merge_conflict` event carrying conflict details for notification.
     pub fn merge_conflict(task_id: impl Into<String>, conflict_count: usize) -> Self {
         let task_id = task_id.into();

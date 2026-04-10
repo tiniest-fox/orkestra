@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use super::types::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
+use crate::workflow::domain::{IterationTrigger, LogEntry, LogNotification, Task};
 use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput};
 use crate::workflow::ports::WorkflowStore;
 
@@ -157,6 +157,11 @@ pub struct StageExecutionService {
     /// Active agent executions keyed by task ID.
     /// (Script executions are tracked by `ScriptExecutionService`)
     active_agents: Mutex<HashMap<String, ActiveAgent>>,
+    /// Optional channel for push-based log notifications.
+    ///
+    /// When set, a single `LogNotification` is sent per batch of log entries
+    /// persisted to the database, enabling consumers to trigger immediate fetches.
+    log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
 }
 
 impl StageExecutionService {
@@ -193,6 +198,7 @@ impl StageExecutionService {
             workflow,
             registry,
             active_agents: Mutex::new(HashMap::new()),
+            log_notify_tx: None,
         }
     }
 
@@ -239,6 +245,14 @@ impl StageExecutionService {
             runner,
             registry,
         )
+    }
+
+    /// Set the log notification channel.
+    ///
+    /// When set, one `LogNotification` is sent per batch of log entries after
+    /// each `persist_log_entries` call. Enables push-based frontend updates.
+    pub fn set_log_notify_tx(&mut self, tx: std::sync::mpsc::Sender<LogNotification>) {
+        self.log_notify_tx = Some(tx);
     }
 
     /// Check if a task has an active execution (agent or script).
@@ -576,6 +590,7 @@ impl StageExecutionService {
     /// Persist collected log entries to the database and agent log file.
     ///
     /// Non-fatal: if a write fails, logs the error and continues.
+    /// Sends one `LogNotification` per batch (after the loop) when a sender is configured.
     fn persist_log_entries(
         &self,
         stage_session_id: &str,
@@ -601,6 +616,16 @@ impl StageExecutionService {
             // Write to agents.log file
             if let Ok(json) = serde_json::to_string(entry) {
                 crate::orkestra_debug!(&format!("{task_id}/{stage}"), target: agents, "{json}");
+            }
+        }
+
+        // Send one notification per batch — receiver triggers a cursor-based fetch.
+        if !entries.is_empty() {
+            if let Some(tx) = &self.log_notify_tx {
+                let _ = tx.send(LogNotification {
+                    task_id: task_id.to_string(),
+                    session_id: stage_session_id.to_string(),
+                });
             }
         }
     }
@@ -872,6 +897,11 @@ pub enum ExecutionResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workflow::config::{StageConfig, WorkflowConfig};
+    use crate::workflow::domain::LogEntry;
+    use crate::workflow::iteration::IterationService;
+    use crate::workflow::InMemoryWorkflowStore;
+    use std::sync::mpsc;
 
     #[test]
     fn test_spawn_error_display() {
@@ -882,6 +912,51 @@ mod tests {
         assert_eq!(
             SpawnError::StageNotFound("foo".into()).to_string(),
             "Stage not found: foo"
+        );
+    }
+
+    #[test]
+    fn persist_log_entries_sends_notification_when_channel_set() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        let project_root = std::path::PathBuf::from("/tmp");
+
+        let mut service =
+            StageExecutionService::new(workflow, project_root, store, iteration_service);
+
+        let (tx, rx) = mpsc::channel();
+        service.set_log_notify_tx(tx);
+
+        let entries = vec![LogEntry::Text {
+            content: "hello".to_string(),
+        }];
+        service.persist_log_entries("session-abc", "task-xyz", "work", &entries, "iter-1");
+
+        let notification = rx.recv().expect("expected notification");
+        assert_eq!(notification.task_id, "task-xyz");
+        assert_eq!(notification.session_id, "session-abc");
+    }
+
+    #[test]
+    fn persist_log_entries_sends_no_notification_for_empty_batch() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        let project_root = std::path::PathBuf::from("/tmp");
+
+        let mut service =
+            StageExecutionService::new(workflow, project_root, store, iteration_service);
+
+        let (tx, rx) = mpsc::channel();
+        service.set_log_notify_tx(tx);
+
+        // Empty batch — no notification should be sent
+        service.persist_log_entries("session-abc", "task-xyz", "work", &[], "iter-1");
+
+        assert!(
+            rx.try_recv().is_err(),
+            "no notification expected for empty batch"
         );
     }
 }

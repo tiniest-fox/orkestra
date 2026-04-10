@@ -30,6 +30,7 @@ impl WorkflowApi {
             project_root,
             task_id,
             message,
+            self.log_notify_tx.clone(),
         )
     }
 

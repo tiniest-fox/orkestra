@@ -12,7 +12,7 @@ use std::thread;
 use super::try_complete_from_output;
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::LogEntry;
+use crate::workflow::domain::{LogEntry, LogNotification};
 use crate::workflow::execution::{get_agent_schema, AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use orkestra_process::{is_process_running, kill_process_tree, ProcessConfig, ProcessHandle};
@@ -27,6 +27,9 @@ pub const CHAT_RESUME_TYPE: &str = "chat";
 ///
 /// Takes `Arc<dyn WorkflowStore>` rather than `&dyn WorkflowStore` because the
 /// background output reader thread needs an owned reference.
+///
+/// `log_notify_tx` is forwarded to the background reader thread which sends one
+/// `LogNotification` per batch of log entries, enabling push-based frontend updates.
 pub fn execute(
     store: Arc<dyn WorkflowStore>,
     registry: &ProviderRegistry,
@@ -34,6 +37,7 @@ pub fn execute(
     project_root: &Path,
     task_id: &str,
     message: &str,
+    log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
 ) -> WorkflowResult<()> {
     let task = store
         .get_task(task_id)?
@@ -90,6 +94,7 @@ pub fn execute(
         project_root,
         message,
         &now,
+        log_notify_tx,
     )
 }
 
@@ -146,6 +151,7 @@ fn spawn_chat_agent(
     project_root: &Path,
     message: &str,
     now: &str,
+    log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
 ) -> WorkflowResult<()> {
     // Kill any existing chat agent process
     if let Some(pid) = session.agent_pid {
@@ -246,6 +252,7 @@ fn spawn_chat_agent(
             stderr,
             &workflow_owned,
             &schema_owned,
+            log_notify_tx.as_ref(),
         );
     });
 
@@ -257,6 +264,9 @@ fn spawn_chat_agent(
 /// Runs in a background thread. Reads stdout, parses each line, writes log entries,
 /// accumulates text for structured output detection, appends `ProcessExit` when done,
 /// and clears the PID on the session.
+///
+/// Sends one `LogNotification` per batch of entries written (main loop + finalized entries),
+/// enabling push-based frontend updates when a `log_notify_tx` sender is provided.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
 fn read_chat_output(
@@ -270,6 +280,7 @@ fn read_chat_output(
     stderr: Option<std::process::ChildStderr>,
     workflow: &WorkflowConfig,
     schema: &serde_json::Value,
+    log_notify_tx: Option<&std::sync::mpsc::Sender<LogNotification>>,
 ) {
     use std::io::BufRead;
 
@@ -296,12 +307,25 @@ fn read_chat_output(
 
                 let update = parser.parse_line(&line);
 
+                let mut batch_count = 0usize;
                 for entry in update.log_entries {
                     if let LogEntry::Text { ref content } = entry {
                         accumulated_text.push(content.clone());
                     }
                     if let Err(e) = store.append_log_entry(session_id, &entry, None) {
                         orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
+                    } else {
+                        batch_count += 1;
+                    }
+                }
+
+                // Send one notification per parsed batch
+                if batch_count > 0 {
+                    if let Some(tx) = &log_notify_tx {
+                        let _ = tx.send(LogNotification {
+                            task_id: task_id.to_string(),
+                            session_id: session_id.to_string(),
+                        });
                     }
                 }
             }
@@ -314,12 +338,25 @@ fn read_chat_output(
 
     // Finalize parser and accumulate text from finalized entries
     let finalized = parser.finalize();
+    let mut finalized_count = 0usize;
     for entry in finalized {
         if let LogEntry::Text { ref content } = entry {
             accumulated_text.push(content.clone());
         }
         if let Err(e) = store.append_log_entry(session_id, &entry, None) {
             orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
+        } else {
+            finalized_count += 1;
+        }
+    }
+
+    // Send notification for finalized entries batch
+    if finalized_count > 0 {
+        if let Some(tx) = &log_notify_tx {
+            let _ = tx.send(LogNotification {
+                task_id: task_id.to_string(),
+                session_id: session_id.to_string(),
+            });
         }
     }
 

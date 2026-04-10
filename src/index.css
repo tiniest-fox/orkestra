@@ -1,5 +1,6 @@
 /* Font imports must precede all other statements */
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "./styles/forge-tokens.css";
 
 @tailwind base;
 @tailwind components;
@@ -18,163 +19,6 @@ body {
   overflow: hidden;
 }
 
-/* ============================================================================
- * Forge Design Token CSS Variables
- * ============================================================================
- * All color tokens are defined here as CSS custom properties.
- * Light mode values in :root; dark mode overrides in the media query below.
- * Tailwind config references these variables so all token classes adapt
- * automatically to the system color scheme.
- *
- * Tokens used with Tailwind opacity modifiers (e.g. border-violet/40) are
- * defined as space-separated RGB channels (e.g. "124 58 237") so that
- * rgb(var(--x) / alpha) syntax works correctly.
- */
-
-:root {
-  /* -- Backgrounds -- */
-  --forge-canvas: #FAF8FC;
-  --forge-surface: #FFFFFF;
-  --forge-surface-raised: #FEFCFA;
-  --forge-surface-2: #F4F0F8;
-  --forge-surface-3: #DDD7E4;
-  --forge-surface-hover: #F5F2F8;
-
-  /* -- Text -- */
-  --forge-text-primary: #1C1820;
-  --forge-text-secondary: #5A5068;
-  --forge-text-tertiary: #7A7288;
-  --forge-text-quaternary: #9E96AC;
-
-  /* -- Border -- */
-  --forge-border: #E4DFE9;
-
-  /* -- Accent (pink-red) (RGB channels for opacity modifier support: bg-accent/8 etc.) -- */
-  --forge-accent: 232 53 88;
-  --forge-accent-soft: rgba(232, 53, 88, 0.08);
-  --forge-accent-hover: #D42B4C;
-
-  /* -- Status: success (RGB channels for opacity modifier support: border-status-success/40) -- */
-  --forge-status-success: 22 163 74;
-  --forge-status-success-bg: rgba(22, 163, 74, 0.11);
-
-  /* -- Status: error (RGB channels for opacity modifier support) -- */
-  --forge-status-error: 220 38 38;
-  --forge-status-error-hover: #B91C1C;
-  --forge-status-error-bg: rgba(220, 38, 38, 0.06);
-
-  /* -- Status: warning (RGB channels for opacity modifier support: border-status-warning/40) -- */
-  --forge-status-warning: 217 119 6;
-  --forge-status-warning-bg: #fef3c7;
-
-  /* -- Status: info (RGB channels for opacity modifier support) -- */
-  --forge-status-info: 37 99 235;
-  --forge-status-info-hover: #1D4FD8;
-  --forge-status-info-bg: rgba(37, 99, 235, 0.06);
-
-  /* -- Status: extended palette -- */
-  --forge-status-purple: #9333ea;
-  --forge-status-purple-bg: #f3e8ff;
-  --forge-status-pink: #db2777;
-  --forge-status-pink-bg: #fce7f3;
-  --forge-status-cyan: #0891b2;
-  --forge-status-cyan-bg: #cffafe;
-  --forge-status-orange: #ea580c;
-  --forge-status-orange-bg: #ffedd5;
-
-  /* -- Workflow action colors (RGB channels for opacity modifier support) -- */
-  --forge-violet: 124 58 237;
-  --forge-violet-hover: #6D28D9;
-  --forge-teal: 13 148 136;
-  --forge-teal-hover: #0B7D74;
-  --forge-merge: 200 90 76;
-  --forge-merge-hover: #B85040;
-
-  /* -- Diff viewer gutters -- */
-  --forge-diff-add-gutter: #C8E6D4;
-  --forge-diff-del-gutter: #F7E1E5;
-  --forge-diff-add-hover: rgba(22, 163, 74, 0.13);
-  --forge-diff-del-hover: rgba(220, 38, 38, 0.11);
-
-  /* -- Panel shadows -- */
-  --forge-shadow-panel: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
-  --forge-shadow-panel-hover: 0px 2px 24px 6px rgb(0 0 0 / 0.14), 0px 0px 4px 1px rgb(0 0 0 / 0.04);
-  --forge-shadow-panel-press: 0px 0px 4px 1px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.02);
-}
-
-/* Dark mode — overrides every token with its dark-mode equivalent. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* -- Backgrounds -- */
-    --forge-canvas: #13111A;
-    --forge-surface: #1C1926;
-    --forge-surface-raised: #221F2E;
-    --forge-surface-2: #252233;
-    --forge-surface-3: #342F44;
-    --forge-surface-hover: #1F1C2A;
-
-    /* -- Text -- */
-    --forge-text-primary: #EDEBF0;
-    --forge-text-secondary: #A9A1B8;
-    --forge-text-tertiary: #7B7490;
-    --forge-text-quaternary: #544E66;
-
-    /* -- Border -- */
-    --forge-border: #2E2A3C;
-
-    /* -- Accent -- */
-    --forge-accent: 240 64 104;
-    --forge-accent-soft: rgba(240, 64, 104, 0.12);
-    --forge-accent-hover: #E83558;
-
-    /* -- Status: success -- */
-    --forge-status-success: 34 197 94;
-    --forge-status-success-bg: rgba(34, 197, 94, 0.12);
-
-    /* -- Status: error -- */
-    --forge-status-error: 239 68 68;
-    --forge-status-error-hover: #DC2626;
-    --forge-status-error-bg: rgba(239, 68, 68, 0.12);
-
-    /* -- Status: warning -- */
-    --forge-status-warning: 245 158 11;
-    --forge-status-warning-bg: rgba(245, 158, 11, 0.12);
-
-    /* -- Status: info -- */
-    --forge-status-info: 59 130 246;
-    --forge-status-info-hover: #2563EB;
-    --forge-status-info-bg: rgba(59, 130, 246, 0.12);
-
-    /* -- Status: extended palette -- */
-    --forge-status-purple: #A855F7;
-    --forge-status-purple-bg: rgba(168, 85, 247, 0.12);
-    --forge-status-pink: #EC4899;
-    --forge-status-pink-bg: rgba(236, 72, 153, 0.12);
-    --forge-status-cyan: #06B6D4;
-    --forge-status-cyan-bg: rgba(6, 182, 212, 0.12);
-    --forge-status-orange: #F97316;
-    --forge-status-orange-bg: rgba(249, 115, 22, 0.12);
-
-    /* -- Workflow action colors -- */
-    --forge-violet: 139 92 246;
-    --forge-violet-hover: #7C3AED;
-    --forge-teal: 20 184 166;
-    --forge-teal-hover: #0D9488;
-    --forge-merge: 224 112 96;
-    --forge-merge-hover: #C85A4C;
-
-    /* -- Diff viewer gutters -- */
-    --forge-diff-add-gutter: rgba(34, 197, 94, 0.15);
-    --forge-diff-del-gutter: rgba(239, 68, 68, 0.15);
-    --forge-diff-add-hover: rgba(34, 197, 94, 0.18);
-    --forge-diff-del-hover: rgba(239, 68, 68, 0.18);
-
-    /* -- Panel shadows (edge-light approach for dark backgrounds) -- */
-    --forge-shadow-panel: 0 0 0 1px rgba(80, 70, 110, 0.25), 0 0 12px 0 rgba(0, 0, 0, 0.3);
-    --forge-shadow-panel-hover: 0 0 0 1px rgba(100, 85, 140, 0.35), 0 0 20px 0 rgba(0, 0, 0, 0.4);
-    --forge-shadow-panel-press: 0 0 0 1px rgba(60, 52, 85, 0.3);
-  }
-}
 
 :root {
   font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
@@ -256,38 +100,6 @@ body {
 
 .prose.prose-sm ol > li {
   margin-left: 2rem;
-}
-
-/* Forge pipeline segment pulse animation */
-@keyframes pipe-active-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* Forge status symbol pulse animation */
-@keyframes forge-pulse-opacity {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-
-/* Intermittent spin: one rotation with elastic overshoot, then a pause */
-@keyframes spin-bounce {
-  0% {
-    transform: rotate(0deg);
-  }
-  30% {
-    transform: rotate(390deg);
-  }
-  38% {
-    transform: rotate(360deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spin-bounce {
-  animation: spin-bounce 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 /* Search match highlighting in diff lines */

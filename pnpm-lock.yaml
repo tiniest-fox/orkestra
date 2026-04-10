@@ -138,12 +138,6 @@ importers:
       astro:
         specifier: ^6.1.5
         version: 6.1.5(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)(rollup@4.55.3)(terser@5.46.0)(typescript@5.9.3)(yaml@2.8.3)
-      framer-motion:
-        specifier: ^12.29.2
-        version: 12.29.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      lucide-react:
-        specifier: ^0.562.0
-        version: 0.562.0(react@18.3.1)
       mermaid:
         specifier: ^11.14.0
         version: 11.14.0
@@ -153,18 +147,6 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
-      react-markdown:
-        specifier: ^10.1.0
-        version: 10.1.0(@types/react@18.3.27)(react@18.3.1)
-      react-router-dom:
-        specifier: ^7.13.1
-        version: 7.13.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      remark-breaks:
-        specifier: ^4.0.0
-        version: 4.0.0
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2

@@ -409,3 +409,167 @@ pub(super) async fn handle_get_commit_diff(
     .await
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diff_types::{combined_diff_sha, file_content_hash};
+    use orkestra_core::workflow::ports::{FileChangeType, FileDiff, TaskDiff};
+
+    fn make_task_diff(path: &str, content: &str) -> TaskDiff {
+        TaskDiff {
+            files: vec![FileDiff {
+                path: path.to_string(),
+                change_type: FileChangeType::Modified,
+                old_path: None,
+                additions: 1,
+                deletions: 0,
+                is_binary: false,
+                diff_content: Some(content.to_string()),
+                total_new_lines: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn tier2_etag_match_returns_unchanged() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
+        let diff = make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n");
+
+        let file_hashes: Vec<(String, u64)> = diff
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), file_content_hash(f)))
+            .collect();
+        let expected_sha = combined_diff_sha(&file_hashes, 3);
+
+        let result = highlight_with_tier2_cache(
+            diff,
+            3,
+            Some(&expected_sha),
+            &expected_sha,
+            "task-1",
+            &highlighter,
+            &cache,
+        );
+
+        assert_eq!(result["unchanged"], true);
+        assert_eq!(result["diff_sha"], expected_sha);
+        assert!(
+            result.get("files").is_none(),
+            "unchanged response should not include files"
+        );
+    }
+
+    #[test]
+    fn tier2_no_last_sha_returns_full_diff() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
+        let diff = make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n");
+
+        let file_hashes: Vec<(String, u64)> = diff
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), file_content_hash(f)))
+            .collect();
+        let store_key = combined_diff_sha(&file_hashes, 3);
+
+        let result =
+            highlight_with_tier2_cache(diff, 3, None, &store_key, "task-2", &highlighter, &cache);
+
+        assert!(
+            result.get("files").is_some(),
+            "full diff response should include files"
+        );
+        assert!(
+            result["files"].as_array().is_some_and(|a| !a.is_empty()),
+            "files array should be non-empty"
+        );
+        assert!(result["diff_sha"].is_string(), "diff_sha should be present");
+        assert!(
+            result.get("unchanged").is_none(),
+            "unchanged field should not be present"
+        );
+    }
+
+    #[test]
+    fn tier2_different_sha_returns_full_diff() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
+        let diff = make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n");
+
+        let file_hashes: Vec<(String, u64)> = diff
+            .files
+            .iter()
+            .map(|f| (f.path.clone(), file_content_hash(f)))
+            .collect();
+        let store_key = combined_diff_sha(&file_hashes, 3);
+
+        let result = highlight_with_tier2_cache(
+            diff,
+            3,
+            Some("wrong-sha-value"),
+            &store_key,
+            "task-3",
+            &highlighter,
+            &cache,
+        );
+
+        assert!(
+            result.get("files").is_some(),
+            "full diff response should include files"
+        );
+        assert!(
+            result["files"].as_array().is_some_and(|a| !a.is_empty()),
+            "files array should be non-empty"
+        );
+        assert!(result["diff_sha"].is_string(), "diff_sha should be present");
+        assert!(
+            result.get("unchanged").is_none(),
+            "unchanged field should not be present"
+        );
+    }
+
+    #[test]
+    fn tier2_diff_sha_is_consistent() {
+        let highlighter = SyntaxHighlighter::new();
+        let cache = DiffCacheState::new();
+
+        let file_hashes: Vec<(String, u64)> =
+            make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n")
+                .files
+                .iter()
+                .map(|f| (f.path.clone(), file_content_hash(f)))
+                .collect();
+        let store_key = combined_diff_sha(&file_hashes, 3);
+
+        let result1 = highlight_with_tier2_cache(
+            make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n"),
+            3,
+            None,
+            &store_key,
+            "task-4",
+            &highlighter,
+            &cache,
+        );
+        let result2 = highlight_with_tier2_cache(
+            make_task_diff("src/main.rs", "@@ -1 +1 @@\n-old\n+new\n"),
+            3,
+            None,
+            &store_key,
+            "task-4",
+            &highlighter,
+            &cache,
+        );
+
+        assert_eq!(
+            result1["diff_sha"], result2["diff_sha"],
+            "same inputs should produce the same diff_sha"
+        );
+    }
+}

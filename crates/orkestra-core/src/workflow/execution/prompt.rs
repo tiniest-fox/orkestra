@@ -85,11 +85,11 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 /// or loads custom schema if specified.
 ///
 /// `route_to_stages` — list of valid stage names agents can route rejections to.
-/// Pass `vec![]` for contexts without workflow stage information (e.g., chat, tests).
+/// Pass `&[]` for contexts without workflow stage information (e.g., chat, tests).
 pub fn get_agent_schema(
     stage_config: &StageConfig,
     project_root: Option<&Path>,
-    route_to_stages: Vec<String>,
+    route_to_stages: &[String],
 ) -> Option<String> {
     // Check for custom schema file first
     if let Some(schema_file) = &stage_config.schema_file {
@@ -108,7 +108,7 @@ pub fn get_agent_schema(
         artifact_name: stage_config.artifact_name(),
         produces_subtasks: stage_config.capabilities.produces_subtasks(),
         has_approval: stage_config.has_agentic_gate(),
-        route_to_stages: &route_to_stages,
+        route_to_stages,
     };
     Some(crate::prompts::generate_stage_schema(&schema_config))
 }
@@ -152,7 +152,7 @@ pub fn resolve_stage_agent_config_for(
 
     // I/O: Get JSON schema (may load custom schema from disk)
     let route_to_stages = workflow.route_to_stage_names(&task.flow, stage_name);
-    let json_schema = get_agent_schema(stage, project_root, route_to_stages).ok_or_else(|| {
+    let json_schema = get_agent_schema(stage, project_root, &route_to_stages).ok_or_else(|| {
         AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
     })?;
 
@@ -460,18 +460,18 @@ mod tests {
 
         // Questions are always included
         let planning = StageConfig::new("planning", "plan");
-        let schema = get_agent_schema(&planning, None, vec![]).unwrap();
+        let schema = get_agent_schema(&planning, None, &[]).unwrap();
         assert!(schema.contains("\"plan\""));
         assert!(schema.contains("\"questions\""));
 
         // Non-approval stages also include questions
         let work = StageConfig::new("work", "summary");
-        let schema = get_agent_schema(&work, None, vec![]).unwrap();
+        let schema = get_agent_schema(&work, None, &[]).unwrap();
         assert!(schema.contains("\"summary\""));
         assert!(schema.contains("\"questions\""));
 
         let review = StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic);
-        let schema = get_agent_schema(&review, None, vec![]).unwrap();
+        let schema = get_agent_schema(&review, None, &[]).unwrap();
         assert!(schema.contains("\"approval\""));
         assert!(!schema.contains("\"verdict\""));
     }

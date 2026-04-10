@@ -439,7 +439,7 @@ fn get_stage_schema(
     crate::workflow::execution::get_agent_schema(
         stage_config,
         Some(prompt_service.project_root()),
-        route_to_stages,
+        &route_to_stages,
     )
     .ok_or_else(|| ExecutionError::ConfigError(format!("No schema for agent stage: {stage}")))
 }

@@ -22,15 +22,15 @@ pub fn execute(
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
+    let after_seq_i64 = i64::try_from(after_sequence)
+        .map_err(|_| WorkflowError::Storage("sequence number exceeds i64 range".into()))?;
+
     let rows = stmt
-        .query_map(
-            params![stage_session_id, after_sequence.cast_signed()],
-            |row| {
-                let content_json: String = row.get(0)?;
-                let sequence_number: i64 = row.get(1)?;
-                Ok((content_json, sequence_number))
-            },
-        )
+        .query_map(params![stage_session_id, after_seq_i64], |row| {
+            let content_json: String = row.get(0)?;
+            let sequence_number: i64 = row.get(1)?;
+            Ok((content_json, sequence_number))
+        })
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
     let mut entries = Vec::new();

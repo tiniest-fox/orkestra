@@ -322,10 +322,12 @@ fn read_chat_output(
                 // Send one notification per parsed batch
                 if batch_count > 0 {
                     if let Some(tx) = &log_notify_tx {
-                        let _ = tx.send(LogNotification {
+                        if let Err(e) = tx.send(LogNotification {
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
-                        });
+                        }) {
+                            orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
+                        }
                     }
                 }
             }
@@ -353,10 +355,12 @@ fn read_chat_output(
     // Send notification for finalized entries batch
     if finalized_count > 0 {
         if let Some(tx) = &log_notify_tx {
-            let _ = tx.send(LogNotification {
+            if let Err(e) = tx.send(LogNotification {
                 task_id: task_id.to_string(),
                 session_id: session_id.to_string(),
-            });
+            }) {
+                orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
+            }
         }
     }
 

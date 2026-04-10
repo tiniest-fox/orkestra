@@ -622,10 +622,12 @@ impl StageExecutionService {
         // Send one notification per batch — receiver triggers a cursor-based fetch.
         if !entries.is_empty() {
             if let Some(tx) = &self.log_notify_tx {
-                let _ = tx.send(LogNotification {
+                if let Err(e) = tx.send(LogNotification {
                     task_id: task_id.to_string(),
                     session_id: stage_session_id.to_string(),
-                });
+                }) {
+                    crate::orkestra_debug!("stage", "Log notification send failed: {}", e);
+                }
             }
         }
     }

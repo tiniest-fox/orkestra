@@ -123,6 +123,7 @@ export function useLogs(
         activeSessionIdRef.current === sessionToFetch
       ) {
         if (!isDisconnectError(err)) {
+          cursorRef.current = null;
           setLogs([]);
           setError(err);
         }

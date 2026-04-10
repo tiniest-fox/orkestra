@@ -14,7 +14,7 @@ use orkestra_types::domain::{
 
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
 
-type LogEntryRecord = (String, i32, LogEntry, Option<String>);
+type LogEntryRecord = (String, i64, LogEntry, Option<String>);
 
 /// In-memory implementation of `WorkflowStore` for testing.
 pub struct InMemoryWorkflowStore {
@@ -401,16 +401,11 @@ impl WorkflowStore for InMemoryWorkflowStore {
         let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
         let mut result: Vec<_> = entries
             .iter()
-            .filter(|(sid, seq, _, _)| {
-                sid == stage_session_id && u64::from((*seq).cast_unsigned()) > after_sequence
-            })
+            .filter(|(sid, seq, _, _)| sid == stage_session_id && *seq as u64 > after_sequence)
             .cloned()
             .collect();
         result.sort_by_key(|(_, seq, _, _)| *seq);
-        let max_seq = result
-            .iter()
-            .map(|(_, seq, _, _)| u64::from((*seq).cast_unsigned()))
-            .max();
+        let max_seq = result.iter().map(|(_, seq, _, _)| *seq as u64).max();
         Ok((
             result.into_iter().map(|(_, _, entry, _)| entry).collect(),
             max_seq,

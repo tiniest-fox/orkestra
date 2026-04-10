@@ -103,8 +103,12 @@ fn route_to_rejection_target(
     comments: Vec<PrCommentData>,
     guidance: Option<String>,
 ) -> WorkflowResult<()> {
-    let target_stage =
-        stage::execute_rejection::resolve_rejection_target(workflow, current_stage, &task.flow)?;
+    let target_stage = stage::execute_rejection::resolve_rejection_target(
+        workflow,
+        current_stage,
+        &task.flow,
+        None,
+    )?;
     iteration_service.create_iteration(
         &task.id,
         &target_stage,

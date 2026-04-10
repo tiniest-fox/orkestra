@@ -217,6 +217,15 @@ impl WorkflowStore for SqliteWorkflowStore {
         interactions::log_entry::get::execute(&conn, stage_session_id)
     }
 
+    fn get_log_entries_after(
+        &self,
+        stage_session_id: &str,
+        after_sequence: u64,
+    ) -> WorkflowResult<(Vec<LogEntry>, Option<u64>)> {
+        let conn = self.lock_conn()?;
+        interactions::log_entry::get_after::execute(&conn, stage_session_id, after_sequence)
+    }
+
     fn get_annotated_log_entries(
         &self,
         stage_session_id: &str,

@@ -241,7 +241,7 @@ mod tests {
         assert!(work_stage.gate.is_some(), "Work stage should have a gate");
         let gate = work_stage.gate.as_ref().unwrap();
         assert!(
-            gate.command.contains("checks.sh"),
+            matches!(gate, crate::workflow::config::GateConfig::Automated { command, .. } if command.contains("checks.sh")),
             "Gate should reference checks.sh"
         );
 

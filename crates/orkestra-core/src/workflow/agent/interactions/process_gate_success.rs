@@ -1,4 +1,4 @@
-//! Handle gate script pass. Respects `auto_mode` and `is_automated` like non-gate stages.
+//! Handle gate script pass. Respects `auto_mode` like non-gate stages.
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
@@ -35,7 +35,7 @@ pub fn execute(
         task.current_stage()
     );
 
-    // Gate passed — respect auto_mode and is_automated, same as non-gate stages.
+    // Gate passed — respect auto_mode, same as non-gate stages.
     stage::auto_advance_or_review::execute(
         iteration_service,
         workflow,

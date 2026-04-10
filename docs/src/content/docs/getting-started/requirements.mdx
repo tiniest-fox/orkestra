@@ -1,0 +1,74 @@
+---
+title: Requirements
+description: Everything you need installed before running Orkestra — desktop app or CLI.
+section: Getting Started
+order: 2
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+Two things are required regardless of how you run Orkestra: **Git** and an **AI agent CLI** (Claude Code or OpenCode). The rest depends on whether you're using the desktop app or building from source.
+
+## Desktop App (Default)
+
+The Orkestra desktop app is the recommended way to get started. Download and install it from the [GitHub Releases page](https://github.com/tiniest-fox/orkestra/releases). No Rust or Node.js required.
+
+<Callout type="warning">
+The GitHub Releases page may not be live yet. If the link above returns a 404, check the repository directly for the latest build or installation instructions.
+</Callout>
+
+| Requirement | Details |
+|-------------|---------|
+| **macOS, Windows, or Linux** | Orkestra ships platform-specific builds for all three. macOS 10.15+, Windows 10+, and major Linux distributions are supported. |
+| **Git** | Must be installed and on `PATH`. Orkestra uses git worktrees — each Trak runs in an isolated branch and directory. |
+| **Claude Code** or **OpenCode** | At least one must be installed, on `PATH`, and authenticated. See [Agent CLIs](#agent-clis) below. |
+
+## `ork` CLI (Build from Source)
+
+If you prefer the terminal or want to build the binary yourself:
+
+| Requirement | Details |
+|-------------|---------|
+| **Rust** (latest stable) | Required to compile the binary. Install via [rustup.rs](https://rustup.rs). |
+| **Git** | Same as above. |
+| **Claude Code** or **OpenCode** | Same as above. |
+
+Node.js and pnpm are not required for CLI-only builds — they are only needed when building the full desktop app from source.
+
+<Callout type="note">
+If you're building the full desktop app from source, you also need **Node.js 18+** and **pnpm** for the React frontend in addition to the Rust toolchain.
+</Callout>
+
+## Agent CLIs
+
+Orkestra spawns AI agents as subprocesses. The binary must be on `PATH` and authenticated before you run Orkestra.
+
+**Claude Code** (default) — invoked as `claude`. Install at [claude.ai/code](https://claude.ai/code). Authentication uses OAuth; run `claude` once and follow the login prompt.
+
+**OpenCode** — invoked as `opencode`. Install at [opencode.ai](https://opencode.ai). Follow OpenCode's auth setup instructions.
+
+You only need one. The default workflow uses Claude Code. To use OpenCode, set the `model` field in your `workflow.yaml` — see [Agents](/docs/core-concepts/agents) for configuration details.
+
+<Callout type="warning">
+If an agent CLI is installed but not authenticated, Orkestra will fail when it tries to spawn the agent. The error comes from the agent subprocess — not Orkestra itself — and will appear in the Trak's log output.
+</Callout>
+
+## Verify Your Setup
+
+Before installing Orkestra, confirm the requirements are in place:
+
+```bash
+git --version       # Git is installed
+
+claude --version    # Claude Code is installed
+# or
+opencode --version  # OpenCode is installed
+```
+
+## Constraints
+
+**PATH must be set correctly.** Agent CLIs must be on `PATH` in the environment where Orkestra runs. If you installed `claude` via a version manager, ensure the shell that launches Orkestra picks it up. The desktop app uses your login shell's `PATH` on macOS and Linux, so GUI-launched apps should resolve it correctly.
+
+**Your project must be a Git repository.** Running `ork trak create` in a directory without a Git repo will fail. Run `git init` first if needed.
+
+**One agent is enough.** You do not need both Claude Code and OpenCode. Install whichever you plan to use.

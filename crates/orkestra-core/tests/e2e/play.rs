@@ -8,9 +8,7 @@
 use std::time::Duration;
 
 use orkestra_core::workflow::{
-    config::{
-        FlowConfig, GateConfig, IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
-    },
+    config::{FlowConfig, GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
     create_pr_sync,
     domain::{IterationTrigger, Question, TaskCreationMode},
     execution::SubtaskOutput,
@@ -246,9 +244,9 @@ fn test_play_with_subtasks() {
 /// `AwaitingQuestionAnswer`.
 #[test]
 fn test_play_questions_auto_answered() {
-    let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")
-        .with_prompt("planner.md")
-        .with_capabilities(StageCapabilities::with_questions())]);
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_prompt("planner.md")
+    ]);
     let ctx = TestEnv::with_workflow(workflow);
 
     let task = ctx
@@ -413,10 +411,8 @@ fn test_play_gate_failure_requeues_agent() {
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new(gate_command).with_timeout(10)),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
+            .with_gate(GateConfig::new_automated(gate_command).with_timeout(10)),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
     ])
     .with_integration(IntegrationConfig::new("work"));
 

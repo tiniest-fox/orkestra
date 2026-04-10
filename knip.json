@@ -1,8 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/main.tsx", "src/service/main.tsx", ".storybook/main.ts", ".storybook/preview.ts", "src/stories/**/*.stories.tsx"],
+  "entry": ["src/main.tsx", "src/service/main.tsx", "src/docs-api.ts", ".storybook/main.ts", ".storybook/preview.ts", "src/stories/**/*.stories.tsx"],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignore": ["src/**/*.test.{ts,tsx}", "src/test/**"],
+  "ignore": ["src/**/*.test.{ts,tsx}", "src/test/**", "docs/**"],
   "ignoreDependencies": ["vite-plugin-pwa", "@testing-library/*", "@storybook/react-vite", "@storybook/react", "@storybook/test", "@storybook/test-runner", "storybook"],
   "ignoreExportsUsedInFile": true,
   "vitest": false

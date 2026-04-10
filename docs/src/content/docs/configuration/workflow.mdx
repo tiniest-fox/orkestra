@@ -1,0 +1,237 @@
+---
+title: Workflow Reference
+description: Complete reference for .orkestra/workflow.yaml.
+order: 1
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+Every stage in a [Trak's](/docs/core-concepts/traks) pipeline — what agent runs, what gates check the output, what capabilities it has, and what happens on failure — is configured in `.orkestra/workflow.yaml`.
+
+## File structure
+
+A `workflow.yaml` file contains one or more named **flows**. A Trak is assigned to a flow at creation time and runs the flow's stages in order.
+
+```yaml
+version: 2
+
+flows:
+  default:
+    stages:
+      - name: work
+        artifact: summary
+        prompt: worker.md
+    integration:
+      on_failure: work
+```
+
+## Root fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | integer | No | Schema version. Current value: `2`. Defaults to `2` if omitted. |
+| `flows` | map | Yes | Named flows. At least one flow is required. |
+
+## Flow fields
+
+Each entry under `flows` is a named flow:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `stages` | list | Yes | Ordered list of stage configs. At least one stage is required. |
+| `integration` | object | Yes | Merge behavior configuration. |
+
+### Integration fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `on_failure` | string | Yes | — | Name of the stage to return to when a merge fails. Must match an existing stage name in this flow. |
+| `auto_merge` | boolean | No | `false` | If `true`, merges the Trak's branch automatically when the final stage completes. |
+
+<Callout type="warning" title="auto_merge is unverified">
+`auto_merge` appears in Orkestra's type definitions but its behavior has not been confirmed. Do not rely on this field until documentation is updated.
+</Callout>
+
+## Stage fields
+
+Each item in `stages` configures one stage in the flow:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | Yes | — | Unique identifier within the flow. Shown in CLI output and logs. |
+| `artifact` | string | Yes | — | Name under which the stage's output is stored and injected into later stages as context. Must be unique within the flow. Reserved values: `activity_log`, `task`. |
+| `description` | string | No | — | Human-readable description. Shown in UI and logs. |
+| `prompt` | string | No | `{name}.md` | Path to the [prompt template](/docs/core-concepts/prompt-templates), relative to `.orkestra/agents/`. Defaults to `{name}.md`. |
+| `model` | string | No | Default | AI model to use. See [Model values](#model-values). |
+| `is_automated` | boolean | No | `false` | If `true`, the stage auto-advances after producing valid output — no human approval step. Gates still run. |
+| `capabilities` | object | No | — | Optional extensions to stage behavior. See [Capabilities](#capabilities). |
+| `gate` | object | No | — | Shell script that runs after the agent produces output. See [Gate fields](#gate-fields). |
+| `disallowed_tools` | list | No | `[]` | Tools the agent cannot use. See [Tool restrictions](#tool-restrictions). |
+| `schema_file` | string | No | — | Advanced / unverified — confirm stability before use. Path to a custom JSON schema for the stage output, relative to `.orkestra/schemas/`. If omitted, Orkestra generates a schema from the stage's capabilities. |
+
+<Callout type="warning" title="schema_file is unverified">
+`schema_file` appears in Orkestra's configuration types but has not been confirmed as a stable, user-facing feature. Omit this field unless you have confirmed it works in your version.
+</Callout>
+
+`name` and `artifact` must be unique within a flow. The names `activity_log` and `task` are reserved and cannot be used as artifact values.
+
+### Model values
+
+The `model` field selects both the AI provider and the model. The provider is inferred from the model name.
+
+| Value | Provider | Model |
+|-------|----------|-------|
+| *(omitted)* | Claude Code | Default model |
+| `sonnet` | Claude Code | Claude Sonnet 4 |
+| `opus` | Claude Code | Claude Opus 4 |
+| `haiku` | Claude Code | Claude Haiku 4.5 |
+| `claudecode/sonnet` | Claude Code | Claude Sonnet 4 |
+| `claudecode/opus` | Claude Code | Claude Opus 4 |
+| `claudecode/haiku` | Claude Code | Claude Haiku 4.5 |
+| Full model ID (e.g., `claude-sonnet-4-6`) | Claude Code | Specific version |
+| `kimi-k2` | OpenCode | Kimi K2 |
+| `opencode/kimi-k2` | OpenCode | Kimi K2 |
+
+## Capabilities
+
+The `capabilities` object extends what a stage can do:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `ask_questions` | boolean | `false` | Allows the agent to ask clarifying questions before producing its artifact. The Trak pauses until the questions are answered. |
+| `subtasks` | object | — | Allows the agent to decompose the Trak into child Traks (Subtraks). See [Subtasks](#subtasks-capability). |
+| `approval` | object | — | Makes this an Agentic Gate: the agent produces an approve or reject verdict instead of a plain artifact. See [Approval](#approval-capability). |
+
+`subtasks` and `approval` cannot coexist on the same stage. `ask_questions` and `approval` can coexist. `ask_questions` and `subtasks` can coexist.
+
+<Callout type="warning" title="capabilities.approval is not the human approval step">
+`capabilities.approval` configures an **Agentic Gate** — a stage where an AI agent evaluates the work and produces a verdict. It is distinct from the human approval step that exists on every non-automated stage. See [Capabilities](/docs/core-concepts/capabilities) for the full explanation.
+</Callout>
+
+### Subtasks capability
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `flow` | string | No | `default` | The flow assigned to child Traks. Must be a named flow in `workflow.yaml`. |
+| `completion_stage` | string | No | Next stage | The stage the parent Trak resumes at after all Subtraks complete. Defaults to the stage immediately following this stage in the flow's `stages` list. Must be a valid stage name in the parent flow. |
+
+### Approval capability
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `rejection_stage` | string | No | Previous stage | The stage the Trak routes to on a reject verdict. Defaults to the stage immediately preceding this stage in the flow's `stages` list. Must be a valid stage name in the flow. |
+| `reset_session` | boolean | No | `false` | If `true`, the target stage starts a fresh agent session. If `false`, the existing session resumes with the rejection as feedback. |
+
+## Gate fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `command` | string | Yes | — | Shell command to execute in the Trak's worktree. Exit 0 passes; non-zero fails and sends the output to the agent as feedback. |
+| `timeout_seconds` | integer | No | `300` | Seconds before the gate is treated as failed. Must be greater than 0. |
+
+See [Gates](/docs/core-concepts/gates) for gate behavior and environment variables.
+
+## Tool restrictions
+
+Each item in `disallowed_tools` restricts the agent from using a specific tool:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pattern` | string | Yes | Tool name or pattern in Claude Code format (e.g., `Bash(cargo *)`, `Edit`). Cannot be empty. |
+| `message` | string | No | Explanation injected into the agent's prompt describing why this tool is restricted. Helps the agent work around the restriction. |
+
+Available tool patterns include: `Bash`, `Bash(<pattern>)`, `Edit`, `Write`, `Read`, `Glob`, `Grep`. Any Claude Code tool name is a valid pattern.
+
+<Callout type="note">
+Tool restrictions apply to Claude Code agents only. For OpenCode agents, the restriction message is injected into the prompt, but enforcement is not guaranteed.
+</Callout>
+
+## Validation
+
+Orkestra validates `workflow.yaml` at startup and reports errors immediately:
+
+- Stage `name` must be unique within a flow.
+- Stage `artifact` must be unique within a flow. `activity_log` and `task` are reserved.
+- `integration.on_failure` must name an existing stage in the flow.
+- `approval.rejection_stage` must name an existing stage in the flow (if specified).
+- `subtasks.completion_stage` must name an existing stage in the parent flow (if specified).
+- `subtasks.flow` must name an existing flow (if specified).
+- `gate.timeout_seconds` must be greater than 0.
+- `disallowed_tools[].pattern` cannot be empty.
+
+## Full example
+
+The default `workflow.yaml` created by Orkestra on first run:
+
+```yaml
+version: 2
+
+flows:
+  # Default pipeline — used for most Traks
+  default:
+    stages:
+      # Planning: agent asks questions, then produces a plan
+      - name: planning
+        artifact: plan
+        description: Clarifies requirements and produces an implementation plan
+        prompt: planner.md
+        capabilities:
+          ask_questions: true   # Agent can ask clarifying questions before outputting
+
+      # Breakdown: agent researches the codebase and proposes Subtraks
+      - name: breakdown
+        artifact: breakdown
+        description: Breaks the plan into parallel implementation Subtraks
+        prompt: breakdown.md
+        capabilities:
+          subtasks:
+            flow: subtask       # Subtraks use the subtask flow below
+
+      # Work: agent implements the changes; gate verifies quality
+      - name: work
+        artifact: summary
+        description: Implements code changes and produces a summary
+        prompt: worker.md
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 600  # 10 minutes; adjust for your project's test suite
+
+      # Review: agentic gate — agent approves or rejects the work
+      - name: review
+        artifact: verdict
+        description: Reviews completed work and produces an approve/reject verdict
+        prompt: reviewer.md
+        capabilities:
+          approval:
+            rejection_stage: work  # On reject, route back to the work stage
+
+      # Compound: captures learnings; automated — no human review step
+      - name: compound
+        artifact: learnings
+        description: Captures learnings to improve future Traks
+        prompt: compound.md
+        is_automated: true
+
+    integration:
+      on_failure: work  # If merge fails, route back to the work stage
+
+  # Subtask pipeline — simpler flow for child Traks
+  subtask:
+    stages:
+      - name: work
+        artifact: summary
+        prompt: worker.md
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 600
+
+      - name: review
+        artifact: verdict
+        prompt: reviewer.md
+        capabilities:
+          approval:
+            rejection_stage: work
+
+    integration:
+      on_failure: work
+```

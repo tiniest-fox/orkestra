@@ -337,8 +337,8 @@ fn test_log_viewing_with_pagination() {
     }
 
     // Get all logs (baseline)
-    let all_logs = api
-        .get_task_logs(&task.id, Some("planning"), None)
+    let (all_logs, _cursor) = api
+        .get_task_logs(&task.id, Some("planning"), None, None)
         .expect("get all logs");
     assert_eq!(all_logs.len(), 10);
 
@@ -438,8 +438,8 @@ fn test_get_logs_by_session_id() {
         .expect("append log to session 2");
 
     // Fetch by specific session_id (session 1) - should get only session 1 logs
-    let logs = api
-        .get_task_logs(&task.id, None, Some(&session1.id))
+    let (logs, _cursor) = api
+        .get_task_logs(&task.id, None, Some(&session1.id), None)
         .expect("get logs by session_id");
     assert_eq!(logs.len(), 1);
     if let LogEntry::Text { content } = &logs[0] {
@@ -452,8 +452,8 @@ fn test_get_logs_by_session_id() {
     }
 
     // Fetch by session 2 - should get only session 2 logs
-    let logs = api
-        .get_task_logs(&task.id, None, Some(&session2.id))
+    let (logs, _cursor) = api
+        .get_task_logs(&task.id, None, Some(&session2.id), None)
         .expect("get logs for session 2");
     assert_eq!(logs.len(), 1);
     if let LogEntry::Text { content } = &logs[0] {
@@ -467,8 +467,8 @@ fn test_get_logs_by_session_id() {
 
     // Verify session_id takes precedence over stage parameter
     // Even when stage is provided, session_id should be used
-    let logs = api
-        .get_task_logs(&task.id, Some("work"), Some(&session1.id))
+    let (logs, _cursor) = api
+        .get_task_logs(&task.id, Some("work"), Some(&session1.id), None)
         .expect("get logs with both stage and session_id");
     assert_eq!(logs.len(), 1);
     if let LogEntry::Text { content } = &logs[0] {

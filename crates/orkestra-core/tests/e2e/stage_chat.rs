@@ -8,7 +8,7 @@
 use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
     workflow::{
-        config::{StageCapabilities, StageConfig, WorkflowConfig},
+        config::{GateConfig, StageConfig, WorkflowConfig},
         domain::{IterationTrigger, LogEntry, StageSession},
         ports::WorkflowStore,
         runtime::TaskState,
@@ -27,7 +27,7 @@ use crate::helpers::{MockAgentOutput, TestEnv};
 fn chat_test_workflow() -> WorkflowConfig {
     WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_capabilities(StageCapabilities::with_approval(None))])
+        .with_gate(GateConfig::Agentic)])
 }
 
 /// Save a `StageSession` directly to the database (bypassing `WorkflowApi`'s private store).
@@ -135,9 +135,9 @@ fn test_send_message_enters_chat_mode_during_awaiting_approval() {
     );
 
     // Verify: UserMessage log entry stored with resume_type "chat"
-    let logs = ctx
+    let (logs, _cursor) = ctx
         .api()
-        .get_task_logs(&task_id, Some("work"), None)
+        .get_task_logs(&task_id, Some("work"), None, None)
         .unwrap();
     let has_user_message = logs.iter().any(|e| {
         matches!(
@@ -373,9 +373,9 @@ fn test_send_message_during_interrupted() {
     );
 
     // Verify log entry with resume_type "chat"
-    let logs = ctx
+    let (logs, _cursor) = ctx
         .api()
-        .get_task_logs(&task_id, Some("work"), None)
+        .get_task_logs(&task_id, Some("work"), None, None)
         .unwrap();
     let has_user_message = logs.iter().any(|e| {
         matches!(
@@ -640,11 +640,12 @@ fn test_chat_structured_output_completes_stage() {
 
     assert!(detected, "Valid approval JSON should be detected");
 
-    // Task should still be in AwaitingApproval (approval output awaits human confirmation)
+    // Task should be in Finishing state — approval via chat enters commit pipeline directly
+    // (same as when the agent produces Approval { approve } in normal mode)
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
-        task.is_awaiting_review(),
-        "Task should still be awaiting review after approval output (human must confirm), got: {:?}",
+        matches!(task.state, TaskState::Finishing { .. }),
+        "Task should be Finishing after approval via chat, got: {:?}",
         task.state
     );
 

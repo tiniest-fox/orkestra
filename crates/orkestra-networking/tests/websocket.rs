@@ -12,7 +12,7 @@ use tokio_tungstenite::{connect_async, WebSocketStream};
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
-    config::{StageCapabilities, StageConfig, WorkflowConfig},
+    config::{StageConfig, WorkflowConfig},
     execution::ProviderRegistry,
     runtime::{Artifact, TaskState},
     SqliteWorkflowStore, WorkflowApi, WorkflowStore,
@@ -31,7 +31,7 @@ const TEST_TOKEN: &str = "test-static-token";
 /// A simple workflow config for tests.
 fn test_workflow() -> WorkflowConfig {
     WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("planning", "plan"),
         StageConfig::new("work", "summary"),
     ])
 }

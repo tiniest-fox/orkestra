@@ -20,7 +20,7 @@
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::{
-    config::{StageConfig, WorkflowConfig},
+    config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
     runtime::{Outcome, TaskState},
     TaskCreationMode,
@@ -383,13 +383,13 @@ fn test_exhaustive_workflow_flow() {
     // Step 8: Reviewer rejects to Work → Working → AwaitingReview
     // =========================================================================
 
-    // Queue outputs: first for reviewer (rejection), then for worker (summary)
-    // Both agents run in the same tick cycle
+    // Pre-queue the work agent's output for after the rejection is confirmed
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code style issues found - please fix formatting".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -404,8 +404,20 @@ fn test_exhaustive_workflow_flow() {
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
-    ctx.advance(); // processes reviewer rejection → moves to work stage → spawns work agent (completion ready)
-    ctx.advance(); // processes work output
+    ctx.advance(); // processes reviewer rejection → AwaitingRejectionConfirmation (human must confirm)
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
+        "Reviewer rejection pauses for human confirmation"
+    );
+
+    // Human confirms the rejection → work stage queued
+    ctx.api()
+        .approve(&task_id)
+        .expect("Should confirm reviewer rejection");
+    ctx.advance(); // spawns work agent (pre-queued output consumed) + processes output → AwaitingApproval
 
     // VERIFY: Work agent after cross-stage rejection → fresh spawn (Rejection is a returning trigger).
     // Full prompt with reviewer feedback embedded.
@@ -429,10 +441,11 @@ fn test_exhaustive_workflow_flow() {
     // Check the iteration recorded the rejection
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let rejection_iter = iterations.iter().find(|i| {
-        matches!(
-            i.outcome.as_ref(),
-            Some(Outcome::Rejection { target, .. }) if target == "work"
-        )
+        // Accept either Rejection (auto_mode) or AwaitingRejectionReview (confirmed by human)
+        i.outcome
+            .as_ref()
+            .and_then(|o| o.rejection_target())
+            .is_some_and(|t| t == "work")
     });
     assert!(rejection_iter.is_some(), "Should have rejection iteration");
 
@@ -492,13 +505,14 @@ fn test_exhaustive_workflow_flow() {
     // Integration is instant now — the same tick cycle that processes the review output
     // will also trigger integration (which fails), recover to "work" stage, and
     // immediately spawn the work agent. Both outputs must be queued before that tick.
-    // The mock queue is FIFO per task, so the review agent consumes "verdict" first,
+    // The mock queue is FIFO per task, so the review agent consumes the approval first,
     // then the recovery work agent consumes "summary".
     ctx.set_output(
         &task_id,
-        MockAgentOutput::Artifact {
-            name: "verdict".to_string(),
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
             content: "LGTM! All checks pass.".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -518,7 +532,7 @@ fn test_exhaustive_workflow_flow() {
     // No trigger on the new review iteration — classified as untriggered re-entry → session superseded.
     ctx.assert_full_prompt("verdict", false, true);
 
-    ctx.advance(); // processes review → auto-approve → Done → integration fails (sync) → recovers to work → spawns work agent (completion ready)
+    ctx.advance(); // processes reviewer approval → Finishing → Done → integration fails (sync) → recovers to work → spawns work agent (completion ready)
     ctx.advance(); // processes work output
 
     // =========================================================================
@@ -591,19 +605,20 @@ fn test_exhaustive_workflow_flow() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
 
-    // Orchestrator spawns reviewer (automated stage auto-transitions to Done)
+    // Orchestrator spawns reviewer (reviewer approves directly → Done → integration runs)
     // Then auto-integration runs and succeeds (no conflict this time)
     ctx.set_output(
         &task_id,
-        MockAgentOutput::Artifact {
-            name: "verdict".to_string(),
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
             content: "Conflict resolved correctly".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
-    ctx.advance(); // processes review → auto-approve → Done → integration succeeds (sync) → Archived
+    ctx.advance(); // processes reviewer approval → Finishing → Done → integration succeeds (sync) → Archived
 
     // Auto-integration should have completed successfully and task becomes Archived
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -668,10 +683,23 @@ fn test_exhaustive_workflow_flow() {
 /// Test that approval output from a stage without approval capability is rejected
 #[test]
 fn test_approval_validation() {
-    let ctx = TestEnv::with_git(
-        &test_default_workflow(),
-        &["planner", "breakdown", "worker", "reviewer"],
-    );
+    // Use a custom workflow where work does NOT have an agentic gate (no approval capability).
+    // This lets us verify that an agent producing Approval output from a non-capable stage
+    // causes a task failure.
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("breakdown", "breakdown")
+            .with_prompt("breakdown.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary").with_prompt("worker.md"), // No gate → no approval capability
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_gate(GateConfig::Agentic),
+    ])
+    .with_integration(IntegrationConfig::new("work"));
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     // Create task and get to work stage (waits for async setup)
     let task = ctx.create_task("Test", "Test task", None);
@@ -713,6 +741,7 @@ fn test_approval_validation() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Should fail".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -750,8 +779,7 @@ fn test_workflow_config_from_file() {
 
     // Review has approval capability
     let review = api.workflow().stage("default", "review").unwrap();
-    assert!(review.capabilities.has_approval());
-    assert!(review.is_automated);
+    assert!(review.has_agentic_gate());
 
     // Integration config defaults to work
     assert_eq!(
@@ -766,14 +794,16 @@ fn test_workflow_config_from_file() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_custom_integration_on_failure() {
-    use orkestra_core::workflow::config::{IntegrationConfig, StageConfig};
+    use orkestra_core::workflow::config::IntegrationConfig;
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"), // No gate: auto-advances after artifact
     ])
     .with_integration(IntegrationConfig {
         on_failure: "planning".into(),
@@ -899,9 +929,7 @@ fn test_custom_integration_on_failure() {
 #[allow(clippy::too_many_lines)]
 fn test_integration_failure_uses_flow_on_failure_override() {
     use indexmap::IndexMap;
-    use orkestra_core::workflow::config::{
-        FlowConfig, IntegrationConfig, StageCapabilities, StageConfig,
-    };
+    use orkestra_core::workflow::config::{FlowConfig, IntegrationConfig};
 
     // Build workflow where:
     // - Default flow integration.on_failure = "work"
@@ -913,11 +941,11 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             stages: vec![
                 StageConfig::new("planning", "plan")
                     .with_prompt("planner.md")
-                    .with_capabilities(StageCapabilities::with_questions()),
-                StageConfig::new("work", "summary").with_prompt("worker.md"),
-                StageConfig::new("review", "verdict")
-                    .with_prompt("reviewer.md")
-                    .automated(),
+                    .with_gate(GateConfig::Agentic),
+                StageConfig::new("work", "summary")
+                    .with_prompt("worker.md")
+                    .with_gate(GateConfig::Agentic),
+                StageConfig::new("review", "verdict").with_prompt("reviewer.md"), // No gate: auto-advances
             ],
             integration: IntegrationConfig {
                 on_failure: "planning".to_string(),
@@ -929,11 +957,11 @@ fn test_integration_failure_uses_flow_on_failure_override() {
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"), // No gate: auto-advances
     ])
     .with_integration(IntegrationConfig {
         on_failure: "work".to_string(), // Global setting
@@ -1083,10 +1111,8 @@ fn test_gate_script_with_recovery() {
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new(gate_command).with_timeout(10)),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
+            .with_gate(GateConfig::new_automated(gate_command).with_timeout(10)),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -1272,10 +1298,10 @@ fn test_recovery_archives_already_merged_task() {
     use orkestra_core::workflow::{config::StageConfig, OrchestratorEvent};
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -1383,10 +1409,10 @@ fn test_recovery_retries_unmerged_task() {
     use orkestra_core::workflow::{config::StageConfig, OrchestratorEvent};
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -1473,7 +1499,8 @@ fn test_recovery_retries_unmerged_task() {
 fn test_opencode_no_pregenerated_session_id() {
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "result")
         .with_prompt("worker.md")
-        .with_model("opencode/kimi-k2.5")]);
+        .with_model("opencode/kimi-k2.5")
+        .with_gate(GateConfig::Agentic)]);
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
     let task = ctx.create_task(
@@ -1568,17 +1595,16 @@ fn test_opencode_no_pregenerated_session_id() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_session_reset_on_cross_stage_rejection() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
     use orkestra_core::workflow::domain::SessionState;
-    use orkestra_core::workflow::runtime::Outcome;
 
     // Rejection always supersedes the target stage session (no flag needed).
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     // Create test env with custom agent definition using Handlebars
@@ -1646,8 +1672,10 @@ fn test_session_reset_on_cross_stage_rejection() {
         "Session ID should be UUID, not hardcoded format"
     );
 
-    // Approve work → advances to review (automated)
+    // Approve work → advances to review
     ctx.api().approve(&task_id).unwrap();
+    // Enable auto_mode so the reviewer's rejection auto-executes (no human confirmation step)
+    ctx.api().set_auto_mode(&task_id, true).unwrap();
 
     // =========================================================================
     // Step 2: Review rejects to work (Rejection trigger always supersedes)
@@ -1659,6 +1687,7 @@ fn test_session_reset_on_cross_stage_rejection() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code needs refactoring — extract helper methods".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -1673,8 +1702,9 @@ fn test_session_reset_on_cross_stage_rejection() {
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
-    ctx.advance(); // processes review rejection → supersedes work session → moves to work → spawns work agent (completion ready)
-    ctx.advance(); // processes work output
+    ctx.advance(); // processes review rejection (auto_mode → auto-executes) → supersedes work session → spawns work agent (completion ready)
+    ctx.api().set_auto_mode(&task_id, false).unwrap(); // disable auto_mode before work#2 processes to prevent review#2 spawning
+    ctx.advance(); // processes work output → AwaitingApproval (auto_mode=false, GateConfig::Agentic)
 
     // =========================================================================
     // Step 3: Verify iteration history (chronological ordering)
@@ -1831,17 +1861,16 @@ fn test_session_reset_on_cross_stage_rejection() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_rejection_always_supersedes_session() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
     use orkestra_core::workflow::domain::SessionState;
-    use orkestra_core::workflow::runtime::Outcome;
 
     // Standard workflow: review rejects to work — supersession happens regardless of flags
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -1874,14 +1903,16 @@ fn test_rejection_always_supersedes_session() {
         .expect("Work session should exist");
     let original_id = original_session.id.clone();
 
-    // Approve → review (automated) → reject back to work
+    // Approve → review → reject back to work (auto_mode for auto-execution of rejection)
     ctx.api().approve(&task_id).unwrap();
+    ctx.api().set_auto_mode(&task_id, true).unwrap();
 
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -1896,8 +1927,9 @@ fn test_rejection_always_supersedes_session() {
         },
     );
     ctx.advance(); // spawns reviewer
-    ctx.advance(); // processes rejection → moves to work → spawns work agent
-    ctx.advance(); // processes work output
+    ctx.advance(); // processes rejection (auto_mode → auto-executes) → moves to work → spawns work agent
+    ctx.api().set_auto_mode(&task_id, false).unwrap(); // disable auto_mode before work#2 processes to prevent review#2 spawning
+    ctx.advance(); // processes work output → AwaitingApproval (auto_mode=false, GateConfig::Agentic)
 
     // Verify iteration history (ORDER BY started_at, iteration_number)
     // [0] work#1   (Approved)
@@ -1998,14 +2030,15 @@ fn test_rejection_always_supersedes_session() {
 /// performance overhead.
 #[test]
 fn test_handlebars_passthrough_for_plain_definitions() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig};
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -2318,12 +2351,12 @@ fn test_human_rejection_resumes_session_even_with_activity() {
 /// preserving the session so the agent can resume with context.
 #[test]
 fn test_human_rejection_resumes_session() {
-    use orkestra_core::workflow::config::StageConfig;
     use orkestra_core::workflow::domain::SessionState;
 
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md")
-    ]);
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::Agentic)])
+    .with_integration(IntegrationConfig::new("work"));
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
     let task = ctx.create_task("Resume test", "Test human rejection resumes", None);
@@ -2409,16 +2442,18 @@ fn test_human_rejection_resumes_session() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_rejection_review_override_then_approval() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
-
     // Non-automated review stage with approval capability (rejection → work)
-    let workflow = enable_auto_merge(WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        // Intentionally NOT .automated() — human review required
-    ]));
+    let workflow = enable_auto_merge(
+        WorkflowConfig::new(vec![
+            StageConfig::new("work", "summary")
+                .with_prompt("worker.md")
+                .with_gate(GateConfig::Agentic),
+            StageConfig::new("review", "verdict")
+                .with_prompt("reviewer.md")
+                .with_gate(GateConfig::Agentic),
+        ])
+        .with_integration(IntegrationConfig::new("work")),
+    );
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -2472,6 +2507,7 @@ fn test_rejection_review_override_then_approval() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests are incomplete — missing edge case coverage".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -2622,15 +2658,16 @@ fn test_rejection_review_override_then_approval() {
 /// pending rejection), the task should move to the rejection target stage (work).
 #[test]
 fn test_rejection_review_confirm() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
-
     // Non-automated review stage
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-    ]);
+            .with_gate(GateConfig::Agentic),
+    ])
+    .with_integration(IntegrationConfig::new("work"));
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -2661,6 +2698,7 @@ fn test_rejection_review_confirm() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code quality is poor".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -2714,27 +2752,27 @@ fn test_rejection_review_confirm() {
 /// human review — they should execute immediately (same as before).
 #[test]
 fn test_automated_review_rejection_skips_human_review() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
-
-    // Automated review stage
+    // When a task has auto_mode=true, reviewer rejections auto-execute without human confirmation.
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
-    ]);
+            .with_gate(GateConfig::Agentic),
+    ])
+    .with_integration(IntegrationConfig::new("work"));
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
     let task = ctx.create_task(
         "Automated rejection test",
-        "Test that automated stages skip rejection review",
+        "Test that auto_mode tasks skip rejection review",
         None,
     );
     let task_id = task.id.clone();
 
-    // Work → produce artifact → approve → review
+    // Work → produce artifact → approve (with auto_mode=false) → then enable auto_mode
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -2745,15 +2783,18 @@ fn test_automated_review_rejection_skips_human_review() {
         },
     );
     ctx.advance(); // spawns worker
-    ctx.advance(); // processes output
+    ctx.advance(); // processes output → AwaitingApproval
     ctx.api().approve(&task_id).unwrap();
+    // Enable auto_mode: reviewer rejection will now auto-execute without human confirmation
+    ctx.api().set_auto_mode(&task_id, true).unwrap();
 
-    // Queue rejection + work output (both consumed in same cycle since automated)
+    // Queue rejection + work output (rejection auto-executes, work auto-advances)
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs refactoring".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -2767,18 +2808,9 @@ fn test_automated_review_rejection_skips_human_review() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns reviewer (completion ready)
-    ctx.advance(); // processes rejection → auto-executes → moves to work → spawns worker
-    ctx.advance(); // processes work output
-
-    // Task should have moved through work, NOT paused in review
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.current_stage(),
-        Some("work"),
-        "Automated rejection should skip human review and go directly to work"
-    );
-    assert!(task.is_awaiting_review());
+    ctx.advance(); // advance work → review → spawns reviewer (completion ready)
+    ctx.advance(); // processes rejection → auto_mode → auto-executes → work Queued → spawns worker
+    ctx.advance(); // processes work output → auto_mode → auto-advances
 
     // Verify the rejection was an immediate Rejection (not AwaitingRejectionReview)
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -2790,7 +2822,7 @@ fn test_automated_review_rejection_skips_human_review() {
     });
     assert!(
         rejection_iter.is_some(),
-        "Automated stage should produce immediate Rejection outcome"
+        "auto_mode task should produce immediate Rejection outcome (not AwaitingRejectionReview)"
     );
     let awaiting_review = iterations.iter().any(|i| {
         matches!(
@@ -2800,7 +2832,7 @@ fn test_automated_review_rejection_skips_human_review() {
     });
     assert!(
         !awaiting_review,
-        "Automated stage should NOT produce AwaitingRejectionReview"
+        "auto_mode task should NOT produce AwaitingRejectionReview"
     );
 }
 
@@ -2823,21 +2855,21 @@ fn test_automated_review_rejection_skips_human_review() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_artifact_generation_for_all_output_types() {
-    use orkestra_core::workflow::config::{GateConfig, StageCapabilities, StageConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig};
 
     // Multi-stage workflow covering all output types:
-    // planning (questions) → work (with gate) → review (approval, non-automated)
+    // planning (questions, with gate) → work (with automated gate) → review (approval, Agentic)
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new("echo 'all checks passed'").with_timeout(10)),
+            .with_gate(GateConfig::new_automated("echo 'all checks passed'").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        // Intentionally NOT .automated() — human review required
+            .with_gate(GateConfig::Agentic),
+        // Intentionally NOT — human review required
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
@@ -3017,11 +3049,12 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Missing integration tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns reviewer → drain_active → rejection processed → AwaitingApproval
+    ctx.advance(); // spawns reviewer → drain_active → rejection processed → AwaitingRejectionConfirmation
 
     let task = ctx.api().get_task(&task_id).unwrap();
 
@@ -3036,7 +3069,7 @@ fn test_artifact_generation_for_all_output_types() {
         "Agent rejection verdict should create an artifact with the rejection content"
     );
 
-    // Task should be paused at AwaitingReview (non-automated stage)
+    // Task should be paused at AwaitingRejectionConfirmation (non-automated stage with reviewer rejection)
     assert_eq!(task.current_stage(), Some("review"));
     assert!(task.is_awaiting_review());
 
@@ -3061,11 +3094,12 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Re-evaluated: all tests adequate, implementation is solid".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns reviewer → drain_active → approval output processed → AwaitingApproval
+    ctx.advance(); // spawns reviewer → drain_active → approval enters commit pipeline directly
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
@@ -3073,14 +3107,7 @@ fn test_artifact_generation_for_all_output_types() {
         Some("Re-evaluated: all tests adequate, implementation is solid"),
         "Agent approval verdict should create an artifact with approval content"
     );
-
-    // Human approves (should NOT change the artifact)
-    let task = ctx.api().approve(&task_id).unwrap();
-    assert_eq!(
-        task.artifact("verdict"),
-        Some("Re-evaluated: all tests adequate, implementation is solid"),
-        "Human approval should not change the verdict artifact"
-    );
+    // Reviewer approval is final — no human approve step needed
 
     ctx.advance(); // commit pipeline: Finishing → Finished → Done → integration → Archived
 
@@ -3244,17 +3271,14 @@ fn test_opencode_provider_fallback() {
 /// confirms the generator was called (if it weren't, integration would fail).
 #[test]
 fn test_commit_message_generation_during_integration() {
-    // Create a simple 2-stage workflow: work → review (automated with approval)
+    // Create a simple 2-stage workflow: work → review (with approval)
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(
-                orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
-                    "work".into(),
-                )),
-            )
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ])
     .with_integration(orkestra_core::workflow::config::IntegrationConfig {
         on_failure: "work".to_string(),
@@ -3301,12 +3325,13 @@ fn test_commit_message_generation_during_integration() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
 
-    // Set mock output for review stage (automated approval)
+    // Set mock output for review stage (reviewer approves directly)
     ctx.set_output(
         &task_id,
-        MockAgentOutput::Artifact {
-            name: "verdict".to_string(),
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
             content: "Approved! Changes look good.".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -3365,10 +3390,10 @@ fn test_interrupt_and_resume() {
     use orkestra_core::workflow::domain::IterationTrigger;
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -3481,9 +3506,9 @@ fn test_interrupt_and_resume_without_message() {
 /// Test multiple interrupt/resume cycles on the same task.
 #[test]
 fn test_interrupt_resume_multiple_cycles() {
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md")
-    ]);
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::Agentic)]);
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
     let task = ctx.create_task("Test multiple cycles", "Testing multiple cycles", None);
@@ -3563,9 +3588,9 @@ fn test_interrupt_resume_multiple_cycles() {
 /// Test that interrupting a task in the wrong phase returns an error.
 #[test]
 fn test_interrupt_wrong_phase() {
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md")
-    ]);
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::Agentic)]);
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
     let task = ctx.create_task("Test wrong phase", "Testing error case", None);
@@ -3689,13 +3714,11 @@ fn test_interrupted_task_not_auto_advanced() {
 /// Test that activity logs from agent output are stored on iteration records.
 #[test]
 fn activity_log_stored_on_iteration() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
 
     // Create a simple workflow with planning → work
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan")
-            .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("planning", "plan").with_prompt("planner.md"),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ]);
 
@@ -3747,13 +3770,13 @@ fn activity_log_stored_on_iteration() {
 /// Test that stored activity logs are injected into the next stage's prompt.
 #[test]
 fn activity_log_injected_into_next_stage_prompt() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
 
     // Create workflow with planning → work stages
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ]);
 
@@ -3823,17 +3846,19 @@ fn activity_log_injected_into_next_stage_prompt() {
 /// Test that activity logs accumulate across multiple stages.
 #[test]
 fn activity_log_accumulates_across_stages() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
 
     // Create workflow with planning → work → review stages
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
@@ -3882,6 +3907,7 @@ fn activity_log_accumulates_across_stages() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -3914,13 +3940,13 @@ fn activity_log_accumulates_across_stages() {
 /// Test that missing `activity_log` (None) doesn't break the workflow.
 #[test]
 fn activity_log_none_does_not_break() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
 
     // Create workflow with planning → work
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ]);
 
@@ -3993,13 +4019,13 @@ fn activity_log_none_does_not_break() {
 /// Test that `activity_log.md` is actually written to the worktree with correct content.
 #[test]
 fn activity_log_file_written_with_correct_content() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
     use std::fs;
 
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ]);
 
@@ -4062,15 +4088,16 @@ fn activity_log_file_written_with_correct_content() {
 /// Test that activity logs are stored on reviewer iterations (including rejections).
 #[test]
 fn activity_log_on_rejection_retry() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
 
-    // Create workflow with work → review stages (review has approval capability)
+    // Create workflow with work → review stages (both with approval capability)
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -4103,6 +4130,7 @@ fn activity_log_on_rejection_retry() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Found bug in error handling".to_string(),
+            route_to: None,
             activity_log: Some(
                 "Reviewed implementation. Tested edge cases. Found null pointer bug.".to_string(),
             ),
@@ -4154,21 +4182,19 @@ fn activity_log_on_rejection_retry() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_reentry_spawns_fresh_session() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
     use orkestra_core::workflow::domain::SessionState;
 
     // 2-stage workflow: work (with passing gate) → review
     // Review has approval rejecting back to work. After work completes again,
     // review re-enters without any trigger → should always spawn fresh session.
-    use orkestra_core::workflow::config::GateConfig;
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
+            .with_gate(GateConfig::new_automated("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -4206,6 +4232,7 @@ fn test_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4225,7 +4252,8 @@ fn test_reentry_spawns_fresh_session() {
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit → review Queued
-    ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → work re-queued
+    ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → AwaitingRejectionConfirmation
+    ctx.api().approve(&task_id).unwrap(); // confirm rejection → work re-queued
 
     // Verify this is NOT a resume (first spawn)
     let first_review_config = ctx.last_run_config();
@@ -4254,6 +4282,7 @@ fn test_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4324,19 +4353,16 @@ fn test_reentry_spawns_fresh_session() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_untriggered_reentry_spawns_fresh_session() {
-    use orkestra_core::workflow::config::{
-        GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
-    };
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
 
     // Same workflow — untriggered re-entry always supersedes regardless of any flag
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
+            .with_gate(GateConfig::new_automated("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -4374,6 +4400,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4393,7 +4420,8 @@ fn test_untriggered_reentry_spawns_fresh_session() {
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit → review Queued
-    ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → work re-queued
+    ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → AwaitingRejectionConfirmation
+    ctx.api().approve(&task_id).unwrap(); // confirm rejection → work re-queued
 
     // Record the first review session ID
     let first_review_session = ctx
@@ -4415,6 +4443,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -4814,9 +4843,9 @@ fn test_disallowed_tools_empty_no_flag() {
 fn test_interrupt_message_in_resume_prompt() {
     use orkestra_core::workflow::config::StageConfig;
 
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md")
-    ]);
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::Agentic)]);
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
     let task = ctx.create_task(
@@ -4920,15 +4949,17 @@ fn test_interrupt_message_in_resume_prompt() {
 /// and verify the second review's prompt content.
 #[test]
 fn test_activity_log_intervening_stage_preserves_entries() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
 
     // Build a simple workflow: work → review (non-automated, can reject back to work)
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        // NOT .automated() - human approval required so we control the flow
+            .with_gate(GateConfig::Agentic),
+        // human approval required so we control the flow
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -4966,6 +4997,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: Some("- Log R: review feedback".to_string()),
             resources: vec![],
         },
@@ -5016,6 +5048,7 @@ fn test_activity_log_intervening_stage_preserves_entries() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -5186,19 +5219,17 @@ fn test_activity_log_file_reference_in_prompt() {
 /// are preserved.
 #[test]
 fn test_activity_log_with_script_and_review_rejection() {
-    use orkestra_core::workflow::config::{
-        GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
-    };
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
 
     // Build workflow: work (with gate) → review (can reject back to work)
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
+            .with_gate(GateConfig::new_automated("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        // NOT .automated() - human approval required so we control the flow
+            .with_gate(GateConfig::Agentic),
+        // NOT - human approval required so we control the flow
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -5234,6 +5265,7 @@ fn test_activity_log_with_script_and_review_rejection() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more error handling".to_string(),
+            route_to: None,
             activity_log: Some("- Log R: review requested changes".to_string()),
             resources: vec![],
         },
@@ -5267,6 +5299,7 @@ fn test_activity_log_with_script_and_review_rejection() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -5340,6 +5373,7 @@ fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6224,14 +6258,15 @@ fn test_stages_with_logs_ordered_chronologically() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig};
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -6288,6 +6323,7 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs refactoring".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6302,7 +6338,9 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
         },
     );
     ctx.advance(); // spawns reviewer
-    ctx.advance(); // processes rejection → supersedes work → spawns new work
+    ctx.advance(); // processes rejection → AwaitingRejectionConfirmation
+    ctx.api().approve(&task_id).unwrap(); // confirm rejection → work re-queued
+    ctx.advance(); // spawns new worker
     ctx.advance(); // processes new work output
 
     // Get task view - work should now have 2 sessions
@@ -6481,7 +6519,7 @@ fn test_request_update_on_done_task() {
 /// 3. Prompts reference file paths (not inline content)
 #[test]
 fn test_artifact_materialization() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
     use std::path::Path;
 
     // Two-stage workflow: planning → work
@@ -6489,7 +6527,7 @@ fn test_artifact_materialization() {
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ]);
 
@@ -6595,7 +6633,7 @@ fn test_artifact_materialization() {
 /// 3. Prompts reference all artifact file paths
 #[test]
 fn test_multiple_artifacts_materialized() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
     use std::path::Path;
 
     // Three-stage workflow: planning → work → review
@@ -6603,11 +6641,13 @@ fn test_multiple_artifacts_materialized() {
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
-            .with_capabilities(StageCapabilities::with_questions()),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
@@ -6656,6 +6696,7 @@ fn test_multiple_artifacts_materialized() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6725,20 +6766,17 @@ fn test_multiple_artifacts_materialized() {
 /// The full prompt should reference artifact file paths, not inline content.
 #[test]
 fn test_untriggered_reentry_prompt_references_file_paths() {
-    use orkestra_core::workflow::config::{
-        GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
-    };
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
     use std::path::Path;
 
     // Workflow with work (gate) → review (with rejection back to work)
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
+            .with_gate(GateConfig::new_automated("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -6774,6 +6812,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6796,6 +6835,7 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good now".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -6805,7 +6845,8 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit → review Queued
-    ctx.advance(); // spawn reviewer → drain_active → rejection → work re-queued
+    ctx.advance(); // spawn reviewer → drain_active → rejection → AwaitingRejectionConfirmation
+    ctx.api().approve(&task_id).unwrap(); // confirm rejection → work re-queued
     ctx.advance(); // spawn second worker → drain_active → AwaitingGate
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
@@ -6866,9 +6907,9 @@ fn test_untriggered_reentry_prompt_references_file_paths() {
 fn test_activity_only_persisted_on_agent_success() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
 
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md")
-    ]);
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::Agentic)]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
@@ -6994,7 +7035,7 @@ fn test_gate_pass_enters_commit_pipeline() {
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_gate(GateConfig::new("exit 0").with_timeout(10))]);
+        .with_gate(GateConfig::new_automated("exit 0").with_timeout(10))]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
     let task = ctx.create_task("Gate pass test", "Test gate pass", None);
@@ -7061,7 +7102,7 @@ fn test_gate_result_persisted() {
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_gate(GateConfig::new("echo 'gate check'").with_timeout(10))]);
+        .with_gate(GateConfig::new_automated("echo 'gate check'").with_timeout(10))]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
     let task = ctx.create_task("Gate result test", "Test gate_result is persisted", None);
@@ -7118,7 +7159,7 @@ fn test_gate_fail_requeues_with_feedback() {
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_gate(GateConfig::new("exit 1").with_timeout(10))])
+        .with_gate(GateConfig::new_automated("exit 1").with_timeout(10))])
     .with_integration(IntegrationConfig::new("work"));
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
@@ -7193,7 +7234,7 @@ fn test_gate_crash_recovery_resets_to_awaiting_gate() {
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_gate(GateConfig::new("exit 0").with_timeout(10))]);
+        .with_gate(GateConfig::new_automated("exit 0").with_timeout(10))]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
     let task = ctx.create_task("Gate recovery test", "Test gate crash recovery", None);
@@ -7225,17 +7266,16 @@ fn test_gate_crash_recovery_resets_to_awaiting_gate() {
 #[test]
 fn test_gate_pass_then_advances_to_next_stage() {
     use orkestra_core::workflow::config::{
-        GateConfig, IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
+        GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
     };
 
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
-            .with_gate(GateConfig::new("exit 0").with_timeout(10)),
+            .with_gate(GateConfig::new_automated("exit 0").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(),
+            .with_gate(GateConfig::Agentic),
     ])
     .with_integration(IntegrationConfig::new("work"));
 
@@ -7268,6 +7308,7 @@ fn test_gate_pass_then_advances_to_next_stage() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "LGTM".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -7303,7 +7344,7 @@ fn test_gate_timeout_treated_as_failure() {
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_gate(GateConfig::new("sleep 10").with_timeout(1))])
+        .with_gate(GateConfig::new_automated("sleep 10").with_timeout(1))])
     .with_integration(IntegrationConfig::new("work"));
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
@@ -7375,7 +7416,7 @@ fn test_interrupt_during_gate() {
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_gate(GateConfig::new("exit 0").with_timeout(10))]);
+        .with_gate(GateConfig::new_automated("exit 0").with_timeout(10))]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
     let task = ctx.create_task("Gate interrupt test", "Test interrupt during gate", None);
@@ -7454,17 +7495,14 @@ fn test_flow_gate_override_disables_gate() {
         "no-gate".to_string(),
         FlowConfig {
             // No gate in this flow's work stage — gate would fail if reached
-            stages: vec![StageConfig::new("work", "summary")
-                .with_prompt("worker.md")
-                .automated()],
+            stages: vec![StageConfig::new("work", "summary").with_prompt("worker.md")],
             integration: IntegrationConfig::new("work"),
         },
     );
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
-        .with_prompt("worker.md")
-        .automated() // skip approval so artifact goes directly to commit pipeline
-        .with_gate(GateConfig::new("exit 1").with_timeout(10))]) // gate would fail if reached
+        .with_prompt("worker.md") // skip approval so artifact goes directly to commit pipeline
+        .with_gate(GateConfig::new_automated("exit 1").with_timeout(10))]) // gate would fail if reached
     .with_integration(IntegrationConfig::new("work"))
     .with_flows(flows);
 
@@ -7533,17 +7571,15 @@ fn test_flow_gate_override_disables_gate() {
 
 /// Build a minimal 2-stage workflow where the review stage pauses for human approval.
 ///
-/// work (summary) → review (verdict, non-automated, `rejection_stage` = work)
+/// work (summary) → review (verdict, agentic gate, defaults to rejecting to previous stage)
 fn workflow_with_non_automated_review() -> WorkflowConfig {
     use orkestra_core::workflow::config::{
-        IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
+        GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
     };
 
     WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary"),
-        StageConfig::new("review", "verdict")
-            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        // Note: no .automated() — task pauses at AwaitingApproval
+        StageConfig::new("work", "summary").with_gate(GateConfig::Agentic),
+        StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
     ])
     .with_integration(IntegrationConfig::new("work"))
 }
@@ -7568,18 +7604,18 @@ fn advance_to_awaiting_approval(ctx: &TestEnv, task_id: &str) {
     ctx.api().approve(task_id).unwrap();
     ctx.advance(); // commit + advance to review
 
-    // Review stage — reviewer produces "approve" verdict; non-automated stage pauses
+    // Review stage — reviewer produces a verdict artifact; GateConfig::Agentic pauses at AwaitingApproval
     ctx.set_output(
         task_id,
-        MockAgentOutput::Approval {
-            decision: "approve".to_string(),
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
             content: "LGTM".to_string(),
             activity_log: None,
             resources: vec![],
         },
     );
     ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval → AwaitingApproval
+    ctx.advance(); // process verdict artifact → AwaitingApproval (GateConfig::Agentic, auto_mode=false)
 }
 
 /// Test normal rejection with line comments routes to the rejection target stage.
@@ -7745,6 +7781,7 @@ fn test_reject_with_comments_pending_rejection_review() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests are failing, fix them".to_string(),
+            route_to: None,
             activity_log: None,
             resources: vec![],
         },
@@ -7872,9 +7909,9 @@ fn test_pr_comments_context_reaches_agent_prompt() {
 fn test_resolved_env_threaded_to_agent_runner() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
 
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md")
-    ]);
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::Agentic)]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
     let task = ctx.create_task("Env threading test", "Verify env in RunConfig", None);
@@ -7935,7 +7972,7 @@ fn test_gate_script_receives_orkestra_env_vars() {
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
-        .with_gate(GateConfig::new(gate_command).with_timeout(10))]);
+        .with_gate(GateConfig::new_automated(gate_command).with_timeout(10))]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
     let task = ctx.create_task("Gate env test", "Verify ORKESTRA vars in gate", None);
@@ -7992,8 +8029,12 @@ fn test_gate_script_receives_orkestra_env_vars() {
 #[test]
 fn test_skip_stage_advances_through_orchestrator() {
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
@@ -8070,8 +8111,12 @@ fn test_skip_stage_advances_through_orchestrator() {
 #[test]
 fn test_send_to_stage_backward_through_orchestrator() {
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
 
@@ -8163,8 +8208,12 @@ fn test_send_to_stage_backward_through_orchestrator() {
 fn test_skip_last_stage_completes_task() {
     // work is the last stage in this 2-stage workflow
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
 
@@ -8231,7 +8280,9 @@ fn test_send_to_stage_respects_flow() {
         "quick".to_string(),
         FlowConfig {
             stages: vec![
-                StageConfig::new("planning", "plan").with_prompt("planner.md"),
+                StageConfig::new("planning", "plan")
+                    .with_prompt("planner.md")
+                    .with_gate(GateConfig::Agentic),
                 StageConfig::new("work", "summary").with_prompt("worker.md"),
             ],
             integration: IntegrationConfig::new("planning"),
@@ -8239,7 +8290,9 @@ fn test_send_to_stage_respects_flow() {
     );
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict").with_prompt("reviewer.md"),
     ])
@@ -8298,8 +8351,12 @@ fn test_send_to_stage_from_interrupted() {
     use orkestra_core::workflow::domain::IterationTrigger;
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
 
@@ -8409,7 +8466,9 @@ fn test_restart_stage_creates_fresh_iteration() {
     use orkestra_core::workflow::domain::IterationTrigger;
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
@@ -8502,7 +8561,9 @@ fn test_restart_stage_creates_fresh_iteration() {
 #[test]
 fn test_restart_stage_from_interrupted() {
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan").with_prompt("planner.md"),
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
@@ -8809,5 +8870,266 @@ fn test_restart_stage_from_blocked() {
         matches!(task.state, TaskState::Queued { ref stage } if stage == "planning"),
         "Task should be Queued at planning, got: {:?}",
         task.state
+    );
+}
+
+/// Test cursor-based incremental log fetching.
+///
+/// Verifies that:
+/// - `get_task_logs` with `cursor: None` returns all entries + a cursor
+/// - `get_task_logs` with the returned cursor returns no new entries + `cursor: None`
+/// - A second agent run adds new entries visible when fetching with the previous cursor
+#[test]
+fn test_cursor_based_incremental_log_fetch() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task(
+        "Test cursor fetch",
+        "A task to test cursor-based log fetching",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Run the planner with activity so log entries are written
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Initial plan".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns planner agent (emits LogLine before Completed)
+    ctx.advance(); // processes artifact output
+
+    // Fetch all entries with cursor=None (returns everything from sequence 0)
+    let (entries, cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, None)
+        .expect("get_task_logs should succeed");
+
+    assert!(
+        !entries.is_empty(),
+        "should have log entries after agent run with activity"
+    );
+    assert!(
+        cursor.is_some(),
+        "cursor should be set when entries are returned"
+    );
+
+    // Fetch again with the returned cursor — no new entries since last fetch
+    let (new_entries, new_cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, cursor)
+        .expect("get_task_logs with cursor should succeed");
+
+    assert!(
+        new_entries.is_empty(),
+        "no new entries since cursor was issued"
+    );
+    assert!(
+        new_cursor.is_none(),
+        "cursor should be None when no entries returned"
+    );
+
+    // Reject to trigger a retry — the new iteration writes additional log entries
+    ctx.api().reject(&task_id, "Needs more detail").unwrap();
+
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Improved plan".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns agent for retry (emits LogLine before Completed)
+    ctx.advance(); // processes artifact output
+
+    // Fetch with the original cursor — should see only entries from the new iteration
+    let (incremental_entries, new_cursor2) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, cursor)
+        .expect("incremental fetch with old cursor should succeed");
+
+    assert!(
+        !incremental_entries.is_empty(),
+        "should return new entries written during the second agent run"
+    );
+    assert!(
+        new_cursor2 > cursor,
+        "new cursor should advance beyond the previous cursor"
+    );
+}
+
+// =============================================================================
+// route_to Rejection Routing Tests
+// =============================================================================
+
+/// Three-stage workflow: planning → work → review (agentic gate).
+/// Used to test `route_to` rejection routing — reviewer can route back to any stage.
+fn workflow_with_route_to() -> WorkflowConfig {
+    WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan"),
+        StageConfig::new("work", "summary"),
+        StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
+    ])
+}
+
+/// Test that agent rejection with `route_to: Some("planning")` routes to the planning stage
+/// (skipping the default previous-stage fallback of "work").
+#[test]
+fn test_route_to_rejection_routes_to_specified_stage() {
+    use orkestra_core::workflow::execution::StageOutput;
+
+    let workflow = workflow_with_route_to();
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Test route_to routing", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through planning and work stages (no gate — auto-advance in 2 ticks each)
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan"));
+    ctx.advance(); // spawn planning
+    ctx.advance(); // process plan → enters commit pipeline → Queued(work)
+
+    ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
+    ctx.advance(); // spawn work
+    ctx.advance(); // process summary → enters commit pipeline → Queued(review)
+
+    // Review stage: agent rejects with route_to="planning" (skip work, go straight back)
+    ctx.set_output(
+        &task_id,
+        StageOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs rethinking from scratch".to_string(),
+            route_to: Some("planning".to_string()),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn review agent
+    ctx.advance(); // process rejection → auto_mode=false → AwaitingRejectionConfirmation
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+
+    // With auto_mode=false, reviewer rejection pauses at AwaitingRejectionConfirmation
+    // The pending rejection target should be "planning" (not "work", the previous stage)
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
+        "Task should be AwaitingRejectionConfirmation, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("review"));
+
+    // Confirm rejection — approve() when in AwaitingRejectionConfirmation confirms the rejection
+    ctx.api().approve(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("planning"),
+        "Task should route to planning stage (specified by route_to), got: {:?}",
+        task.state
+    );
+    assert!(matches!(task.state, TaskState::Queued { .. }));
+}
+
+/// Test that agent rejection without `route_to` falls back to the previous stage.
+#[test]
+fn test_route_to_fallback_routes_to_previous_stage() {
+    let workflow = workflow_with_route_to();
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Test route_to fallback", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through planning and work to review (no gate — auto-advance in 2 ticks each)
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan"));
+    ctx.advance(); // spawn planning
+    ctx.advance(); // process plan → enters commit pipeline → Queued(work)
+
+    ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
+    ctx.advance(); // spawn work
+    ctx.advance(); // process summary → enters commit pipeline → Queued(review)
+
+    // Review agent rejects with no route_to — should fall back to "work" (previous stage)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Implementation needs improvement".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn review
+    ctx.advance(); // process rejection
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+
+    // Pauses for human confirmation
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
+        "Expected AwaitingRejectionConfirmation, got: {:?}",
+        task.state
+    );
+
+    // approve() in AwaitingRejectionConfirmation confirms the rejection
+    ctx.api().approve(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Without route_to, should fall back to previous stage 'work', got: {:?}",
+        task.state
+    );
+}
+
+/// Test that an invalid `route_to` stage name returns `WorkflowError::InvalidTransition`.
+#[test]
+fn test_route_to_invalid_stage_returns_error() {
+    use std::sync::Arc;
+
+    use orkestra_core::workflow::execution::StageOutput;
+    use orkestra_core::workflow::ports::{WorkflowError, WorkflowStore};
+    use orkestra_core::workflow::runtime::TaskState;
+    use orkestra_core::workflow::InMemoryWorkflowStore;
+    use orkestra_core::workflow::WorkflowApi;
+
+    let workflow = workflow_with_route_to();
+    let store = Arc::new(InMemoryWorkflowStore::new());
+    let store_ref: Arc<dyn WorkflowStore> = Arc::clone(&store) as Arc<dyn WorkflowStore>;
+    let api = WorkflowApi::new(workflow, Arc::clone(&store) as Arc<dyn WorkflowStore>);
+
+    let mut task = api
+        .create_task("Test invalid route_to", "Desc", None)
+        .unwrap();
+    task.auto_mode = true;
+    task.state = TaskState::agent_working("review");
+    store_ref.save_task(&task).unwrap();
+    api.iteration_service()
+        .create_iteration(&task.id, "review", None)
+        .unwrap();
+
+    let output = StageOutput::Approval {
+        decision: "reject".to_string(),
+        content: "feedback".to_string(),
+        route_to: Some("nonexistent_stage".to_string()),
+        activity_log: None,
+        resources: vec![],
+    };
+
+    let result = api.process_agent_output(&task.id, output);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "Invalid route_to should return InvalidTransition error, got: {result:?}"
     );
 }

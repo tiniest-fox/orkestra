@@ -8,7 +8,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use super::stage::StageConfig;
+use super::stage::{GateConfig, StageConfig};
 use crate::runtime::{ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME};
 
 /// Name used by `WorkflowConfig::new()` for its single created flow.
@@ -194,6 +194,22 @@ impl WorkflowConfig {
         }
     }
 
+    /// Get the stage names a given stage can route to (for agentic gate schema).
+    ///
+    /// Returns all stage names in the flow if the stage has an agentic gate,
+    /// empty vec otherwise.
+    pub fn route_to_stage_names(&self, flow: &str, stage_name: &str) -> Vec<String> {
+        match self.stage(flow, stage_name) {
+            Some(stage) if stage.has_agentic_gate() => self
+                .stages_in_flow(flow)
+                .into_iter()
+                .filter(|s| s.name != stage_name)
+                .map(|s| s.name.clone())
+                .collect(),
+            _ => vec![],
+        }
+    }
+
     /// Check whether a stage name exists in the given flow.
     pub fn has_stage(&self, flow: &str, stage_name: &str) -> bool {
         self.flows
@@ -342,21 +358,6 @@ impl WorkflowConfig {
         let stage_names_set: std::collections::HashSet<&str> =
             stage_names.iter().copied().collect();
 
-        // Validate approval rejection_stage targets are within this flow
-        for stage in &flow.stages {
-            if let Some(ref approval) = stage.capabilities.approval {
-                if let Some(ref target) = approval.rejection_stage {
-                    if !stage_names_set.contains(target.as_str()) {
-                        errors.push(format!(
-                            "Flow \"{flow_name}\" stage \"{}\" has approval rejection_stage \"{}\" which is not in flow \"{flow_name}\". \
-                             Valid stages: {stage_names:?}",
-                            stage.name, target
-                        ));
-                    }
-                }
-            }
-        }
-
         // Validate integration.on_failure is in this flow
         if !flow.integration.on_failure.is_empty()
             && !stage_names_set.contains(flow.integration.on_failure.as_str())
@@ -384,17 +385,6 @@ impl WorkflowConfig {
                                 "Flow \"{flow_name}\" stage \"{}\" has subtasks.flow=\"{subtask_flow}\" \
                                  but flow \"{subtask_flow}\" doesn't exist. \
                                  Define the flow under 'flows:' or remove subtasks.flow.",
-                                stage.name
-                            ));
-                        }
-                    }
-                    if let Some(ref target) = subtask_caps.completion_stage {
-                        let stage_names: Vec<&str> =
-                            flow.stages.iter().map(|s| s.name.as_str()).collect();
-                        if !stage_names.contains(&target.as_str()) {
-                            errors.push(format!(
-                                "Flow \"{flow_name}\" stage \"{}\" has subtasks.completion_stage=\"{target}\" \
-                                 but stage \"{target}\" is not in flow \"{flow_name}\".",
                                 stage.name
                             ));
                         }
@@ -438,14 +428,18 @@ impl WorkflowConfig {
     fn validate_gates(&self, errors: &mut Vec<String>) {
         for (flow_name, flow) in &self.flows {
             for stage in &flow.stages {
-                if let Some(ref gate) = stage.gate {
-                    if gate.command.trim().is_empty() {
+                if let Some(GateConfig::Automated {
+                    command,
+                    timeout_seconds,
+                }) = &stage.gate
+                {
+                    if command.trim().is_empty() {
                         errors.push(format!(
                             "Flow \"{flow_name}\" stage \"{}\" has a gate with an empty command.",
                             stage.name
                         ));
                     }
-                    if gate.timeout_seconds == 0 {
+                    if *timeout_seconds == 0 {
                         errors.push(format!(
                             "Flow \"{flow_name}\" stage \"{}\" has a gate with timeout_seconds of 0. \
                              Timeout must be greater than 0.",
@@ -453,6 +447,7 @@ impl WorkflowConfig {
                         ));
                     }
                 }
+                // GateConfig::Agentic needs no validation
             }
         }
     }
@@ -475,20 +470,16 @@ mod tests {
     fn default_flow() -> FlowConfig {
         FlowConfig {
             stages: vec![
-                StageConfig::new("planning", "plan")
-                    .with_prompt("planner.md")
-                    .with_capabilities(StageCapabilities::with_questions()),
+                StageConfig::new("planning", "plan").with_prompt("planner.md"),
                 StageConfig::new("breakdown", "breakdown")
                     .with_prompt("breakdown.md")
                     .with_capabilities(StageCapabilities {
                         subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
-                        ..Default::default()
                     }),
                 StageConfig::new("work", "summary").with_prompt("worker.md"),
                 StageConfig::new("review", "verdict")
                     .with_prompt("reviewer.md")
-                    .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                    .automated(),
+                    .with_gate(GateConfig::Agentic),
             ],
             integration: IntegrationConfig::new("work"),
         }
@@ -501,8 +492,7 @@ mod tests {
                 StageConfig::new("work", "summary").with_prompt("worker.md"),
                 StageConfig::new("review", "verdict")
                     .with_prompt("reviewer.md")
-                    .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                    .automated(),
+                    .with_gate(GateConfig::Agentic),
             ],
             integration: IntegrationConfig::new("work"),
         }
@@ -955,20 +945,17 @@ flows:
         let flow = workflow.flow("default").unwrap();
         assert_eq!(flow.stages.len(), 4);
 
-        // Planning can ask questions
+        // Planning stage: no capabilities
         let planning = workflow.stage("default", "planning").unwrap();
-        assert!(planning.capabilities.ask_questions);
         assert!(!planning.capabilities.produces_subtasks());
 
         // Breakdown can produce subtasks
         let breakdown = workflow.stage("default", "breakdown").unwrap();
         assert!(breakdown.capabilities.produces_subtasks());
 
-        // Review is automated and has approval capability
+        // Review has an agentic gate
         let review = workflow.stage("default", "review").unwrap();
-        assert!(review.is_automated);
-        assert!(review.capabilities.has_approval());
-        assert_eq!(review.capabilities.rejection_stage(), Some("work"));
+        assert!(review.has_agentic_gate());
     }
 
     #[test]
@@ -1070,38 +1057,10 @@ flows:
     }
 
     #[test]
-    fn test_workflow_validation_invalid_approval_target() {
+    fn test_workflow_validation_agentic_gate_is_valid() {
         let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("nonexistent".into()))),
-        ]);
-        let errors = workflow.validate();
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("rejection_stage") && e.contains("not in flow")));
-    }
-
-    #[test]
-    fn test_workflow_validation_valid_approval_target() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        ])
-        .with_integration(IntegrationConfig::new("work"));
-        let errors = workflow.validate();
-        assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
-    }
-
-    #[test]
-    fn test_workflow_validation_approval_no_rejection_stage() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_approval(None)),
+            StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
         ])
         .with_integration(IntegrationConfig::new("work"));
         let errors = workflow.validate();
@@ -1130,7 +1089,7 @@ flows:
 
     #[test]
     fn test_validate_integration_on_failure_not_in_flow() {
-        // approval rejection_stage in a flow that doesn't have it
+        // integration.on_failure points to a stage not in the flow
         let mut flows = IndexMap::new();
         flows.insert(
             "default".to_string(),
@@ -1175,7 +1134,6 @@ flows:
             StageConfig::new("planning", "plan"),
             StageConfig::new("breakdown", "breakdown").with_capabilities(StageCapabilities {
                 subtasks: Some(SubtaskCapabilities::default().with_flow("nonexistent")),
-                ..Default::default()
             }),
             StageConfig::new("work", "summary"),
         ]);
@@ -1184,22 +1142,6 @@ flows:
         assert!(errors
             .iter()
             .any(|e| e.contains("subtasks.flow") && e.contains("doesn't exist")));
-    }
-
-    #[test]
-    fn test_completion_stage_not_in_flow() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("breakdown", "breakdown").with_capabilities(StageCapabilities {
-                subtasks: Some(SubtaskCapabilities::default().with_completion_stage("nonexistent")),
-                ..Default::default()
-            }),
-            StageConfig::new("work", "summary"),
-        ]);
-
-        let errors = workflow.validate();
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("completion_stage") && e.contains("not in flow")));
     }
 
     #[test]
@@ -1220,9 +1162,7 @@ flows:
         artifact: summary
       - name: review
         artifact: verdict
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true
     integration:
       on_failure: work
   subtask:
@@ -1231,9 +1171,7 @@ flows:
         artifact: summary
       - name: review
         artifact: verdict
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true
     integration:
       on_failure: work
 ";
@@ -1296,8 +1234,10 @@ flows:
 
     #[test]
     fn test_validate_gate_empty_command() {
-        let mut gate = GateConfig::new("./checks.sh");
-        gate.command = String::new();
+        let gate = GateConfig::Automated {
+            command: String::new(),
+            timeout_seconds: 300,
+        };
         let workflow =
             WorkflowConfig::new(vec![StageConfig::new("work", "summary").with_gate(gate)])
                 .with_integration(IntegrationConfig::new("work"));
@@ -1313,8 +1253,10 @@ flows:
 
     #[test]
     fn test_validate_gate_zero_timeout() {
-        let mut gate = GateConfig::new("./checks.sh");
-        gate.timeout_seconds = 0;
+        let gate = GateConfig::Automated {
+            command: "./checks.sh".to_string(),
+            timeout_seconds: 0,
+        };
         let workflow =
             WorkflowConfig::new(vec![StageConfig::new("work", "summary").with_gate(gate)])
                 .with_integration(IntegrationConfig::new("work"));
@@ -1330,7 +1272,7 @@ flows:
 
     #[test]
     fn test_validate_gate_valid_config() {
-        let gate = GateConfig::new("./checks.sh");
+        let gate = GateConfig::new_automated("./checks.sh");
         let workflow =
             WorkflowConfig::new(vec![StageConfig::new("work", "summary").with_gate(gate)])
                 .with_integration(IntegrationConfig::new("work"));
@@ -1339,35 +1281,6 @@ flows:
         assert!(
             !errors.iter().any(|e| e.contains("gate")),
             "expected no gate errors, got: {errors:?}"
-        );
-    }
-
-    // ========================================================================
-    // Approval in flow validation
-    // ========================================================================
-
-    #[test]
-    fn test_approval_rejection_stage_not_in_flow() {
-        let mut flows = IndexMap::new();
-        flows.insert(
-            "quick".to_string(),
-            FlowConfig {
-                stages: vec![
-                    // "work" has approval with rejection_stage "planning", but "planning" is not in this flow
-                    StageConfig::new("work", "summary").with_capabilities(
-                        StageCapabilities::with_approval(Some("planning".into())),
-                    ),
-                ],
-                integration: IntegrationConfig::new("work"),
-            },
-        );
-        let workflow = WorkflowConfig { version: 1, flows };
-        let errors = workflow.validate();
-        assert!(
-            errors.iter().any(|e| e.contains("quick")
-                && e.contains("rejection_stage")
-                && e.contains("planning")),
-            "got: {errors:?}"
         );
     }
 
@@ -1427,5 +1340,41 @@ flows:
             "planning"
         );
         assert!(workflow.is_valid());
+    }
+
+    // ========================================================================
+    // route_to_stage_names
+    // ========================================================================
+
+    #[test]
+    fn test_route_to_stage_names_with_agentic_gate() {
+        let workflow = test_default_workflow();
+        // "review" has an agentic gate — should return all other stage names
+        let names = workflow.route_to_stage_names("default", "review");
+        assert_eq!(names, vec!["planning", "breakdown", "work"]);
+        // Must not include "review" itself
+        assert!(!names.contains(&"review".to_string()));
+    }
+
+    #[test]
+    fn test_route_to_stage_names_without_gate() {
+        let workflow = test_default_workflow();
+        // "planning" has no gate — should return empty
+        let names = workflow.route_to_stage_names("default", "planning");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_route_to_stage_names_nonexistent_flow() {
+        let workflow = test_default_workflow();
+        let names = workflow.route_to_stage_names("nonexistent", "review");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_route_to_stage_names_nonexistent_stage() {
+        let workflow = test_default_workflow();
+        let names = workflow.route_to_stage_names("default", "nonexistent");
+        assert!(names.is_empty());
     }
 }

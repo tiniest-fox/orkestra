@@ -1,0 +1,55 @@
+---
+import ArrowRight from "../components/icons/ArrowRight.astro";
+import GitHub from "../components/icons/GitHub.astro";
+import Orkestra from "../components/icons/Orkestra.astro";
+import Layout from "../layouts/Layout.astro";
+import LiveDemo from "../components/LiveDemo";
+---
+
+<Layout title="Orkestra — AI-powered Trak orchestration" description="Structured AI development workflows — parallel by default, human when it matters.">
+  <main class="min-h-screen bg-canvas text-text-primary">
+
+    <!-- Hero -->
+    <div class="flex flex-col items-center text-center px-6 pt-20 pb-16">
+      <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent to-violet flex items-center justify-center shadow-panel mb-8">
+        <Orkestra size={32} />
+      </div>
+
+      <h1 class="text-4xl font-bold tracking-[0.06em] mb-4 text-text-primary uppercase">
+        Orkestra
+      </h1>
+
+      <p class="text-xl text-text-secondary mb-4 font-medium">
+        Structured AI development workflows —<br />parallel by default, human when it matters.
+      </p>
+
+      <div class="flex items-center justify-center gap-3 flex-wrap mt-8">
+        <a
+          href="/docs/getting-started"
+          class="inline-flex items-center gap-2 px-6 py-3 bg-accent text-white font-semibold rounded-panel-sm hover:bg-accent-hover transition-colors shadow-panel"
+        >
+          Read the docs
+          <ArrowRight />
+        </a>
+        <a
+          href="https://github.com/tiniest-fox/orkestra"
+          class="inline-flex items-center gap-2 px-6 py-3 bg-surface text-text-primary font-semibold rounded-panel-sm border border-border hover:bg-surface-hover transition-colors shadow-panel"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <GitHub size={18} />
+          GitHub
+        </a>
+      </div>
+      <a href="/releases" class="inline-block mt-5 text-sm text-text-tertiary hover:text-text-secondary transition-colors">
+        See latest releases
+      </a>
+    </div>
+
+    <!-- Demo embed -->
+    <div class="px-6 pb-20 max-w-6xl mx-auto w-full">
+      <LiveDemo client:only="react" />
+    </div>
+
+  </main>
+</Layout>

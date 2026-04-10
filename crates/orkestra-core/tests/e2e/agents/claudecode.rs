@@ -131,15 +131,15 @@ fn claudecode_bad_model_fails_fast() {
 
 /// Questions output: agent asks a clarifying question instead of producing an artifact.
 ///
-/// Exercises: capabilities with `ask_questions`, schema includes "questions" type,
-/// agent outputs questions JSON, parser extracts it, task transitions to `AwaitingReview`
+/// Exercises: questions are always included in all stage schemas, agent outputs questions JSON,
+/// parser extracts it, task transitions to `AwaitingReview`
 /// with pending questions stored in the iteration outcome.
 #[test]
 #[ignore = "requires claude CLI installed + API key"]
 fn claudecode_questions_output() {
     let env = helpers::AgentTestEnv::with_capabilities(
         "claudecode/haiku",
-        StageCapabilities::with_questions(),
+        StageCapabilities::default(),
         "You MUST respond with the \"questions\" output type. Ask exactly ONE question: \
          \"What programming language should be used?\" with two options: \"Python\" and \"Rust\". \
          Do NOT attempt any work — ONLY ask the question.",

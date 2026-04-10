@@ -424,7 +424,7 @@ fn extract_pending_approval(task: &Task, workflow: &WorkflowConfig) -> bool {
 
     workflow
         .stage(&task.flow, stage)
-        .is_some_and(|s| s.capabilities.has_approval())
+        .is_some_and(orkestra_types::config::StageConfig::has_agentic_gate)
 }
 
 #[cfg(test)]
@@ -823,8 +823,15 @@ mod tests {
 
     #[test]
     fn test_derived_state_no_pending_approval_without_capability() {
-        let workflow = test_default_workflow();
-        let mut task = make_task("planning"); // planning has NO approval capability
+        use crate::workflow::config::{StageConfig, WorkflowConfig};
+
+        // Build a workflow where "planning" has NO agentic gate (plain stage, no gate config)
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan").with_prompt("planner.md"),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
+        ]);
+
+        let mut task = make_task("planning"); // planning has NO agentic gate
         task.state = TaskState::awaiting_approval("planning");
 
         let iter = Iteration::new("iter-1", "task-1", "planning", 1, "now");

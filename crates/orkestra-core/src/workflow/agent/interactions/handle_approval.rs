@@ -7,6 +7,7 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
@@ -14,15 +15,15 @@ pub fn execute(
     current_stage: &str,
     decision: &str,
     content: &str,
+    route_to: Option<&str>,
     now: &str,
 ) -> WorkflowResult<()> {
     // Verify stage has approval capability
     let stage_config = workflow.stage(&task.flow, current_stage).ok_or_else(|| {
         WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
     })?;
-    let effective_caps = &stage_config.capabilities;
 
-    if !effective_caps.has_approval() {
+    if !stage_config.has_agentic_gate() {
         return Err(WorkflowError::InvalidTransition(format!(
             "Stage {current_stage} does not have approval capability"
         )));
@@ -30,15 +31,26 @@ pub fn execute(
 
     match decision {
         "approve" => {
-            // Store content as artifact, then auto-advance or review (same as artifact flow)
-            super::handle_artifact::execute(
+            // Store the reviewer's approval content as artifact, then enter commit pipeline
+            // directly. The reviewer's verdict is final — no additional human approval is
+            // needed (the human can still override via `reject()` if they disagree).
+            let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
                 workflow,
-                iteration_service,
-                task,
-                content,
+                &task.flow,
                 current_stage,
-                now,
-            )
+                "artifact",
+            );
+            task.artifacts
+                .set(Artifact::new(&artifact_name, content, current_stage, now));
+            iteration_service.set_artifact_snapshot(
+                &task.id,
+                current_stage,
+                ArtifactSnapshot {
+                    name: artifact_name,
+                    content: content.to_string(),
+                },
+            )?;
+            stage::enter_commit_pipeline::execute(iteration_service, task, now)
         }
         "reject" => {
             // Store rejection content as artifact (same name as approvals, overwrite semantics)
@@ -61,18 +73,15 @@ pub fn execute(
                 },
             )?;
 
-            // Resolve rejection target: explicit config → previous stage in flow
+            // Resolve rejection target: agent route_to → previous stage in flow
             let target = stage::execute_rejection::resolve_rejection_target(
                 workflow,
                 current_stage,
                 &task.flow,
+                route_to,
             )?;
 
-            if task.auto_mode
-                || workflow
-                    .stage(&task.flow, current_stage)
-                    .is_some_and(|s| s.is_automated)
-            {
+            if task.auto_mode {
                 // Auto-advance: execute rejection immediately (existing behavior)
                 stage::end_iteration::execute(
                     iteration_service,

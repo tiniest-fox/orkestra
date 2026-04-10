@@ -1,0 +1,118 @@
+---
+title: Scripts Reference
+description: Shell scripts for worktree setup, cleanup, and quality gates.
+order: 2
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+The `.orkestra/scripts/` directory contains three shell scripts that Orkestra executes at lifecycle boundaries. All three are created by `ork trak list` on first run and are committed to version control.
+
+| Script | When it runs | Working directory |
+|--------|-------------|-------------------|
+| `checks.sh` | After each agent work stage with a `gate` configured | Trak's worktree (set by Orkestra) |
+| `worktree_setup.sh` | After Orkestra creates a new worktree, before the first stage starts | Project root |
+| `worktree_cleanup.sh` | Before Orkestra removes a worktree | Project root |
+
+## checks.sh
+
+The gate script. Runs after the agent completes a stage that references it via `gate.command`. Its exit code determines what happens next:
+
+- **Exit 0** — gate passes. The stage advances to human review (or auto-advances if `is_automated: true`).
+- **Non-zero exit** — gate fails. stdout and stderr are captured and sent to the agent as feedback. The agent retries.
+
+<Callout type="warning">
+Always run checks against `ORKESTRA_WORKTREE_PATH`, not `ORKESTRA_PROJECT_ROOT`. The agent's changes live in the Trak's isolated worktree — running checks against the project root would check the main working directory, not the agent's work.
+</Callout>
+
+### Environment variables
+
+| Variable | Always set? | Description |
+|----------|------------|-------------|
+| `ORKESTRA_WORKTREE_PATH` | Yes | Absolute path to the Trak's worktree |
+| `ORKESTRA_PROJECT_ROOT` | Yes | Absolute path to the project root |
+| `ORKESTRA_TASK_ID` | Yes | The Trak's ID (e.g., `only-decisive-chiffchaff`) |
+| `ORKESTRA_TASK_TITLE` | Yes | The Trak's title |
+| `ORKESTRA_BASE_BRANCH` | Yes | The branch the Trak was created from |
+| `ORKESTRA_BRANCH` | Yes | The Trak's git branch name |
+| `ORKESTRA_PARENT_ID` | Subtraks only | Parent Trak's ID |
+
+### Examples
+
+Orkestra sets the working directory to the Trak's worktree before invoking `checks.sh`. The `cd "$ORKESTRA_WORKTREE_PATH"` in these examples is defensive — it ensures the script works correctly regardless of the invocation context.
+
+Node.js project:
+
+```bash
+#!/bin/bash
+set -e
+cd "$ORKESTRA_WORKTREE_PATH"
+
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run typecheck
+pnpm test
+```
+
+Rust project:
+
+```bash
+#!/bin/bash
+set -e
+cd "$ORKESTRA_WORKTREE_PATH"
+
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+```
+
+## worktree_setup.sh
+
+Runs after Orkestra creates a new git worktree for a Trak, before the first stage starts. Use it to prepare the worktree so the agent can work — copying environment files, installing dependencies, or creating symlinks.
+
+**Working directory:** Project root.
+
+**Arguments:** The absolute path to the new worktree as `$1`.
+
+**Exit behavior:**
+- Exit 0 — setup succeeded. The Trak proceeds.
+- Non-zero exit — setup failed. Worktree creation is blocked.
+
+### Example
+
+```bash
+#!/bin/bash
+set -e
+WORKTREE_PATH="$1"
+
+# Copy environment config to the new worktree
+cp .env "$WORKTREE_PATH/.env"
+
+# Install dependencies in the worktree
+cd "$WORKTREE_PATH"
+pnpm install --frozen-lockfile
+```
+
+## worktree_cleanup.sh
+
+Runs before Orkestra removes a Trak's worktree, on completion, failure, or manual cleanup. Use it to remove anything `worktree_setup.sh` created that Git won't clean up automatically (`.env` copies, caches, symlinks).
+
+**Working directory:** Project root.
+
+**Arguments:** The absolute path to the worktree being removed as `$1`.
+
+**Exit behavior:** The exit code is ignored. Cleanup always proceeds regardless of whether this script fails. Output is not captured or logged.
+
+<Callout type="note">
+Because failures are silently swallowed, keep this script simple and defensive. Use `rm -f` instead of `rm` so missing files don't cause a non-zero exit.
+</Callout>
+
+### Example
+
+```bash
+#!/bin/bash
+WORKTREE_PATH="$1"
+
+# Remove the env file copied in worktree_setup.sh
+rm -f "$WORKTREE_PATH/.env"
+```

@@ -1,0 +1,64 @@
+---
+title: Agents
+description: Agents are the AI coding assistants Orkestra spawns for each stage — prompted with structured context, constrained to structured output.
+order: 6
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+
+The work in each agent [stage](/docs/core-concepts/stages) gets done by an AI coding assistant. Orkestra handles spawning, prompting, output parsing, and session management — you configure what the agent should do and what it's allowed to do, not how to run it.
+
+## What an agent receives
+
+When Orkestra spawns an agent for a stage, it builds a prompt from three sources:
+
+1. **The prompt template** — the Markdown file in `.orkestra/agents/` that defines the agent's role and instructions
+2. **Injected context** — the Trak's title and description, all prior stage artifacts, any rejection feedback from previous iterations, and any answers to questions the agent previously asked
+3. **A JSON schema** — generated from the stage's [capabilities](/docs/core-concepts/capabilities), telling the agent exactly what output format to produce
+
+The agent must produce output that matches the schema. Orkestra uses this structured output to determine whether to advance the Trak, retry, route to a different stage, or pause for human review.
+
+## Supported providers
+
+| Provider | CLI | Notes |
+|----------|-----|-------|
+| `claudecode` (default) | `claude` | Claude Code CLI. Supports native JSON schema enforcement. |
+| `opencode` | `opencode` | OpenCode CLI. Schema is embedded in the prompt text. |
+
+The provider is selected via the `model` field on a stage. If `model` is omitted, Orkestra uses Claude Code with its default model.
+
+<Callout type="note">
+OpenCode does not support native JSON schema enforcement. Orkestra embeds the schema as text in the prompt instead. Output conformance is less strict.
+</Callout>
+
+## Session continuity
+
+Agent sessions are stateful. When a stage's output is rejected and the agent retries, Orkestra resumes the same session — the agent sees its full conversation history including the rejection feedback. It does not restart from the beginning.
+
+Session continuity is scoped to a stage. Moving to a new stage always starts a new session. Within a stage, sessions persist across iterations unless `reset_session: true` is set on an `approval` capability.
+
+## Output types
+
+An agent can produce one of the following outputs:
+
+| Output | Effect |
+|--------|--------|
+| Artifact | Text stored under the stage's artifact name. Trak advances. |
+| Questions | A list of clarifying questions. Trak pauses until answered. |
+| Subtraks | A breakdown into child Traks. Trak pauses for human review. |
+| Approve | An approval verdict. Trak advances (used with `approval` capability). |
+| Reject | A rejection verdict. Trak routes to an earlier stage. |
+| Failed | Agent cannot complete the work. Trak is marked Failed. |
+| Blocked | Agent is blocked on something external. Trak is marked Blocked. |
+
+Only outputs that match the stage's configured capabilities are valid. An agent on a stage without `subtasks` enabled cannot produce a Subtraks output.
+
+## Tool restrictions
+
+Stages can restrict which tools agents are allowed to use. Common uses: preventing agents from running tests themselves when a gate handles it, or blocking edits to lock files.
+
+Restrictions are configured as patterns with optional messages. The message is injected into the agent's prompt to explain why the restriction exists, which helps the agent work around it rather than attempting the disallowed action.
+
+## What's next
+
+See [Prompt Templates](/docs/core-concepts/prompt-templates) to understand how to write and customize the Markdown files that define agent behavior.

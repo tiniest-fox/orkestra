@@ -34,7 +34,7 @@ export function createMockTransport(): Transport {
         case "git_sync_status":
           return resolve({ ahead: 0, behind: 0 });
         case "get_logs":
-          return resolve([]);
+          return resolve({ entries: [], cursor: null });
         case "get_diff":
           return resolve({ files: [] });
         case "get_branch_commits":

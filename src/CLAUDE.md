@@ -77,6 +77,7 @@ useEffect(() => {
 - Remove failed items from the ref so they retry on next trigger
 - See `GitHistoryProvider.tsx` for the canonical example
 
+<<<<<<< task/sonorously-defiant-pipit
 ### Resetting Refs on Prop Change
 
 When a hook has multiple refs tracking internal request or display state (e.g., `hasFetchedOnceRef`, `diffShaRef`, `requestedIdsRef`), **all of them must be reset** in the same effect that reacts to the key prop (e.g., `taskId`) changing. Partial resets cause stale state from the previous value to bleed through — for instance, suppressing the loading spinner on the first fetch of a new task or briefly flashing the old data.
@@ -91,6 +92,22 @@ useEffect(() => {
 ```
 
 Pattern: collect every ref that tracks "have I fetched / what did I fetch last" and reset them together as a unit when the identity prop changes.
+=======
+### Cursor Ref + Array State Must Reset Together
+
+When a hook maintains a cursor or position ref alongside a data array, clearing the array (e.g., on error via `setState([])`) **must also reset the cursor ref to its initial value**. If only the array is cleared, the next fetch requests entries "after cursor X" — which returns nothing because the local state was reset but the cursor still points past everything — leaving a permanent display gap until new entries advance the cursor beyond that position.
+
+```ts
+// WRONG — cursor ref left at old position after clearing
+setLogs([]);
+
+// CORRECT — reset cursor when clearing the data array
+setLogs([]);
+cursorRef.current = 0; // or undefined / null — whatever the initial value is
+```
+
+This applies to any hook that pairs `useRef` position tracking with a state array: log streams, infinite scroll, paginated lists.
+>>>>>>> main
 
 ### DOM Observation Pattern (Callback Ref + useState)
 
@@ -209,6 +226,14 @@ Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvide
 - One-shot providers (workflow config) **must** explicitly clear their cache and re-fetch on reconnect; polling won't do it for them.
 - Maps accumulate entries for every project URL visited during the session (no implicit eviction). This is fine in practice — sessions visit few projects — but worth noting if memory becomes a concern.
 
+### `demoTransport.ts` Must Stay in Sync with Response Shapes
+
+`src/stories/Demo/demoTransport.ts` is a hardcoded demo implementation of the transport interface for Storybook. Every command returns a static value. When a command's **response shape changes** (e.g., `get_logs` switching from a plain array to a `{ logs, cursor }` envelope), update `demoTransport.ts` too.
+
+TypeScript won't catch this — transport methods return `Promise<unknown>`, so the mismatch compiles silently. The break only surfaces at runtime in Storybook or when a reviewer traces the response path.
+
+**Rule:** Any time you change what a backend command returns, `demoTransport.ts` is in scope for that change.
+
 ## Styling
 
 - Tailwind classes only. No CSS modules, styled-components, or inline style objects.
@@ -290,6 +315,20 @@ The skeleton also has a `statusText` element (`.loading-status-text`) that shows
 <!-- compound: unthinkingly-inventive-dugong -->
 
 Forge is the project's design language — it is not an alternate or scoped visual language. It uses IBM Plex fonts, a warm purple-undertone palette, and pink-red accent (`accent`/`accent-*`). All components use Forge tokens by default.
+
+**Some Forge tokens are bare RGB channels — never use them directly as CSS colors.** `--forge-accent` and `--forge-status-{success,error,warning,info}` are stored as space-separated RGB channels (e.g., `232 53 88`) for Tailwind v3 opacity modifier support. Using them raw in CSS (`color: var(--forge-accent)`) produces invalid CSS. Always use the `--color-*` wrappers defined in `tailwind.config.js` (and in `docs/src/styles/global.css` for the Astro docs site), which apply `rgb()`:
+
+```css
+/* Wrong — bare channel token is not a valid CSS color */
+color: var(--forge-accent);
+border-color: var(--forge-status-error);
+
+/* Correct — --color-* wrappers include the rgb() call */
+color: var(--color-accent);
+border-color: var(--color-status-error);
+```
+
+Tokens that are already valid CSS colors (`--forge-border`, `--forge-text-*`, `--forge-surface-*`, `--forge-status-*-bg`, `--forge-status-purple/pink/cyan/orange`) can be used directly, but prefer the `--color-*` equivalents for consistency.
 
 **Animation coupling:** Keyframe names (`pipe-active-pulse`, `forge-pulse-opacity`) are coupled by string between `index.css` and TSX files with no compile-time check. Be careful when renaming them.
 
@@ -607,9 +646,9 @@ This applies to any code gated on `IS_TAURI` that needs project context. The `ge
 Verdict display is computed in two places — this is intentional, not duplication. They serve different data sources:
 
 - **`DrawerTabContent.tsx`** (live view): uses backend-computed `DerivedTaskState` (e.g., `task.derived.pending_approval`, `task.derived.pending_rejection`). No config lookup needed; the backend already has the full workflow config.
-- **`HistoricalRunView.tsx`** (past runs): computes verdict from raw iteration outcomes because historical snapshots don't carry pre-computed derived state. Requires a config lookup to distinguish approval-capability stages from regular human-review gates.
+- **`HistoricalRunView.tsx`** (past runs): computes verdict from raw iteration outcomes because historical snapshots don't carry pre-computed derived state. Requires a config lookup to distinguish agentic gate stages from regular human-review gates.
 
-**Flow-scoped stage lookup is required for correctness.** When `HistoricalRunView.tsx` queries stage config (e.g., `workflow.stage(flow, stageName).has_approval()`), always scope to `task.flow` — never flat-map across all flows. Flows may share stage names, and searching all flows silently returns the wrong config for any task not in the first matching flow.
+**Flow-scoped stage lookup is required for correctness.** When `HistoricalRunView.tsx` queries stage config (e.g., `workflow.stage(flow, stageName).has_agentic_gate()`), always scope to `task.flow` — never flat-map across all flows. Flows may share stage names, and searching all flows silently returns the wrong config for any task not in the first matching flow.
 
 ```tsx
 // Correct — scoped to this task's flow

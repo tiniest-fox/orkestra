@@ -130,12 +130,6 @@ function TaskDrawerBody({
   const selectedRun = selectedRunIdx !== null ? runs[selectedRunIdx] : null;
   const reviewType = stageReviewType(task, config);
 
-  const breakdownStageName = task.state.type === "waiting_on_children" ? task.state.stage : null;
-  const completionStage = breakdownStageName
-    ? config.flows[task.flow]?.stages.find((s) => s.name === breakdownStageName)?.capabilities
-        .subtasks?.completion_stage
-    : null;
-
   const onProgressClick =
     selectedRunIdx !== null
       ? () => {
@@ -208,7 +202,6 @@ function TaskDrawerBody({
             activeTab={activeTab}
             questions={task.derived.pending_questions}
             stageReviewType={reviewType}
-            completionStage={completionStage}
             state={state}
           />
         </>

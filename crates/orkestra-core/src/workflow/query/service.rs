@@ -146,18 +146,22 @@ impl WorkflowApi {
         query::logs::get_latest_log_for_task(&self.store, task_id)
     }
 
-    /// Get log entries for a task's stage or a specific session.
+    /// Get log entries for a task's stage or a specific session with optional cursor-based pagination.
     ///
     /// If `session_id` is provided, fetch logs for that specific session.
     /// Otherwise, if `stage` is provided, fetch logs for the current session of that stage.
     /// If neither is provided, fetch logs for the current stage's current session.
+    ///
+    /// When `cursor` is `Some(seq)`, only entries with `sequence_number` > seq are returned.
+    /// Returns `(entries, cursor)` where cursor is the max `sequence_number` of the returned entries.
     pub fn get_task_logs(
         &self,
         task_id: &str,
         stage: Option<&str>,
         session_id: Option<&str>,
-    ) -> WorkflowResult<Vec<LogEntry>> {
-        query::logs::get_task_logs(&self.store, task_id, stage, session_id)
+        cursor: Option<u64>,
+    ) -> WorkflowResult<(Vec<LogEntry>, Option<u64>)> {
+        query::logs::get_task_logs(&self.store, task_id, stage, session_id, cursor)
     }
 }
 
@@ -167,7 +171,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
     use crate::workflow::domain::{Question, Task};
     use crate::workflow::execution::StageOutput;
     use crate::workflow::query::interactions::task_views::topological_sort;
@@ -187,8 +191,7 @@ mod tests {
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("planning", "plan").with_gate(GateConfig::Agentic),
             StageConfig::new("work", "summary"),
         ])
     }

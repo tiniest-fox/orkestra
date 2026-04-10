@@ -435,8 +435,8 @@ mod tests {
     }
 
     #[test]
-    fn test_stage_without_gate_auto_advances() {
-        // A stage with no gate auto-advances after artifact output (no human confirmation needed)
+    fn test_stage_without_gate_pauses_for_approval() {
+        // A stage with no gate pauses at AwaitingApproval — only auto_mode=true skips human review
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
@@ -447,7 +447,7 @@ mod tests {
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Move to review stage (no gate — auto-advances)
+        // Move to review stage (no gate — pauses for human approval)
         task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
 
@@ -458,8 +458,8 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // No gate → should enter commit pipeline directly
-        assert!(matches!(task.state, TaskState::Finishing { .. }));
+        // No gate, auto_mode=false → should pause at AwaitingApproval (not enter commit pipeline)
+        assert!(matches!(task.state, TaskState::AwaitingApproval { .. }));
         assert_eq!(task.current_stage(), Some("review"));
     }
 

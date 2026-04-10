@@ -177,13 +177,18 @@ impl StageExecutionService {
         runner: Arc<dyn AgentRunnerTrait>,
         registry: Arc<ProviderRegistry>,
     ) -> Self {
-        // Agent service only handles execution - session lifecycle is managed here
-        let agent_service = Arc::new(AgentExecutionService::new(
-            runner,
-            workflow.clone(),
-            project_root.clone(),
-            Arc::clone(&registry),
-        ));
+        // Agent service only handles execution - session lifecycle is managed here.
+        // Skip env resolution: with_runner is the test-only constructor and login-shell
+        // startup (shell -l -i) blocks the tick thread for up to 5 s, causing timeouts.
+        let agent_service = Arc::new(
+            AgentExecutionService::new(
+                runner,
+                workflow.clone(),
+                project_root.clone(),
+                Arc::clone(&registry),
+            )
+            .with_skip_env_resolution(),
+        );
 
         let script_service = Arc::new(ScriptExecutionService::new(
             project_root,

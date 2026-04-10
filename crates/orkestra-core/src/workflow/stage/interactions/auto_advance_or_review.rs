@@ -24,12 +24,8 @@ pub fn execute(
 
 // -- Helpers --
 
-fn should_auto_advance(task: &Task, stage: &str, workflow: &WorkflowConfig) -> bool {
-    // Any gate (agentic or automated script) pauses for human review unless auto_mode is set.
-    // This function is called after a gate passes — the gate already ran; the question is
-    // whether human confirmation is required before advancing.
-    let has_any_gate = workflow
-        .stage(&task.flow, stage)
-        .is_some_and(|s| s.gate.is_some());
-    task.auto_mode || !has_any_gate
+fn should_auto_advance(task: &Task, _stage: &str, _workflow: &WorkflowConfig) -> bool {
+    // Auto-advance only when the task is in auto_mode. Otherwise, pause for human
+    // review regardless of whether the stage has a gate.
+    task.auto_mode
 }

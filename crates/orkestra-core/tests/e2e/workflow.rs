@@ -896,7 +896,9 @@ fn test_custom_integration_on_failure() {
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
-    ctx.advance(); // processes review → auto-approve → Done → integration fails (sync) → recovers to planning → spawns planner (completion ready)
+    ctx.advance(); // processes review output → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration fails (sync) → recovers to planning → spawns planner (completion ready)
     ctx.advance(); // processes planner output
 
     // Integration should have failed and routed to planning (configured on_failure).
@@ -1062,7 +1064,9 @@ fn test_integration_failure_uses_flow_on_failure_override() {
         },
     );
     ctx.advance(); // spawns reviewer
-    ctx.advance(); // processes review → auto-approve → Done → integration fails → recovers to planning → spawns planner
+    ctx.advance(); // processes review output → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration fails → recovers to planning → spawns planner
     ctx.advance(); // processes planner output
 
     // Verify task is in PLANNING stage (flow's on_failure), not work (global on_failure)
@@ -1212,7 +1216,9 @@ fn test_gate_script_with_recovery() {
     ctx.advance(); // spawns gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit pipeline → review Queued
-    ctx.advance(); // spawns reviewer → drain_active → review output processed → Done/Archived
+    ctx.advance(); // spawns reviewer → drain_active → review output → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves review
+    ctx.advance(); // commit pipeline → Done/Archived
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
@@ -1265,7 +1271,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
     ctx.api().approve(task_id).unwrap(); // → Finishing
     ctx.advance(); // commit → advance to review
 
-    // Review stage (automated — auto-approves)
+    // Review stage (no gate — pauses for approval)
     ctx.set_output(
         task_id,
         MockAgentOutput::Artifact {
@@ -1276,12 +1282,14 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
         },
     );
     ctx.advance(); // spawn reviewer
-    ctx.advance(); // process output → auto-approve → commit → Done
+    ctx.advance(); // process output → AwaitingApproval
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done
 
     let task = ctx.api().get_task(task_id).unwrap();
     assert!(
         task.is_done(),
-        "Task should be Done after review auto-approves, but state is {:?}",
+        "Task should be Done after review approves, but state is {:?}",
         task.state
     );
 }
@@ -7543,7 +7551,7 @@ fn test_flow_gate_override_disables_gate() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns agent → drain_active → artifact → no gate → commit pipeline
+    ctx.advance(); // spawns agent → drain_active → artifact → no gate → AwaitingApproval
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
@@ -7551,6 +7559,11 @@ fn test_flow_gate_override_disables_gate() {
         "Task should NOT enter AwaitingGate when flow disables gate, got: {:?}",
         task.state
     );
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline
+
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         matches!(
             task.state,
@@ -7560,7 +7573,7 @@ fn test_flow_gate_override_disables_gate() {
                 | TaskState::Done
                 | TaskState::Archived
         ),
-        "Task should have entered commit pipeline directly, got: {:?}",
+        "Task should have entered commit pipeline, got: {:?}",
         task.state
     );
 }
@@ -7931,25 +7944,15 @@ fn test_resolved_env_threaded_to_agent_runner() {
     let calls = ctx.runner_calls();
     assert!(!calls.is_empty(), "Expected at least one runner call");
 
-    if std::env::var("SHELL").is_ok() {
-        // SHELL is set: env should be resolved with PATH
-        let env = calls[0].env.as_ref();
-        assert!(env.is_some(), "Expected resolved env when SHELL is set");
-        let env_map = env.unwrap();
-        assert!(
-            env_map.contains_key("PATH"),
-            "Resolved env should contain PATH"
-        );
-        assert!(!env_map["PATH"].is_empty(), "PATH should not be empty");
-    } else {
-        // SHELL is not set: env should be None (graceful fallback)
-        assert!(
-            calls[0].env.is_none(),
-            "Expected None env when SHELL is not set"
-        );
-    }
+    // `StageExecutionService::with_runner` (used by all TestEnv constructors) skips
+    // login-shell env resolution to avoid blocking the tick thread for up to 5 s while
+    // the shell sources ~/.zshrc. The RunConfig.env field is always None in tests.
+    assert!(
+        calls[0].env.is_none(),
+        "Env should be None in test environments (resolution is skipped for MockAgentRunner)"
+    );
 
-    // Verify task progresses normally regardless of env resolution outcome
+    // Verify task progresses normally without env resolution
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         matches!(task.state, TaskState::AwaitingApproval { .. }),
@@ -8993,14 +8996,18 @@ fn test_route_to_rejection_routes_to_specified_stage() {
     let task = ctx.create_task("Test route_to routing", "Description", None);
     let task_id = task.id.clone();
 
-    // Advance through planning and work stages (no gate — auto-advance in 2 ticks each)
+    // Advance through planning and work stages (no gate — pauses for approval each time)
     ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan"));
     ctx.advance(); // spawn planning
-    ctx.advance(); // process plan → enters commit pipeline → Queued(work)
+    ctx.advance(); // process plan → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Queued(work)
 
     ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
     ctx.advance(); // spawn work
-    ctx.advance(); // process summary → enters commit pipeline → Queued(review)
+    ctx.advance(); // process summary → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Queued(review)
 
     // Review stage: agent rejects with route_to="planning" (skip work, go straight back)
     ctx.set_output(
@@ -9049,14 +9056,18 @@ fn test_route_to_fallback_routes_to_previous_stage() {
     let task = ctx.create_task("Test route_to fallback", "Description", None);
     let task_id = task.id.clone();
 
-    // Advance through planning and work to review (no gate — auto-advance in 2 ticks each)
+    // Advance through planning and work to review (no gate — pauses for approval each time)
     ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan"));
     ctx.advance(); // spawn planning
-    ctx.advance(); // process plan → enters commit pipeline → Queued(work)
+    ctx.advance(); // process plan → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Queued(work)
 
     ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
     ctx.advance(); // spawn work
-    ctx.advance(); // process summary → enters commit pipeline → Queued(review)
+    ctx.advance(); // process summary → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Queued(review)
 
     // Review agent rejects with no route_to — should fall back to "work" (previous stage)
     ctx.set_output(

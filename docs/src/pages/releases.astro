@@ -1,38 +1,13 @@
 ---
-import GitHub from "../components/icons/GitHub.astro";
-import Orkestra from "../components/icons/Orkestra.astro";
+import Header from "../components/Header.astro";
 import Layout from "../layouts/Layout.astro";
 ---
 
 <Layout title="Releases — Orkestra" description="Download the latest Orkestra release for your platform.">
   <div class="min-h-screen bg-canvas text-text-primary flex flex-col">
 
-    <!-- Top bar (matches DocsLayout) -->
-    <header class="h-14 border-b border-border bg-surface flex items-center px-6 gap-4 sticky top-0 z-10">
-      <a href="/" class="flex items-center gap-2.5 shrink-0 group">
-        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-accent to-violet flex items-center justify-center">
-          <Orkestra size={14} />
-        </div>
-        <span class="text-sm font-semibold tracking-wide text-text-primary group-hover:text-accent transition-colors">
-          Orkestra
-        </span>
-      </a>
-      <div class="w-px h-5 bg-border"></div>
-      <nav class="flex items-center gap-1">
-        <a href="/docs/getting-started" class="px-2.5 py-1 rounded text-xs font-medium text-text-tertiary hover:text-text-secondary transition-colors">Docs</a>
-        <a href="/releases" class="px-2.5 py-1 rounded text-xs font-medium text-accent bg-accent/8 transition-colors">Releases</a>
-      </nav>
-      <div class="flex-1"></div>
-      <a
-        href="https://github.com/tiniest-fox/orkestra"
-        class="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <GitHub size={15} />
-        GitHub
-      </a>
-    </header>
+    <!-- Top bar -->
+    <Header activePage="releases" />
 
     <main class="max-w-3xl mx-auto w-full px-6 py-12">
       <h1 class="text-2xl font-bold tracking-tight text-text-primary mb-1">Releases</h1>

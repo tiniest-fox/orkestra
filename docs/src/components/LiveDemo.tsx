@@ -1,7 +1,5 @@
 // Live Orkestra demo rendered as a React island in the docs site.
-import { Orkestra } from "@app/components/Orkestra";
-import { StorybookProviders } from "@app/stories/storybook-helpers";
-import { createDemoTransport } from "@app/stories/Demo/demoTransport";
+import { Orkestra, StorybookProviders, createDemoTransport } from "@app/docs-api";
 
 const demoTransport = createDemoTransport();
 

@@ -1,0 +1,302 @@
+---
+title: Example Flows
+description: Ready-to-use workflow configurations for common use cases — from quick fixes to full product features.
+order: 3
+---
+
+import Callout from "../../../components/docs/Callout.astro";
+import Pipeline from "../../../components/docs/Pipeline.astro";
+
+These flows are starting points. Copy one into `.orkestra/workflow.yaml`, adapt the prompt templates to your project, and run `ork trak create --flow <name>` to use it.
+
+For the full list of available fields, see the [Workflow Reference](/docs/configuration/workflow).
+
+---
+
+## Full product feature
+
+Best for complex features: upfront planning, parallel implementation via Subtraks, automated checks, and a thorough review before merge. This is the structure the default flow from `ork init` follows.
+
+<Pipeline
+  stages={[
+    { name: "Planning", description: "Clarify requirements and produce a plan", gate: { kind: "approval" } },
+    { name: "Breakdown", description: "Split the plan into parallel Subtraks", gate: { kind: "approval" } },
+    { name: "Work", description: "Implement changes in an isolated worktree", gate: [{ kind: "check" }, { kind: "approval" }] },
+    { name: "Review", description: "Agent evaluates the completed work", gate: { kind: "verdict", onApproveFail: "Work" } },
+    { name: "Compound", description: "Capture learnings for future Traks", auto: true },
+  ]}
+  terminal="Branch merged"
+/>
+
+After the Breakdown stage is approved, Orkestra spawns parallel [Subtraks](/docs/core-concepts/traks) — one per item in the breakdown — using the `subtask` flow. All Subtraks complete before the parent Trak advances to Work.
+
+The Compound stage is marked `is_automated: true`, so it runs without a human approval step.
+
+```yaml
+version: 2
+
+flows:
+  default:
+    stages:
+      - name: planning
+        artifact: plan
+        description: Clarifies requirements and produces an implementation plan
+        prompt: planner.md
+        model: opus
+        capabilities:
+          ask_questions: true
+
+      - name: breakdown
+        artifact: breakdown
+        description: Researches the codebase and breaks the plan into parallel Subtraks
+        prompt: breakdown.md
+        capabilities:
+          subtasks:
+            flow: subtask  # Simpler flow used for child Traks (Subtraks)
+
+      - name: work
+        artifact: summary
+        description: Implements code changes in an isolated worktree
+        prompt: worker.md
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 600
+
+      - name: review
+        artifact: verdict
+        description: Reviews completed work and produces an approve/reject verdict
+        prompt: reviewer.md
+        model: opus
+        capabilities:
+          approval:
+            rejection_stage: work
+
+      - name: compound
+        artifact: learnings
+        description: Captures learnings to improve future Traks
+        prompt: compound.md
+        is_automated: true
+
+    integration:
+      on_failure: work
+
+  subtask:
+    stages:
+      - name: work
+        artifact: summary
+        prompt: worker.md
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 600
+
+      - name: review
+        artifact: verdict
+        prompt: reviewer.md
+        capabilities:
+          approval:
+            rejection_stage: work
+
+    integration:
+      on_failure: work
+```
+
+<Callout type="note">
+`model: opus` on the planning and review stages targets higher-reasoning tasks where quality matters more than speed. The field is optional — omit it on any stage to use the default model.
+</Callout>
+
+The prompt templates used here — `planner.md`, `breakdown.md`, `worker.md`, `reviewer.md`, and `compound.md` — are created by `ork init`. The `subtask` flow reuses `worker.md` and `reviewer.md` from the default flow.
+
+---
+
+## Quick fix
+
+Best for bug fixes, small changes, documentation typos, and dependency updates. No planning or breakdown — just implement and review.
+
+<Pipeline
+  stages={[
+    { name: "Work", description: "Implement the fix", gate: [{ kind: "check" }, { kind: "approval" }] },
+    { name: "Review", description: "Verify the fix and approve for merge", gate: { kind: "verdict", onApproveFail: "Work" } },
+  ]}
+  terminal="Branch merged"
+/>
+
+```yaml
+# In .orkestra/workflow.yaml, add under flows:
+flows:
+  quick:
+    stages:
+      - name: work
+        artifact: summary
+        description: Implements the change and produces a summary
+        prompt: worker.md
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 300
+
+      - name: review
+        artifact: verdict
+        description: Reviews the fix and produces an approve/reject verdict
+        prompt: reviewer.md
+        capabilities:
+          approval:
+            rejection_stage: work
+
+    integration:
+      on_failure: work
+```
+
+This flow reuses `worker.md` and `reviewer.md` — no additional prompt templates needed.
+
+To create a Trak using this flow:
+
+```bash
+ork trak create \
+  -t "Fix null pointer in auth middleware" \
+  -d "Line 47 of src/auth/middleware.rs panics when the session token is missing." \
+  --flow quick
+```
+
+---
+
+## Documentation writer
+
+Best for writing or updating documentation, READMEs, API references, and migration guides. No gate script — documentation doesn't compile.
+
+<Pipeline
+  stages={[
+    { name: "Research", description: "Explore the codebase and clarify scope", gate: { kind: "approval" } },
+    { name: "Draft", description: "Write the documentation", gate: { kind: "approval" } },
+    { name: "Review", description: "Check accuracy, completeness, and clarity", gate: { kind: "verdict", onApproveFail: "Draft" } },
+  ]}
+  terminal="PR ready"
+/>
+
+```yaml
+# In .orkestra/workflow.yaml, add under flows:
+flows:
+  docs:
+    stages:
+      - name: research
+        artifact: findings
+        description: Explores the codebase and clarifies what needs documenting
+        prompt: docs-researcher.md
+        capabilities:
+          ask_questions: true
+
+      - name: draft
+        artifact: draft
+        description: Writes the documentation based on research findings
+        prompt: docs-writer.md
+
+      - name: review
+        artifact: verdict
+        description: Reviews the draft for accuracy, completeness, and clarity
+        prompt: docs-reviewer.md
+        capabilities:
+          approval:
+            rejection_stage: draft
+
+    integration:
+      on_failure: draft
+```
+
+<Callout type="tip">
+If your project has a docs linter or link checker, add a `gate:` block to the `draft` stage — the same pattern as the automated check in the quick fix flow.
+</Callout>
+
+This flow uses custom prompt templates that `ork init` does not create. Add these files to `.orkestra/agents/`:
+
+- **`docs-researcher.md`** — instruct the agent to explore relevant source files, understand the feature being documented, and identify what the documentation must cover. Include questions about audience, depth, and scope.
+- **`docs-writer.md`** — instruct the agent to write complete, accurate documentation based on the research artifact. Specify the format (MDX, Markdown, etc.) and any style guide requirements.
+- **`docs-reviewer.md`** — instruct the agent to evaluate the draft against the research findings for accuracy, check for missing sections, and produce an approve/reject verdict with specific feedback.
+
+See [Prompt Templates](/docs/core-concepts/prompt-templates) for guidance on writing effective stage prompts.
+
+<Callout type="warning">
+Flow names in `workflow.yaml` are unrestricted. If your project already defines a flow named `docs`, choose a different name (e.g., `documentation`) to avoid a conflict.
+</Callout>
+
+---
+
+## Storybook story generator
+
+Best for generating Storybook stories for existing components. A custom gate script verifies that stories build correctly before human review.
+
+<Pipeline
+  stages={[
+    { name: "Analyze", description: "Identify components needing stories", gate: { kind: "approval" } },
+    { name: "Generate", description: "Write Storybook stories for each component", gate: [{ kind: "check" }, { kind: "approval" }] },
+    { name: "Review", description: "Verify stories are correct and complete", gate: { kind: "verdict", onApproveFail: "Generate" } },
+  ]}
+  terminal="Stories merged"
+/>
+
+```yaml
+# In .orkestra/workflow.yaml, add under flows:
+flows:
+  storybook:
+    stages:
+      - name: analyze
+        artifact: analysis
+        description: Identifies which components need stories and their required variants
+        prompt: storybook-analyzer.md
+        capabilities:
+          ask_questions: true
+
+      - name: generate
+        artifact: summary
+        description: Generates Storybook stories for each identified component
+        prompt: storybook-writer.md
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/storybook-check.sh"
+          timeout_seconds: 120
+
+      - name: review
+        artifact: verdict
+        description: Reviews stories for accuracy, completeness, and visual correctness
+        prompt: reviewer.md
+        capabilities:
+          approval:
+            rejection_stage: generate
+
+    integration:
+      on_failure: generate
+```
+
+Create `.orkestra/scripts/storybook-check.sh`:
+
+```bash
+#!/bin/bash
+set -e
+cd "$ORKESTRA_WORKTREE_PATH"
+pnpm storybook build --quiet
+```
+
+This flow uses two custom prompt templates:
+
+- **`storybook-analyzer.md`** — instruct the agent to explore the component library, identify components lacking story coverage, and produce a structured list of required variants (default, loading, error, edge cases).
+- **`storybook-writer.md`** — instruct the agent to write complete CSF3 stories based on the analysis artifact, matching the project's existing story patterns.
+
+The `review` stage reuses `reviewer.md` from the default flow.
+
+---
+
+## Using multiple flows
+
+All flows live in a single `.orkestra/workflow.yaml` under the `flows:` map. Add each flow as a named entry:
+
+```yaml
+version: 2
+
+flows:
+  default:
+    # ...
+  quick:
+    # ...
+  docs:
+    # ...
+  storybook:
+    # ...
+```
+
+You can also share gate scripts across flows. The `storybook-check.sh` above is a separate file from `checks.sh` — reference it by path in the gate `command` field. See [Shell Scripts](/docs/configuration/scripts) for the gate script interface and available environment variables.

@@ -1,0 +1,345 @@
+---
+import { getCollection } from "astro:content";
+import ArrowLeft from "../components/icons/ArrowLeft.astro";
+import ArrowRight from "../components/icons/ArrowRight.astro";
+import GitHub from "../components/icons/GitHub.astro";
+import Orkestra from "../components/icons/Orkestra.astro";
+import Layout from "./Layout.astro";
+
+interface Props {
+  title: string;
+  description?: string;
+  headings?: { depth: number; slug: string; text: string }[];
+  prevPage?: { title: string; href: string };
+  nextPage?: { title: string; href: string };
+}
+
+const { title, description, headings = [], prevPage, nextPage } = Astro.props;
+const currentPath = Astro.url.pathname.replace(/\/$/, "");
+
+function isActive(id: string) {
+  return currentPath === `/docs/${id}`;
+}
+
+// Section index pages have no "/" in their id (Astro strips "/index" automatically).
+const allDocs = await getCollection("docs");
+
+const indexPages = allDocs
+  .filter((e) => !e.id.includes("/"))
+  .sort((a, b) => a.data.order - b.data.order);
+
+const childPages = allDocs.filter((e) => e.id.includes("/"));
+
+const sections = indexPages.map((indexPage) => {
+  const children = childPages
+    .filter((e) => e.id.startsWith(`${indexPage.id}/`))
+    .sort((a, b) => a.data.order - b.data.order);
+  return { indexPage, children };
+});
+
+const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+<script>
+  // Highlight the TOC link whose heading is currently at the top of the viewport.
+  function updateToc() {
+    const headingEls = Array.from(
+      document.querySelectorAll<HTMLElement>("article h2[id], article h3[id]"),
+    );
+    if (!headingEls.length) return;
+
+    const scrollY = window.scrollY + 96; // account for sticky header + buffer
+    let active = headingEls[0];
+    for (const el of headingEls) {
+      if (el.offsetTop <= scrollY) active = el;
+      else break;
+    }
+
+    for (const a of document.querySelectorAll("[data-toc] a")) {
+      a.removeAttribute("data-active");
+    }
+    for (const a of document.querySelectorAll("[data-toc-mobile] a")) {
+      a.removeAttribute("data-active");
+    }
+    const link = document.querySelector(`[data-toc] a[href="#${active.id}"]`);
+    if (link) link.setAttribute("data-active", "");
+    const mobileLink = document.querySelector(`[data-toc-mobile] a[href="#${active.id}"]`);
+    if (mobileLink) mobileLink.setAttribute("data-active", "");
+  }
+
+  window.addEventListener("scroll", updateToc, { passive: true });
+  updateToc();
+
+  // Mobile TOC overlay toggle
+  const tocToggle = document.getElementById("toc-toggle") as HTMLElement | null;
+  const tocPanel = document.getElementById("toc-panel") as HTMLElement | null;
+  const tocClose = document.getElementById("toc-close");
+  let tocOpen = false;
+
+  function openToc() {
+    tocOpen = true;
+    if (tocToggle) tocToggle.style.boxShadow = "none";
+    if (!tocPanel) return;
+    tocPanel.style.opacity = "1";
+    tocPanel.style.transform = "translateX(0)";
+    tocPanel.style.pointerEvents = "auto";
+  }
+
+  function closeToc() {
+    tocOpen = false;
+    if (tocToggle) tocToggle.style.boxShadow = "";
+    if (!tocPanel) return;
+    tocPanel.style.opacity = "0";
+    tocPanel.style.transform = "translateX(12px)";
+    tocPanel.style.pointerEvents = "none";
+  }
+
+  tocToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    tocOpen ? closeToc() : openToc();
+  });
+
+  tocClose?.addEventListener("click", closeToc);
+
+  // Close when clicking outside the panel
+  document.addEventListener("click", (e) => {
+    if (tocOpen && tocPanel && !tocPanel.contains(e.target as Node)) {
+      closeToc();
+    }
+  });
+
+  // Close when a TOC link is clicked
+  tocPanel?.querySelectorAll("a").forEach((a) => {
+    a.addEventListener("click", closeToc);
+  });
+</script>
+
+<script>
+  import mermaid from "mermaid";
+
+  const s = getComputedStyle(document.documentElement);
+  const token = (name: string) => s.getPropertyValue(name).trim();
+
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "base",
+    themeVariables: {
+      background:          token("--forge-surface"),
+      mainBkg:             token("--forge-surface-2"),
+      clusterBkg:          token("--forge-surface-2"),
+      edgeLabelBackground: token("--forge-surface"),
+      primaryTextColor:    token("--forge-text-primary"),
+      titleColor:          token("--forge-text-primary"),
+      primaryBorderColor:  token("--forge-border"),
+      lineColor:           token("--forge-text-tertiary"),
+      primaryColor:        token("--forge-accent-soft"),
+      nodeBorder:          token("--forge-accent"),
+    },
+    flowchart: {
+      curve: "linear",
+      diagramPadding: 16,
+    },
+  });
+</script>
+
+<Layout title={`${title} — Orkestra Docs`} description={description}>
+  <div class="min-h-screen bg-canvas text-text-primary flex flex-col">
+
+    <!-- Top bar -->
+    <header class="h-14 border-b border-border bg-surface flex items-center px-6 gap-4 sticky top-0 z-10">
+      <a href="/" class="flex items-center gap-2.5 shrink-0 group">
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-accent to-violet flex items-center justify-center">
+          <Orkestra size={14} />
+        </div>
+        <span class="text-sm font-semibold tracking-wide text-text-primary group-hover:text-accent transition-colors">
+          Orkestra
+        </span>
+      </a>
+      <div class="w-px h-5 bg-border"></div>
+      <nav class="flex items-center gap-1">
+        <a href="/docs/getting-started" class="px-2.5 py-1 rounded text-xs font-medium text-accent bg-accent/8 transition-colors">Docs</a>
+        <a href="/releases" class="px-2.5 py-1 rounded text-xs font-medium text-text-tertiary hover:text-text-secondary transition-colors">Releases</a>
+      </nav>
+      <div class="flex-1"></div>
+      <a
+        href="https://github.com/tiniest-fox/orkestra"
+        class="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <GitHub size={15} />
+        GitHub
+      </a>
+    </header>
+
+    <div class="flex flex-1">
+
+      <!-- Left sidebar -->
+      <aside class="w-60 shrink-0 border-r border-border bg-surface sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
+        <nav class="p-4 space-y-1">
+          {sections.map(({ indexPage, children }) => (
+            <div class="mb-4">
+              <!-- Section header — linked to the index page -->
+              <a
+                href={`/docs/${indexPage.id}`}
+                class={`flex items-center px-2 py-1.5 rounded-panel-sm text-xs font-semibold tracking-widest uppercase transition-colors mb-0.5 ${
+                  isActive(indexPage.id)
+                    ? "text-accent"
+                    : "text-text-quaternary hover:text-text-secondary"
+                }`}
+              >
+                {indexPage.data.title}
+              </a>
+              <!-- Child pages -->
+              {children.length > 0 && (
+                <ul class="space-y-0.5">
+                  {children.map((entry) => (
+                    <li>
+                      <a
+                        href={`/docs/${entry.id}`}
+                        class={`block px-2 py-1.5 rounded-panel-sm text-sm transition-colors ${
+                          isActive(entry.id)
+                            ? "bg-accent/8 text-accent font-medium"
+                            : "text-text-secondary hover:text-text-primary hover:bg-surface-hover"
+                        }`}
+                      >
+                        {entry.data.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <!-- Main content -->
+      <main class="flex-1 min-w-0">
+        <article class="max-w-3xl mx-auto px-10 py-12 prose prose-neutral dark:prose-invert prose-headings:scroll-mt-20
+          prose-headings:text-text-primary prose-headings:font-semibold prose-headings:tracking-tight
+          prose-p:text-text-secondary prose-li:text-text-secondary
+          prose-a:text-accent prose-a:no-underline hover:prose-a:underline
+          prose-code:text-text-primary prose-code:bg-surface-2 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:before:content-none prose-code:after:content-none
+          prose-pre:bg-surface-2 prose-pre:border prose-pre:border-border
+          prose-hr:border-border
+          prose-table:text-sm prose-th:text-text-primary prose-td:text-text-secondary
+          max-w-none">
+          <slot />
+          {(prevPage || nextPage) && (
+            <footer class="not-prose pt-8 mt-8 border-t border-border flex items-center justify-between gap-4">
+              {prevPage ? (
+                <a
+                  href={prevPage.href}
+                  class="inline-flex items-center gap-2 text-sm font-medium text-accent hover:text-accent-hover transition-colors"
+                >
+                  <ArrowLeft />
+                  {prevPage.title}
+                </a>
+              ) : <span />}
+              {nextPage && (
+                <a
+                  href={nextPage.href}
+                  class="inline-flex items-center gap-2 text-sm font-medium text-accent hover:text-accent-hover transition-colors"
+                >
+                  {nextPage.title}
+                  <ArrowRight />
+                </a>
+              )}
+            </footer>
+          )}
+        </article>
+      </main>
+
+      <!-- Right TOC — only shown on xl+ when there are headings -->
+      {tocHeadings.length > 0 && (
+        <aside class="hidden xl:block w-52 shrink-0 border-l border-border sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
+          <nav data-toc class="p-5">
+            <p class="text-[10px] font-semibold tracking-widest uppercase text-text-quaternary mb-3">
+              On this page
+            </p>
+            <ul class="space-y-1">
+              {tocHeadings.map((h) => (
+                <li>
+                  <a
+                    href={`#${h.slug}`}
+                    class={`block text-xs leading-relaxed transition-colors text-text-tertiary hover:text-text-primary [&[data-active]]:text-accent [&[data-active]]:font-medium ${
+                      h.depth === 3 ? "pl-3" : ""
+                    }`}
+                  >
+                    {h.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </aside>
+      )}
+
+    </div>
+
+    <!-- Mobile TOC: floating button + overlay (hidden on xl+) -->
+    {tocHeadings.length > 0 && (
+      <>
+        <button
+          id="toc-toggle"
+          class="xl:hidden fixed top-[4.25rem] right-4 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-panel-sm bg-surface border border-border text-xs font-medium text-text-secondary hover:text-text-primary shadow-panel transition-[color,box-shadow]"
+          style="transition: color 150ms, box-shadow 150ms;"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="15" y2="12" />
+            <line x1="3" y1="18" x2="18" y2="18" />
+          </svg>
+          On this page
+        </button>
+
+        <div id="toc-overlay" class="xl:hidden fixed inset-0 z-20 pointer-events-none">
+          <aside
+            id="toc-panel"
+            class="absolute top-[4.25rem] right-4 bottom-4 w-52 bg-surface rounded-panel overflow-y-auto shadow-panel-hover border border-border"
+            style="opacity: 0; transform: translateX(12px); pointer-events: none; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease-out;"
+          >
+            <nav data-toc-mobile class="p-5">
+              <div class="flex items-center justify-between mb-3">
+                <p class="flex items-center gap-1.5 text-[10px] font-semibold tracking-widest uppercase text-text-quaternary">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="15" y2="12" />
+                    <line x1="3" y1="18" x2="18" y2="18" />
+                  </svg>
+                  On this page
+                </p>
+                <button
+                  id="toc-close"
+                  class="text-text-tertiary hover:text-text-primary transition-colors"
+                  aria-label="Close outline"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <ul class="space-y-1">
+                {tocHeadings.map((h) => (
+                  <li>
+                    <a
+                      href={`#${h.slug}`}
+                      class={`block text-xs leading-relaxed transition-colors text-text-tertiary hover:text-text-primary [&[data-active]]:text-accent [&[data-active]]:font-medium ${
+                        h.depth === 3 ? "pl-3" : ""
+                      }`}
+                    >
+                      {h.text}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          </aside>
+        </div>
+      </>
+    )}
+
+  </div>
+</Layout>

@@ -1,0 +1,21 @@
+---
+title: Configuration
+description: Reference documentation for Orkestra configuration files and the CLI.
+order: 3
+---
+
+All Orkestra configuration lives in the `.orkestra/` directory at your project root. Running `ork trak list` in a git repository scaffolds it automatically on first use.
+
+Three surfaces make up a project's configuration:
+
+| Surface | Location | Purpose |
+|---------|----------|---------|
+| [Workflow](/docs/configuration/workflow) | `.orkestra/workflow.yaml` | Defines flows: the stages that run, their order, gates, capabilities, and integration behavior. |
+| [Shell scripts](/docs/configuration/scripts) | `.orkestra/scripts/` | Lifecycle hooks for worktree setup and cleanup, and the gate script that runs quality checks after agent work. |
+| [Prompt templates](/docs/core-concepts/prompt-templates) | `.orkestra/agents/` | Markdown files that define what agents do at each stage. |
+
+For copy-paste starting points across common use cases, see [Example Flows](/docs/configuration/examples).
+
+All three are committed to version control and shared across the team. Runtime state — the database, logs, and worktrees — is gitignored automatically.
+
+For day-to-day CLI usage, see the [CLI Reference](/docs/configuration/cli).

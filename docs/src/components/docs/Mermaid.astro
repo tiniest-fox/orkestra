@@ -1,0 +1,9 @@
+---
+interface Props {
+  diagram: string;
+}
+
+const { diagram } = Astro.props;
+---
+
+<div class="mermaid not-prose">{diagram}</div>

@@ -1,0 +1,54 @@
+---
+import { getCollection, render } from "astro:content";
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+// Section index pages have no "/" in their id (e.g. "getting-started").
+// Child pages have a "/" (e.g. "getting-started/quickstart").
+// Astro's glob loader already strips "/index" from index file ids.
+
+export async function getStaticPaths() {
+  const docs = await getCollection("docs");
+
+  const indexPages = docs
+    .filter((e) => !e.id.includes("/"))
+    .sort((a, b) => a.data.order - b.data.order);
+
+  const childPages = docs.filter((e) => e.id.includes("/"));
+
+  // Full reading order: section index → its children (by order) → next section → …
+  const ordered: typeof docs = [];
+  for (const indexPage of indexPages) {
+    const children = childPages
+      .filter((e) => e.id.startsWith(`${indexPage.id}/`))
+      .sort((a, b) => a.data.order - b.data.order);
+    ordered.push(indexPage, ...children);
+  }
+
+  return ordered.map((entry, i) => {
+    const prev = i > 0 ? ordered[i - 1] : undefined;
+    const next = i < ordered.length - 1 ? ordered[i + 1] : undefined;
+
+    return {
+      params: { slug: entry.id },
+      props: {
+        entry,
+        prevPage: prev ? { title: prev.data.title, href: `/docs/${prev.id}` } : undefined,
+        nextPage: next ? { title: next.data.title, href: `/docs/${next.id}` } : undefined,
+      },
+    };
+  });
+}
+
+const { entry, prevPage, nextPage } = Astro.props;
+const { Content, headings } = await render(entry);
+---
+
+<DocsLayout
+  title={entry.data.title}
+  description={entry.data.description}
+  headings={headings}
+  prevPage={prevPage}
+  nextPage={nextPage}
+>
+  <Content />
+</DocsLayout>

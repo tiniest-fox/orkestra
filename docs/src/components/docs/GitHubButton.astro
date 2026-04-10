@@ -1,0 +1,20 @@
+---
+import GitHub from "../icons/GitHub.astro";
+
+interface Props {
+  href: string;
+  label?: string;
+}
+
+const { href, label = "View on GitHub" } = Astro.props;
+---
+
+<a
+  href={href}
+  class="not-prose inline-flex items-center gap-2 px-4 py-2.5 bg-surface text-text-primary text-sm font-semibold rounded-panel-sm border border-border hover:bg-surface-hover transition-colors shadow-panel"
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  <GitHub size={16} />
+  {label}
+</a>

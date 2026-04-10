@@ -1,0 +1,47 @@
+---
+interface Props {
+  type?: "note" | "tip" | "warning" | "danger";
+  title?: string;
+}
+
+const { type = "note", title } = Astro.props;
+
+const config = {
+  note: {
+    label: title ?? "Note",
+    icon: "ℹ",
+    classes: "border-status-info/40 bg-status-info-bg text-status-info",
+    bodyClasses: "text-text-secondary",
+  },
+  tip: {
+    label: title ?? "Tip",
+    icon: "✦",
+    classes: "border-status-success/40 bg-status-success-bg text-status-success",
+    bodyClasses: "text-text-secondary",
+  },
+  warning: {
+    label: title ?? "Warning",
+    icon: "⚠",
+    classes: "border-status-warning/40 bg-status-warning-bg text-status-warning",
+    bodyClasses: "text-text-secondary",
+  },
+  danger: {
+    label: title ?? "Danger",
+    icon: "✕",
+    classes: "border-status-error/40 bg-status-error-bg text-status-error",
+    bodyClasses: "text-text-secondary",
+  },
+};
+
+const { label, icon, classes, bodyClasses } = config[type];
+---
+
+<aside class={`not-prose my-6 rounded-panel-sm border px-4 py-3 ${classes}`}>
+  <p class="mb-1 flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase">
+    <span aria-hidden="true">{icon}</span>
+    {label}
+  </p>
+  <div class={`text-sm leading-relaxed [&_a]:underline [&_a]:underline-offset-2 ${bodyClasses}`}>
+    <slot />
+  </div>
+</aside>

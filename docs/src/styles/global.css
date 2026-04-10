@@ -1,0 +1,288 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@source "../../src";
+
+/* ============================================================================
+ * Forge Design Token CSS Variables
+ * ============================================================================
+ * Light mode in :root, dark mode overrides in the media query.
+ * Colors use full hex/rgb values so Tailwind 4 opacity modifiers work
+ * via color-mix() (e.g. bg-accent/10).
+ */
+
+:root {
+  /* -- Backgrounds -- */
+  --forge-canvas: #FAF8FC;
+  --forge-surface: #FFFFFF;
+  --forge-surface-raised: #FEFCFA;
+  --forge-surface-2: #F4F0F8;
+  --forge-surface-3: #DDD7E4;
+  --forge-surface-hover: #F5F2F8;
+
+  /* -- Text -- */
+  --forge-text-primary: #1C1820;
+  --forge-text-secondary: #5A5068;
+  --forge-text-tertiary: #7A7288;
+  --forge-text-quaternary: #9E96AC;
+
+  /* -- Border -- */
+  --forge-border: #E4DFE9;
+
+  /* -- Accent (pink-red) -- */
+  --forge-accent: #E83558;
+  --forge-accent-soft: rgba(232, 53, 88, 0.08);
+  --forge-accent-hover: #D42B4C;
+
+  /* -- Status: success -- */
+  --forge-status-success: #16A34A;
+  --forge-status-success-bg: rgba(22, 163, 74, 0.11);
+
+  /* -- Status: error -- */
+  --forge-status-error: #DC2626;
+  --forge-status-error-hover: #B91C1C;
+  --forge-status-error-bg: rgba(220, 38, 38, 0.06);
+
+  /* -- Status: warning -- */
+  --forge-status-warning: #D97706;
+  --forge-status-warning-bg: #fef3c7;
+
+  /* -- Status: info -- */
+  --forge-status-info: #2563EB;
+  --forge-status-info-hover: #1D4FD8;
+  --forge-status-info-bg: rgba(37, 99, 235, 0.06);
+
+  /* -- Status: extended palette -- */
+  --forge-status-purple: #9333ea;
+  --forge-status-purple-bg: #f3e8ff;
+  --forge-status-pink: #db2777;
+  --forge-status-pink-bg: #fce7f3;
+  --forge-status-cyan: #0891b2;
+  --forge-status-cyan-bg: #cffafe;
+  --forge-status-orange: #ea580c;
+  --forge-status-orange-bg: #ffedd5;
+
+  /* -- Workflow action colors -- */
+  --forge-violet: #7C3AED;
+  --forge-violet-hover: #6D28D9;
+  --forge-teal: #0D9488;
+  --forge-teal-hover: #0B7D74;
+  --forge-merge: #C85A4C;
+  --forge-merge-hover: #B85040;
+
+  /* -- Panel shadows -- */
+  --forge-shadow-panel: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
+  --forge-shadow-panel-hover: 0px 2px 24px 6px rgb(0 0 0 / 0.14), 0px 0px 4px 1px rgb(0 0 0 / 0.04);
+  --forge-shadow-panel-press: 0px 0px 4px 1px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.02);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* -- Backgrounds -- */
+    --forge-canvas: #13111A;
+    --forge-surface: #1C1926;
+    --forge-surface-raised: #221F2E;
+    --forge-surface-2: #252233;
+    --forge-surface-3: #342F44;
+    --forge-surface-hover: #1F1C2A;
+
+    /* -- Text -- */
+    --forge-text-primary: #EDEBF0;
+    --forge-text-secondary: #A9A1B8;
+    --forge-text-tertiary: #7B7490;
+    --forge-text-quaternary: #544E66;
+
+    /* -- Border -- */
+    --forge-border: #2E2A3C;
+
+    /* -- Accent -- */
+    --forge-accent: #F04068;
+    --forge-accent-soft: rgba(240, 64, 104, 0.12);
+    --forge-accent-hover: #E83558;
+
+    /* -- Status: success -- */
+    --forge-status-success: #22C55E;
+    --forge-status-success-bg: rgba(34, 197, 94, 0.12);
+
+    /* -- Status: error -- */
+    --forge-status-error: #EF4444;
+    --forge-status-error-hover: #DC2626;
+    --forge-status-error-bg: rgba(239, 68, 68, 0.12);
+
+    /* -- Status: warning -- */
+    --forge-status-warning: #F59E0B;
+    --forge-status-warning-bg: rgba(245, 158, 11, 0.12);
+
+    /* -- Status: info -- */
+    --forge-status-info: #3B82F6;
+    --forge-status-info-hover: #2563EB;
+    --forge-status-info-bg: rgba(59, 130, 246, 0.12);
+
+    /* -- Status: extended palette -- */
+    --forge-status-purple: #A855F7;
+    --forge-status-purple-bg: rgba(168, 85, 247, 0.12);
+    --forge-status-pink: #EC4899;
+    --forge-status-pink-bg: rgba(236, 72, 153, 0.12);
+    --forge-status-cyan: #06B6D4;
+    --forge-status-cyan-bg: rgba(6, 182, 212, 0.12);
+    --forge-status-orange: #F97316;
+    --forge-status-orange-bg: rgba(249, 115, 22, 0.12);
+
+    /* -- Workflow action colors -- */
+    --forge-violet: #8B5CF6;
+    --forge-violet-hover: #7C3AED;
+    --forge-teal: #14B8A6;
+    --forge-teal-hover: #0D9488;
+    --forge-merge: #E07060;
+    --forge-merge-hover: #C85A4C;
+
+    /* -- Panel shadows (edge-light for dark backgrounds) -- */
+    --forge-shadow-panel: 0 0 0 1px rgba(80, 70, 110, 0.25), 0 0 12px 0 rgba(0, 0, 0, 0.3);
+    --forge-shadow-panel-hover: 0 0 0 1px rgba(100, 85, 140, 0.35), 0 0 20px 0 rgba(0, 0, 0, 0.4);
+    --forge-shadow-panel-press: 0 0 0 1px rgba(60, 52, 85, 0.3);
+  }
+}
+
+/* ============================================================================
+ * Tailwind 4 Theme
+ * ============================================================================
+ * Maps forge tokens to Tailwind utility classes. Defined here so they
+ * respond to the light/dark CSS variable overrides above automatically.
+ */
+
+@theme {
+  /* Backgrounds */
+  --color-canvas: var(--forge-canvas);
+  --color-surface: var(--forge-surface);
+  --color-surface-raised: var(--forge-surface-raised);
+  --color-surface-2: var(--forge-surface-2);
+  --color-surface-3: var(--forge-surface-3);
+  --color-surface-hover: var(--forge-surface-hover);
+
+  /* Text */
+  --color-text-primary: var(--forge-text-primary);
+  --color-text-secondary: var(--forge-text-secondary);
+  --color-text-tertiary: var(--forge-text-tertiary);
+  --color-text-quaternary: var(--forge-text-quaternary);
+
+  /* Border */
+  --color-border: var(--forge-border);
+
+  /* Accent */
+  --color-accent: var(--forge-accent);
+  --color-accent-soft: var(--forge-accent-soft);
+  --color-accent-hover: var(--forge-accent-hover);
+
+  /* Status */
+  --color-status-success: var(--forge-status-success);
+  --color-status-success-bg: var(--forge-status-success-bg);
+  --color-status-error: var(--forge-status-error);
+  --color-status-error-hover: var(--forge-status-error-hover);
+  --color-status-error-bg: var(--forge-status-error-bg);
+  --color-status-warning: var(--forge-status-warning);
+  --color-status-warning-bg: var(--forge-status-warning-bg);
+  --color-status-info: var(--forge-status-info);
+  --color-status-info-hover: var(--forge-status-info-hover);
+  --color-status-info-bg: var(--forge-status-info-bg);
+  --color-status-purple: var(--forge-status-purple);
+  --color-status-purple-bg: var(--forge-status-purple-bg);
+  --color-status-pink: var(--forge-status-pink);
+  --color-status-pink-bg: var(--forge-status-pink-bg);
+  --color-status-cyan: var(--forge-status-cyan);
+  --color-status-cyan-bg: var(--forge-status-cyan-bg);
+  --color-status-orange: var(--forge-status-orange);
+  --color-status-orange-bg: var(--forge-status-orange-bg);
+
+  /* Workflow */
+  --color-violet: var(--forge-violet);
+  --color-violet-hover: var(--forge-violet-hover);
+  --color-teal: var(--forge-teal);
+  --color-teal-hover: var(--forge-teal-hover);
+  --color-merge: var(--forge-merge);
+  --color-merge-hover: var(--forge-merge-hover);
+
+  /* Typography */
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", "Cascadia Code", monospace;
+
+  /* Custom font sizes */
+  --text-forge-mono-sm: 11px;
+  --text-forge-mono-sm--line-height: 16px;
+  --text-forge-mono-md: 12px;
+  --text-forge-mono-md--line-height: 18px;
+  --text-forge-mono-label: 10px;
+  --text-forge-mono-label--line-height: 14px;
+  --text-forge-body: 13px;
+  --text-forge-body--line-height: 20px;
+  --text-forge-body-md: 14px;
+  --text-forge-body-md--line-height: 20px;
+  --text-forge-body-lg: 15px;
+  --text-forge-body-lg--line-height: 22px;
+
+  /* Border radius */
+  --radius-panel: 12px;
+  --radius-panel-sm: 8px;
+
+  /* Shadows */
+  --shadow-panel: var(--forge-shadow-panel);
+  --shadow-panel-hover: var(--forge-shadow-panel-hover);
+  --shadow-panel-press: var(--forge-shadow-panel-press);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  /* Give the first column of prose tables a comfortable minimum width
+     so short terms/labels aren't squeezed too narrow. */
+  .prose table th:first-child,
+  .prose table td:first-child {
+    min-width: 6rem;
+    padding-right: 2rem;
+  }
+}
+
+/* ============================================================================
+ * Code block overrides — outside @layer so they beat Tailwind prose utilities
+ * and Shiki's inline style="background-color:..." attributes.
+ * ============================================================================ */
+
+/* Mermaid diagram container */
+.mermaid {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+  background-color: var(--forge-surface-2);
+  border: 1px solid var(--forge-border);
+  border-radius: var(--radius-panel-sm);
+  overflow-x: auto;
+  margin-block: 1.5rem;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Shiki injects inline background-color on <pre> — !important overrides it. */
+.prose pre {
+  background-color: var(--forge-surface-2) !important;
+}
+
+/* Reset the <code> inside <pre>: prose-code:* utilities apply a background,
+   padding, and rounded corners suited for inline code, which double-up inside
+   a code block and cause the light-stripe banding. */
+.prose pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+}

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use orkestra_core::workflow::ports::{CommitInfo, FileChangeType, FileDiff};
 use orkestra_networking::diff as shared_diff;
+use orkestra_networking::diff_types::{cache_key_for_sha, combined_diff_sha, file_content_hash};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::State;
@@ -109,7 +110,6 @@ pub struct SyntaxCss {
 /// Accepts an optional `last_sha` `ETag` parameter. When `last_sha` matches the current
 /// diff fingerprint, returns `{ "unchanged": true, "diff_sha": "..." }` immediately.
 /// Full diff responses include a `diff_sha` field for use as `last_sha` on the next poll.
-#[allow(clippy::too_many_lines)]
 #[tauri::command]
 pub async fn workflow_get_task_diff(
     task_id: String,
@@ -147,11 +147,7 @@ pub async fn workflow_get_task_diff(
         // Use ok() so a transient git2 error doesn't block the diff.
         if let Ok(wt_state) = git.get_worktree_state(worktree_path) {
             if !wt_state.is_dirty {
-                let cache_sha = if context_lines == 3 {
-                    wt_state.head_sha.clone()
-                } else {
-                    format!("{}:{}", wt_state.head_sha, context_lines)
-                };
+                let cache_sha = cache_key_for_sha(&wt_state.head_sha, context_lines);
                 // ETag short-circuit: unchanged since last poll.
                 if last_sha.as_deref() == Some(&cache_sha) {
                     return Ok(serde_json::json!({ "unchanged": true, "diff_sha": cache_sha }));
@@ -166,52 +162,23 @@ pub async fn workflow_get_task_diff(
                     .unwrap_or(Value::Null));
                 }
 
-                // Tier 1 miss — run git diff subprocess.
+                // Tier 1 miss — run git diff subprocess then apply Tier 2 caching.
                 let raw_diff = git
                     .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                     .map_err(|e| {
                         orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string())
                     })?;
 
-                // Tier 2: per-file content hash — only re-highlight changed files.
-                let file_hashes: Vec<(String, u64)> = raw_diff
-                    .files
-                    .iter()
-                    .map(|f| (f.path.clone(), file_content_hash(f)))
-                    .collect();
-                let diff_sha = combined_diff_sha(&file_hashes, context_lines);
-
-                // ETag short-circuit for clean Tier 1 miss.
-                if last_sha.as_deref() == Some(&diff_sha) {
-                    return Ok(serde_json::json!({ "unchanged": true, "diff_sha": diff_sha }));
-                }
-
-                let mut cached_files =
-                    diff_cache.get_files_by_hash(window.label(), &task_id, &file_hashes);
-
-                let mut to_store: Vec<(String, u64, HighlightedFileDiff)> = Vec::new();
-                let files: Vec<HighlightedFileDiff> = raw_diff
-                    .files
-                    .into_iter()
-                    .zip(file_hashes.iter())
-                    .map(|(file, (path, hash))| {
-                        if let Some(Some(cached)) = cached_files.remove(path) {
-                            to_store.push((path.clone(), *hash, cached.clone()));
-                            cached
-                        } else {
-                            let result = highlight_file_diff(file, &highlighter);
-                            to_store.push((path.clone(), *hash, result.clone()));
-                            result
-                        }
-                    })
-                    .collect();
-
-                diff_cache.store(window.label(), &task_id, &cache_sha, to_store);
-                return Ok(serde_json::to_value(HighlightedTaskDiff {
-                    files,
-                    diff_sha: Some(diff_sha),
-                })
-                .unwrap_or(Value::Null));
+                return Ok(highlight_with_tier2_cache(
+                    raw_diff,
+                    context_lines,
+                    last_sha.as_deref(),
+                    &cache_sha,
+                    window.label(),
+                    &task_id,
+                    &highlighter,
+                    &diff_cache,
+                )?);
             }
 
             // Worktree is dirty — run git diff subprocess without Tier 1 caching.
@@ -221,46 +188,17 @@ pub async fn workflow_get_task_diff(
                     orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string())
                 })?;
 
-            // Tier 2: per-file content hash — only re-highlight changed files.
-            let file_hashes: Vec<(String, u64)> = raw_diff
-                .files
-                .iter()
-                .map(|f| (f.path.clone(), file_content_hash(f)))
-                .collect();
-            let diff_sha = combined_diff_sha(&file_hashes, context_lines);
-
-            // ETag short-circuit for dirty worktrees.
-            if last_sha.as_deref() == Some(&diff_sha) {
-                return Ok(serde_json::json!({ "unchanged": true, "diff_sha": diff_sha }));
-            }
-
-            let mut cached_files =
-                diff_cache.get_files_by_hash(window.label(), &task_id, &file_hashes);
-
-            let mut to_store: Vec<(String, u64, HighlightedFileDiff)> = Vec::new();
-            let files: Vec<HighlightedFileDiff> = raw_diff
-                .files
-                .into_iter()
-                .zip(file_hashes.iter())
-                .map(|(file, (path, hash))| {
-                    if let Some(Some(cached)) = cached_files.remove(path) {
-                        to_store.push((path.clone(), *hash, cached.clone()));
-                        cached
-                    } else {
-                        let result = highlight_file_diff(file, &highlighter);
-                        to_store.push((path.clone(), *hash, result.clone()));
-                        result
-                    }
-                })
-                .collect();
-
             // Store with dirty-state SHA (no Tier 1 key) for Tier 2 re-use only.
-            diff_cache.store(window.label(), &task_id, &wt_state.head_sha, to_store);
-            return Ok(serde_json::to_value(HighlightedTaskDiff {
-                files,
-                diff_sha: Some(diff_sha),
-            })
-            .unwrap_or(Value::Null));
+            return Ok(highlight_with_tier2_cache(
+                raw_diff,
+                context_lines,
+                last_sha.as_deref(),
+                &wt_state.head_sha,
+                window.label(),
+                &task_id,
+                &highlighter,
+                &diff_cache,
+            )?);
         }
 
         // get_worktree_state failed — fall back to direct diff with no caching.
@@ -280,35 +218,6 @@ pub async fn workflow_get_task_diff(
         })
         .unwrap_or(Value::Null))
     })
-}
-
-/// Combine per-file content hashes into a single diff fingerprint.
-fn combined_diff_sha(file_hashes: &[(String, u64)], context_lines: u32) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    for (path, hash) in file_hashes {
-        path.hash(&mut h);
-        hash.hash(&mut h);
-    }
-    context_lines.hash(&mut h);
-    format!("{:x}", h.finish())
-}
-
-/// Stable content hash for a file diff entry.
-///
-/// Covers all fields that appear in the cached `HighlightedFileDiff` output so
-/// that a cache hit is only returned when the rendered result would be identical.
-fn file_content_hash(file: &FileDiff) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    file.path.hash(&mut h);
-    file.old_path.hash(&mut h);
-    file.change_type.hash(&mut h);
-    file.is_binary.hash(&mut h);
-    file.diff_content.hash(&mut h);
-    h.finish()
 }
 
 /// Get the content of a file at HEAD in a task's worktree, with syntax highlighting.
@@ -370,6 +279,57 @@ pub async fn workflow_get_syntax_css(
 // =============================================================================
 // Diff Parsing and Highlighting
 // =============================================================================
+
+/// Run Tier 2 per-file highlight caching: compare file content hashes, reuse cached
+/// highlights for unchanged files, re-highlight only changed files, then store results.
+fn highlight_with_tier2_cache(
+    raw_diff: orkestra_core::workflow::ports::TaskDiff,
+    context_lines: u32,
+    last_sha: Option<&str>,
+    store_key: &str,
+    window_label: &str,
+    task_id: &str,
+    highlighter: &SyntaxHighlighter,
+    diff_cache: &DiffCacheState,
+) -> Result<Value, orkestra_core::workflow::ports::WorkflowError> {
+    let file_hashes: Vec<(String, u64)> = raw_diff
+        .files
+        .iter()
+        .map(|f| (f.path.clone(), file_content_hash(f)))
+        .collect();
+    let diff_sha = combined_diff_sha(&file_hashes, context_lines);
+
+    // ETag short-circuit.
+    if last_sha == Some(&diff_sha) {
+        return Ok(serde_json::json!({ "unchanged": true, "diff_sha": diff_sha }));
+    }
+
+    let mut cached_files = diff_cache.get_files_by_hash(window_label, task_id, &file_hashes);
+
+    let mut to_store: Vec<(String, u64, HighlightedFileDiff)> = Vec::new();
+    let files: Vec<HighlightedFileDiff> = raw_diff
+        .files
+        .into_iter()
+        .zip(file_hashes.iter())
+        .map(|(file, (path, hash))| {
+            if let Some(Some(cached)) = cached_files.remove(path) {
+                to_store.push((path.clone(), *hash, cached.clone()));
+                cached
+            } else {
+                let result = highlight_file_diff(file, highlighter);
+                to_store.push((path.clone(), *hash, result.clone()));
+                result
+            }
+        })
+        .collect();
+
+    diff_cache.store(window_label, task_id, store_key, to_store);
+    Ok(serde_json::to_value(HighlightedTaskDiff {
+        files,
+        diff_sha: Some(diff_sha),
+    })
+    .unwrap_or(Value::Null))
+}
 
 /// Convert a raw `FileDiff` into a highlighted `FileDiff` with parsed hunks.
 fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> HighlightedFileDiff {

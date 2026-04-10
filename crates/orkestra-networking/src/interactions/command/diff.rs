@@ -6,7 +6,8 @@ use orkestra_core::workflow::ports::FileDiff;
 use serde_json::Value;
 
 use crate::diff_types::{
-    HighlightedFileDiff, HighlightedHunk, HighlightedLine, HighlightedTaskDiff, LineType, SyntaxCss,
+    cache_key_for_sha, combined_diff_sha, file_content_hash, HighlightedFileDiff, HighlightedHunk,
+    HighlightedLine, HighlightedTaskDiff, LineType, SyntaxCss,
 };
 use crate::highlight::SyntaxHighlighter;
 use crate::types::ErrorPayload;
@@ -65,11 +66,7 @@ pub(super) async fn handle_get_task_diff(
         // Tier 1: clean worktree + matching SHA → return full cached result.
         if let Ok(wt_state) = git.get_worktree_state(worktree_path) {
             if !wt_state.is_dirty {
-                let cache_sha = if context_lines == 3 {
-                    wt_state.head_sha.clone()
-                } else {
-                    format!("{}:{}", wt_state.head_sha, context_lines)
-                };
+                let cache_sha = cache_key_for_sha(&wt_state.head_sha, context_lines);
                 // ETag short-circuit: unchanged since last poll.
                 if last_sha.as_deref() == Some(&cache_sha) {
                     return Ok(serde_json::json!({ "unchanged": true, "diff_sha": cache_sha }));
@@ -83,11 +80,7 @@ pub(super) async fn handle_get_task_diff(
                 }
             }
 
-            let cache_sha = if context_lines == 3 {
-                wt_state.head_sha.clone()
-            } else {
-                format!("{}:{}", wt_state.head_sha, context_lines)
-            };
+            let cache_sha = cache_key_for_sha(&wt_state.head_sha, context_lines);
             let raw_diff = git
                 .diff_against_base(worktree_path, branch_name, &task.base_branch, context_lines)
                 .map_err(|e| ErrorPayload::new("GIT_ERROR", e.to_string()))?;
@@ -382,32 +375,6 @@ pub(super) async fn handle_get_commit_diff(
 // Diff parsing and highlighting
 // ============================================================================
 
-/// Combine per-file content hashes into a single diff fingerprint.
-fn combined_diff_sha(file_hashes: &[(String, u64)], context_lines: u32) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    for (path, hash) in file_hashes {
-        path.hash(&mut h);
-        hash.hash(&mut h);
-    }
-    context_lines.hash(&mut h);
-    format!("{:x}", h.finish())
-}
-
-/// Stable content hash for a `FileDiff` entry.
-fn file_content_hash(file: &FileDiff) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    file.path.hash(&mut h);
-    file.old_path.hash(&mut h);
-    file.change_type.hash(&mut h);
-    file.is_binary.hash(&mut h);
-    file.diff_content.hash(&mut h);
-    h.finish()
-}
-
 /// Convert a raw `FileDiff` into a highlighted `HighlightedFileDiff` with parsed hunks.
 fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> HighlightedFileDiff {
     let hunks = match file.diff_content {
@@ -582,46 +549,5 @@ mod tests {
     fn parse_hunk_header_invalid() {
         assert_eq!(parse_hunk_header("not a header"), None);
         assert_eq!(parse_hunk_header(""), None);
-    }
-
-    #[test]
-    fn combined_diff_sha_consistent() {
-        let hashes = vec![("src/main.rs".to_string(), 12345u64)];
-        let a = combined_diff_sha(&hashes, 3);
-        let b = combined_diff_sha(&hashes, 3);
-        assert_eq!(a, b, "same inputs should produce same fingerprint");
-    }
-
-    #[test]
-    fn combined_diff_sha_changes_with_file_hash() {
-        let hashes_a = vec![("src/main.rs".to_string(), 12345u64)];
-        let hashes_b = vec![("src/main.rs".to_string(), 99999u64)];
-        assert_ne!(
-            combined_diff_sha(&hashes_a, 3),
-            combined_diff_sha(&hashes_b, 3),
-            "different file content should produce different fingerprint"
-        );
-    }
-
-    #[test]
-    fn combined_diff_sha_changes_with_context_lines() {
-        let hashes = vec![("src/main.rs".to_string(), 12345u64)];
-        assert_ne!(
-            combined_diff_sha(&hashes, 3),
-            combined_diff_sha(&hashes, 10),
-            "different context_lines should produce different fingerprint"
-        );
-    }
-
-    #[test]
-    fn combined_diff_sha_sensitive_to_file_order() {
-        let hashes_ab = vec![("a.rs".to_string(), 1u64), ("b.rs".to_string(), 2u64)];
-        let hashes_ba = vec![("b.rs".to_string(), 2u64), ("a.rs".to_string(), 1u64)];
-        // Order matters — files are hashed in iteration order.
-        assert_ne!(
-            combined_diff_sha(&hashes_ab, 3),
-            combined_diff_sha(&hashes_ba, 3),
-            "file order affects the fingerprint"
-        );
     }
 }

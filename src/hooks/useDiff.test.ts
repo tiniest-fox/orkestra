@@ -121,6 +121,50 @@ describe("useDiff", () => {
     });
   });
 
+  it("resets diffShaRef when taskId changes, preventing stale last_sha", async () => {
+    // First task — get a diff_sha
+    mockCall.mockResolvedValue(makeDiffResult([makeFile()], "sha-task1"));
+    const { result, rerender } = renderHook(({ taskId }: { taskId: string }) => useDiff(taskId), {
+      initialProps: { taskId: "task-1" },
+    });
+
+    await act(async () => {
+      await capturedPollCallback?.();
+    });
+    // Confirm sha was stored
+    expect(mockCall).toHaveBeenLastCalledWith("get_task_diff", {
+      task_id: "task-1",
+      context_lines: 3,
+    });
+
+    // Second poll sends last_sha for task-1
+    mockCall.mockResolvedValue({ unchanged: true, diff_sha: "sha-task1" });
+    await act(async () => {
+      await capturedPollCallback?.();
+    });
+    expect(mockCall).toHaveBeenLastCalledWith("get_task_diff", {
+      task_id: "task-1",
+      context_lines: 3,
+      last_sha: "sha-task1",
+    });
+
+    // Switch to task-2
+    mockCall.mockResolvedValue(makeDiffResult([makeFile({ path: "src/bar.ts" })], "sha-task2"));
+    rerender({ taskId: "task-2" });
+
+    // First poll for task-2 must NOT include last_sha (stale from task-1)
+    await act(async () => {
+      await capturedPollCallback?.();
+    });
+    expect(mockCall).toHaveBeenLastCalledWith("get_task_diff", {
+      task_id: "task-2",
+      context_lines: 3,
+    });
+
+    // Confirm result has task-2 diff
+    expect(result.current.diff?.files[0].path).toBe("src/bar.ts");
+  });
+
   it("preserves existing diff state on unchanged response", async () => {
     const diffResult = makeDiffResult([makeFile()], "sha-abc");
     mockCall.mockResolvedValue(diffResult);

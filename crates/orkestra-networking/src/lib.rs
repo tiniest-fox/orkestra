@@ -5,7 +5,7 @@
 //! `interactions`, following the project's module structure conventions.
 
 pub(crate) mod diff_cache;
-pub(crate) mod diff_types;
+pub mod diff_types;
 pub(crate) mod highlight;
 pub(crate) mod interactions;
 pub mod relay_client;

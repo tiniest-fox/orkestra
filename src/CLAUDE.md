@@ -276,6 +276,20 @@ The skeleton also has a `statusText` element (`.loading-status-text`) that shows
 
 Forge is the project's design language — it is not an alternate or scoped visual language. It uses IBM Plex fonts, a warm purple-undertone palette, and pink-red accent (`accent`/`accent-*`). All components use Forge tokens by default.
 
+**Some Forge tokens are bare RGB channels — never use them directly as CSS colors.** `--forge-accent` and `--forge-status-{success,error,warning,info}` are stored as space-separated RGB channels (e.g., `232 53 88`) for Tailwind v3 opacity modifier support. Using them raw in CSS (`color: var(--forge-accent)`) produces invalid CSS. Always use the `--color-*` wrappers defined in `tailwind.config.js` (and in `docs/src/styles/global.css` for the Astro docs site), which apply `rgb()`:
+
+```css
+/* Wrong — bare channel token is not a valid CSS color */
+color: var(--forge-accent);
+border-color: var(--forge-status-error);
+
+/* Correct — --color-* wrappers include the rgb() call */
+color: var(--color-accent);
+border-color: var(--color-status-error);
+```
+
+Tokens that are already valid CSS colors (`--forge-border`, `--forge-text-*`, `--forge-surface-*`, `--forge-status-*-bg`, `--forge-status-purple/pink/cyan/orange`) can be used directly, but prefer the `--color-*` equivalents for consistency.
+
 **Animation coupling:** Keyframe names (`pipe-active-pulse`, `forge-pulse-opacity`) are coupled by string between `index.css` and TSX files with no compile-time check. Be careful when renaming them.
 
 <!-- compound: regularly-befriended-nuthatch -->

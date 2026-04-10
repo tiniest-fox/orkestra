@@ -1,4 +1,4 @@
-//! Tests for useDiff: fingerprinting, loading state, polling behaviour.
+// Tests for useDiff: ETag-based short-circuit, loading state, polling behaviour.
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ vi.mock("./usePolling", () => ({
 }));
 
 import type { HighlightedFileDiff } from "./useDiff";
-import { buildDiffFingerprint, useDiff } from "./useDiff";
+import { useDiff } from "./useDiff";
 
 const mockCall = mockTransportCall as ReturnType<typeof vi.fn>;
 
@@ -46,91 +46,9 @@ function makeFile(overrides: Partial<HighlightedFileDiff> = {}): HighlightedFile
   };
 }
 
-function makeDiffResult(files: HighlightedFileDiff[] = [makeFile()]) {
-  return { files };
+function makeDiffResult(files: HighlightedFileDiff[] = [makeFile()], diffSha = "sha-1") {
+  return { files, diff_sha: diffSha };
 }
-
-// ============================================================================
-// buildDiffFingerprint
-// ============================================================================
-
-describe("buildDiffFingerprint", () => {
-  it("returns the same fingerprint for two separately constructed identical inputs", () => {
-    expect(buildDiffFingerprint([makeFile()])).toBe(buildDiffFingerprint([makeFile()]));
-  });
-
-  it("returns an empty-array fingerprint for an empty file list", () => {
-    expect(buildDiffFingerprint([])).toBe("[]");
-  });
-
-  it("detects a path change", () => {
-    const a = buildDiffFingerprint([makeFile({ path: "src/a.ts" })]);
-    const b = buildDiffFingerprint([makeFile({ path: "src/b.ts" })]);
-    expect(a).not.toBe(b);
-  });
-
-  it("detects an additions count change", () => {
-    const a = buildDiffFingerprint([makeFile({ additions: 1 })]);
-    const b = buildDiffFingerprint([makeFile({ additions: 5 })]);
-    expect(a).not.toBe(b);
-  });
-
-  it("detects a deletions count change", () => {
-    const a = buildDiffFingerprint([makeFile({ deletions: 1 })]);
-    const b = buildDiffFingerprint([makeFile({ deletions: 3 })]);
-    expect(a).not.toBe(b);
-  });
-
-  it("detects a content change when line counts remain identical (typo fix scenario)", () => {
-    const original = makeFile({
-      hunks: [
-        {
-          old_start: 1,
-          old_count: 1,
-          new_start: 1,
-          new_count: 1,
-          lines: [
-            {
-              line_type: "context",
-              content: "const x = 'tpyo'",
-              html: "",
-              old_line_number: 1,
-              new_line_number: 1,
-            },
-          ],
-        },
-      ],
-    });
-    const fixed = makeFile({
-      hunks: [
-        {
-          old_start: 1,
-          old_count: 1,
-          new_start: 1,
-          new_count: 1,
-          lines: [
-            {
-              line_type: "context",
-              content: "const x = 'typo'",
-              html: "",
-              old_line_number: 1,
-              new_line_number: 1,
-            },
-          ],
-        },
-      ],
-    });
-    expect(buildDiffFingerprint([original])).not.toBe(buildDiffFingerprint([fixed]));
-  });
-
-  it("handles a hunk with no lines gracefully", () => {
-    const file = makeFile({
-      hunks: [{ old_start: 1, old_count: 0, new_start: 1, new_count: 0, lines: [] }],
-    });
-    // Should not throw
-    expect(() => buildDiffFingerprint([file])).not.toThrow();
-  });
-});
 
 // ============================================================================
 // useDiff — behavioral contracts
@@ -164,8 +82,7 @@ describe("useDiff", () => {
     expect(result.current.diff).toEqual(diffResult);
 
     // Second poll: loading must NOT flip back to true mid-fetch
-    // We track that it never becomes true by verifying the final state
-    const anotherResult = makeDiffResult([makeFile({ additions: 99 })]);
+    const anotherResult = makeDiffResult([makeFile({ additions: 99 })], "sha-2");
     mockCall.mockResolvedValue(anotherResult);
     await act(async () => {
       await capturedPollCallback?.();
@@ -179,10 +96,34 @@ describe("useDiff", () => {
     expect(capturedPollCallback).toBeNull();
   });
 
-  it("does not update diff state when fingerprint is unchanged between polls", async () => {
-    const diffResult = makeDiffResult();
-    mockCall.mockResolvedValue(diffResult);
+  it("sends last_sha from previous response on subsequent polls", async () => {
+    mockCall.mockResolvedValue(makeDiffResult([makeFile()], "sha-abc"));
+    renderHook(() => useDiff("task-1"));
 
+    // First poll — no last_sha sent
+    await act(async () => {
+      await capturedPollCallback?.();
+    });
+    expect(mockCall).toHaveBeenCalledWith("get_task_diff", {
+      task_id: "task-1",
+      context_lines: 3,
+    });
+
+    // Second poll — last_sha from previous response
+    mockCall.mockResolvedValue(makeDiffResult([makeFile()], "sha-abc"));
+    await act(async () => {
+      await capturedPollCallback?.();
+    });
+    expect(mockCall).toHaveBeenLastCalledWith("get_task_diff", {
+      task_id: "task-1",
+      context_lines: 3,
+      last_sha: "sha-abc",
+    });
+  });
+
+  it("preserves existing diff state on unchanged response", async () => {
+    const diffResult = makeDiffResult([makeFile()], "sha-abc");
+    mockCall.mockResolvedValue(diffResult);
     const { result } = renderHook(() => useDiff("task-1"));
 
     // First fetch — diff is set
@@ -192,11 +133,12 @@ describe("useDiff", () => {
     const diffAfterFirst = result.current.diff;
     expect(diffAfterFirst).not.toBeNull();
 
-    // Second fetch with identical content — diff reference must not change
-    mockCall.mockResolvedValue(makeDiffResult());
+    // Second fetch returns unchanged
+    mockCall.mockResolvedValue({ unchanged: true, diff_sha: "sha-abc" });
     await act(async () => {
       await capturedPollCallback?.();
     });
+    // Diff reference should be exactly the same object (no re-render)
     expect(result.current.diff).toBe(diffAfterFirst);
   });
 });

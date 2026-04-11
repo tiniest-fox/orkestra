@@ -28,6 +28,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
   // Derive verdict for historical run — only show for approval-capability stages
   const stageConfig = config.flows[task.flow]?.stages.find((s) => s.name === run.stage);
   let verdict: "approved" | "rejected" | undefined;
+  let rejectionTarget: string | undefined;
   if (stageConfig?.gate === true) {
     const lastOutcome = run.iterations[run.iterations.length - 1]?.outcome;
     if (lastOutcome?.type === "approved") {
@@ -38,6 +39,12 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
       lastOutcome?.type === "awaiting_rejection_review"
     ) {
       verdict = "rejected";
+      if (lastOutcome.type === "rejection" || lastOutcome.type === "awaiting_rejection_review") {
+        const { from_stage, target } = lastOutcome;
+        if (target !== from_stage) {
+          rejectionTarget = target;
+        }
+      }
     }
   }
 
@@ -64,7 +71,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {activeTab === "artifact" ? (
           artifact ? (
-            <ArtifactView artifact={artifact} verdict={verdict} />
+            <ArtifactView artifact={artifact} verdict={verdict} rejectionTarget={rejectionTarget} />
           ) : (
             <EmptyState icon={FileText} message="No artifact for this stage." />
           )

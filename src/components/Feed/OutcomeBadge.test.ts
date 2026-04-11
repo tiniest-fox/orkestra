@@ -3,6 +3,8 @@ import type { WorkflowOutcome } from "../../types/workflow";
 import { artifactBadgeLabel, badgeLabel } from "./OutcomeBadge";
 
 const outcome = (type: string) => ({ type }) as WorkflowOutcome;
+const rejectionOutcome = (type: string, from_stage: string, target: string) =>
+  ({ type, from_stage, target, feedback: "" }) as WorkflowOutcome;
 
 describe("badgeLabel", () => {
   it("returns Approved for approved outcome", () => {
@@ -17,10 +19,37 @@ describe("badgeLabel", () => {
     expect(result.color).toContain("warning");
   });
 
-  it("returns Rejected for rejection outcome", () => {
+  it("returns Rejected for rejection outcome with no target", () => {
     const result = badgeLabel(outcome("rejection"));
     expect(result.label).toBe("Rejected");
     expect(result.color).toContain("warning");
+  });
+
+  it("returns Rejected → Work for rejection outcome with target work", () => {
+    const result = badgeLabel(rejectionOutcome("rejection", "review", "work"));
+    expect(result.label).toBe("Rejected → Work");
+    expect(result.color).toContain("warning");
+  });
+
+  it("returns Rejected → Breakdown for rejection outcome with target breakdown", () => {
+    const result = badgeLabel(rejectionOutcome("rejection", "review", "breakdown"));
+    expect(result.label).toBe("Rejected → Breakdown");
+  });
+
+  it("returns plain Rejected for rejection outcome when target equals from_stage", () => {
+    const result = badgeLabel(rejectionOutcome("rejection", "review", "review"));
+    expect(result.label).toBe("Rejected");
+  });
+
+  it("returns Pending Review → Work for awaiting_rejection_review with target work", () => {
+    const result = badgeLabel(rejectionOutcome("awaiting_rejection_review", "review", "work"));
+    expect(result.label).toBe("Pending Review → Work");
+    expect(result.color).toContain("warning");
+  });
+
+  it("returns plain Pending Review for awaiting_rejection_review when target equals from_stage", () => {
+    const result = badgeLabel(rejectionOutcome("awaiting_rejection_review", "review", "review"));
+    expect(result.label).toBe("Pending Review");
   });
 
   it("returns Done for completed outcome", () => {
@@ -118,5 +147,27 @@ describe("artifactBadgeLabel", () => {
   it("handles underscored artifact names", () => {
     const result = artifactBadgeLabel("code_review", undefined);
     expect(result.label).toBe("Code Review");
+  });
+
+  it("returns Rejected → Work when rejectionTarget is work", () => {
+    const result = artifactBadgeLabel("verdict", "rejected", "work");
+    expect(result.label).toBe("Rejected → Work");
+    expect(result.classes).toContain("bg-status-error");
+    expect(result.classes).toContain("text-white");
+  });
+
+  it("returns Rejected → Breakdown when rejectionTarget is breakdown", () => {
+    const result = artifactBadgeLabel("verdict", "rejected", "breakdown");
+    expect(result.label).toBe("Rejected → Breakdown");
+  });
+
+  it("returns plain Rejected when rejectionTarget is undefined", () => {
+    const result = artifactBadgeLabel("verdict", "rejected", undefined);
+    expect(result.label).toBe("Rejected");
+  });
+
+  it("ignores rejectionTarget when verdict is approved", () => {
+    const result = artifactBadgeLabel("verdict", "approved", "work");
+    expect(result.label).toBe("Approved");
   });
 });

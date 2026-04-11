@@ -470,6 +470,7 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
                         serde_json::json!({
                             "task_id": notification.task_id,
                             "session_id": notification.session_id,
+                            "summary": notification.last_entry_summary,
                         }),
                     );
                 }

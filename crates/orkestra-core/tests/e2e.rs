@@ -18,6 +18,8 @@ mod artifact_history;
 mod assistant;
 #[path = "e2e/cleanup.rs"]
 mod cleanup;
+#[path = "e2e/differential.rs"]
+mod differential;
 #[path = "e2e/git_sync.rs"]
 mod git_sync;
 #[path = "e2e/integration.rs"]

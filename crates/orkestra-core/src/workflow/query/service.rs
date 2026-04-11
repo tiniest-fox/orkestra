@@ -1,7 +1,9 @@
 //! Read-only query operations.
 
+use std::collections::HashMap;
+
 use crate::workflow::api::WorkflowApi;
-use crate::workflow::domain::task_view::TaskView;
+use crate::workflow::domain::task_view::{DifferentialTaskResponse, TaskView};
 use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
 use crate::workflow::ports::{SyncStatus, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::Artifact;
@@ -51,6 +53,18 @@ impl WorkflowApi {
     /// List all active top-level tasks with pre-joined data and derived state.
     pub fn list_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
         query::task_views::list_active(&self.store, &self.workflow)
+    }
+
+    /// List only tasks that have changed since the client's last known timestamps.
+    ///
+    /// Accepts a map of `task_id → updated_at`. Returns tasks that are new or whose
+    /// `updated_at` differs, plus IDs of tasks that were deleted from the active set.
+    /// An empty map triggers a full response (backwards compatible).
+    pub fn list_task_views_differential<S: std::hash::BuildHasher>(
+        &self,
+        since: &HashMap<String, String, S>,
+    ) -> WorkflowResult<DifferentialTaskResponse> {
+        query::task_views::list_active_differential(&self.store, &self.workflow, since)
     }
 
     /// List subtasks for a parent task with pre-joined data and derived state.

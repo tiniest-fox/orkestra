@@ -1,5 +1,7 @@
 //! Task CRUD command handlers: create, read, list, delete operations.
 
+use std::collections::HashMap;
+
 use orkestra_core::workflow::TaskCreationMode;
 use serde_json::Value;
 
@@ -7,11 +9,27 @@ use crate::types::ErrorPayload;
 
 use super::dispatch::CommandContext;
 
-/// Returns all active top-level tasks as views.
-pub fn list_tasks(ctx: &CommandContext, _params: &Value) -> Result<Value, ErrorPayload> {
+/// Returns active top-level tasks as views.
+///
+/// When params contains a `since` map (`{ task_id: updated_at }`), returns a
+/// `DifferentialTaskResponse` with only changed tasks and deleted IDs.
+/// Without `since`, returns the full `Vec<TaskView>` (backwards compatible).
+pub fn list_tasks(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let tasks = api.list_task_views().map_err(ErrorPayload::from)?;
-    Ok(serde_json::to_value(tasks).unwrap_or(Value::Array(vec![])))
+
+    let since = params
+        .get("since")
+        .and_then(|v| serde_json::from_value::<HashMap<String, String>>(v.clone()).ok());
+
+    if let Some(ref timestamps) = since {
+        let diff = api
+            .list_task_views_differential(timestamps)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(diff).unwrap_or(Value::Null))
+    } else {
+        let tasks = api.list_task_views().map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(tasks).unwrap_or(Value::Array(vec![])))
+    }
 }
 
 /// Returns a single task by ID.

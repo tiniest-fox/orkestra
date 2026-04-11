@@ -22,7 +22,7 @@ import { startupData } from "../startup";
 import { useConnectionState, useTransport } from "../transport";
 
 import { useTransportListener } from "../transport/useTransportListener";
-import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
+import type { DifferentialTaskResponse, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import type { OptimisticAction } from "../utils/optimisticTransitions";
 import { applyOptimisticTransition } from "../utils/optimisticTransitions";
 import { isDisconnectError } from "../utils/transportErrors";
@@ -30,6 +30,32 @@ import { useWorkflowConfigState } from "./WorkflowConfigProvider";
 
 const tasksCache = new Map<string, WorkflowTaskView[]>();
 const archivedTasksCache = new Map<string, WorkflowTaskView[]>();
+
+// Merges a differential response into the existing task list.
+// Replaces updated tasks, preserves unchanged tasks, and removes deleted tasks.
+// New tasks (in response but not in existing) are appended.
+function mergeDifferentialResponse(
+  existing: WorkflowTaskView[],
+  diff: DifferentialTaskResponse,
+): WorkflowTaskView[] {
+  const deletedSet = new Set(diff.deleted_ids);
+  const updatedMap = new Map(diff.tasks.map((t) => [t.id, t]));
+
+  // Start from existing: remove deleted, replace updated.
+  const merged = existing
+    .filter((t) => !deletedSet.has(t.id))
+    .map((t) => updatedMap.get(t.id) ?? t);
+
+  // Append new tasks (in response but not in existing).
+  const existingIds = new Set(existing.map((t) => t.id));
+  for (const task of diff.tasks) {
+    if (!existingIds.has(task.id)) {
+      merged.push(task);
+    }
+  }
+
+  return merged;
+}
 
 // Tracks a pre-action snapshot of updated_at plus when the entry was added,
 // so fetchTasks can hold the optimistic state until the server confirms the change.
@@ -150,6 +176,14 @@ export function TasksProvider({ children }: TasksProviderProps) {
         result = startupData.value.tasks;
         firstFetchRef.current = false;
         console.timeEnd("[startup] tasks");
+      } else if (!firstFetchRef.current && tasksRef.current.length > 0) {
+        // Differential sync: send current timestamps, receive only changed tasks.
+        const since: Record<string, string> = {};
+        for (const task of tasksRef.current) {
+          since[task.id] = task.updated_at;
+        }
+        const diff = await transport.call<DifferentialTaskResponse>("list_tasks", { since });
+        result = mergeDifferentialResponse(tasksRef.current, diff);
       } else {
         result = await transport.call<WorkflowTaskView[]>("list_tasks");
         if (firstFetchRef.current) {

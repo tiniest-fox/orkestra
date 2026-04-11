@@ -268,16 +268,22 @@ impl Event {
 
     /// `log_entry_appended` event signaling new log entries for a session.
     ///
-    /// Carries only identifiers — clients use these to trigger a cursor-based fetch
-    /// for the actual new entries rather than receiving the content directly.
-    pub fn log_entry_appended(task_id: impl Into<String>, session_id: impl Into<String>) -> Self {
-        Self::new(
-            "log_entry_appended",
-            serde_json::json!({
-                "task_id": task_id.into(),
-                "session_id": session_id.into(),
-            }),
-        )
+    /// Carries identifiers plus an optional human-readable summary of the last
+    /// summarizable entry in the batch. Clients can display the summary immediately
+    /// and use the identifiers to trigger a cursor-based fetch for full entry content.
+    pub fn log_entry_appended(
+        task_id: impl Into<String>,
+        session_id: impl Into<String>,
+        summary: Option<String>,
+    ) -> Self {
+        let mut payload = serde_json::json!({
+            "task_id": task_id.into(),
+            "session_id": session_id.into(),
+        });
+        if let Some(s) = summary {
+            payload["summary"] = serde_json::Value::String(s);
+        }
+        Self::new("log_entry_appended", payload)
     }
 
     /// `merge_conflict` event carrying conflict details for notification.

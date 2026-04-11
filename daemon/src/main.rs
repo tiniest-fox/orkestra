@@ -309,6 +309,7 @@ async fn run(
             let _ = event_tx_for_log.send(Event::log_entry_appended(
                 notification.task_id,
                 notification.session_id,
+                notification.last_entry_summary,
             ));
         }
     });

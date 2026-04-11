@@ -34,7 +34,12 @@ import { ErrorLine, ToolLine } from "./FeedEntryComponents";
 //
 // Entries containing mermaid or wireframe blocks are excluded — those need
 // React lifecycle (MermaidBlock, WireframeBlock) and fall back to ReactMarkdown.
+//
+// Cache is LRU-bounded at MAX_CACHE_ENTRIES. Each entry is a sanitized HTML
+// string (~0.5–5KB). At 500 entries the upper bound is ~2.5MB — acceptable
+// for a long session, negligible for a typical one.
 
+const MAX_CACHE_ENTRIES = 500;
 const markdownHtmlCache = new Map<string, string>();
 
 // Single processor instance — building the unified pipeline is not free.
@@ -51,9 +56,18 @@ function hasRichBlocks(content: string): boolean {
 
 function renderMarkdownToHtml(content: string): string {
   const cached = markdownHtmlCache.get(content);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    // Refresh insertion order so this entry is last-evicted.
+    markdownHtmlCache.delete(content);
+    markdownHtmlCache.set(content, cached);
+    return cached;
+  }
   const raw = String(markdownProcessor.processSync(content));
   const sanitized = DOMPurify.sanitize(raw);
+  if (markdownHtmlCache.size >= MAX_CACHE_ENTRIES) {
+    // Map preserves insertion order — first key is least recently used.
+    markdownHtmlCache.delete(markdownHtmlCache.keys().next().value as string);
+  }
   markdownHtmlCache.set(content, sanitized);
   return sanitized;
 }

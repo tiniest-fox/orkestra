@@ -158,6 +158,8 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 
 ## Anti-Patterns
 
+- **Don't embed test-only configuration in production constructors** — If a production `new()` delegates to a shared builder method (e.g., `with_runner()`), any feature added to that shared method silently applies to production. Instead, expose test-only configuration as a separate opt-in builder callable *after* construction (e.g., `StageExecutionService::with_skip_env_resolution()`). Use `Arc::get_mut()` when the builder needs mutable access — safe as long as tests call it immediately after construction before any clones exist.
+
 - **Don't bypass WorkflowApi** — Store access should go through API methods or interactions
 - **Don't hold locks during async/background ops** — Causes deadlocks
 - **Don't put business logic in orchestrator** — It's a thin sequencer; logic goes in interactions

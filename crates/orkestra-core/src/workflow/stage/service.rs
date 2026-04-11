@@ -252,6 +252,7 @@ impl StageExecutionService {
     /// Use in test environments to prevent each agent spawn from blocking the
     /// tick thread for up to 5 s while the login shell sources `~/.zshrc`.
     /// Must be called immediately after construction (before `Arc::clone`).
+    #[must_use]
     pub fn with_skip_env_resolution(mut self) -> Self {
         Arc::get_mut(&mut self.agent_service)
             .expect("with_skip_env_resolution must be called before cloning the Arc")

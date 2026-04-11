@@ -40,6 +40,8 @@ mod stage_chat;
 mod startup;
 #[path = "e2e/subtasks.rs"]
 mod subtasks;
+#[path = "e2e/sync.rs"]
+mod sync;
 #[path = "e2e/task_creation.rs"]
 mod task_creation;
 #[path = "e2e/workflow.rs"]

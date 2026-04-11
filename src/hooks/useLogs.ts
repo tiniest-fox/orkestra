@@ -127,7 +127,7 @@ export function useLogs(
       ) {
         if (result.entries.length > 0) {
           cursorRef.current = result.cursor;
-          setLogs((prev) => [...prev, ...result.entries]);
+          setLogs((prev) => [...prev.slice(0, cursorToFetch), ...result.entries]);
         }
       }
     } catch (err) {

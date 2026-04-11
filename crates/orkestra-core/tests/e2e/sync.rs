@@ -1,0 +1,175 @@
+//! End-to-end tests for differential sync infrastructure.
+//!
+//! Verifies that `updated_at` is bumped correctly when iteration or session
+//! data changes, enabling downstream differential sync to detect which tasks
+//! have been modified.
+
+use orkestra_core::workflow::config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig};
+
+use crate::helpers::{MockAgentOutput, TestEnv};
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/// Simple single-stage workflow (work with agentic gate, no approval needed).
+fn simple_workflow() -> WorkflowConfig {
+    WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::Agentic)])
+    .with_integration(IntegrationConfig::new("work"))
+}
+
+/// Parse an RFC3339 timestamp string to a comparable value (seconds + nanos since epoch).
+fn parse_ts(s: &str) -> chrono::DateTime<chrono::FixedOffset> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .unwrap_or_else(|e| panic!("Failed to parse timestamp '{s}': {e}"))
+}
+
+// =============================================================================
+// Test: iteration end bumps updated_at
+// =============================================================================
+
+/// When an iteration ends (agent completes output processing), the task's
+/// `updated_at` timestamp must increase to signal that dependent data changed.
+#[test]
+fn iteration_end_bumps_updated_at() {
+    let ctx = TestEnv::with_git(&simple_workflow(), &["worker"]);
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Record the timestamp after task creation (which sets updated_at via save_task)
+    let t_initial = parse_ts(&task.updated_at);
+
+    // Brief sleep so any subsequent timestamp is guaranteed to be strictly greater.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Queue work output so the mock agent completes synchronously.
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Work done".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+
+    ctx.advance(); // spawns work agent (completion ready); no new iteration created
+    ctx.advance(); // processes work output → ends iteration → touch_task bumps updated_at
+
+    let task_after = ctx.api().get_task(&task_id).unwrap();
+    let t_after_end = parse_ts(&task_after.updated_at);
+
+    assert!(
+        t_after_end > t_initial,
+        "updated_at should increase after iteration end: initial={t_initial}, after={t_after_end}"
+    );
+}
+
+// =============================================================================
+// Test: iteration creation bumps updated_at
+// =============================================================================
+
+/// When a new iteration is created for a task (e.g., on rejection), the task's
+/// `updated_at` timestamp must increase.
+#[test]
+fn iteration_creation_bumps_updated_at() {
+    let ctx = TestEnv::with_git(&simple_workflow(), &["worker"]);
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Drive through one full agent run to get to AwaitingApproval
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Work done".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns work agent
+    ctx.advance(); // processes output → ends iter-work-1 → AwaitingApproval
+
+    // Record timestamp after the first iteration ended
+    let t_before_reject = parse_ts(&ctx.api().get_task(&task_id).unwrap().updated_at);
+
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Reject the task — this creates a new iteration for "work" stage
+    ctx.api().reject(&task_id, "Try again").unwrap();
+    ctx.advance(); // applies rejection, creates iter-work-2 → touch_task bumps updated_at
+
+    let task_after = ctx.api().get_task(&task_id).unwrap();
+    let t_after_create = parse_ts(&task_after.updated_at);
+
+    assert!(
+        t_after_create > t_before_reject,
+        "updated_at should increase after new iteration created: before={t_before_reject}, after={t_after_create}"
+    );
+}
+
+// =============================================================================
+// Test: parent updated_at bumps when child iteration changes
+// =============================================================================
+
+/// When a subtask's iteration is created or ended, the parent task's `updated_at`
+/// must also increase, so differential sync marks the parent as changed.
+#[test]
+fn parent_updated_at_bumps_when_child_iteration_changes() {
+    let ctx = TestEnv::with_git(&simple_workflow(), &["worker"]);
+
+    let parent = ctx.create_task("Feature", "Build it", None);
+    let parent_id = parent.id.clone();
+
+    // Record parent's updated_at before child is created.
+    let t_parent_before = parse_ts(&ctx.api().get_task(&parent_id).unwrap().updated_at);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Create child directly via API (no advance yet) — create_initial_iteration cascades
+    // touch_task to parent immediately during the API call.
+    let child_raw = ctx
+        .api()
+        .create_subtask(&parent_id, "Child task", "Do the work")
+        .unwrap();
+    let child_id = child_raw.id.clone();
+
+    let t_parent_after_create = parse_ts(&ctx.api().get_task(&parent_id).unwrap().updated_at);
+    assert!(
+        t_parent_after_create > t_parent_before,
+        "parent updated_at should increase when child iteration is created: before={t_parent_before}, after={t_parent_after_create}"
+    );
+
+    // Enable auto_mode on child so work completion calls enter_commit_pipeline →
+    // end_iteration → touch_task cascade (without auto_mode the task just parks at
+    // AwaitingApproval without ending the iteration).
+    ctx.api().set_auto_mode(&child_id, true).unwrap();
+
+    // Pre-configure child output for when it is spawned in the next advance.
+    ctx.set_output(
+        &child_id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Done".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+
+    // Record parent's updated_at after the creation cascade (before the end cascade).
+    let t_parent_before_end = t_parent_after_create;
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Single advance: sets up child worktree, spawns child work agent (and parent —
+    // which fails with no output), processes child completion → enter_commit_pipeline
+    // → end_iteration → touch_task cascades to parent.
+    ctx.advance();
+
+    let t_parent_after_end = parse_ts(&ctx.api().get_task(&parent_id).unwrap().updated_at);
+
+    assert!(
+        t_parent_after_end > t_parent_before_end,
+        "parent updated_at should increase when child iteration ends: before={t_parent_before_end}, after={t_parent_after_end}"
+    );
+}

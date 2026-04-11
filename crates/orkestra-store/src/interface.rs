@@ -128,6 +128,12 @@ pub trait WorkflowStore: Send + Sync {
         self.next_task_id()
     }
 
+    /// Bump the `updated_at` timestamp without modifying other fields.
+    ///
+    /// Used when dependent data (iterations, sessions) changes without a
+    /// corresponding `save_task` call.
+    fn touch_task(&self, id: &str) -> WorkflowResult<()>;
+
     // -- Iteration --
 
     /// Get all iterations for a task.

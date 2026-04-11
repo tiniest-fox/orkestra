@@ -166,6 +166,10 @@ export function TasksProvider({ children }: TasksProviderProps) {
   tasksRef.current = tasks;
 
   const firstFetchRef = useRef(true);
+  // Tracks whether at least one successful fetch has completed.
+  // Distinguishes "initial load not yet done" from "project has zero tasks",
+  // so differential sync activates correctly even for empty projects.
+  const hasFetchedRef = useRef(false);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -176,7 +180,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
         result = startupData.value.tasks;
         firstFetchRef.current = false;
         console.timeEnd("[startup] tasks");
-      } else if (!firstFetchRef.current && tasksRef.current.length > 0) {
+      } else if (hasFetchedRef.current) {
         // Differential sync: send current timestamps, receive only changed tasks.
         const since: Record<string, string> = {};
         for (const task of tasksRef.current) {
@@ -212,6 +216,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
         setTasks(result);
         tasksCache.set(projectUrl, result);
       }
+      hasFetchedRef.current = true;
       setLastFetchedAt(Date.now());
       setError(null);
     } catch (err) {

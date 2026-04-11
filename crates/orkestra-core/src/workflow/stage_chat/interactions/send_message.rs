@@ -308,11 +308,8 @@ fn read_chat_output(
                 let update = parser.parse_line(&line);
 
                 let mut batch_count = 0usize;
-                let mut batch_summary: Option<String> = None;
+                let batch_summary = LogEntry::last_summary(&update.log_entries);
                 for entry in update.log_entries {
-                    if let Some(s) = entry.push_summary() {
-                        batch_summary = Some(s);
-                    }
                     if let LogEntry::Text { ref content } = entry {
                         accumulated_text.push(content.clone());
                     }
@@ -346,11 +343,8 @@ fn read_chat_output(
     // Finalize parser and accumulate text from finalized entries
     let finalized = parser.finalize();
     let mut finalized_count = 0usize;
-    let mut finalized_summary: Option<String> = None;
+    let finalized_summary = LogEntry::last_summary(&finalized);
     for entry in finalized {
-        if let Some(s) = entry.push_summary() {
-            finalized_summary = Some(s);
-        }
         if let LogEntry::Text { ref content } = entry {
             accumulated_text.push(content.clone());
         }

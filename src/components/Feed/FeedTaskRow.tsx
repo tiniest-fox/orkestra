@@ -71,6 +71,12 @@ function FeedTaskRowInner({
 // derived from task state (captured by updated_at) and focus state (captured
 // by isFocused), so any visible change to actionsSlot is already reflected in
 // one of those props.
+//
+// `onClick` is intentionally omitted: callers always pass
+// `() => onRowClick(task.id)` where `task.id` is immutable. A stale reference
+// still navigates to the same task, so skipping re-renders is safe here.
+// The other action callbacks (onReview, onAnswer, etc.) are omitted for the
+// same reason — they are all closures over a stable task.id.
 export const FeedTaskRow = React.memo(FeedTaskRowInner, (prev, next) => {
   return (
     prev.task.updated_at === next.task.updated_at &&

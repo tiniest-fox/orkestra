@@ -86,113 +86,41 @@ pub fn list_active(
 /// whose `updated_at` has changed or that are new (not in the map), plus IDs of
 /// tasks that were in the map but are no longer active. When the map is empty,
 /// returns all active tasks (backwards-compatible full response).
+///
+/// Delegates to `list_active` for correct iteration/session data on all tasks,
+/// then filters to the changed subset.
 pub fn list_active_differential<S: std::hash::BuildHasher>(
     store: &Arc<dyn WorkflowStore>,
     workflow: &WorkflowConfig,
     since: &HashMap<String, String, S>,
 ) -> WorkflowResult<DifferentialTaskResponse> {
+    // Fetch all active tasks with fully-joined data (correct subtask derived state).
+    let all_views = list_active(store, workflow)?;
+
     // Empty map → full response (backwards compatible).
     if since.is_empty() {
-        let tasks = list_active(store, workflow)?;
         return Ok(DifferentialTaskResponse {
-            tasks,
+            tasks: all_views,
             deleted_ids: vec![],
         });
     }
 
-    let all_active = store.list_active_tasks()?;
-
-    // Compute the set of active task IDs for deletion detection.
+    // IDs the client knows about that are no longer active.
     let active_ids: std::collections::HashSet<&str> =
-        all_active.iter().map(|t| t.id.as_str()).collect();
-
-    // IDs in the client map that no longer exist in the active set.
+        all_views.iter().map(|v| v.task.id.as_str()).collect();
     let deleted_ids: Vec<String> = since
         .keys()
         .filter(|id| !active_ids.contains(id.as_str()))
         .cloned()
         .collect();
 
-    // Partition into top-level and subtasks, tracking which are changed.
-    let mut top_level: Vec<(Task, bool)> = Vec::new();
-    let mut subtasks_by_parent: HashMap<String, Vec<Task>> = HashMap::new();
-
-    for task in all_active {
-        let is_changed = since.get(&task.id) != Some(&task.updated_at);
-        if let Some(ref parent_id) = task.parent_id {
-            subtasks_by_parent
-                .entry(parent_id.clone())
-                .or_default()
-                .push(task);
-        } else {
-            top_level.push((task, is_changed));
-        }
-    }
-
-    // For non-archived parent tasks, load their archived subtasks too.
-    let all_parent_ids: Vec<&str> = top_level.iter().map(|(t, _)| t.id.as_str()).collect();
-    load_archived_subtasks_for_parents(store, &all_parent_ids, &mut subtasks_by_parent)?;
-
-    // Collect task IDs we need iterations/sessions for (changed tasks only).
-    let changed_ids: Vec<String> = top_level
-        .iter()
-        .filter(|(_, changed)| *changed)
-        .map(|(t, _)| t.id.clone())
-        .chain(
-            subtasks_by_parent
-                .values()
-                .flat_map(|subtasks| subtasks.iter())
-                .filter(|t| since.get(&t.id) != Some(&t.updated_at))
-                .map(|t| t.id.clone()),
-        )
+    // Only send views whose updated_at changed or that are new to the client.
+    let tasks = all_views
+        .into_iter()
+        .filter(|v| since.get(&v.task.id) != Some(&v.task.updated_at))
         .collect();
-    let changed_id_refs: Vec<&str> = changed_ids.iter().map(String::as_str).collect();
 
-    let iterations_by_task = group_by_task_id(store.list_iterations_for_tasks(&changed_id_refs)?);
-    let sessions_by_task = group_by_task_id(store.list_stage_sessions_for_tasks(&changed_id_refs)?);
-
-    let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
-    let mut subtask_views: Vec<TaskView> = Vec::new();
-
-    for (parent_id, subtasks) in subtasks_by_parent {
-        // Pre-compute which subtask IDs are changed so the closure can borrow them.
-        let changed_subtask_ids: std::collections::HashSet<String> = subtasks
-            .iter()
-            .filter(|t| since.get(&t.id) != Some(&t.updated_at))
-            .map(|t| t.id.clone())
-            .collect();
-
-        let (derived_states, views) = build_subtask_derived_data(
-            subtasks,
-            &iterations_by_task,
-            &sessions_by_task,
-            workflow,
-            |id| changed_subtask_ids.contains(id),
-        );
-        subtask_derived_by_parent.insert(parent_id, derived_states);
-        subtask_views.extend(views);
-    }
-
-    let mut views = Vec::new();
-    for (task, is_changed) in top_level {
-        if !is_changed {
-            continue;
-        }
-        views.push(build_single_top_level_view(
-            task,
-            &iterations_by_task,
-            &sessions_by_task,
-            &subtask_derived_by_parent,
-            workflow,
-        ));
-    }
-
-    views.extend(subtask_views);
-
-    Ok(DifferentialTaskResponse {
-        tasks: views,
-        deleted_ids,
-    })
+    Ok(DifferentialTaskResponse { tasks, deleted_ids })
 }
 
 /// List subtasks for a parent task with pre-joined data and derived state.

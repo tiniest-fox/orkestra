@@ -197,6 +197,14 @@ impl LogEntry {
         }
     }
 
+    /// Return the summary of the last summarizable entry in a batch.
+    ///
+    /// Iterates in reverse to find the last entry for which `push_summary` is `Some`.
+    /// Returns `None` when no entry in the slice produces a summary.
+    pub fn last_summary(entries: &[Self]) -> Option<String> {
+        entries.iter().rev().find_map(Self::push_summary)
+    }
+
     /// Human-readable one-line summary suitable for push notifications.
     ///
     /// Returns `None` for non-summarizable variants (results, exit codes, errors).

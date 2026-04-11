@@ -7944,9 +7944,9 @@ fn test_resolved_env_threaded_to_agent_runner() {
     let calls = ctx.runner_calls();
     assert!(!calls.is_empty(), "Expected at least one runner call");
 
-    // `StageExecutionService::with_runner` (used by all TestEnv constructors) skips
-    // login-shell env resolution to avoid blocking the tick thread for up to 5 s while
-    // the shell sources ~/.zshrc. The RunConfig.env field is always None in tests.
+    // All TestEnv constructors call `.with_skip_env_resolution()` on the stage executor
+    // to avoid blocking the tick thread for up to 5 s while the shell sources ~/.zshrc.
+    // The RunConfig.env field is always None in tests.
     assert!(
         calls[0].env.is_none(),
         "Env should be None in test environments (resolution is skipped for MockAgentRunner)"

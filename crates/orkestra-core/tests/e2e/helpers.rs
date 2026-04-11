@@ -135,14 +135,17 @@ impl TestEnv {
 
         let runner = Arc::new(MockAgentRunner::new());
 
-        let stage_executor = Arc::new(StageExecutionService::with_runner(
-            workflow,
-            project_root,
-            store,
-            iteration_service,
-            runner.clone(),
-            test_provider_registry(),
-        ));
+        let stage_executor = Arc::new(
+            StageExecutionService::with_runner(
+                workflow,
+                project_root,
+                store,
+                iteration_service,
+                runner.clone(),
+                test_provider_registry(),
+            )
+            .with_skip_env_resolution(),
+        );
 
         // Sync setup so create_task() completes inline (no worktree/title-gen to wait for).
         // Scripts still spawn as real processes via tick() — that's the async lifecycle
@@ -224,14 +227,17 @@ impl TestEnv {
         let iteration_service = api.lock().unwrap().iteration_service().clone();
         let runner = Arc::new(MockAgentRunner::new());
 
-        let stage_executor = Arc::new(StageExecutionService::with_runner(
-            loaded_workflow,
-            project_root,
-            store,
-            iteration_service,
-            runner.clone(),
-            test_provider_registry(),
-        ));
+        let stage_executor = Arc::new(
+            StageExecutionService::with_runner(
+                loaded_workflow,
+                project_root,
+                store,
+                iteration_service,
+                runner.clone(),
+                test_provider_registry(),
+            )
+            .with_skip_env_resolution(),
+        );
 
         let mut orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
         orchestrator.set_sync_background(true);
@@ -308,14 +314,17 @@ impl TestEnv {
         let iteration_service = api.lock().unwrap().iteration_service().clone();
         let runner = Arc::new(MockAgentRunner::new());
 
-        let stage_executor = Arc::new(StageExecutionService::with_runner(
-            loaded_workflow,
-            project_root,
-            store,
-            iteration_service,
-            runner.clone(),
-            test_provider_registry(),
-        ));
+        let stage_executor = Arc::new(
+            StageExecutionService::with_runner(
+                loaded_workflow,
+                project_root,
+                store,
+                iteration_service,
+                runner.clone(),
+                test_provider_registry(),
+            )
+            .with_skip_env_resolution(),
+        );
 
         let mut orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
         orchestrator.set_sync_background(true);
@@ -392,14 +401,17 @@ impl TestEnv {
         let iteration_service = api.lock().unwrap().iteration_service().clone();
         let runner = Arc::new(MockAgentRunner::new());
 
-        let stage_executor = Arc::new(StageExecutionService::with_runner(
-            loaded_workflow,
-            project_root,
-            store,
-            iteration_service,
-            runner.clone(),
-            test_provider_registry(),
-        ));
+        let stage_executor = Arc::new(
+            StageExecutionService::with_runner(
+                loaded_workflow,
+                project_root,
+                store,
+                iteration_service,
+                runner.clone(),
+                test_provider_registry(),
+            )
+            .with_skip_env_resolution(),
+        );
 
         let mut orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
         orchestrator.set_sync_background(true);

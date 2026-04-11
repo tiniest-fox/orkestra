@@ -115,16 +115,15 @@ impl AgentExecutionService {
         }
     }
 
-    /// Disable login-shell env resolution for this service.
+    /// Set the skip-env-resolution flag by mutable reference.
     ///
-    /// When called, `execute_stage` will not call `resolve_agent_env` — the
-    /// resolved env in `RunConfig` is always `None`. Used by
-    /// `StageExecutionService::with_runner` (the test-only constructor) to
-    /// prevent each agent spawn from blocking the tick thread for up to 5 s
-    /// while the login shell sources `~/.zshrc`.
-    pub fn with_skip_env_resolution(mut self) -> Self {
+    /// When set, `execute_stage` will not call `resolve_agent_env` — the
+    /// resolved env in `RunConfig` is always `None`. Used in test environments
+    /// via `StageExecutionService::with_skip_env_resolution` to prevent each
+    /// agent spawn from blocking the tick thread for up to 5 s while the login
+    /// shell sources `~/.zshrc`.
+    pub(super) fn set_skip_env_resolution(&mut self) {
         self.skip_env_resolution = true;
-        self
     }
 
     /// Execute a stage for a task (async with events).

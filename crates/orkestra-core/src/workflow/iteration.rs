@@ -207,16 +207,26 @@ fn cascade_touch_to_parent(store: &Arc<dyn WorkflowStore>, task_id: &str) {
 mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::QuestionAnswer;
+    use crate::workflow::domain::{QuestionAnswer, Task};
+    use crate::workflow::ports::WorkflowStore;
 
-    fn create_service() -> IterationService {
+    fn create_service() -> (Arc<InMemoryWorkflowStore>, IterationService) {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        IterationService::new(store)
+        let task = Task::new(
+            "task-1",
+            "Test Task",
+            "Desc",
+            "planning",
+            "2020-01-01T00:00:00Z",
+        );
+        store.save_task(&task).unwrap();
+        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
+        (store, service)
     }
 
     #[test]
     fn test_create_initial_iteration() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         let iteration = service
             .create_initial_iteration("task-1", "planning")
@@ -231,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_create_iteration_with_trigger() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Create first iteration
         service
@@ -259,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_per_stage_numbering() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Create iterations in planning stage
         let p1 = service
@@ -280,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_end_iteration() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         service
             .create_initial_iteration("task-1", "planning")
@@ -297,7 +307,7 @@ mod tests {
     #[test]
     fn test_end_iteration_nonexistent_succeeds() {
         // Verify the documented "silent success" behavior when no iteration exists
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // End an iteration that was never created - should succeed silently
         let result = service.end_iteration("nonexistent-task", "planning", Outcome::Approved);
@@ -306,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_create_iteration_rejects_empty_inputs() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Empty task_id should fail
         let result = service.create_iteration("", "planning", None);
@@ -319,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_iteration_triggers() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Test various trigger types
         let triggers = vec![
@@ -355,11 +365,22 @@ mod tests {
 mod activity_log_tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::Task;
+    use crate::workflow::ports::WorkflowStore;
 
     #[test]
     fn test_set_activity_log() {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = IterationService::new(store.clone());
+        store
+            .save_task(&Task::new(
+                "task-1",
+                "T",
+                "D",
+                "work",
+                "2020-01-01T00:00:00Z",
+            ))
+            .unwrap();
+        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
 
         // Create an active iteration
         service.create_initial_iteration("task-1", "work").unwrap();
@@ -392,12 +413,22 @@ mod activity_log_tests {
 mod artifact_snapshot_tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::ArtifactSnapshot;
+    use crate::workflow::domain::{ArtifactSnapshot, Task};
+    use crate::workflow::ports::WorkflowStore;
 
     #[test]
     fn test_set_artifact_snapshot() {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = IterationService::new(store.clone());
+        store
+            .save_task(&Task::new(
+                "task-1",
+                "T",
+                "D",
+                "work",
+                "2020-01-01T00:00:00Z",
+            ))
+            .unwrap();
+        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
 
         service.create_initial_iteration("task-1", "work").unwrap();
 

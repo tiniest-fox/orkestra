@@ -1,7 +1,14 @@
 // Shared conversation-style message list for AssistantDrawer, InteractiveDrawer, and Logs tab.
 
+import DOMPurify from "dompurify";
 import { memo, useCallback, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeStringify from "rehype-stringify";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import { unified } from "unified";
 import { Virtualizer } from "virtua";
 import type { LogEntry, ResumeType } from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
@@ -12,6 +19,44 @@ import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { groupLogEntries } from "../Logs/useGroupedLogs";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ErrorLine, ToolLine } from "./FeedEntryComponents";
+
+// ============================================================================
+// Markdown HTML cache
+// ============================================================================
+//
+// Virtua unmounts items that scroll out of view and remounts them when they
+// scroll back. Without caching, each remount re-runs the full remark/rehype
+// parse pipeline — expensive for large blocks (10–36ms).
+//
+// For plain markdown (no mermaid/wireframe), we render to an HTML string once,
+// sanitize with DOMPurify, and cache it at module level. On remount the item
+// renders instantly from cache via dangerouslySetInnerHTML.
+//
+// Entries containing mermaid or wireframe blocks are excluded — those need
+// React lifecycle (MermaidBlock, WireframeBlock) and fall back to ReactMarkdown.
+
+const markdownHtmlCache = new Map<string, string>();
+
+// Single processor instance — building the unified pipeline is not free.
+const markdownProcessor = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkBreaks)
+  .use(remarkRehype)
+  .use(rehypeStringify);
+
+function hasRichBlocks(content: string): boolean {
+  return content.includes("```mermaid") || content.includes("```wireframe");
+}
+
+function renderMarkdownToHtml(content: string): string {
+  const cached = markdownHtmlCache.get(content);
+  if (cached !== undefined) return cached;
+  const raw = String(markdownProcessor.processSync(content));
+  const sanitized = DOMPurify.sanitize(raw);
+  markdownHtmlCache.set(content, sanitized);
+  return sanitized;
+}
 
 // ============================================================================
 // Types
@@ -141,12 +186,25 @@ export function buildVirtualItems(
 const AssistantTextLine = memo(function AssistantTextLine({ content }: { content: string }) {
   const cleaned = stripQuestionBlocks(stripParameterBlocks(content));
   if (!cleaned) return null;
+
+  // Mermaid/wireframe blocks need React lifecycle — fall back to ReactMarkdown.
+  if (hasRichBlocks(cleaned)) {
+    return (
+      <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
+        <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
+          {cleaned}
+        </ReactMarkdown>
+      </div>
+    );
+  }
+
+  // Plain markdown — cached HTML, instant on Virtua remount.
   return (
-    <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
-      <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
-        {cleaned}
-      </ReactMarkdown>
-    </div>
+    <div
+      className={`text-forge-body py-3 ${PROSE_CLASSES}`}
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized with DOMPurify
+      dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(cleaned) }}
+    />
   );
 });
 
@@ -359,7 +417,7 @@ export function MessageList({
             <p className="font-mono text-forge-mono-sm text-text-quaternary">{emptyText}</p>
           </div>
         ) : (
-          <Virtualizer scrollRef={scrollObjectRef} overscan={12}>
+          <Virtualizer scrollRef={scrollObjectRef} bufferSize={800}>
             {virtualItems.map((item, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: append-only list, no reordering
               <VirtualItemRenderer key={i} item={item} contentFilter={contentFilter} />

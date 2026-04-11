@@ -41,6 +41,7 @@ pub(crate) fn execute(
     activity_logs: &[ActivityLogEntry],
     sibling_tasks: &[SiblingTaskContext],
     parent_resources: Option<&ResourceStore>,
+    skip_env_resolution: bool,
 ) -> Result<ExecutionHandle, ExecutionError> {
     let stage = task
         .current_stage()
@@ -135,29 +136,35 @@ pub(crate) fn execute(
         spawn_context.is_resume
     );
 
-    // 8. Resolve project-specific environment for the agent process
-    let resolved_env = orkestra_agent::resolve_agent_env(
-        prompt_service.project_root(),
-        std::env::var("SHELL").ok().as_deref(),
-    );
-
-    match &resolved_env {
-        Some(env) => {
-            orkestra_debug!(
-                "stage",
-                "Env resolution for {}: {} vars resolved",
-                task.id,
-                env.len()
-            );
+    // 8. Resolve project-specific environment for the agent process.
+    // Skipped in test environments (skip_env_resolution=true) to avoid blocking
+    // the tick thread while the login shell sources ~/.zshrc (up to 5 s).
+    let resolved_env = if skip_env_resolution {
+        None
+    } else {
+        let env = orkestra_agent::resolve_agent_env(
+            prompt_service.project_root(),
+            std::env::var("SHELL").ok().as_deref(),
+        );
+        match &env {
+            Some(e) => {
+                orkestra_debug!(
+                    "stage",
+                    "Env resolution for {}: {} vars resolved",
+                    task.id,
+                    e.len()
+                );
+            }
+            None => {
+                orkestra_debug!(
+                    "stage",
+                    "Env resolution for {}: fell back to inherited env",
+                    task.id
+                );
+            }
         }
-        None => {
-            orkestra_debug!(
-                "stage",
-                "Env resolution for {}: fell back to inherited env",
-                task.id
-            );
-        }
-    }
+        env
+    };
 
     // 9. Build run config with session info, model spec, system prompt, and env
     let stage_config = ResolvedStageConfig {

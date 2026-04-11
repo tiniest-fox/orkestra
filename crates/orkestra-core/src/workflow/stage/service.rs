@@ -177,7 +177,7 @@ impl StageExecutionService {
         runner: Arc<dyn AgentRunnerTrait>,
         registry: Arc<ProviderRegistry>,
     ) -> Self {
-        // Agent service only handles execution - session lifecycle is managed here
+        // Agent service only handles execution - session lifecycle is managed here.
         let agent_service = Arc::new(AgentExecutionService::new(
             runner,
             workflow.clone(),
@@ -245,6 +245,19 @@ impl StageExecutionService {
             runner,
             registry,
         )
+    }
+
+    /// Disable login-shell env resolution for agent execution.
+    ///
+    /// Use in test environments to prevent each agent spawn from blocking the
+    /// tick thread for up to 5 s while the login shell sources `~/.zshrc`.
+    /// Must be called immediately after construction (before `Arc::clone`).
+    #[must_use]
+    pub fn with_skip_env_resolution(mut self) -> Self {
+        Arc::get_mut(&mut self.agent_service)
+            .expect("with_skip_env_resolution must be called before cloning the Arc")
+            .set_skip_env_resolution();
+        self
     }
 
     /// Set the log notification channel.

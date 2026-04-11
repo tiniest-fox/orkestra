@@ -1269,9 +1269,11 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     );
 
     ctx.advance(); // spawn both workers
-                   // With sync_background, this tick: processes both artifacts → Done, then the
-                   // orchestrator immediately finds the hotfix candidate (auto_merge=true) and
-                   // auto-integrates it. Default task (auto_merge=false) stays at Done.
+    ctx.advance(); // processes both artifacts → AwaitingApproval for both
+    ctx.api().approve(&default_id).unwrap();
+    ctx.api().approve(&hotfix_id).unwrap();
+    // Commit pipeline → Done for both; orchestrator then finds hotfix candidate (auto_merge=true)
+    // and auto-integrates it. Default task (auto_merge=false) stays at Done.
     ctx.advance();
 
     let default_after = ctx.api().get_task(&default_id).unwrap();

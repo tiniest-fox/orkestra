@@ -93,6 +93,9 @@ pub struct AgentExecutionService {
     workflow: WorkflowConfig,
     /// Provider registry for resolving model specs to capabilities.
     registry: Arc<ProviderRegistry>,
+    /// When true, skips login-shell env resolution. Used in tests to avoid
+    /// blocking the tick thread on slow shell startup.
+    skip_env_resolution: bool,
 }
 
 impl AgentExecutionService {
@@ -108,7 +111,19 @@ impl AgentExecutionService {
             prompt_service: PromptService::new(project_root),
             workflow,
             registry,
+            skip_env_resolution: false,
         }
+    }
+
+    /// Set the skip-env-resolution flag by mutable reference.
+    ///
+    /// When set, `execute_stage` will not call `resolve_agent_env` — the
+    /// resolved env in `RunConfig` is always `None`. Used in test environments
+    /// via `StageExecutionService::with_skip_env_resolution` to prevent each
+    /// agent spawn from blocking the tick thread for up to 5 s while the login
+    /// shell sources `~/.zshrc`.
+    pub(super) fn set_skip_env_resolution(&mut self) {
+        self.skip_env_resolution = true;
     }
 
     /// Execute a stage for a task (async with events).
@@ -135,6 +150,7 @@ impl AgentExecutionService {
             activity_logs,
             sibling_tasks,
             parent_resources,
+            self.skip_env_resolution,
         )
     }
 }

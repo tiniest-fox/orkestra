@@ -1,6 +1,7 @@
 // Outcome badge — colored label for iteration outcomes and artifact states.
 
 import type { WorkflowOutcome } from "../../types/workflow";
+import { titleCase } from "../../utils/titleCase";
 
 export function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
   if (!outcome) return null;
@@ -22,8 +23,10 @@ export function artifactBadgeLabel(
   }
   if (verdict === "rejected") {
     if (rejectionTarget) {
-      const stage = rejectionTarget.replace(/\b\w/g, (c) => c.toUpperCase());
-      return { label: `Rejected → ${stage}`, classes: "bg-status-error text-white" };
+      return {
+        label: `Rejected → ${titleCase(rejectionTarget)}`,
+        classes: "bg-status-error text-white",
+      };
     }
     return { label: "Rejected", classes: "bg-status-error text-white" };
   }
@@ -62,16 +65,14 @@ export function badgeLabel(outcome: WorkflowOutcome): { label: string; color: st
     case "rejection": {
       const { from_stage, target } = outcome;
       if (target && target !== from_stage) {
-        const stage = target.replace(/\b\w/g, (c) => c.toUpperCase());
-        return { label: `Rejected → ${stage}`, color: "text-status-warning" };
+        return { label: `Rejected → ${titleCase(target)}`, color: "text-status-warning" };
       }
       return { label: "Rejected", color: "text-status-warning" };
     }
     case "awaiting_rejection_review": {
       const { from_stage, target } = outcome;
       if (target && target !== from_stage) {
-        const stage = target.replace(/\b\w/g, (c) => c.toUpperCase());
-        return { label: `Pending Review → ${stage}`, color: "text-status-warning" };
+        return { label: `Pending Review → ${titleCase(target)}`, color: "text-status-warning" };
       }
       return { label: "Pending Review", color: "text-status-warning" };
     }

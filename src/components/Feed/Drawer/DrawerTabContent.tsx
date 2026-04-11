@@ -119,7 +119,9 @@ export function DrawerTabContent({
       : task.derived.pending_approval
         ? ("approved" as const)
         : undefined;
-    const rejectionTarget = task.derived.pending_rejection?.target;
+    const rejection = task.derived.pending_rejection;
+    const rejectionTarget =
+      rejection && rejection.target !== rejection.from_stage ? rejection.target : undefined;
 
     const stageResources = artifact
       ? Object.values(task.resources)

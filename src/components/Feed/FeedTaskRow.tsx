@@ -1,5 +1,6 @@
-//! 4-column grid row for a top-level task in the feed view.
+// 4-column grid row for a top-level task in the feed view.
 
+import React from "react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { FeedRow } from "./FeedRow";
 import { IterationChain } from "./IterationChain";
@@ -21,7 +22,7 @@ interface FeedTaskRowProps {
   actionsSlot?: React.ReactNode;
 }
 
-export function FeedTaskRow({
+function FeedTaskRowInner({
   task,
   config,
   isFocused,
@@ -59,3 +60,15 @@ export function FeedTaskRow({
     />
   );
 }
+
+// Memoize to skip re-renders when only callback props change reference.
+// Task data comparison uses updated_at — bumped by touch_task whenever
+// iterations or sessions change, so this is a safe equality proxy.
+export const FeedTaskRow = React.memo(FeedTaskRowInner, (prev, next) => {
+  return (
+    prev.task.updated_at === next.task.updated_at &&
+    prev.isFocused === next.isFocused &&
+    prev.waiting === next.waiting &&
+    prev.config === next.config
+  );
+});

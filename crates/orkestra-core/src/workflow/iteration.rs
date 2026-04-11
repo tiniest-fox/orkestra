@@ -72,11 +72,7 @@ impl IterationService {
         // Bump task's updated_at so differential sync picks up the change
         self.store.touch_task(task_id)?;
         // Cascade to parent if this is a subtask
-        if let Ok(Some(task)) = self.store.get_task(task_id) {
-            if let Some(ref parent_id) = task.parent_id {
-                let _ = self.store.touch_task(parent_id);
-            }
-        }
+        cascade_touch_to_parent(&self.store, task_id);
         Ok(iteration)
     }
 
@@ -115,11 +111,7 @@ impl IterationService {
             // Bump task's updated_at so differential sync picks up the change
             self.store.touch_task(task_id)?;
             // Cascade to parent if this is a subtask
-            if let Ok(Some(task)) = self.store.get_task(task_id) {
-                if let Some(ref parent_id) = task.parent_id {
-                    let _ = self.store.touch_task(parent_id);
-                }
-            }
+            cascade_touch_to_parent(&self.store, task_id);
         }
         Ok(())
     }
@@ -162,6 +154,52 @@ impl IterationService {
             self.store.save_iteration(&iteration)?;
         }
         Ok(())
+    }
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/// Touch the parent task's `updated_at` when a subtask's iteration changes.
+///
+/// Cascading ensures `DerivedTaskState.subtask_progress` stays fresh in
+/// differential responses, since `DerivedTaskState::build()` depends on
+/// subtask states. Single-level only — does not recurse beyond direct parent.
+///
+/// Non-fatal: logs a debug warning on error rather than propagating, because
+/// a failed parent touch is not a correctness issue for the subtask's own
+/// iteration lifecycle.
+fn cascade_touch_to_parent(store: &Arc<dyn WorkflowStore>, task_id: &str) {
+    match store.get_task(task_id) {
+        Ok(Some(task)) => {
+            if let Some(ref parent_id) = task.parent_id {
+                if let Err(e) = store.touch_task(parent_id) {
+                    crate::orkestra_debug!(
+                        "iteration",
+                        "cascade_touch_to_parent: failed to touch parent {} of {}: {}",
+                        parent_id,
+                        task_id,
+                        e
+                    );
+                }
+            }
+        }
+        Ok(None) => {
+            crate::orkestra_debug!(
+                "iteration",
+                "cascade_touch_to_parent: task {} not found",
+                task_id
+            );
+        }
+        Err(e) => {
+            crate::orkestra_debug!(
+                "iteration",
+                "cascade_touch_to_parent: error loading task {}: {}",
+                task_id,
+                e
+            );
+        }
     }
 }
 

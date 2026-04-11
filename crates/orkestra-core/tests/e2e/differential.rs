@@ -1,7 +1,8 @@
 //! End-to-end tests for differential task sync.
 //!
 //! Verifies that `list_task_views_differential` returns only changed/new tasks
-//! and correctly identifies deleted task IDs.
+//! and correctly identifies deleted task IDs. Covers both top-level tasks and
+//! subtask-specific logic (inclusion, exclusion, parent cascade).
 
 use std::collections::HashMap;
 
@@ -186,4 +187,82 @@ fn deleted_task_in_deleted_ids() {
     );
     assert_eq!(result.deleted_ids.len(), 1);
     assert_eq!(result.deleted_ids[0], t1.id);
+}
+
+// =============================================================================
+// Tests: Subtask differential sync
+// =============================================================================
+
+/// An unchanged subtask is excluded from the differential response.
+///
+/// Exercises the subtask-specific filtering path in `list_active_differential`,
+/// which independently checks each subtask's `updated_at` against the since map.
+#[test]
+fn unchanged_subtask_excluded() {
+    let ctx = TestEnv::with_git(&simple_workflow(), &["worker"]);
+
+    let parent = ctx.create_task("Parent", "desc", None);
+    let sub = ctx.create_subtask(&parent.id, "Subtask", "desc");
+
+    // Re-read both to get current DB timestamps.
+    let parent_ts = ctx.api().get_task(&parent.id).unwrap().updated_at;
+    let sub_ts = ctx.api().get_task(&sub.id).unwrap().updated_at;
+    let since = ts_map(&[(&parent.id, &parent_ts), (&sub.id, &sub_ts)]);
+
+    let result = ctx.api().list_task_views_differential(&since).unwrap();
+
+    assert!(
+        result.tasks.is_empty(),
+        "No tasks should be returned when both parent and subtask timestamps match"
+    );
+    assert!(result.deleted_ids.is_empty());
+}
+
+/// Parent's `updated_at` is cascaded when a subtask is created, so the parent
+/// appears in the differential response whenever the client's since map contains
+/// a pre-creation timestamp for the parent.
+///
+/// Subtask creation calls `create_initial_iteration`, which calls
+/// `cascade_touch_to_parent`. This is the most reliable point to verify the
+/// cascade end-to-end: it happens synchronously, within the same API call,
+/// without depending on how many orchestrator ticks are needed to end an
+/// iteration under a particular gate configuration.
+#[test]
+fn subtask_creation_cascades_to_parent() {
+    let ctx = TestEnv::with_git(&simple_workflow(), &["worker"]);
+
+    let parent = ctx.create_task("Parent", "desc", None);
+
+    // Capture parent timestamp before any subtask exists.
+    let parent_ts_before = ctx.api().get_task(&parent.id).unwrap().updated_at;
+
+    // Brief sleep so the cascade timestamp is strictly greater.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Creating the subtask triggers create_initial_iteration → cascade_touch_to_parent.
+    let sub = ctx.create_subtask(&parent.id, "Subtask", "desc");
+
+    let parent_ts_after = ctx.api().get_task(&parent.id).unwrap().updated_at;
+
+    assert_ne!(
+        parent_ts_after, parent_ts_before,
+        "Parent updated_at should be bumped when subtask is created (cascade)"
+    );
+
+    // Client has only the pre-creation parent timestamp. The subtask is new (not in since map).
+    let since = ts_map(&[(&parent.id, &parent_ts_before)]);
+    let result = ctx.api().list_task_views_differential(&since).unwrap();
+
+    // Both parent (timestamp changed via cascade) and subtask (new, not in since) appear.
+    let returned_ids: std::collections::HashSet<&str> =
+        result.tasks.iter().map(|v| v.task.id.as_str()).collect();
+    assert!(
+        returned_ids.contains(parent.id.as_str()),
+        "Parent (cascaded) should appear in differential response"
+    );
+    assert!(
+        returned_ids.contains(sub.id.as_str()),
+        "New subtask (not in since map) should appear in differential response"
+    );
+    assert!(result.deleted_ids.is_empty());
 }

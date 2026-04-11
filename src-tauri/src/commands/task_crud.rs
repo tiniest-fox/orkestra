@@ -6,13 +6,19 @@ use serde_json::Value;
 use tauri::{State, Window};
 
 /// Get all tasks from the workflow (rich view with iterations, sessions, derived state).
+///
+/// Accepts an optional `since` map of `{ task_id: updated_at }` timestamps.
+/// When present, delegates to differential sync and returns only changed tasks.
+/// Without `since`, returns the full `Vec<TaskView>` (backwards compatible).
 #[tauri::command]
 pub fn workflow_get_tasks(
     registry: State<ProjectRegistry>,
     window: Window,
+    since: Option<Value>,
 ) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        task::list_tasks(state.command_context(), &Value::Null).map_err(Into::into)
+        let params = since.map_or(Value::Null, |s| serde_json::json!({ "since": s }));
+        task::list_tasks(state.command_context(), &params).map_err(Into::into)
     })
 }
 

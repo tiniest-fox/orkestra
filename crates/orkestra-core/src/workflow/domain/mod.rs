@@ -9,7 +9,8 @@ pub(crate) mod task_view;
 pub use orkestra_types::domain::*;
 
 pub use task_view::{
-    DerivedTaskState, PendingRejection, SessionLogInfo, StageLogInfo, SubtaskProgress, TaskView,
+    DerivedTaskState, DifferentialTaskResponse, PendingRejection, SessionLogInfo, StageLogInfo,
+    SubtaskProgress, TaskView,
 };
 
 // ============================================================================

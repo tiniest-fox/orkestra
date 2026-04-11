@@ -14,16 +14,18 @@ use super::dispatch::CommandContext;
 /// When params contains a `since` map (`{ task_id: updated_at }`), returns a
 /// `DifferentialTaskResponse` with only changed tasks and deleted IDs.
 /// Without `since`, returns the full `Vec<TaskView>` (backwards compatible).
+/// Returns an error when `since` is present but not a valid `{ id: timestamp }` map.
 pub fn list_tasks(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
 
-    let since = params
-        .get("since")
-        .and_then(|v| serde_json::from_value::<HashMap<String, String>>(v.clone()).ok());
+    let since_value = params.get("since");
 
-    if let Some(ref timestamps) = since {
+    if let Some(raw) = since_value {
+        // `since` is present — must be a valid `{ task_id: updated_at }` map.
+        let timestamps = serde_json::from_value::<HashMap<String, String>>(raw.clone())
+            .map_err(|e| ErrorPayload::invalid_params(format!("invalid `since` map: {e}")))?;
         let diff = api
-            .list_task_views_differential(timestamps)
+            .list_task_views_differential(&timestamps)
             .map_err(ErrorPayload::from)?;
         Ok(serde_json::to_value(diff).unwrap_or(Value::Null))
     } else {

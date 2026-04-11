@@ -64,6 +64,13 @@ function FeedTaskRowInner({
 // Memoize to skip re-renders when only callback props change reference.
 // Task data comparison uses updated_at — bumped by touch_task whenever
 // iterations or sessions change, so this is a safe equality proxy.
+//
+// `actionsSlot` is intentionally omitted from the comparator: React.ReactNode
+// references are new objects on every parent render, so comparing them would
+// always return false and defeat memoization. Safety: actionsSlot content is
+// derived from task state (captured by updated_at) and focus state (captured
+// by isFocused), so any visible change to actionsSlot is already reflected in
+// one of those props.
 export const FeedTaskRow = React.memo(FeedTaskRowInner, (prev, next) => {
   return (
     prev.task.updated_at === next.task.updated_at &&

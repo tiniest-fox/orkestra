@@ -24,9 +24,11 @@ export function LatestLogSummary({ task }: LatestLogSummaryProps) {
   const [entry, setEntry] = useState<LogEntry | null>(null);
   const [eventSummary, setEventSummary] = useState<string | null>(null);
 
-  // Clear event summary when task changes so we don't show stale data.
+  // Clear both display states when task changes so we don't show stale data
+  // from the previous task while the new task's log entry is being fetched.
   // biome-ignore lint/correctness/useExhaustiveDependencies: task.id is an intentional reset trigger, not a value read inside the effect
   useEffect(() => {
+    setEntry(null);
     setEventSummary(null);
   }, [task.id]);
 

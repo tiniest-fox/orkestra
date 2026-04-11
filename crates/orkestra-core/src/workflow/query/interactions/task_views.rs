@@ -4,12 +4,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::task_view::{DerivedTaskState, DifferentialTaskResponse, TaskView};
+use crate::workflow::domain::task_view::DerivedTaskState;
+use crate::workflow::domain::{DifferentialTaskResponse, TaskView};
 use crate::workflow::domain::{Iteration, StageSession, Task};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 
 /// List all active top-level tasks with pre-joined data and derived state.
-#[allow(clippy::too_many_lines)]
 pub fn list_active(
     store: &Arc<dyn WorkflowStore>,
     workflow: &WorkflowConfig,
@@ -32,19 +32,8 @@ pub fn list_active(
         }
     }
 
-    // For non-archived parent tasks, load their archived subtasks too
-    {
-        let parent_id_refs: Vec<&str> = parent_ids.iter().map(String::as_str).collect();
-        let archived_subtasks = store.list_archived_subtasks_by_parents(&parent_id_refs)?;
-        for subtask in archived_subtasks {
-            if let Some(ref parent_id) = subtask.parent_id {
-                subtasks_by_parent
-                    .entry(parent_id.clone())
-                    .or_default()
-                    .push(subtask);
-            }
-        }
-    }
+    let parent_id_refs: Vec<&str> = parent_ids.iter().map(String::as_str).collect();
+    load_archived_subtasks_for_parents(store, &parent_id_refs, &mut subtasks_by_parent)?;
 
     let all_task_ids: Vec<String> = {
         let mut ids = parent_ids.clone();
@@ -64,52 +53,27 @@ pub fn list_active(
     let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
     let mut subtask_views: Vec<TaskView> = Vec::new();
 
-    for (parent_id, subtasks) in &subtasks_by_parent {
-        let sorted = topological_sort(subtasks.clone());
-        let mut derived_states = Vec::with_capacity(sorted.len());
-
-        for task in sorted {
-            let iterations = iterations_by_task
-                .get(&task.id)
-                .cloned()
-                .unwrap_or_default();
-            let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-            let derived =
-                DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
-            derived_states.push(derived.clone());
-            subtask_views.push(TaskView {
-                task,
-                iterations,
-                stage_sessions,
-                derived,
-            });
-        }
-        subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
+    for (parent_id, subtasks) in subtasks_by_parent {
+        let (derived_states, views) = build_subtask_derived_data(
+            subtasks,
+            &iterations_by_task,
+            &sessions_by_task,
+            workflow,
+            |_| true, // include all subtask views
+        );
+        subtask_derived_by_parent.insert(parent_id, derived_states);
+        subtask_views.extend(views);
     }
 
     let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
     for task in top_level {
-        let iterations = iterations_by_task
-            .get(&task.id)
-            .cloned()
-            .unwrap_or_default();
-        let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-        let subtask_states = subtask_derived_by_parent
-            .get(&task.id)
-            .map_or(&[][..], Vec::as_slice);
-        let derived = DerivedTaskState::build(
-            &task,
-            &iterations,
-            &stage_sessions,
-            subtask_states,
-            workflow,
-        );
-        views.push(TaskView {
+        views.push(build_single_top_level_view(
             task,
-            iterations,
-            stage_sessions,
-            derived,
-        });
+            &iterations_by_task,
+            &sessions_by_task,
+            &subtask_derived_by_parent,
+            workflow,
+        ));
     }
 
     views.extend(subtask_views);
@@ -122,7 +86,6 @@ pub fn list_active(
 /// whose `updated_at` has changed or that are new (not in the map), plus IDs of
 /// tasks that were in the map but are no longer active. When the map is empty,
 /// returns all active tasks (backwards-compatible full response).
-#[allow(clippy::too_many_lines)]
 pub fn list_active_differential<S: std::hash::BuildHasher>(
     store: &Arc<dyn WorkflowStore>,
     workflow: &WorkflowConfig,
@@ -151,56 +114,38 @@ pub fn list_active_differential<S: std::hash::BuildHasher>(
         .collect();
 
     // Partition into top-level and subtasks, tracking which are changed.
-    let mut top_level = Vec::new();
-    let mut parent_ids = Vec::new();
+    let mut top_level: Vec<(Task, bool)> = Vec::new();
     let mut subtasks_by_parent: HashMap<String, Vec<Task>> = HashMap::new();
 
     for task in all_active {
         let is_changed = since.get(&task.id) != Some(&task.updated_at);
-
         if let Some(ref parent_id) = task.parent_id {
             subtasks_by_parent
                 .entry(parent_id.clone())
                 .or_default()
                 .push(task);
         } else {
-            if is_changed {
-                parent_ids.push(task.id.clone());
-            }
             top_level.push((task, is_changed));
         }
     }
 
     // For non-archived parent tasks, load their archived subtasks too.
-    {
-        let all_parent_ids: Vec<&str> = top_level.iter().map(|(t, _)| t.id.as_str()).collect();
-        let archived_subtasks = store.list_archived_subtasks_by_parents(&all_parent_ids)?;
-        for subtask in archived_subtasks {
-            if let Some(ref parent_id) = subtask.parent_id {
-                subtasks_by_parent
-                    .entry(parent_id.clone())
-                    .or_default()
-                    .push(subtask);
-            }
-        }
-    }
+    let all_parent_ids: Vec<&str> = top_level.iter().map(|(t, _)| t.id.as_str()).collect();
+    load_archived_subtasks_for_parents(store, &all_parent_ids, &mut subtasks_by_parent)?;
 
-    // Collect all task IDs we need iterations/sessions for (changed tasks only).
-    let changed_top_level_ids: Vec<String> = top_level
+    // Collect task IDs we need iterations/sessions for (changed tasks only).
+    let changed_ids: Vec<String> = top_level
         .iter()
         .filter(|(_, changed)| *changed)
         .map(|(t, _)| t.id.clone())
+        .chain(
+            subtasks_by_parent
+                .values()
+                .flat_map(|subtasks| subtasks.iter())
+                .filter(|t| since.get(&t.id) != Some(&t.updated_at))
+                .map(|t| t.id.clone()),
+        )
         .collect();
-
-    let changed_subtask_ids: Vec<String> = subtasks_by_parent
-        .values()
-        .flat_map(|subtasks| subtasks.iter())
-        .filter(|t| since.get(&t.id) != Some(&t.updated_at))
-        .map(|t| t.id.clone())
-        .collect();
-
-    let mut changed_ids = changed_top_level_ids;
-    changed_ids.extend(changed_subtask_ids);
     let changed_id_refs: Vec<&str> = changed_ids.iter().map(String::as_str).collect();
 
     let iterations_by_task = group_by_task_id(store.list_iterations_for_tasks(&changed_id_refs)?);
@@ -209,32 +154,23 @@ pub fn list_active_differential<S: std::hash::BuildHasher>(
     let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
     let mut subtask_views: Vec<TaskView> = Vec::new();
 
-    for (parent_id, subtasks) in &subtasks_by_parent {
-        let sorted = topological_sort(subtasks.clone());
-        let mut derived_states = Vec::with_capacity(sorted.len());
+    for (parent_id, subtasks) in subtasks_by_parent {
+        // Pre-compute which subtask IDs are changed so the closure can borrow them.
+        let changed_subtask_ids: std::collections::HashSet<String> = subtasks
+            .iter()
+            .filter(|t| since.get(&t.id) != Some(&t.updated_at))
+            .map(|t| t.id.clone())
+            .collect();
 
-        for task in sorted {
-            let is_changed = since.get(&task.id) != Some(&task.updated_at);
-
-            let iterations = iterations_by_task
-                .get(&task.id)
-                .cloned()
-                .unwrap_or_default();
-            let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-            let derived =
-                DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
-            derived_states.push(derived.clone());
-
-            if is_changed {
-                subtask_views.push(TaskView {
-                    task,
-                    iterations,
-                    stage_sessions,
-                    derived,
-                });
-            }
-        }
-        subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
+        let (derived_states, views) = build_subtask_derived_data(
+            subtasks,
+            &iterations_by_task,
+            &sessions_by_task,
+            workflow,
+            |id| changed_subtask_ids.contains(id),
+        );
+        subtask_derived_by_parent.insert(parent_id, derived_states);
+        subtask_views.extend(views);
     }
 
     let mut views = Vec::new();
@@ -242,27 +178,13 @@ pub fn list_active_differential<S: std::hash::BuildHasher>(
         if !is_changed {
             continue;
         }
-        let iterations = iterations_by_task
-            .get(&task.id)
-            .cloned()
-            .unwrap_or_default();
-        let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-        let subtask_states = subtask_derived_by_parent
-            .get(&task.id)
-            .map_or(&[][..], Vec::as_slice);
-        let derived = DerivedTaskState::build(
-            &task,
-            &iterations,
-            &stage_sessions,
-            subtask_states,
-            workflow,
-        );
-        views.push(TaskView {
+        views.push(build_single_top_level_view(
             task,
-            iterations,
-            stage_sessions,
-            derived,
-        });
+            &iterations_by_task,
+            &sessions_by_task,
+            &subtask_derived_by_parent,
+            workflow,
+        ));
     }
 
     views.extend(subtask_views);
@@ -303,7 +225,6 @@ pub fn list_subtasks(
 }
 
 /// List all archived top-level tasks with pre-joined data and derived state.
-#[allow(clippy::too_many_lines)]
 pub fn list_archived(
     store: &Arc<dyn WorkflowStore>,
     workflow: &WorkflowConfig,
@@ -344,52 +265,27 @@ pub fn list_archived(
     let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
     let mut subtask_views: Vec<TaskView> = Vec::new();
 
-    for (parent_id, subtasks) in &subtasks_by_parent {
-        let sorted = topological_sort(subtasks.clone());
-        let mut derived_states = Vec::with_capacity(sorted.len());
-
-        for task in sorted {
-            let iterations = iterations_by_task
-                .get(&task.id)
-                .cloned()
-                .unwrap_or_default();
-            let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-            let derived =
-                DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
-            derived_states.push(derived.clone());
-            subtask_views.push(TaskView {
-                task,
-                iterations,
-                stage_sessions,
-                derived,
-            });
-        }
-        subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
+    for (parent_id, subtasks) in subtasks_by_parent {
+        let (derived_states, views) = build_subtask_derived_data(
+            subtasks,
+            &iterations_by_task,
+            &sessions_by_task,
+            workflow,
+            |_| true, // include all subtask views
+        );
+        subtask_derived_by_parent.insert(parent_id, derived_states);
+        subtask_views.extend(views);
     }
 
     let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
     for task in top_level {
-        let iterations = iterations_by_task
-            .get(&task.id)
-            .cloned()
-            .unwrap_or_default();
-        let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-        let subtask_states = subtask_derived_by_parent
-            .get(&task.id)
-            .map_or(&[][..], Vec::as_slice);
-        let derived = DerivedTaskState::build(
-            &task,
-            &iterations,
-            &stage_sessions,
-            subtask_states,
-            workflow,
-        );
-        views.push(TaskView {
+        views.push(build_single_top_level_view(
             task,
-            iterations,
-            stage_sessions,
-            derived,
-        });
+            &iterations_by_task,
+            &sessions_by_task,
+            &subtask_derived_by_parent,
+            workflow,
+        ));
     }
 
     views.extend(subtask_views);
@@ -397,6 +293,97 @@ pub fn list_archived(
 }
 
 // -- Helpers --
+
+/// Extend `subtasks_by_parent` with archived subtasks for a set of parent IDs.
+///
+/// Active parents may also have archived subtasks (integrated children) that need
+/// to be included in derived state computation. Shared by `list_active` and
+/// `list_active_differential`.
+fn load_archived_subtasks_for_parents(
+    store: &Arc<dyn WorkflowStore>,
+    parent_ids: &[&str],
+    subtasks_by_parent: &mut HashMap<String, Vec<Task>>,
+) -> WorkflowResult<()> {
+    let archived_subtasks = store.list_archived_subtasks_by_parents(parent_ids)?;
+    for subtask in archived_subtasks {
+        if let Some(ref parent_id) = subtask.parent_id {
+            subtasks_by_parent
+                .entry(parent_id.clone())
+                .or_default()
+                .push(subtask);
+        }
+    }
+    Ok(())
+}
+
+/// Build derived states and views for a group of subtasks belonging to one parent.
+///
+/// `include_view` controls which tasks contribute a `TaskView` to the output.
+/// All tasks contribute a `DerivedTaskState` regardless (needed for parent view).
+/// Returns `(derived_states_in_topo_order, filtered_views)`.
+fn build_subtask_derived_data(
+    subtasks: Vec<Task>,
+    iterations_by_task: &HashMap<String, Vec<Iteration>>,
+    sessions_by_task: &HashMap<String, Vec<StageSession>>,
+    workflow: &WorkflowConfig,
+    include_view: impl Fn(&str) -> bool,
+) -> (Vec<DerivedTaskState>, Vec<TaskView>) {
+    let sorted = topological_sort(subtasks);
+    let mut derived_states = Vec::with_capacity(sorted.len());
+    let mut views = Vec::new();
+
+    for task in sorted {
+        let iterations = iterations_by_task
+            .get(&task.id)
+            .cloned()
+            .unwrap_or_default();
+        let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
+        let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
+        derived_states.push(derived.clone());
+
+        if include_view(&task.id) {
+            views.push(TaskView {
+                task,
+                iterations,
+                stage_sessions,
+                derived,
+            });
+        }
+    }
+
+    (derived_states, views)
+}
+
+/// Build a view for a single top-level task using preloaded data.
+fn build_single_top_level_view(
+    task: Task,
+    iterations_by_task: &HashMap<String, Vec<Iteration>>,
+    sessions_by_task: &HashMap<String, Vec<StageSession>>,
+    subtask_derived_by_parent: &HashMap<String, Vec<DerivedTaskState>>,
+    workflow: &WorkflowConfig,
+) -> TaskView {
+    let iterations = iterations_by_task
+        .get(&task.id)
+        .cloned()
+        .unwrap_or_default();
+    let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
+    let subtask_states = subtask_derived_by_parent
+        .get(&task.id)
+        .map_or(&[][..], Vec::as_slice);
+    let derived = DerivedTaskState::build(
+        &task,
+        &iterations,
+        &stage_sessions,
+        subtask_states,
+        workflow,
+    );
+    TaskView {
+        task,
+        iterations,
+        stage_sessions,
+        derived,
+    }
+}
 
 /// Trait for types that belong to a task (have a `task_id` field).
 trait HasTaskId {

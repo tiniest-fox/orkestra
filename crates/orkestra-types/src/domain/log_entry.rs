@@ -208,7 +208,12 @@ impl LogEntry {
                 if trimmed.is_empty() {
                     None
                 } else {
-                    Some(trimmed[..trimmed.len().min(100)].to_string())
+                    // Truncate at a char boundary to avoid panics on multi-byte UTF-8.
+                    let end = trimmed
+                        .char_indices()
+                        .nth(100)
+                        .map_or(trimmed.len(), |(i, _)| i);
+                    Some(trimmed[..end].to_string())
                 }
             }
             LogEntry::ToolUse { tool, input, .. } => Some(
@@ -325,7 +330,19 @@ mod tests {
         let long = "a".repeat(150);
         let entry = LogEntry::Text { content: long };
         let summary = entry.push_summary().unwrap();
-        assert_eq!(summary.len(), 100);
+        assert_eq!(summary.chars().count(), 100);
+    }
+
+    #[test]
+    fn test_push_summary_multibyte_utf8_does_not_panic() {
+        // "é" is 2 bytes; 100 repetitions = 100 chars but 200 bytes.
+        // The old byte-slice `trimmed[..100]` would panic at a char boundary.
+        let long = "é".repeat(150);
+        let entry = LogEntry::Text { content: long };
+        let summary = entry.push_summary().unwrap();
+        assert_eq!(summary.chars().count(), 100);
+        // Confirm the output is valid UTF-8 (would panic earlier if broken)
+        assert!(summary.chars().all(|c| c == 'é'));
     }
 
     #[test]

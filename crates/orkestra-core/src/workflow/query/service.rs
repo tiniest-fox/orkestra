@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use crate::workflow::api::WorkflowApi;
-use crate::workflow::domain::task_view::{DifferentialTaskResponse, TaskView};
-use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
+use crate::workflow::domain::{
+    DifferentialTaskResponse, Iteration, LogEntry, Question, StageSession, TaskView,
+};
 use crate::workflow::ports::{SyncStatus, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::Artifact;
 

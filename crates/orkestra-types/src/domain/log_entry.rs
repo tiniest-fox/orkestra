@@ -196,11 +196,162 @@ impl LogEntry {
             LogEntry::Error { .. } => "error",
         }
     }
+
+    /// Return the summary of the last summarizable entry in a batch.
+    ///
+    /// Iterates in reverse to find the last entry for which `push_summary` is `Some`.
+    /// Returns `None` when no entry in the slice produces a summary.
+    pub fn last_summary(entries: &[Self]) -> Option<String> {
+        entries.iter().rev().find_map(Self::push_summary)
+    }
+
+    /// Human-readable one-line summary suitable for push notifications.
+    ///
+    /// Returns `None` for non-summarizable variants (results, exit codes, errors).
+    /// Mirrors the frontend's `entrySummary()` in `LatestLogSummary.tsx`.
+    pub fn push_summary(&self) -> Option<String> {
+        match self {
+            LogEntry::Text { content } => {
+                let trimmed = content.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    // Truncate at a char boundary to avoid panics on multi-byte UTF-8.
+                    let end = trimmed
+                        .char_indices()
+                        .nth(100)
+                        .map_or(trimmed.len(), |(i, _)| i);
+                    Some(trimmed[..end].to_string())
+                }
+            }
+            LogEntry::ToolUse { tool, input, .. } => Some(
+                format!("{tool} {}", summarize_tool_input(input))
+                    .trim_end()
+                    .to_string(),
+            ),
+            LogEntry::SubagentToolUse { tool, input, .. } => Some(
+                format!("↳ {tool} {}", summarize_tool_input(input))
+                    .trim_end()
+                    .to_string(),
+            ),
+            _ => None,
+        }
+    }
+}
+
+/// Produce a short description of a tool input.
+///
+/// Mirrors the frontend's `toolSummary()` in `src/utils/toolSummary.ts`.
+fn summarize_tool_input(input: &ToolInput) -> String {
+    match input {
+        ToolInput::Bash { command } => command.chars().take(120).collect(),
+        ToolInput::Read { file_path }
+        | ToolInput::Write { file_path }
+        | ToolInput::Edit { file_path } => file_path.clone(),
+        ToolInput::Glob { pattern } | ToolInput::Grep { pattern } => pattern.clone(),
+        ToolInput::Agent { description } => description.clone(),
+        ToolInput::WebSearch { query } => query.clone(),
+        ToolInput::WebFetch { url } => url.clone(),
+        ToolInput::TodoWrite { todos } => {
+            let n = todos.len();
+            format!("{n} item{}", if n == 1 { "" } else { "s" })
+        }
+        ToolInput::Ork { ork_action } => summarize_ork_action(ork_action),
+        ToolInput::StructuredOutput { output_type } => output_type.clone(),
+        ToolInput::Other { summary } => summary.clone(),
+    }
+}
+
+/// Produce a short description of an Ork CLI action.
+fn summarize_ork_action(action: &OrkAction) -> String {
+    match action {
+        OrkAction::Complete { task_id, .. } => format!("complete {task_id}"),
+        OrkAction::Fail { task_id, .. } => format!("fail {task_id}"),
+        OrkAction::Block { task_id, .. } => format!("block {task_id}"),
+        OrkAction::Approve { task_id } | OrkAction::ApproveReview { task_id } => {
+            format!("approve {task_id}")
+        }
+        OrkAction::CreateSubtask { title, .. } => title.clone(),
+        OrkAction::Other { raw } => raw.clone(),
+        OrkAction::SetPlan { task_id } => format!("set_plan {task_id}"),
+        OrkAction::SetBreakdown { task_id } => format!("set_breakdown {task_id}"),
+        OrkAction::ApproveBreakdown { task_id } => format!("approve_breakdown {task_id}"),
+        OrkAction::SkipBreakdown { task_id } => format!("skip_breakdown {task_id}"),
+        OrkAction::CompleteSubtask { subtask_id } => format!("complete_subtask {subtask_id}"),
+        OrkAction::RejectReview { task_id, .. } => format!("reject_review {task_id}"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_push_summary_text() {
+        let entry = LogEntry::Text {
+            content: "Hello world".to_string(),
+        };
+        assert_eq!(entry.push_summary(), Some("Hello world".to_string()));
+    }
+
+    #[test]
+    fn test_push_summary_empty_text_returns_none() {
+        let entry = LogEntry::Text {
+            content: "   ".to_string(),
+        };
+        assert!(entry.push_summary().is_none());
+    }
+
+    #[test]
+    fn test_push_summary_tool_use() {
+        let entry = LogEntry::ToolUse {
+            tool: "read".to_string(),
+            id: "1".to_string(),
+            input: ToolInput::Read {
+                file_path: "src/main.rs".to_string(),
+            },
+        };
+        assert_eq!(entry.push_summary(), Some("read src/main.rs".to_string()));
+    }
+
+    #[test]
+    fn test_push_summary_subagent_tool_use() {
+        let entry = LogEntry::SubagentToolUse {
+            tool: "bash".to_string(),
+            id: "2".to_string(),
+            input: ToolInput::Bash {
+                command: "cargo test".to_string(),
+            },
+            parent_task_id: "p1".to_string(),
+        };
+        assert_eq!(entry.push_summary(), Some("↳ bash cargo test".to_string()));
+    }
+
+    #[test]
+    fn test_push_summary_process_exit_returns_none() {
+        let entry = LogEntry::ProcessExit { code: Some(0) };
+        assert!(entry.push_summary().is_none());
+    }
+
+    #[test]
+    fn test_push_summary_text_truncates_at_100() {
+        let long = "a".repeat(150);
+        let entry = LogEntry::Text { content: long };
+        let summary = entry.push_summary().unwrap();
+        assert_eq!(summary.chars().count(), 100);
+    }
+
+    #[test]
+    fn test_push_summary_multibyte_utf8_does_not_panic() {
+        // "é" is 2 bytes; 100 repetitions = 100 chars but 200 bytes.
+        // The old byte-slice `trimmed[..100]` would panic at a char boundary.
+        let long = "é".repeat(150);
+        let entry = LogEntry::Text { content: long };
+        let summary = entry.push_summary().unwrap();
+        assert_eq!(summary.chars().count(), 100);
+        // Confirm the output is valid UTF-8 (would panic earlier if broken)
+        assert!(summary.chars().all(|c| c == 'é'));
+    }
 
     #[test]
     fn test_log_entry_serialization() {

@@ -9,7 +9,8 @@ pub(crate) mod task_view;
 pub use orkestra_types::domain::*;
 
 pub use task_view::{
-    DerivedTaskState, PendingRejection, SessionLogInfo, StageLogInfo, SubtaskProgress, TaskView,
+    DerivedTaskState, DifferentialTaskResponse, PendingRejection, SessionLogInfo, StageLogInfo,
+    SubtaskProgress, TaskView,
 };
 
 // ============================================================================
@@ -18,12 +19,16 @@ pub use task_view::{
 
 /// Lightweight notification that a log entry was appended.
 ///
-/// Carries only identifiers — no log content. Consumers use these identifiers
-/// to trigger a cursor-based fetch for the actual new entries.
+/// Carries identifiers plus a human-readable summary of the last summarizable
+/// entry in the batch. Consumers can display the summary immediately and use
+/// the identifiers to fetch the full entry content via a cursor-based fetch.
 #[derive(Debug, Clone)]
 pub struct LogNotification {
     /// ID of the task whose log was updated.
     pub task_id: String,
     /// ID of the stage session that received the new entry.
     pub session_id: String,
+    /// Human-readable summary of the last log entry in the batch.
+    /// None if no entry in the batch was summarizable.
+    pub last_entry_summary: Option<String>,
 }

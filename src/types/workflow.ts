@@ -503,6 +503,23 @@ export interface WorkflowTaskView extends WorkflowTask {
 }
 
 // =============================================================================
+// Differential Sync
+// =============================================================================
+
+/**
+ * Response shape for differential task sync.
+ *
+ * Returned by `list_tasks` when called with a `since` timestamp map.
+ * Contains only tasks whose `updated_at` has changed plus IDs of deleted tasks.
+ */
+export interface DifferentialTaskResponse {
+  /** Tasks that are new or have changed since the client's last known timestamps. */
+  tasks: WorkflowTaskView[];
+  /** IDs of tasks that were in the client's timestamp map but are no longer active. */
+  deleted_ids: string[];
+}
+
+// =============================================================================
 // Log Pagination
 // =============================================================================
 

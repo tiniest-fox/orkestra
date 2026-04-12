@@ -39,6 +39,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::Task;
     use crate::workflow::iteration::IterationService;
     use crate::workflow::ports::WorkflowStore;
     use crate::workflow::query::interactions::sessions as query_sessions;
@@ -47,6 +48,15 @@ mod tests {
 
     fn create_deps() -> (Arc<InMemoryWorkflowStore>, Arc<IterationService>) {
         let store = Arc::new(InMemoryWorkflowStore::new());
+        store
+            .save_task(&Task::new(
+                "task-1",
+                "Test Task",
+                "Desc",
+                "planning",
+                "2020-01-01T00:00:00Z",
+            ))
+            .unwrap();
         let iteration_service = Arc::new(IterationService::new(
             Arc::clone(&store) as Arc<dyn WorkflowStore>
         ));
@@ -183,6 +193,15 @@ mod tests {
     #[test]
     fn test_get_running_agents() {
         let (store, iter_svc) = create_deps();
+        store
+            .save_task(&Task::new(
+                "task-2",
+                "Test Task 2",
+                "Desc",
+                "planning",
+                "2020-01-01T00:00:00Z",
+            ))
+            .unwrap();
 
         // Task 1 has running agent
         session::on_spawn_starting::execute(

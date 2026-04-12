@@ -308,6 +308,7 @@ fn read_chat_output(
                 let update = parser.parse_line(&line);
 
                 let mut batch_count = 0usize;
+                let batch_summary = LogEntry::last_summary(&update.log_entries);
                 for entry in update.log_entries {
                     if let LogEntry::Text { ref content } = entry {
                         accumulated_text.push(content.clone());
@@ -325,6 +326,7 @@ fn read_chat_output(
                         if let Err(e) = tx.send(LogNotification {
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
+                            last_entry_summary: batch_summary,
                         }) {
                             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
                         }
@@ -341,6 +343,7 @@ fn read_chat_output(
     // Finalize parser and accumulate text from finalized entries
     let finalized = parser.finalize();
     let mut finalized_count = 0usize;
+    let finalized_summary = LogEntry::last_summary(&finalized);
     for entry in finalized {
         if let LogEntry::Text { ref content } = entry {
             accumulated_text.push(content.clone());
@@ -358,6 +361,7 @@ fn read_chat_output(
             if let Err(e) = tx.send(LogNotification {
                 task_id: task_id.to_string(),
                 session_id: session_id.to_string(),
+                last_entry_summary: finalized_summary,
             }) {
                 orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
             }
@@ -415,6 +419,7 @@ fn read_chat_output(
         if let Err(e) = tx.send(LogNotification {
             task_id: task_id.to_string(),
             session_id: session_id.to_string(),
+            last_entry_summary: None, // ProcessExit is not summarizable
         }) {
             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
         }

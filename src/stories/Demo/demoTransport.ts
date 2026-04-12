@@ -15,6 +15,11 @@ export function createDemoTransport(): Transport {
         case "get_startup_data":
           return resolve({ config: demoConfig, tasks: demoTasks });
         case "list_tasks":
+          // Differential sync: when called with `since`, return the envelope shape.
+          // Without `since`, return the plain array (backwards compatible).
+          if (params?.since) {
+            return resolve({ tasks: demoTasks, deleted_ids: [] });
+          }
           return resolve(demoTasks);
         case "get_logs": {
           const sessionId = params?.session_id as string | undefined;

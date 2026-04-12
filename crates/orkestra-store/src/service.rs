@@ -78,6 +78,11 @@ impl WorkflowStore for SqliteWorkflowStore {
         interactions::task::next_subtask_id::execute(&conn, parent_id)
     }
 
+    fn touch_task(&self, id: &str) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::task::touch::execute(&conn, id)
+    }
+
     // -- Iteration --
 
     fn get_iterations(&self, task_id: &str) -> WorkflowResult<Vec<Iteration>> {

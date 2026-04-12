@@ -641,9 +641,11 @@ impl StageExecutionService {
         // Send one notification per batch — receiver triggers a cursor-based fetch.
         if !entries.is_empty() {
             if let Some(tx) = &self.log_notify_tx {
+                let summary = LogEntry::last_summary(entries);
                 if let Err(e) = tx.send(LogNotification {
                     task_id: task_id.to_string(),
                     session_id: stage_session_id.to_string(),
+                    last_entry_summary: summary,
                 }) {
                     crate::orkestra_debug!("stage", "Log notification send failed: {}", e);
                 }
@@ -957,6 +959,67 @@ mod tests {
         let notification = rx.recv().expect("expected notification");
         assert_eq!(notification.task_id, "task-xyz");
         assert_eq!(notification.session_id, "session-abc");
+        assert_eq!(
+            notification.last_entry_summary.as_deref(),
+            Some("hello"),
+            "text entry should produce a summary"
+        );
+    }
+
+    #[test]
+    fn persist_log_entries_summary_none_for_empty_text() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        let project_root = std::path::PathBuf::from("/tmp");
+
+        let mut service =
+            StageExecutionService::new(workflow, project_root, store, iteration_service);
+
+        let (tx, rx) = mpsc::channel();
+        service.set_log_notify_tx(tx);
+
+        let entries = vec![LogEntry::Text {
+            content: "   ".to_string(), // whitespace only
+        }];
+        service.persist_log_entries("session-abc", "task-xyz", "work", &entries, "iter-1");
+
+        let notification = rx.recv().expect("expected notification");
+        assert!(
+            notification.last_entry_summary.is_none(),
+            "whitespace-only text should produce no summary"
+        );
+    }
+
+    #[test]
+    fn persist_log_entries_summary_tool_use() {
+        use crate::workflow::domain::ToolInput;
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        let project_root = std::path::PathBuf::from("/tmp");
+
+        let mut service =
+            StageExecutionService::new(workflow, project_root, store, iteration_service);
+
+        let (tx, rx) = mpsc::channel();
+        service.set_log_notify_tx(tx);
+
+        let entries = vec![LogEntry::ToolUse {
+            tool: "read".to_string(),
+            id: "1".to_string(),
+            input: ToolInput::Read {
+                file_path: "src/main.rs".to_string(),
+            },
+        }];
+        service.persist_log_entries("session-abc", "task-xyz", "work", &entries, "iter-1");
+
+        let notification = rx.recv().expect("expected notification");
+        assert_eq!(
+            notification.last_entry_summary.as_deref(),
+            Some("read src/main.rs"),
+            "tool_use entry should produce tool + input summary"
+        );
     }
 
     #[test]

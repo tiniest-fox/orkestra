@@ -111,6 +111,17 @@ impl WorkflowStore for InMemoryWorkflowStore {
         ))
     }
 
+    fn touch_task(&self, id: &str) -> WorkflowResult<()> {
+        let mut tasks = self.tasks.lock().map_err(|_| WorkflowError::Lock)?;
+        match tasks.get_mut(id) {
+            Some(task) => {
+                task.updated_at = chrono::Utc::now().to_rfc3339();
+                Ok(())
+            }
+            None => Err(WorkflowError::TaskNotFound(id.to_string())),
+        }
+    }
+
     fn list_all_iterations(&self) -> WorkflowResult<Vec<Iteration>> {
         let iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
         let mut result: Vec<_> = iterations.clone();

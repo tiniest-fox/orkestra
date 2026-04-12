@@ -69,6 +69,10 @@ impl IterationService {
         }
 
         self.store.save_iteration(&iteration)?;
+        // Bump task's updated_at so differential sync picks up the change
+        self.store.touch_task(task_id)?;
+        // Cascade to parent if this is a subtask
+        cascade_touch_to_parent(&self.store, task_id);
         Ok(iteration)
     }
 
@@ -104,6 +108,10 @@ impl IterationService {
         if let Some(mut iteration) = self.store.get_active_iteration(task_id, stage)? {
             iteration.end(Utc::now().to_rfc3339(), outcome);
             self.store.save_iteration(&iteration)?;
+            // Bump task's updated_at so differential sync picks up the change
+            self.store.touch_task(task_id)?;
+            // Cascade to parent if this is a subtask
+            cascade_touch_to_parent(&self.store, task_id);
         }
         Ok(())
     }
@@ -149,20 +157,76 @@ impl IterationService {
     }
 }
 
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/// Touch the parent task's `updated_at` when a subtask's iteration changes.
+///
+/// Cascading ensures `DerivedTaskState.subtask_progress` stays fresh in
+/// differential responses, since `DerivedTaskState::build()` depends on
+/// subtask states. Single-level only — does not recurse beyond direct parent.
+///
+/// Non-fatal: logs a debug warning on error rather than propagating, because
+/// a failed parent touch is not a correctness issue for the subtask's own
+/// iteration lifecycle.
+fn cascade_touch_to_parent(store: &Arc<dyn WorkflowStore>, task_id: &str) {
+    match store.get_task(task_id) {
+        Ok(Some(task)) => {
+            if let Some(ref parent_id) = task.parent_id {
+                if let Err(e) = store.touch_task(parent_id) {
+                    crate::orkestra_debug!(
+                        "iteration",
+                        "cascade_touch_to_parent: failed to touch parent {} of {}: {}",
+                        parent_id,
+                        task_id,
+                        e
+                    );
+                }
+            }
+        }
+        Ok(None) => {
+            crate::orkestra_debug!(
+                "iteration",
+                "cascade_touch_to_parent: task {} not found",
+                task_id
+            );
+        }
+        Err(e) => {
+            crate::orkestra_debug!(
+                "iteration",
+                "cascade_touch_to_parent: error loading task {}: {}",
+                task_id,
+                e
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::QuestionAnswer;
+    use crate::workflow::domain::{QuestionAnswer, Task};
+    use crate::workflow::ports::WorkflowStore;
 
-    fn create_service() -> IterationService {
+    fn create_service() -> (Arc<InMemoryWorkflowStore>, IterationService) {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        IterationService::new(store)
+        let task = Task::new(
+            "task-1",
+            "Test Task",
+            "Desc",
+            "planning",
+            "2020-01-01T00:00:00Z",
+        );
+        store.save_task(&task).unwrap();
+        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
+        (store, service)
     }
 
     #[test]
     fn test_create_initial_iteration() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         let iteration = service
             .create_initial_iteration("task-1", "planning")
@@ -177,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_create_iteration_with_trigger() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Create first iteration
         service
@@ -205,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_per_stage_numbering() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Create iterations in planning stage
         let p1 = service
@@ -226,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_end_iteration() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         service
             .create_initial_iteration("task-1", "planning")
@@ -243,7 +307,7 @@ mod tests {
     #[test]
     fn test_end_iteration_nonexistent_succeeds() {
         // Verify the documented "silent success" behavior when no iteration exists
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // End an iteration that was never created - should succeed silently
         let result = service.end_iteration("nonexistent-task", "planning", Outcome::Approved);
@@ -252,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_create_iteration_rejects_empty_inputs() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Empty task_id should fail
         let result = service.create_iteration("", "planning", None);
@@ -265,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_iteration_triggers() {
-        let service = create_service();
+        let (_store, service) = create_service();
 
         // Test various trigger types
         let triggers = vec![
@@ -301,11 +365,22 @@ mod tests {
 mod activity_log_tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::Task;
+    use crate::workflow::ports::WorkflowStore;
 
     #[test]
     fn test_set_activity_log() {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = IterationService::new(store.clone());
+        store
+            .save_task(&Task::new(
+                "task-1",
+                "T",
+                "D",
+                "work",
+                "2020-01-01T00:00:00Z",
+            ))
+            .unwrap();
+        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
 
         // Create an active iteration
         service.create_initial_iteration("task-1", "work").unwrap();
@@ -338,12 +413,22 @@ mod activity_log_tests {
 mod artifact_snapshot_tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::ArtifactSnapshot;
+    use crate::workflow::domain::{ArtifactSnapshot, Task};
+    use crate::workflow::ports::WorkflowStore;
 
     #[test]
     fn test_set_artifact_snapshot() {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = IterationService::new(store.clone());
+        store
+            .save_task(&Task::new(
+                "task-1",
+                "T",
+                "D",
+                "work",
+                "2020-01-01T00:00:00Z",
+            ))
+            .unwrap();
+        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
 
         service.create_initial_iteration("task-1", "work").unwrap();
 
@@ -371,5 +456,159 @@ mod artifact_snapshot_tests {
         // Should not error when no iteration exists
         let result = service.set_artifact_snapshot("nonexistent", "work", snapshot);
         assert!(result.is_ok());
+    }
+}
+
+// ============================================================================
+// touch_task integration tests
+// ============================================================================
+
+#[cfg(test)]
+mod touch_task_tests {
+    use super::*;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::{LogEntry, StageSession, Task};
+    use crate::workflow::ports::WorkflowStore;
+
+    fn make_task(id: &str) -> Task {
+        // Task::new(id, title, description, first_stage, created_at)
+        let mut task = Task::new(id, "Test", "Description", "work", "2020-01-01T00:00:00Z");
+        task.updated_at = "2020-01-01T00:00:00Z".to_string();
+        task
+    }
+
+    /// `create_iteration` must bump the task's `updated_at` so differential sync picks it up.
+    #[test]
+    fn create_iteration_bumps_task_updated_at() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = IterationService::new(store.clone());
+
+        let task = make_task("task-1");
+        store.save_task(&task).unwrap();
+
+        service.create_initial_iteration("task-1", "work").unwrap();
+
+        let updated = store.get_task("task-1").unwrap().unwrap();
+        assert_ne!(
+            updated.updated_at, task.updated_at,
+            "create_iteration should bump updated_at"
+        );
+    }
+
+    /// `end_iteration` must bump the task's `updated_at`.
+    #[test]
+    fn end_iteration_bumps_task_updated_at() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = IterationService::new(store.clone());
+
+        let task = make_task("task-1");
+        store.save_task(&task).unwrap();
+        service.create_initial_iteration("task-1", "work").unwrap();
+
+        // Save the updated_at after iteration creation
+        let after_create = store.get_task("task-1").unwrap().unwrap().updated_at;
+
+        // Small sleep to ensure next timestamp is strictly greater
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        service
+            .end_iteration("task-1", "work", Outcome::Approved)
+            .unwrap();
+
+        let after_end = store.get_task("task-1").unwrap().unwrap().updated_at;
+        assert_ne!(
+            after_end, after_create,
+            "end_iteration should bump updated_at"
+        );
+    }
+
+    /// When a subtask's iteration is created, the parent task's `updated_at` must
+    /// also be bumped (cascade).
+    #[test]
+    fn create_iteration_cascades_to_parent() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = IterationService::new(store.clone());
+
+        let parent = make_task("parent-1");
+        let mut child = make_task("child-1");
+        child.parent_id = Some("parent-1".to_string());
+
+        store.save_task(&parent).unwrap();
+        store.save_task(&child).unwrap();
+
+        // Small sleep so parent's updated_at after cascade is strictly later
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        service.create_initial_iteration("child-1", "work").unwrap();
+
+        let updated_parent = store.get_task("parent-1").unwrap().unwrap();
+        assert_ne!(
+            updated_parent.updated_at, parent.updated_at,
+            "parent updated_at should be bumped when child iteration is created"
+        );
+    }
+
+    /// When a subtask's iteration ends, the parent task's `updated_at` must also
+    /// be bumped (cascade).
+    #[test]
+    fn end_iteration_cascades_to_parent() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = IterationService::new(store.clone());
+
+        let parent = make_task("parent-1");
+        let mut child = make_task("child-1");
+        child.parent_id = Some("parent-1".to_string());
+
+        store.save_task(&parent).unwrap();
+        store.save_task(&child).unwrap();
+        service.create_initial_iteration("child-1", "work").unwrap();
+
+        let parent_after_create = store.get_task("parent-1").unwrap().unwrap().updated_at;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        service
+            .end_iteration("child-1", "work", Outcome::Approved)
+            .unwrap();
+
+        let parent_after_end = store.get_task("parent-1").unwrap().unwrap().updated_at;
+        assert_ne!(
+            parent_after_end, parent_after_create,
+            "parent updated_at should be bumped when child iteration ends"
+        );
+    }
+
+    /// Appending a log entry to a stage session must NOT bump the task's `updated_at`.
+    ///
+    /// Log entry writes are high-frequency streaming events. Bumping `updated_at`
+    /// on every log write would cause noisy churn in differential sync, defeating
+    /// its purpose.
+    #[test]
+    fn log_append_does_not_bump_updated_at() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+
+        let task = make_task("task-1");
+        store.save_task(&task).unwrap();
+
+        // Create a stage session for the task
+        let now = chrono::Utc::now().to_rfc3339();
+        let session = StageSession::new("session-1", "task-1", "work", &now);
+        store.save_stage_session(&session).unwrap();
+
+        // Record updated_at before log append
+        let before = store.get_task("task-1").unwrap().unwrap().updated_at;
+
+        // Append a log entry — should NOT touch the task's updated_at
+        store
+            .append_log_entry(
+                "session-1",
+                &LogEntry::Text {
+                    content: "hello".into(),
+                },
+                None,
+            )
+            .unwrap();
+
+        let after = store.get_task("task-1").unwrap().unwrap().updated_at;
+        assert_eq!(before, after, "log append must not bump task updated_at");
     }
 }

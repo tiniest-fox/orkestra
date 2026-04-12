@@ -10,6 +10,18 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{Iteration, Question, StageSession, Task};
 use crate::workflow::runtime::{Outcome, TaskState};
 
+/// Response type for differential task sync.
+///
+/// Contains only tasks whose `updated_at` has changed since the client's last
+/// known timestamps, plus IDs of tasks that were deleted from the active set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DifferentialTaskResponse {
+    /// Tasks that are new or have changed since the client's last known timestamps.
+    pub tasks: Vec<TaskView>,
+    /// IDs of tasks that were in the client's timestamp map but are no longer active.
+    pub deleted_ids: Vec<String>,
+}
+
 /// A task with pre-joined data and derived state for the frontend.
 ///
 /// This is the API response type — the internal `Task` struct stays lean.

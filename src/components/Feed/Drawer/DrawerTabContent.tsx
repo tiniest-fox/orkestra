@@ -119,6 +119,9 @@ export function DrawerTabContent({
       : task.derived.pending_approval
         ? ("approved" as const)
         : undefined;
+    const rejection = task.derived.pending_rejection;
+    const rejectionTarget =
+      rejection && rejection.target !== rejection.from_stage ? rejection.target : undefined;
 
     const stageResources = artifact
       ? Object.values(task.resources)
@@ -130,7 +133,7 @@ export function DrawerTabContent({
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
         {artifact ? (
           <>
-            <ArtifactView artifact={artifact} verdict={verdict} />
+            <ArtifactView artifact={artifact} verdict={verdict} rejectionTarget={rejectionTarget} />
             {stageResources.length > 0 && <StageResources resources={stageResources} />}
           </>
         ) : (

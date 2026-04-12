@@ -1,6 +1,7 @@
 // Outcome badge — colored label for iteration outcomes and artifact states.
 
 import type { WorkflowOutcome } from "../../types/workflow";
+import { titleCase } from "../../utils/titleCase";
 
 export function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
   if (!outcome) return null;
@@ -15,11 +16,18 @@ export function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
 export function artifactBadgeLabel(
   artifactName: string,
   verdict?: "approved" | "rejected",
+  rejectionTarget?: string,
 ): { label: string; classes: string } {
   if (verdict === "approved") {
     return { label: "Approved", classes: "bg-status-success text-white" };
   }
   if (verdict === "rejected") {
+    if (rejectionTarget) {
+      return {
+        label: `Rejected → ${titleCase(rejectionTarget)}`,
+        classes: "bg-status-error text-white",
+      };
+    }
     return { label: "Rejected", classes: "bg-status-error text-white" };
   }
   // Non-approval artifact or no verdict yet: show title-cased artifact name
@@ -30,11 +38,13 @@ export function artifactBadgeLabel(
 export function ArtifactBadge({
   artifactName,
   verdict,
+  rejectionTarget,
 }: {
   artifactName: string;
   verdict?: "approved" | "rejected";
+  rejectionTarget?: string;
 }) {
-  const { label, classes } = artifactBadgeLabel(artifactName, verdict);
+  const { label, classes } = artifactBadgeLabel(artifactName, verdict, rejectionTarget);
   return (
     <span
       className={`font-mono text-forge-mono-label font-medium px-1.5 py-0.5 rounded ${classes}`}
@@ -51,10 +61,21 @@ export function badgeLabel(outcome: WorkflowOutcome): { label: string; color: st
     case "completed":
       return { label: "Done", color: "text-status-success" };
     case "rejected":
-    case "rejection":
       return { label: "Rejected", color: "text-status-warning" };
-    case "awaiting_rejection_review":
+    case "rejection": {
+      const { from_stage, target } = outcome;
+      if (target && target !== from_stage) {
+        return { label: `Rejected → ${titleCase(target)}`, color: "text-status-warning" };
+      }
+      return { label: "Rejected", color: "text-status-warning" };
+    }
+    case "awaiting_rejection_review": {
+      const { from_stage, target } = outcome;
+      if (target && target !== from_stage) {
+        return { label: `Pending Review → ${titleCase(target)}`, color: "text-status-warning" };
+      }
       return { label: "Pending Review", color: "text-status-warning" };
+    }
     case "awaiting_answers":
       return { label: "Waiting", color: "text-status-info" };
     case "interrupted":

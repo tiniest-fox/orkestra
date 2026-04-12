@@ -20,9 +20,10 @@ import { ArtifactBadge } from "./OutcomeBadge";
 interface ArtifactViewProps {
   artifact: WorkflowArtifact;
   verdict?: "approved" | "rejected";
+  rejectionTarget?: string;
 }
 
-export function ArtifactView({ artifact, verdict }: ArtifactViewProps) {
+export function ArtifactView({ artifact, verdict, rejectionTarget }: ArtifactViewProps) {
   // Defer heavy content rendering until all ancestor animations settle
   const isSettled = useContentSettled();
   const deferChunks = !isSettled;
@@ -36,7 +37,11 @@ export function ArtifactView({ artifact, verdict }: ArtifactViewProps) {
   return (
     <div className="p-4">
       <div className="flex items-center gap-2 text-xs text-text-secondary mb-2">
-        <ArtifactBadge artifactName={artifact.name} verdict={verdict} />
+        <ArtifactBadge
+          artifactName={artifact.name}
+          verdict={verdict}
+          rejectionTarget={rejectionTarget}
+        />
         <span>
           Stage: {artifact.stage} | Iteration: {artifact.iteration} |{" "}
           {formatTimestamp(artifact.created_at)}

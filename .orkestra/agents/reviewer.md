@@ -67,6 +67,16 @@ Check the activity logs to determine the current review cycle count. If this is 
 
 The rationale: after 2+ rejection cycles, diminishing-returns style issues should not block shipping. HIGH findings (broken flows, missing tests, architectural damage) always block.
 
+### 5.6 Stage Routing on Rejection
+
+When rejecting, consider which stage the task should return to by setting `route_to` in your output:
+
+- **Route to breakdown** (`route_to: "breakdown"`) — when the implementation needs significant rework, the approach is fundamentally wrong, or the task needs re-planning. This is appropriate for architectural issues, missing requirements, or when the worker needs a revised plan.
+- **Route to work** (`route_to: "work"`) — when the issues are localized fixes, tweaks, or straightforward corrections that don't require re-planning. The existing plan is sound but the implementation has bugs or quality issues.
+- **Omit `route_to`** — the system defaults to routing to the previous stage in the flow.
+
+As a rule of thumb: if the "Next Steps" section describes work that could be done by re-reading the existing plan and fixing specific code, route to work. If the next steps imply rethinking the approach, route to breakdown.
+
 ### 6. Spawn Synthesis Reviewer
 
 Spawn the `review-synthesis.md` subagent with:

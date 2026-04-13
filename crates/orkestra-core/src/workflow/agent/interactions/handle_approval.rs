@@ -31,9 +31,8 @@ pub fn execute(
 
     match decision {
         "approve" => {
-            // Store the reviewer's approval content as artifact, then enter commit pipeline
-            // directly. The reviewer's verdict is final — no additional human approval is
-            // needed (the human can still override via `reject()` if they disagree).
+            // Store the reviewer's approval content as artifact, then auto-advance
+            // or pause for human review based on auto_mode.
             let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
                 workflow,
                 &task.flow,
@@ -50,7 +49,13 @@ pub fn execute(
                     content: content.to_string(),
                 },
             )?;
-            stage::enter_commit_pipeline::execute(iteration_service, task, now)
+            stage::auto_advance_or_review::execute(
+                iteration_service,
+                workflow,
+                task,
+                current_stage,
+                now,
+            )
         }
         "reject" => {
             // Store rejection content as artifact (same name as approvals, overwrite semantics)

@@ -310,8 +310,9 @@ fn test_integration_squashes_commits_for_non_subtask() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done -> integration (sync)
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration (sync)
 
     // Task should be archived after integration
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -470,8 +471,9 @@ fn test_subtask_integration_squashes_commits() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done -> integration (sync)
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(subtask_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration (sync)
 
     // Subtask should be archived
     let subtask = ctx.api().get_task(subtask_id).unwrap();
@@ -662,9 +664,10 @@ fn test_conflict_recovery_squashes_all_commits() {
         },
     );
 
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done -> integration fails -> recovers to work -> spawns worker (completion ready)
-    ctx.advance(); // processes work output
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration fails → recovers to work
+    ctx.advance(); // spawns work agent → processes work output → AwaitingApproval (work)
 
     // Task should be back in work stage (recovery)
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -731,8 +734,9 @@ fn test_conflict_recovery_squashes_all_commits() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done -> integration succeeds
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration succeeds
 
     // Task should now be archived
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -832,8 +836,9 @@ fn test_integration_with_no_commits_succeeds() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done -> integration (should succeed despite no commits)
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration (should succeed despite no commits)
 
     // Task should be archived
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -944,8 +949,9 @@ fn test_merge_task_squashes_commits() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done (no auto-merge)
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done (no auto-merge)
 
     // Verify task is Done+Idle (not archived — auto_merge is off)
     let task = ctx.api().get_task(&task_id).unwrap();

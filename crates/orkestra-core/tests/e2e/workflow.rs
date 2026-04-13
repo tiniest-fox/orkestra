@@ -526,14 +526,15 @@ fn test_exhaustive_workflow_flow() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // spawns reviewer → drain_active → AwaitingApproval
 
     // VERIFY: Reviewer re-entering the same stage (untriggered re-entry) → fresh spawn, full prompt.
     // No trigger on the new review iteration — classified as untriggered re-entry → session superseded.
     ctx.assert_full_prompt("verdict", false, true);
 
-    ctx.advance(); // processes reviewer approval → Finishing → Done → integration fails (sync) → recovers to work → spawns work agent (completion ready)
-    ctx.advance(); // processes work output
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration fails → recovers to work
+    ctx.advance(); // spawns work agent → processes work output → AwaitingApproval (work)
 
     // =========================================================================
     // Step 11: Integration fails (auto-triggered) → Back to Working
@@ -617,8 +618,9 @@ fn test_exhaustive_workflow_flow() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns reviewer (completion ready)
-    ctx.advance(); // processes reviewer approval → Finishing → Done → integration succeeds (sync) → Archived
+    ctx.advance(); // spawns reviewer → drain_active → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration succeeds (sync) → Archived
 
     // Auto-integration should have completed successfully and task becomes Archived
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -2660,6 +2662,196 @@ fn test_rejection_review_override_then_approval() {
     );
 }
 
+/// Test that agent approval pauses at `AwaitingApproval` when `auto_mode` is false.
+///
+/// Regression test for: approval output calling `enter_commit_pipeline` directly,
+/// bypassing the `auto_mode` check in `auto_advance_or_review`.
+///
+/// Flow:
+/// 1. Create task with work + review stages (both `GateConfig::Agentic`), `auto_mode=false`
+/// 2. Work agent produces artifact → human approves → review stage
+/// 3. Reviewer agent outputs "approve"
+/// 4. Assert task pauses at `AwaitingApproval` (human must still confirm)
+/// 5. Human approves → task advances through commit pipeline → archived
+#[test]
+fn test_approval_review_pauses_for_human_when_not_auto_mode() {
+    let workflow = enable_auto_merge(
+        WorkflowConfig::new(vec![
+            StageConfig::new("work", "summary")
+                .with_prompt("worker.md")
+                .with_gate(GateConfig::Agentic),
+            StageConfig::new("review", "verdict")
+                .with_prompt("reviewer.md")
+                .with_gate(GateConfig::Agentic),
+        ])
+        .with_integration(IntegrationConfig::new("work")),
+    );
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Approval pause test",
+        "Test that reviewer approval pauses for human when auto_mode=false",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    assert_eq!(task.current_stage(), Some("work"));
+    assert!(matches!(task.state, TaskState::Queued { .. }));
+
+    // Work stage: produce artifact → awaiting review → human approves → review stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes work output → AwaitingApproval
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_awaiting_review());
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to review
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+    assert!(matches!(task.state, TaskState::Queued { .. }));
+
+    // Review stage: reviewer approves → should pause at AwaitingApproval (auto_mode=false)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM — implementation looks correct".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes approval → should pause at AwaitingApproval
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("review"),
+        "Task should still be in review stage (agent approval paused for human review)"
+    );
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Task should be AwaitingApproval — agent approval must not bypass human review when auto_mode=false. Got state: {:?}",
+        task.state
+    );
+
+    // Human approves → commit pipeline → archived
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → Done → integration → Archived
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_archived(),
+        "Task should be Archived after human approval + integration, got state: {:?}",
+        task.state
+    );
+}
+
+/// Test that agent approval auto-advances immediately when `auto_mode` is true.
+///
+/// When `auto_mode` is enabled, the approve path in `handle_approval.rs` should
+/// call `auto_advance_or_review` which short-circuits the human review pause and
+/// enters the commit pipeline directly.
+///
+/// Flow:
+/// 1. Create task with work + review stages (both `GateConfig::Agentic`)
+/// 2. Enable `auto_mode` on the task
+/// 3. Drive through work → review
+/// 4. Reviewer agent outputs "approve"
+/// 5. Assert task advances past review without pausing at `AwaitingApproval`
+#[test]
+fn test_approval_auto_advances_when_auto_mode() {
+    let workflow = enable_auto_merge(
+        WorkflowConfig::new(vec![
+            StageConfig::new("work", "summary")
+                .with_prompt("worker.md")
+                .with_gate(GateConfig::Agentic),
+            StageConfig::new("review", "verdict")
+                .with_prompt("reviewer.md")
+                .with_gate(GateConfig::Agentic),
+        ])
+        .with_integration(IntegrationConfig::new("work")),
+    );
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Auto-mode approval test",
+        "Test that reviewer approval auto-advances when auto_mode=true",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Drive work stage with auto_mode=false (default) to reach review stage predictably
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes work output → AwaitingApproval
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → advance to review
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("review"),
+        "Task should be in review stage. Got: {:?}",
+        task.state
+    );
+
+    // Enable auto_mode before review stage runs
+    ctx.api().set_auto_mode(&task_id, true).unwrap();
+
+    // Review stage: reviewer approves → auto_mode=true: should NOT pause at AwaitingApproval
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM — implementation looks correct".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns reviewer → drain_active → auto_mode=true: enters commit pipeline → Done
+    ctx.advance(); // integration → Archived
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        !matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Task should NOT be AwaitingApproval when auto_mode=true — agent approval should auto-advance. Got state: {:?}",
+        task.state
+    );
+    // Task should be Finishing, Done, or Archived depending on pipeline speed
+    assert!(
+        matches!(task.state, TaskState::Finishing { .. })
+            || task.is_done()
+            || task.is_archived(),
+        "Task should be past review stage (Finishing/Done/Archived) with auto_mode=true. Got state: {:?}",
+        task.state
+    );
+}
+
 /// Test that confirming a reviewer rejection sends the task to the target stage.
 ///
 /// When the human agrees with the reviewer's rejection (calls approve on the
@@ -3107,7 +3299,7 @@ fn test_artifact_generation_for_all_output_types() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns reviewer → drain_active → approval enters commit pipeline directly
+    ctx.advance(); // spawns reviewer → drain_active → approval stored as artifact → AwaitingApproval
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
@@ -3115,9 +3307,10 @@ fn test_artifact_generation_for_all_output_types() {
         Some("Re-evaluated: all tests adequate, implementation is solid"),
         "Agent approval verdict should create an artifact with approval content"
     );
-    // Reviewer approval is final — no human approve step needed
+    // Human must still confirm after agent approval
+    ctx.api().approve(&task_id).unwrap();
 
-    ctx.advance(); // commit pipeline: Finishing → Finished → Done → integration → Archived
+    ctx.advance(); // commit pipeline: Finishing → Done → integration → Archived
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
@@ -3360,8 +3553,9 @@ fn test_commit_message_generation_during_integration() {
         .unwrap();
 
     // Advance through review stage
-    ctx.advance(); // spawn review agent
-    ctx.advance(); // process review output → auto-approve → Done → integration (sync) → Archived
+    ctx.advance(); // spawn review agent → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done → integration (sync) → Archived
 
     // Verify task is archived (integration succeeded, which means generator was called)
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -5386,8 +5580,9 @@ fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done
 }
 
 /// Test that a Done task can be manually archived.
@@ -7321,7 +7516,9 @@ fn test_gate_pass_then_advances_to_next_stage() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns review agent → drain_active → approval processed → Finishing/Done
+    ctx.advance(); // spawns review agent → drain_active → approval → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done (or Archived if auto-merge)
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
@@ -7331,7 +7528,7 @@ fn test_gate_pass_then_advances_to_next_stage() {
                 | TaskState::Committing { .. }
                 | TaskState::Committed { .. }
                 | TaskState::Done
-        ),
+        ) || task.is_archived(),
         "Task should have advanced past review after gate pass, got: {:?}",
         task.state
     );

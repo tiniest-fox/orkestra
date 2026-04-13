@@ -114,10 +114,25 @@ pub fn list_active_differential<S: std::hash::BuildHasher>(
         .cloned()
         .collect();
 
-    // Only send views whose updated_at changed or that are new to the client.
+    // Parents must appear in the response when any child changes, because
+    // parent derived state (subtask_progress) depends on child states.
+    let parents_with_changed_children: std::collections::HashSet<String> = all_views
+        .iter()
+        .filter_map(|v| {
+            if since.get(&v.task.id) == Some(&v.task.updated_at) {
+                None
+            } else {
+                v.task.parent_id.clone()
+            }
+        })
+        .collect();
+
     let tasks = all_views
         .into_iter()
-        .filter(|v| since.get(&v.task.id) != Some(&v.task.updated_at))
+        .filter(|v| {
+            since.get(&v.task.id) != Some(&v.task.updated_at)
+                || parents_with_changed_children.contains(&v.task.id)
+        })
         .collect();
 
     Ok(DifferentialTaskResponse { tasks, deleted_ids })

@@ -71,8 +71,6 @@ impl IterationService {
         self.store.save_iteration(&iteration)?;
         // Bump task's updated_at so differential sync picks up the change
         self.store.touch_task(task_id)?;
-        // Cascade to parent if this is a subtask
-        cascade_touch_to_parent(&self.store, task_id);
         Ok(iteration)
     }
 
@@ -110,8 +108,6 @@ impl IterationService {
             self.store.save_iteration(&iteration)?;
             // Bump task's updated_at so differential sync picks up the change
             self.store.touch_task(task_id)?;
-            // Cascade to parent if this is a subtask
-            cascade_touch_to_parent(&self.store, task_id);
         }
         Ok(())
     }
@@ -156,53 +152,6 @@ impl IterationService {
         Ok(())
     }
 }
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/// Touch the parent task's `updated_at` when a subtask's iteration changes.
-///
-/// Cascading ensures `DerivedTaskState.subtask_progress` stays fresh in
-/// differential responses, since `DerivedTaskState::build()` depends on
-/// subtask states. Single-level only — does not recurse beyond direct parent.
-///
-/// Non-fatal: logs a debug warning on error rather than propagating, because
-/// a failed parent touch is not a correctness issue for the subtask's own
-/// iteration lifecycle.
-fn cascade_touch_to_parent(store: &Arc<dyn WorkflowStore>, task_id: &str) {
-    match store.get_task(task_id) {
-        Ok(Some(task)) => {
-            if let Some(ref parent_id) = task.parent_id {
-                if let Err(e) = store.touch_task(parent_id) {
-                    crate::orkestra_debug!(
-                        "iteration",
-                        "cascade_touch_to_parent: failed to touch parent {} of {}: {}",
-                        parent_id,
-                        task_id,
-                        e
-                    );
-                }
-            }
-        }
-        Ok(None) => {
-            crate::orkestra_debug!(
-                "iteration",
-                "cascade_touch_to_parent: task {} not found",
-                task_id
-            );
-        }
-        Err(e) => {
-            crate::orkestra_debug!(
-                "iteration",
-                "cascade_touch_to_parent: error loading task {}: {}",
-                task_id,
-                e
-            );
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,61 +468,6 @@ mod touch_task_tests {
         assert_ne!(
             after_end, after_create,
             "end_iteration should bump updated_at"
-        );
-    }
-
-    /// When a subtask's iteration is created, the parent task's `updated_at` must
-    /// also be bumped (cascade).
-    #[test]
-    fn create_iteration_cascades_to_parent() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = IterationService::new(store.clone());
-
-        let parent = make_task("parent-1");
-        let mut child = make_task("child-1");
-        child.parent_id = Some("parent-1".to_string());
-
-        store.save_task(&parent).unwrap();
-        store.save_task(&child).unwrap();
-
-        // Small sleep so parent's updated_at after cascade is strictly later
-        std::thread::sleep(std::time::Duration::from_millis(5));
-
-        service.create_initial_iteration("child-1", "work").unwrap();
-
-        let updated_parent = store.get_task("parent-1").unwrap().unwrap();
-        assert_ne!(
-            updated_parent.updated_at, parent.updated_at,
-            "parent updated_at should be bumped when child iteration is created"
-        );
-    }
-
-    /// When a subtask's iteration ends, the parent task's `updated_at` must also
-    /// be bumped (cascade).
-    #[test]
-    fn end_iteration_cascades_to_parent() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = IterationService::new(store.clone());
-
-        let parent = make_task("parent-1");
-        let mut child = make_task("child-1");
-        child.parent_id = Some("parent-1".to_string());
-
-        store.save_task(&parent).unwrap();
-        store.save_task(&child).unwrap();
-        service.create_initial_iteration("child-1", "work").unwrap();
-
-        let parent_after_create = store.get_task("parent-1").unwrap().unwrap().updated_at;
-        std::thread::sleep(std::time::Duration::from_millis(5));
-
-        service
-            .end_iteration("child-1", "work", Outcome::Approved)
-            .unwrap();
-
-        let parent_after_end = store.get_task("parent-1").unwrap().unwrap().updated_at;
-        assert_ne!(
-            parent_after_end, parent_after_create,
-            "parent updated_at should be bumped when child iteration ends"
         );
     }
 

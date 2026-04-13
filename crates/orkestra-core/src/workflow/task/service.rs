@@ -86,6 +86,15 @@ impl WorkflowApi {
         )
     }
 
+    /// Bump a task's `updated_at` timestamp without modifying any other field.
+    ///
+    /// Used in tests to simulate child state changes without going through full
+    /// iteration lifecycle. Also available for any caller that needs to signal
+    /// a task has changed without a full state transition.
+    pub fn touch_task(&self, id: &str) -> WorkflowResult<()> {
+        self.store.touch_task(id)
+    }
+
     /// Get a task by ID.
     pub fn get_task(&self, id: &str) -> WorkflowResult<Task> {
         self.store

@@ -6,7 +6,7 @@ jobs = 6
 # Incremental builds are per-target-directory and can't be cached by sccache.
 [env]
 CARGO_INCREMENTAL = "0"
-SCCACHE_CACHE_SIZE = "30G"
+SCCACHE_CACHE_SIZE = "20G"
 
 [alias]
 ork = "run -p orkestra-cli --"

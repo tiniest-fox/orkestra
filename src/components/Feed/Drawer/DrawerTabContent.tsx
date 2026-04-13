@@ -12,10 +12,8 @@ import { ActivityLog } from "../ActivityLog";
 import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerGateTab } from "../DrawerGateTab";
 import { DrawerPrTab } from "../DrawerPrTab";
-import { FeedLogList } from "../FeedLogList";
 import { AgentTab } from "./AgentTab/AgentTab";
 import type { DrawerTabId } from "./drawerTabs";
-import { LogsChatInput } from "./Footer/LogsChatInput";
 import { ErrorTab } from "./Sections/ErrorTab";
 import { ResourcesTab } from "./Sections/ResourcesTab";
 import { RunTab } from "./Sections/RunTab";
@@ -85,39 +83,6 @@ export function DrawerTabContent({
         }
         onRemoveDraftComment={state.removeDraftComment}
       />
-    );
-  }
-
-  if (activeTab === "logs") {
-    return (
-      <>
-        <FeedLogList
-          logs={logs}
-          error={logsError}
-          isAgentRunning={task.derived.is_working || task.derived.chat_agent_active}
-          artifacts={task.artifacts}
-          containerRef={logContainerRef}
-          onScroll={handleLogScroll}
-        />
-        {(task.derived.needs_review ||
-          task.derived.has_questions ||
-          task.derived.is_interrupted ||
-          task.derived.is_chatting ||
-          task.derived.is_working) && (
-          <LogsChatInput
-            chatMessage={state.chatMessage}
-            onChatMessageChange={state.setChatMessage}
-            chatTextareaRef={state.chatTextareaRef}
-            chatSending={state.chatSending}
-            chatAgentActive={task.derived.chat_agent_active || task.derived.is_working}
-            onSendChat={state.handleSendChat}
-            onInterrupt={
-              task.derived.chat_agent_active ? state.handleChatStop : state.handleInterrupt
-            }
-            chatError={state.chatError}
-          />
-        )}
-      </>
     );
   }
 

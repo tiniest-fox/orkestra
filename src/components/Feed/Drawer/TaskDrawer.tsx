@@ -200,7 +200,6 @@ function TaskDrawerBody({
           <DrawerFooter
             task={task}
             activeTab={activeTab}
-            questions={task.derived.pending_questions}
             stageReviewType={reviewType}
             state={state}
           />

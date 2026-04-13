@@ -16,8 +16,9 @@ import type { DrawerTab } from "../DrawerTabBar";
 
 export type DrawerTabId =
   | "agent"
-  | "questions"
   | "subtasks"
+  // "logs" and "artifact" remain in the union for HistoricalRunView, which manages
+  // its own internal tab bar for past stage runs and is not routed through availableTabs().
   | "logs"
   | "diff"
   | "artifact"

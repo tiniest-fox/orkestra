@@ -1,6 +1,6 @@
 //! Thin state switcher — picks the correct footer component based on task state.
 
-import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
+import type { WorkflowTaskView } from "../../../../types/workflow";
 import type { DrawerTabId } from "../drawerTabs";
 import type { TaskDrawerState } from "../useTaskDrawerState";
 import { ChatFooter } from "./ChatFooter";
@@ -8,7 +8,6 @@ import { DoneFooter } from "./DoneFooter";
 import { FailedFooter } from "./FailedFooter";
 import { InterruptedFooter } from "./InterruptedFooter";
 import { LineCommentsFooter } from "./LineCommentsFooter";
-import { QuestionsFooter } from "./QuestionsFooter";
 import { RejectFooter } from "./RejectFooter";
 import { ReviewFooter } from "./ReviewFooter";
 import { WaitingFooter } from "./WaitingFooter";
@@ -21,7 +20,6 @@ import { WorkingFooter } from "./WorkingFooter";
 interface DrawerFooterProps {
   task: WorkflowTaskView;
   activeTab: DrawerTabId;
-  questions: WorkflowQuestion[];
   stageReviewType: "violet" | "teal";
   state: TaskDrawerState;
 }
@@ -30,13 +28,7 @@ interface DrawerFooterProps {
 // Component
 // ============================================================================
 
-export function DrawerFooter({
-  task,
-  activeTab,
-  questions,
-  stageReviewType,
-  state,
-}: DrawerFooterProps) {
+export function DrawerFooter({ task, activeTab, stageReviewType, state }: DrawerFooterProps) {
   const progress = task.derived.subtask_progress;
 
   if (task.derived.is_failed) {
@@ -58,18 +50,6 @@ export function DrawerFooter({
         retryTextareaRef={state.retryTextareaRef}
         retrying={state.retrying}
         onRetry={state.handleRetry}
-      />
-    );
-  }
-  if (task.derived.has_questions && activeTab === "questions") {
-    return (
-      <QuestionsFooter
-        questions={questions}
-        answeredCount={state.answeredCount}
-        allAnswered={state.allAnswered}
-        loading={state.loading}
-        onSubmitAnswers={state.handleSubmitAnswers}
-        submitRef={state.submitRef}
       />
     );
   }

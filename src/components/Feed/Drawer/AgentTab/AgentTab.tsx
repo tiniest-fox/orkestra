@@ -77,10 +77,10 @@ export function AgentTab({
     rejection && rejection.target !== rejection.from_stage ? rejection.target : undefined;
 
   // Input bar visibility:
-  // Show when working, review, chatting, or interrupted.
-  // Hide when questions (answered inline), failed, blocked, done.
-  const showInputBar =
-    derived.is_working || derived.needs_review || derived.is_chatting || derived.is_interrupted;
+  // Show when working, review, or chatting.
+  // Hide when interrupted (InterruptedFooter in DrawerFooter handles that state),
+  // questions (answered inline), failed, blocked, done.
+  const showInputBar = derived.is_working || derived.needs_review || derived.is_chatting;
 
   // Input bar agent active state:
   // Working → treat as agentActive (shows stop, disables textarea)
@@ -96,10 +96,18 @@ export function AgentTab({
     <div className="flex flex-col flex-1 min-h-0">
       {/* Scrollable timeline */}
       <div ref={combinedRef} className="flex-1 overflow-y-auto" onScroll={handleLogScroll}>
+        {/*
+         * Virtualization is intentionally disabled here: the agent tab uses a shared
+         * scroll container for logs + artifact + questions, but MessageList's virtualized
+         * path creates its own overflow-y-auto wrapper which would conflict. For typical
+         * agent runs this is acceptable; a follow-up can add an "embedded" mode to
+         * MessageList that virtualizes against an external scroll container.
+         */}
         <FeedLogList
           logs={logs}
           error={logsError}
           isAgentRunning={derived.is_working || derived.chat_agent_active}
+          onScroll={handleLogScroll}
         />
 
         {/* Inline artifact card */}

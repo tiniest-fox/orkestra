@@ -3,7 +3,7 @@
 import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { isOptionKey, optionKey } from "../../../../lib/optionKey";
-import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
+import type { WorkflowQuestion } from "../../../../types/workflow";
 import { Button } from "../../../ui/Button";
 import { useNavHandler } from "../../../ui/HotkeyScope";
 import { NavigationScope } from "../../../ui/NavigationScope";
@@ -18,7 +18,7 @@ type FlatItem =
   | { type: "textarea"; qIdx: number };
 
 interface InlineQuestionsCardProps {
-  task: WorkflowTaskView;
+  taskId: string;
   questions: WorkflowQuestion[];
   answers: string[];
   setAnswer: (index: number, value: string) => void;
@@ -35,7 +35,7 @@ interface InlineQuestionsCardProps {
 // ============================================================================
 
 export function InlineQuestionsCard({
-  task,
+  taskId,
   questions,
   answers,
   setAnswer,
@@ -57,7 +57,7 @@ export function InlineQuestionsCard({
     setScrollSeq(0);
     setCursorTarget(null);
     textareaRefs.current.clear();
-  }, [task.id]);
+  }, [taskId]);
 
   const flatItems = useMemo<FlatItem[]>(() => {
     const items: FlatItem[] = [];
@@ -222,7 +222,7 @@ export function InlineQuestionsCard({
           Submit {questions.length === 1 ? "answer" : "answers"}
         </Button>
         {questions.length > 1 && (
-          <span className="ml-auto font-mono text-[11px] text-text-quaternary">
+          <span className="ml-auto font-mono text-forge-mono-sm text-text-quaternary">
             {answeredCount} of {questions.length} answered
           </span>
         )}

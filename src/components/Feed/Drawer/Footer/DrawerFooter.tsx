@@ -82,34 +82,38 @@ export function DrawerFooter({ task, activeTab, stageReviewType, state }: Drawer
       />
     );
   }
-  if (task.derived.needs_review && state.rejectMode && activeTab !== "agent") {
-    return (
-      <RejectFooter
-        reviewVariant={stageReviewType}
-        feedback={state.feedback}
-        onFeedbackChange={state.setFeedback}
-        feedbackRef={state.feedbackRef}
-        loading={state.loading}
-        onReject={state.handleReject}
-        onExitRejectMode={state.exitRejectMode}
-      />
-    );
-  }
-  if (task.derived.needs_review && activeTab !== "agent") {
-    return (
-      <ReviewFooter
-        reviewVariant={stageReviewType}
-        loading={state.loading}
-        onApprove={state.handleApprove}
-        onEnterRejectMode={state.enterRejectMode}
-      />
-    );
+  if (activeTab !== "agent") {
+    if (task.derived.needs_review && state.rejectMode) {
+      return (
+        <RejectFooter
+          reviewVariant={stageReviewType}
+          feedback={state.feedback}
+          onFeedbackChange={state.setFeedback}
+          feedbackRef={state.feedbackRef}
+          loading={state.loading}
+          onReject={state.handleReject}
+          onExitRejectMode={state.exitRejectMode}
+        />
+      );
+    }
+    if (task.derived.needs_review) {
+      return (
+        <ReviewFooter
+          reviewVariant={stageReviewType}
+          loading={state.loading}
+          onApprove={state.handleApprove}
+          onEnterRejectMode={state.enterRejectMode}
+        />
+      );
+    }
+    if (task.derived.is_working && activeTab !== "logs") {
+      return (
+        <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />
+      );
+    }
   }
   if (task.derived.is_interrupted) {
     return <InterruptedFooter resuming={state.resuming} onResume={state.handleResume} />;
-  }
-  if (task.derived.is_working && activeTab !== "logs" && activeTab !== "agent") {
-    return <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />;
   }
   if (task.derived.is_done) {
     return (

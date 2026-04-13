@@ -132,7 +132,7 @@ export function AgentTab({
         {/* Inline questions */}
         {derived.has_questions && task.derived.pending_questions.length > 0 && (
           <InlineQuestionsCard
-            task={task}
+            taskId={task.id}
             questions={task.derived.pending_questions}
             answers={state.answers}
             setAnswer={state.setAnswer}

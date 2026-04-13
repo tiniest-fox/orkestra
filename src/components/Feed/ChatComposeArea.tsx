@@ -3,7 +3,7 @@
 
 import { ArrowUp, Square } from "lucide-react";
 import type React from "react";
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
 
 interface ChatComposeAreaProps {
@@ -22,7 +22,7 @@ interface ChatComposeAreaProps {
   className?: string;
 }
 
-export function ChatComposeArea({
+export const ChatComposeArea = memo(function ChatComposeArea({
   value,
   onChange,
   textareaRef,
@@ -109,4 +109,4 @@ export function ChatComposeArea({
       )}
     </div>
   );
-}
+});

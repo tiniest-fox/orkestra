@@ -10,7 +10,7 @@
 // section below the fixed-height title row — nothing in the title row moves.
 
 import { ArrowLeft, ChevronDown, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { Kbd } from "../Kbd";
 
@@ -43,7 +43,7 @@ interface DrawerHeaderProps {
   expandable?: { taskId: string; description?: string | null };
 }
 
-export function DrawerHeader({
+export const DrawerHeader = memo(function DrawerHeader({
   title,
   onClose,
   onBack,
@@ -210,4 +210,4 @@ export function DrawerHeader({
       )}
     </div>
   );
-}
+});

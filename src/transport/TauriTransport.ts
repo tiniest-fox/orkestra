@@ -61,6 +61,7 @@ const METHOD_MAP: Record<string, string> = {
   get_current_stage: "workflow_get_current_stage",
   get_rejection_feedback: "workflow_get_rejection_feedback",
   list_branches: "workflow_list_branches",
+  list_project_files: "workflow_list_project_files",
   get_logs: "workflow_get_logs",
   get_latest_log: "workflow_get_latest_log",
   get_pr_status: "workflow_get_pr_status",
@@ -68,6 +69,7 @@ const METHOD_MAP: Record<string, string> = {
   // -- Diffs --
   get_task_diff: "workflow_get_task_diff",
   get_file_content: "workflow_get_file_content",
+  get_project_file_content: "workflow_get_project_file_content",
   get_syntax_css: "workflow_get_syntax_css",
   get_branch_commits: "workflow_get_branch_commits",
   get_uncommitted_diff: "workflow_get_uncommitted_diff",

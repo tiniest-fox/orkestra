@@ -76,6 +76,11 @@ pub trait GitService: Send + Sync {
     /// `diff_against_base` to check whether an existing cached diff is still valid.
     fn get_worktree_state(&self, worktree_path: &Path) -> Result<WorktreeState, GitError>;
 
+    // -- Files --
+
+    /// List all git-tracked files in the repository.
+    fn list_files(&self) -> Result<Vec<String>, GitError>;
+
     // -- Branch --
 
     /// List local branches, excluding task/* worktree branches.

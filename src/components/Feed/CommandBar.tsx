@@ -65,19 +65,23 @@ function DropdownSection({
 
 interface CommandBarProps {
   tasks: WorkflowTaskView[];
+  projectFiles: string[];
   filterText: string;
   onFilterChange: (text: string) => void;
   onExecuteCommand: (command: string) => void;
   onSelectTask: (taskId: string) => void;
+  onSelectFile: (filePath: string) => void;
   inputRef: RefObject<HTMLInputElement>;
 }
 
 export function CommandBar({
   tasks,
+  projectFiles,
   filterText,
   onFilterChange,
   onExecuteCommand,
   onSelectTask,
+  onSelectFile,
   inputRef,
 }: CommandBarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -89,7 +93,14 @@ export function CommandBar({
     showDropdown,
     onInputKeyDown,
     executeItem,
-  } = useCommandBar({ tasks, filterText, onExecuteCommand, onSelectTask });
+  } = useCommandBar({
+    tasks,
+    projectFiles,
+    filterText,
+    onExecuteCommand,
+    onSelectTask,
+    onSelectFile,
+  });
 
   useEffect(() => {
     if (!showDropdown) return;
@@ -104,6 +115,7 @@ export function CommandBar({
 
   const indexed = items.map((item, index) => ({ item, globalIndex: index }));
   const commandItems = indexed.filter(({ item }) => item.type === "command");
+  const fileItems = indexed.filter(({ item }) => item.type === "file");
   const taskItems = indexed.filter(({ item }) => item.type === "task");
 
   return (
@@ -136,6 +148,13 @@ export function CommandBar({
           <DropdownSection
             label="Commands"
             items={commandItems}
+            highlightedIndex={highlightedIndex}
+            onHighlight={setHighlightedIndex}
+            onSelect={executeItem}
+          />
+          <DropdownSection
+            label="Files"
+            items={fileItems}
             highlightedIndex={highlightedIndex}
             onHighlight={setHighlightedIndex}
             onSelect={executeItem}

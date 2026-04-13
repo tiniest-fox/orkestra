@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { WorkflowTaskView } from "../../types/workflow";
 
 export interface CommandBarItem {
-  type: "command" | "task";
+  type: "command" | "task" | "file";
   id: string;
   label: string;
   description?: string;
@@ -13,9 +13,11 @@ export interface CommandBarItem {
 
 interface UseCommandBarArgs {
   tasks: WorkflowTaskView[];
+  projectFiles: string[];
   filterText: string;
   onExecuteCommand: (command: string) => void;
   onSelectTask: (taskId: string) => void;
+  onSelectFile: (filePath: string) => void;
 }
 
 interface UseCommandBarReturn {
@@ -44,9 +46,11 @@ export function taskMatchesFilter(title: string, filter: string): boolean {
 /** Manages autocomplete items, highlighted index, and keyboard navigation for the command bar. */
 export function useCommandBar({
   tasks,
+  projectFiles,
   filterText,
   onExecuteCommand,
   onSelectTask,
+  onSelectFile,
 }: UseCommandBarArgs): UseCommandBarReturn {
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
@@ -64,6 +68,21 @@ export function useCommandBar({
       }),
     );
 
+    const matchingFiles: CommandBarItem[] = projectFiles
+      .filter((f) => f.toLowerCase().includes(lower))
+      .slice(0, 10)
+      .map((f) => {
+        const parts = f.split("/");
+        const filename = parts[parts.length - 1];
+        const directory = parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
+        return {
+          type: "file" as const,
+          id: f,
+          label: filename,
+          description: directory,
+        };
+      });
+
     const matchingTasks: CommandBarItem[] = tasks
       .filter((t) => taskMatchesFilter(t.title, filterText))
       .map((t) => ({
@@ -73,8 +92,8 @@ export function useCommandBar({
         description: t.derived.current_stage ?? undefined,
       }));
 
-    return [...matchingCommands, ...matchingTasks];
-  }, [tasks, filterText]);
+    return [...matchingCommands, ...matchingFiles, ...matchingTasks];
+  }, [tasks, projectFiles, filterText]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: items is used as a trigger — we reset the index whenever the filtered list changes, not to read its value
   useEffect(() => {
@@ -86,6 +105,8 @@ export function useCommandBar({
   function executeItem(item: CommandBarItem) {
     if (item.type === "command") {
       onExecuteCommand(item.id);
+    } else if (item.type === "file") {
+      onSelectFile(item.id);
     } else {
       onSelectTask(item.id);
     }

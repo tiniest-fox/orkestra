@@ -18,7 +18,8 @@ interface FeedStatusLineProps {
     | "git-history"
     | "new-task"
     | "assistant"
-    | "interactive";
+    | "interactive"
+    | "file-viewer";
   onToggleHistory?: () => void;
 }
 

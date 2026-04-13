@@ -109,7 +109,7 @@ impl GitService for Git2GitService {
     // -- Files --
 
     fn list_files(&self) -> Result<Vec<String>, GitError> {
-        interactions::worktree::list_files::execute(&self.repo_path)
+        interactions::file::list::execute(&self.repo_path)
     }
 
     // -- Branch --

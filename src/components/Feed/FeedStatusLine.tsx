@@ -228,6 +228,11 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
                   <Kbd>esc</Kbd>
                   <span>close</span>
                 </span>
+              ) : drawerMode === "file-viewer" ? (
+                <span className="flex items-center gap-1.5">
+                  <Kbd>esc</Kbd>
+                  <span>close</span>
+                </span>
               ) : (
                 <>
                   <span className="flex items-center gap-1.5">

@@ -115,6 +115,33 @@ pub fn file_content_hash(file: &FileDiff) -> u64 {
 // Diff parsing and highlighting
 // ============================================================================
 
+/// Highlight all lines of a plain file as context lines with 1-based line numbers.
+///
+/// `highlight_line` is a closure `|line, extension| -> html_string` so both the Tauri
+/// and WebSocket highlighters can be used without a shared trait.
+#[allow(clippy::cast_possible_truncation)]
+pub fn highlight_file_content(
+    content: &str,
+    extension: &str,
+    highlight_line: &dyn Fn(&str, &str) -> String,
+) -> Vec<HighlightedLine> {
+    content
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let line_with_newline = format!("{line}\n");
+            let html = highlight_line(&line_with_newline, extension);
+            HighlightedLine {
+                line_type: LineType::Context,
+                content: line.to_string(),
+                html,
+                old_line_number: Some((i + 1) as u32),
+                new_line_number: Some((i + 1) as u32),
+            }
+        })
+        .collect()
+}
+
 /// Convert a raw `FileDiff` into a highlighted `HighlightedFileDiff` with parsed hunks.
 ///
 /// `highlight_line` is a closure `|line, extension| -> html_string` so both the Tauri

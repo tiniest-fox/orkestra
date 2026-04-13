@@ -331,7 +331,7 @@ impl WorkflowApi {
         let full_path = project_root.join(file_path);
 
         // Verify the resolved path is under project_root
-        match full_path.canonicalize() {
+        let canonical = match full_path.canonicalize() {
             Ok(canonical) => {
                 let canonical_root = project_root
                     .canonicalize()
@@ -341,13 +341,14 @@ impl WorkflowApi {
                         "Path escapes project root: {file_path}"
                     )));
                 }
+                canonical
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(WorkflowError::InvalidState(e.to_string())),
-        }
+        };
 
         // Size limit: 1MB
-        let metadata = std::fs::metadata(&full_path)
+        let metadata = std::fs::metadata(&canonical)
             .map_err(|e| WorkflowError::InvalidState(e.to_string()))?;
         if metadata.len() > 1_048_576 {
             return Err(WorkflowError::InvalidState(format!(
@@ -358,7 +359,7 @@ impl WorkflowApi {
 
         // Read as bytes to detect binary files
         let bytes =
-            std::fs::read(&full_path).map_err(|e| WorkflowError::InvalidState(e.to_string()))?;
+            std::fs::read(&canonical).map_err(|e| WorkflowError::InvalidState(e.to_string()))?;
         match String::from_utf8(bytes) {
             Ok(content) => Ok(Some(content)),
             Err(_) => Err(WorkflowError::InvalidState(

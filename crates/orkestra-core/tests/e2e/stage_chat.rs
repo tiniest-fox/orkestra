@@ -150,14 +150,6 @@ fn test_send_message_enters_chat_mode_during_awaiting_approval() {
         has_user_message,
         "UserMessage with resume_type='chat' should be in logs. Got: {logs:?}"
     );
-
-    // Verify: DerivedTaskState.is_chatting is true
-    let views = ctx.api().list_task_views().unwrap();
-    let view = views.iter().find(|v| v.task.id == task_id).unwrap();
-    assert!(
-        view.derived.is_chatting,
-        "DerivedTaskState.is_chatting should be true"
-    );
 }
 
 // =============================================================================

@@ -354,6 +354,7 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .find(|s| s.id == session_id && s.agent_pid == Some(expected_pid))
         {
             session.agent_pid = None;
+            session.chat_active = false;
             session.updated_at = chrono::Utc::now().to_rfc3339();
             Ok(true)
         } else {

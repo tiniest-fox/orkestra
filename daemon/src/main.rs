@@ -320,7 +320,8 @@ async fn run(
     let api_for_broadcast = Arc::clone(&api);
     let event_tx_for_orch = event_tx.clone();
 
-    let orchestrator = OrchestratorLoop::new(Arc::clone(&api), Arc::clone(&stage_executor));
+    let orchestrator = OrchestratorLoop::new(Arc::clone(&api), Arc::clone(&stage_executor))
+        .with_project_root(project_root.clone());
     let orch_loop_stop = orchestrator.stop_flag();
 
     // Forward the shared stop flag to the orchestrator's own stop flag.

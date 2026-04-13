@@ -46,7 +46,7 @@ impl std::error::Error for LockError {
 ///
 /// Created via `acquire()`; the lock file is removed on `Drop`.
 #[derive(Debug)]
-pub struct OrchestratorLock {
+pub(super) struct OrchestratorLock {
     lock_path: PathBuf,
 }
 
@@ -59,23 +59,18 @@ impl OrchestratorLock {
     /// 3. Alive → `Err(AlreadyRunning(pid))`
     /// 4. Dead / unreadable / unparseable → treat as stale, steal
     /// 5. Write current PID and return the guard
-    pub fn acquire(project_root: &Path) -> Result<Self, LockError> {
+    pub(super) fn acquire(project_root: &Path) -> Result<Self, LockError> {
         let lock_path = project_root.join(".orkestra/orchestrator.lock");
 
         if lock_path.exists() {
-            let is_alive = match std::fs::read_to_string(&lock_path) {
-                Ok(contents) => match contents.trim().parse::<u32>() {
-                    Ok(pid) => {
-                        if crate::process::is_process_running(pid) {
-                            return Err(LockError::AlreadyRunning(pid));
-                        }
-                        false
+            if let Ok(contents) = std::fs::read_to_string(&lock_path) {
+                if let Ok(pid) = contents.trim().parse::<u32>() {
+                    if crate::process::is_process_running(pid) {
+                        return Err(LockError::AlreadyRunning(pid));
                     }
-                    Err(_) => false, // Unparseable PID — stale
-                },
-                Err(_) => false, // Unreadable — stale
-            };
-            let _ = is_alive; // already handled above
+                }
+            }
+            // Unreadable or unparseable PID — treat as stale, steal the lock
         }
 
         let current_pid = std::process::id();

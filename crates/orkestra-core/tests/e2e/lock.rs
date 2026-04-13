@@ -10,8 +10,8 @@ use tempfile::TempDir;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
-    config::WorkflowConfig, LockError, OrchestratorEvent, OrchestratorLoop, SqliteWorkflowStore,
-    WorkflowApi,
+    config::WorkflowConfig, orchestrator::LockError, OrchestratorEvent, OrchestratorLoop,
+    SqliteWorkflowStore, WorkflowApi,
 };
 
 // =============================================================================

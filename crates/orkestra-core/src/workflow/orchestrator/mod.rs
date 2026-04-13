@@ -17,7 +17,7 @@ mod commit_pipeline;
 mod lock;
 mod recovery;
 
-pub use lock::{LockError, OrchestratorLock};
+pub use lock::LockError;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -214,6 +214,16 @@ impl OrchestratorLoop {
         stage_executor: Arc<StageExecutionService>,
     ) -> Self {
         Self::new(api, stage_executor)
+    }
+
+    /// Set the project root to enable PID lock file acquisition in `run()`.
+    ///
+    /// Call this on callers that create the orchestrator with a pre-built
+    /// `stage_executor` (Tauri desktop app, headless daemon). Enables duplicate-
+    /// orchestrator detection for the given project directory.
+    pub fn with_project_root(mut self, project_root: PathBuf) -> Self {
+        self.project_root = Some(project_root);
+        self
     }
 
     /// Get the stop flag for external control.

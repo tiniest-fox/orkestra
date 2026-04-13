@@ -68,6 +68,8 @@ pub fn execute(
     if !session.chat_active {
         session.enter_chat(&now);
         store.save_stage_session(&session)?;
+        // Bump updated_at so differential sync delivers is_chatting and shouldPoll immediately.
+        store.touch_task(task_id)?;
     }
 
     // Store the user message as a log entry on the stage session
@@ -79,6 +81,18 @@ pub fn execute(
         },
         None,
     )?;
+
+    // Notify frontend immediately so it fetches the UserMessage entry without waiting
+    // for the background reader's first batch notification.
+    if let Some(tx) = &log_notify_tx {
+        if let Err(e) = tx.send(LogNotification {
+            task_id: task_id.to_string(),
+            session_id: session.id.clone(),
+            last_entry_summary: None,
+        }) {
+            orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
+        }
+    }
 
     // Resolve worktree path for the task
     let worktree_path = resolve_worktree_path(task.worktree_path.as_deref(), project_root, task_id);

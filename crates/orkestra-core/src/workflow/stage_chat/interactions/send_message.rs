@@ -434,12 +434,28 @@ fn read_chat_output(
     // The conditional update (`WHERE id = ? AND agent_pid = ?`) is a no-op when another
     // writer has already cleared `agent_pid`, so `chat_active` is never clobbered.
     if !detection_succeeded {
-        if let Err(e) = store.clear_agent_pid_for_session(session_id, pid) {
-            orkestra_debug!(
-                "stage_chat",
-                "Failed to clear agent PID on session exit: {}",
-                e
-            );
+        match store.clear_agent_pid_for_session(session_id, pid) {
+            Ok(true) => {
+                // PID was ours — bump task.updated_at so differential sync delivers the
+                // chat_active=false state change to the UI.
+                if let Err(e) = store.touch_task(task_id) {
+                    orkestra_debug!(
+                        "stage_chat",
+                        "Failed to touch task after clearing agent PID: {}",
+                        e
+                    );
+                }
+            }
+            Ok(false) => {
+                // Another writer (exit_chat) already cleared the PID — it owns touch_task.
+            }
+            Err(e) => {
+                orkestra_debug!(
+                    "stage_chat",
+                    "Failed to clear agent PID on session exit: {}",
+                    e
+                );
+            }
         }
     }
 

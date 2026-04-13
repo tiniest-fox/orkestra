@@ -26,6 +26,7 @@ const REQUIRED_GITIGNORE_ENTRIES: &[&str] = &[
     ".orkestra/.logs/",
     ".orkestra/.worktrees/",
     ".orkestra/.artifacts/",
+    ".orkestra/orchestrator.lock",
 ];
 
 /// Ensures `.orkestra/` has its full directory structure and default files.

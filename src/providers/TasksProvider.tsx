@@ -38,6 +38,10 @@ function mergeDifferentialResponse(
   existing: WorkflowTaskView[],
   diff: DifferentialTaskResponse,
 ): WorkflowTaskView[] {
+  if (diff.tasks.length === 0 && diff.deleted_ids.length === 0) {
+    return existing;
+  }
+
   const deletedSet = new Set(diff.deleted_ids);
   const updatedMap = new Map(diff.tasks.map((t) => [t.id, t]));
 

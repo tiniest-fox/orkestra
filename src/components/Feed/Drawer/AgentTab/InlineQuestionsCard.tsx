@@ -1,10 +1,10 @@
-//! Keyboard-navigable questions form with option selection and textarea entry.
+// Inline questions form rendered in the agent timeline — reuses QuestionCard with inline scroll context.
 
-import { HelpCircle } from "lucide-react";
+import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { isOptionKey, optionKey } from "../../../../lib/optionKey";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
-import { EmptyState } from "../../../ui/EmptyState";
+import { Button } from "../../../ui/Button";
 import { useNavHandler } from "../../../ui/HotkeyScope";
 import { NavigationScope } from "../../../ui/NavigationScope";
 import { QuestionCard } from "../../QuestionCard";
@@ -13,33 +13,39 @@ import { QuestionCard } from "../../QuestionCard";
 // Types
 // ============================================================================
 
-/** A single navigable item in the flat keyboard nav list for questions. */
 type FlatItem =
   | { type: "option"; qIdx: number; optIdx: number }
   | { type: "textarea"; qIdx: number };
 
-export interface QuestionsSectionProps {
+interface InlineQuestionsCardProps {
   task: WorkflowTaskView;
   questions: WorkflowQuestion[];
   answers: string[];
   setAnswer: (index: number, value: string) => void;
-  onFocusSubmit: () => void;
+  onSubmitAnswers: (questions: WorkflowQuestion[]) => void;
   loading: boolean;
+  submitRef: React.RefObject<HTMLButtonElement>;
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
+  answeredCount: number;
+  allAnswered: boolean;
 }
 
 // ============================================================================
 // Component
 // ============================================================================
 
-export function QuestionsSection({
+export function InlineQuestionsCard({
   task,
   questions,
   answers,
   setAnswer,
-  onFocusSubmit,
+  onSubmitAnswers,
   loading,
-}: QuestionsSectionProps) {
-  const bodyRef = useRef<HTMLDivElement>(null);
+  submitRef,
+  scrollContainerRef,
+  answeredCount,
+  allAnswered,
+}: InlineQuestionsCardProps) {
   const [flatIdx, setFlatIdx] = useState(0);
   const [scrollSeq, setScrollSeq] = useState(0);
   const [cursorTarget, setCursorTarget] = useState<{ qIdx: number; char: string } | null>(null);
@@ -77,6 +83,10 @@ export function QuestionsSection({
     }
     return starts;
   }, [questions]);
+
+  const onFocusSubmit = useCallback(() => {
+    submitRef.current?.focus();
+  }, [submitRef]);
 
   const advanceFromQuestion = useCallback(
     (qi: number) => {
@@ -159,19 +169,11 @@ export function QuestionsSection({
 
   const activeQuestionId = flatItems[flatIdx] ? String(flatItems[flatIdx].qIdx) : undefined;
 
-  if (questions.length === 0) {
-    return (
-      <div ref={bodyRef} className="flex-1 overflow-y-auto">
-        <EmptyState icon={HelpCircle} message="No questions." />
-      </div>
-    );
-  }
-
   return (
-    <div ref={bodyRef} className="flex-1 overflow-y-auto">
+    <div className="border-t border-border">
       <NavigationScope
         activeId={activeQuestionId}
-        containerRef={bodyRef}
+        containerRef={scrollContainerRef}
         buffer={48}
         scrollSeq={scrollSeq}
       >
@@ -208,6 +210,23 @@ export function QuestionsSection({
           ))}
         </div>
       </NavigationScope>
+      <div className="flex items-center gap-2.5 px-6 py-3 border-t border-border">
+        <Button
+          ref={submitRef}
+          hotkey="s"
+          onAccent
+          variant="submit"
+          onClick={() => onSubmitAnswers(questions)}
+          disabled={!allAnswered || loading}
+        >
+          Submit {questions.length === 1 ? "answer" : "answers"}
+        </Button>
+        {questions.length > 1 && (
+          <span className="ml-auto font-mono text-[11px] text-text-quaternary">
+            {answeredCount} of {questions.length} answered
+          </span>
+        )}
+      </div>
     </div>
   );
 }

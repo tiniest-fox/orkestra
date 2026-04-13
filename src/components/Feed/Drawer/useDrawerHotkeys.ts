@@ -32,9 +32,10 @@ export function useDrawerHotkeys({
 }: DrawerHotkeysOptions) {
   const isMobile = useIsMobile();
 
+  const hasQuestions = task.derived.has_questions;
   useEffect(() => {
     if (isMobile) return;
-    if (activeTab === "questions" || activeTab === "subtasks") return;
+    if (activeTab === "subtasks" || (activeTab === "agent" && hasQuestions)) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "ArrowDown") activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" });
@@ -42,24 +43,18 @@ export function useDrawerHotkeys({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isMobile, activeTab, activeScrollRef]);
+  }, [isMobile, activeTab, activeScrollRef, hasQuestions]);
 
   useNavHandler("j", () => activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
   useNavHandler("k", () => activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
   useNavHandler("l", () => {
-    if (selectedRunIdx === null) setActiveTab("logs");
+    if (selectedRunIdx === null) setActiveTab("agent");
   });
   useNavHandler("d", () => {
     if (selectedRunIdx === null) setActiveTab("diff");
   });
-  useNavHandler("a", () => {
-    if (!task.derived.needs_review && selectedRunIdx === null) setActiveTab("artifact");
-  });
   useNavHandler("h", () => {
     if (selectedRunIdx === null) setActiveTab("history");
-  });
-  useNavHandler("q", () => {
-    if (task.derived.has_questions && selectedRunIdx === null) setActiveTab("questions");
   });
   useNavHandler("t", () => {
     if (task.derived.is_waiting_on_children && selectedRunIdx === null) setActiveTab("subtasks");

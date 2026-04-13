@@ -20,34 +20,58 @@ describe("defaultTab", () => {
     expect(defaultTab(task)).toBe("error");
   });
 
-  it("returns 'logs' for a generic queued task", () => {
+  it("returns 'agent' for a generic queued task", () => {
     const task = createMockWorkflowTaskView({ state: { type: "queued", stage: "planning" } });
-    expect(defaultTab(task)).toBe("logs");
+    expect(defaultTab(task)).toBe("agent");
   });
 
-  it("returns 'logs' when task is in chat mode", () => {
+  it("returns 'agent' when task is in chat mode", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "agent_working", stage: "work" },
       derived: { is_chatting: true },
     });
-    expect(defaultTab(task)).toBe("logs");
+    expect(defaultTab(task)).toBe("agent");
   });
 
-  it("returns 'logs' in chat mode even when needs_review is true", () => {
+  it("returns 'agent' in chat mode even when needs_review is true", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "awaiting_approval", stage: "review" },
       derived: { is_chatting: true, needs_review: true },
     });
-    expect(defaultTab(task)).toBe("logs");
+    expect(defaultTab(task)).toBe("agent");
+  });
+
+  it("returns 'agent' when task needs review", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "awaiting_approval", stage: "work" },
+      derived: { needs_review: true },
+    });
+    expect(defaultTab(task)).toBe("agent");
+  });
+
+  it("returns 'agent' when task has questions", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "awaiting_approval", stage: "work" },
+      derived: { has_questions: true },
+    });
+    expect(defaultTab(task)).toBe("agent");
+  });
+
+  it("returns 'agent' when task is working", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+      derived: { is_working: true },
+    });
+    expect(defaultTab(task)).toBe("agent");
   });
 });
 
 describe("availableTabs — blocked task", () => {
-  it("returns Error, Logs, Diff, History tabs for a blocked task", () => {
+  it("returns Error, Agent, Diff, History tabs for a blocked task", () => {
     const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
     const tabs = availableTabs(task, config);
-    expect(tabs.map((t) => t.id)).toEqual(["error", "logs", "diff", "history"]);
+    expect(tabs.map((t) => t.id)).toEqual(["error", "agent", "diff", "history"]);
   });
 
   it("blocked tabs match failed tabs in shape", () => {
@@ -95,27 +119,39 @@ function hasGateTab(tabs: ReturnType<typeof availableTabs>) {
   return tabs.some((t) => t.id === "gate");
 }
 
-describe("availableTabs — artifact tab hotkey", () => {
-  it("omits hotkey from artifact tab during review state to avoid conflict with Approve", () => {
+describe("availableTabs — agent tab", () => {
+  it("includes agent tab with hotkey 'l' during review state", () => {
     const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({
       state: { type: "awaiting_approval", stage: "review" },
       derived: { current_stage: "review", needs_review: true },
     });
-    const artifactTab = availableTabs(task, config).find((t) => t.id === "artifact");
-    expect(artifactTab).toBeDefined();
-    expect(artifactTab?.hotkey).toBeUndefined();
+    const tab = availableTabs(task, config).find((t) => t.id === "agent");
+    expect(tab).toBeDefined();
+    expect(tab?.hotkey).toBe("l");
   });
 
-  it("includes hotkey 'a' on artifact tab in non-review state", () => {
+  it("includes agent tab in working state", () => {
     const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({
       state: { type: "agent_working", stage: "work" },
       derived: { current_stage: "work", needs_review: false },
     });
-    const artifactTab = availableTabs(task, config).find((t) => t.id === "artifact");
-    expect(artifactTab).toBeDefined();
-    expect(artifactTab?.hotkey).toBe("a");
+    const tab = availableTabs(task, config).find((t) => t.id === "agent");
+    expect(tab).toBeDefined();
+    expect(tab?.hotkey).toBe("l");
+  });
+
+  it("does not include artifact or logs or questions tabs", () => {
+    const config = createMockWorkflowConfig();
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+      derived: { current_stage: "work" },
+    });
+    const tabIds = availableTabs(task, config).map((t) => t.id);
+    expect(tabIds).not.toContain("artifact");
+    expect(tabIds).not.toContain("logs");
+    expect(tabIds).not.toContain("questions");
   });
 });
 
@@ -187,21 +223,21 @@ describe("availableTabs — gate tab visibility", () => {
 });
 
 describe("availableTabs — done task tabs", () => {
-  it("includes Logs tab when task is done and has no PR", () => {
+  it("includes Agent tab when task is done and has no PR", () => {
     const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({ state: { type: "done" } });
     const tabs = availableTabs(task, config);
-    expect(tabs.some((t) => t.id === "logs")).toBe(true);
+    expect(tabs.some((t) => t.id === "agent")).toBe(true);
   });
 
-  it("includes Logs tab when task is done and has a PR", () => {
+  it("includes Agent tab when task is done and has a PR", () => {
     const config = createMockWorkflowConfig();
     const task = {
       ...createMockWorkflowTaskView({ state: { type: "done" } }),
       pr_url: "https://github.com/org/repo/pull/1",
     };
     const tabs = availableTabs(task, config);
-    expect(tabs.some((t) => t.id === "logs")).toBe(true);
+    expect(tabs.some((t) => t.id === "agent")).toBe(true);
   });
 });
 

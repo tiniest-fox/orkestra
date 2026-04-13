@@ -95,7 +95,7 @@ function TaskDrawerBody({
   }, [rejectMode, onRejectModeChange]);
 
   // -- Logs (logs tab) --
-  const showLogs = activeTab === "logs" && selectedRunIdx === null;
+  const showLogs = (activeTab === "logs" || activeTab === "agent") && selectedRunIdx === null;
   const isChatting = task.derived.is_chatting;
   const { logs, error: logsError } = useLogs(task, showLogs, undefined, isChatting);
   const logScrollRef = useRef<HTMLDivElement>(null);

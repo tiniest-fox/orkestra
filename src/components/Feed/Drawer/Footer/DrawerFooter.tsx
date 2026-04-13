@@ -90,7 +90,7 @@ export function DrawerFooter({
       />
     );
   }
-  if (task.derived.is_chatting && activeTab === "logs") {
+  if (task.derived.is_chatting && (activeTab === "logs" || activeTab === "agent")) {
     return (
       <ChatFooter
         chatAgentActive={task.derived.chat_agent_active}
@@ -102,7 +102,7 @@ export function DrawerFooter({
       />
     );
   }
-  if (task.derived.needs_review && state.rejectMode) {
+  if (task.derived.needs_review && state.rejectMode && activeTab !== "agent") {
     return (
       <RejectFooter
         reviewVariant={stageReviewType}
@@ -115,7 +115,7 @@ export function DrawerFooter({
       />
     );
   }
-  if (task.derived.needs_review) {
+  if (task.derived.needs_review && activeTab !== "agent") {
     return (
       <ReviewFooter
         reviewVariant={stageReviewType}
@@ -128,7 +128,7 @@ export function DrawerFooter({
   if (task.derived.is_interrupted) {
     return <InterruptedFooter resuming={state.resuming} onResume={state.handleResume} />;
   }
-  if (task.derived.is_working && activeTab !== "logs") {
+  if (task.derived.is_working && activeTab !== "logs" && activeTab !== "agent") {
     return <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />;
   }
   if (task.derived.is_done) {

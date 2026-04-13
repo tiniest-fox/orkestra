@@ -1,27 +1,22 @@
 // Tab body content switcher — renders the correct panel based on the active tab.
 
-import { FileText } from "lucide-react";
 import type { RefCallback } from "react";
 import type { UseRunScriptResult } from "../../../hooks/useRunScript";
 import type {
   LogEntry,
   WorkflowArtifact,
   WorkflowConfig,
-  WorkflowResource,
   WorkflowTaskView,
 } from "../../../types/workflow";
-import { formatTimestamp } from "../../../utils";
-import { EmptyState } from "../../ui/EmptyState";
 import { ActivityLog } from "../ActivityLog";
-import { ArtifactView } from "../ArtifactView";
 import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerGateTab } from "../DrawerGateTab";
 import { DrawerPrTab } from "../DrawerPrTab";
 import { FeedLogList } from "../FeedLogList";
+import { AgentTab } from "./AgentTab/AgentTab";
 import type { DrawerTabId } from "./drawerTabs";
 import { LogsChatInput } from "./Footer/LogsChatInput";
 import { ErrorTab } from "./Sections/ErrorTab";
-import { QuestionsSection } from "./Sections/QuestionsSection";
 import { ResourcesTab } from "./Sections/ResourcesTab";
 import { RunTab } from "./Sections/RunTab";
 import { SubtasksSection } from "./Sections/SubtasksSection";
@@ -66,7 +61,19 @@ export function DrawerTabContent({
   onOpenTask,
   runScript,
 }: DrawerTabContentProps) {
-  const { submitRef } = state;
+  if (activeTab === "agent") {
+    return (
+      <AgentTab
+        task={task}
+        logs={logs}
+        logsError={logsError}
+        artifact={artifact}
+        state={state}
+        logContainerRef={logContainerRef}
+        handleLogScroll={handleLogScroll}
+      />
+    );
+  }
 
   if (activeTab === "diff") {
     return (
@@ -114,54 +121,11 @@ export function DrawerTabContent({
     );
   }
 
-  if (activeTab === "artifact") {
-    const verdict = task.derived.pending_rejection
-      ? ("rejected" as const)
-      : task.derived.pending_approval
-        ? ("approved" as const)
-        : undefined;
-    const rejection = task.derived.pending_rejection;
-    const rejectionTarget =
-      rejection && rejection.target !== rejection.from_stage ? rejection.target : undefined;
-
-    const stageResources = artifact
-      ? Object.values(task.resources)
-          .filter((r) => r.stage === artifact.stage)
-          .sort((a, b) => a.created_at.localeCompare(b.created_at))
-      : [];
-
-    return (
-      <div ref={bodyRef} className="flex-1 overflow-y-auto">
-        {artifact ? (
-          <>
-            <ArtifactView artifact={artifact} verdict={verdict} rejectionTarget={rejectionTarget} />
-            {stageResources.length > 0 && <StageResources resources={stageResources} />}
-          </>
-        ) : (
-          <EmptyState icon={FileText} message="No artifact yet." />
-        )}
-      </div>
-    );
-  }
-
   if (activeTab === "history") {
     return (
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
         <ActivityLog iterations={task.iterations} />
       </div>
-    );
-  }
-
-  if (activeTab === "questions") {
-    return (
-      <QuestionsSection
-        task={task}
-        questions={task.derived.pending_questions}
-        answers={state.answers}
-        setAnswer={state.setAnswer}
-        onFocusSubmit={() => submitRef.current?.focus()}
-        loading={state.loading}
-      />
     );
   }
 
@@ -207,36 +171,4 @@ export function DrawerTabContent({
   }
 
   return null;
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function StageResources({ resources }: { resources: WorkflowResource[] }) {
-  return (
-    <div className="border-t border-border p-4 flex flex-col gap-3">
-      {resources.map((r) => (
-        <div key={r.name} className="flex flex-col gap-1">
-          <span className="text-forge-mono-sm font-semibold text-text-primary">{r.name}</span>
-          {r.url && (
-            <a
-              href={r.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-forge-mono-sm text-accent truncate"
-            >
-              {r.url}
-            </a>
-          )}
-          {r.description && (
-            <span className="text-forge-mono-sm text-text-secondary">{r.description}</span>
-          )}
-          <span className="text-forge-mono-label text-text-tertiary">
-            {r.stage} · {formatTimestamp(r.created_at)}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
 }

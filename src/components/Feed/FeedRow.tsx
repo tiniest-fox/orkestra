@@ -2,7 +2,7 @@
 
 import { useMemo, useRef } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
+import type { PrStatus, WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 import { HotkeyScope } from "../ui/HotkeyScope";
@@ -22,6 +22,7 @@ interface FeedRowProps {
   isFocused?: boolean;
   /** When true, shows a waiting indicator instead of the task's derived status symbol. */
   waiting?: boolean;
+  prStatus?: PrStatus;
   onMouseEnter?: () => void;
   onReview?: () => void;
   onAnswer?: () => void;
@@ -43,6 +44,7 @@ export function FeedRow({
   isSubtask,
   isFocused,
   waiting,
+  prStatus,
   onMouseEnter,
   onReview,
   onAnswer,
@@ -112,7 +114,7 @@ export function FeedRow({
               <span className="font-mono text-sm text-text-quaternary mt-0.5 text-center">↳</span>
             </>
           ) : (
-            <StatusSymbol task={task} waiting={waiting} />
+            <StatusSymbol task={task} waiting={waiting} prStatus={prStatus} />
           )}
           <div className="min-w-0">
             <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
@@ -136,6 +138,7 @@ export function FeedRow({
                     onMerge={onMerge ?? (() => {})}
                     onOpenPr={onOpenPr ?? (() => {})}
                     onArchive={onArchive ?? (() => {})}
+                    prStatus={prStatus}
                     fullWidth
                   />
                 </HotkeyScope>
@@ -171,7 +174,7 @@ export function FeedRow({
           <span className="text-center font-mono text-sm text-text-quaternary self-start">↳</span>
         </>
       ) : (
-        <StatusSymbol task={task} waiting={waiting} />
+        <StatusSymbol task={task} waiting={waiting} prStatus={prStatus} />
       )}
       <div className={`min-w-0 ${!isSubtask ? "col-span-2" : ""}`}>
         <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
@@ -200,6 +203,7 @@ export function FeedRow({
               onMerge={onMerge ?? (() => {})}
               onOpenPr={onOpenPr ?? (() => {})}
               onArchive={onArchive ?? (() => {})}
+              prStatus={prStatus}
             />
           </div>
         </HotkeyScope>

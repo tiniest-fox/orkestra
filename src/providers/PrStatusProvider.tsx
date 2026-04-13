@@ -44,6 +44,19 @@ function isTerminalPrState(state: string | undefined): boolean {
   return state === "merged" || state === "closed";
 }
 
+/**
+ * Returns true if two PrStatus objects are equal, ignoring fetched_at.
+ *
+ * Uses JSON.stringify for comparison — order-dependent, but both objects come from
+ * the same backend serialization path so field order is stable. The failure mode for
+ * an order mismatch is a spurious re-render (harmless), not a missed update.
+ */
+export function isPrStatusEqual(a: PrStatus, b: PrStatus): boolean {
+  const { fetched_at: _a, ...restA } = a;
+  const { fetched_at: _b, ...restB } = b;
+  return JSON.stringify(restA) === JSON.stringify(restB);
+}
+
 interface PrStatusProviderProps {
   children: ReactNode;
 }
@@ -83,6 +96,10 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
       try {
         const status = await transport.call<PrStatus>("get_pr_status", { pr_url: prUrl });
         setStatuses((prev) => {
+          const existing = prev.get(taskId);
+          if (existing && isPrStatusEqual(existing, status)) {
+            return prev; // same reference → no re-render
+          }
           const next = new Map(prev);
           next.set(taskId, status);
           return next;

@@ -384,6 +384,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                 surfacedSubtasks={subtaskRows}
                 config={config}
                 focusedId={focusedId}
+                getPrStatus={getPrStatus}
                 onFocusRow={setFocusedId}
                 onReview={setActiveTaskId}
                 onAnswer={setActiveTaskId}

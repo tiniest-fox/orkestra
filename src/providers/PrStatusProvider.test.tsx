@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockTransport, mockTransportCallResponses } from "../test/mocks/transport";
 import type { WorkflowTaskView } from "../types/workflow";
-import { PrStatusProvider, usePrStatus } from "./PrStatusProvider";
+import { isPrStatusEqual, PrStatusProvider, usePrStatus } from "./PrStatusProvider";
 import { useTasks } from "./TasksProvider";
 
 // Mock the TasksProvider
@@ -85,6 +85,55 @@ function TestConsumer({ taskId = "task-1" }: { taskId?: string }) {
     </div>
   );
 }
+
+describe("isPrStatusEqual", () => {
+  const baseCheck = { name: "CI", status: "success" as const };
+  const baseReview = {
+    id: 1,
+    author: "alice",
+    state: "APPROVED",
+    body: null,
+    submitted_at: "2025-01-01T00:00:00Z",
+  };
+  const base: import("../types/workflow").PrStatus = {
+    url: "https://github.com/test/repo/pull/1",
+    state: "open",
+    checks: [baseCheck],
+    reviews: [baseReview],
+    comments: [],
+    fetched_at: "2025-01-01T00:00:00Z",
+    mergeable: true,
+    merge_state_status: "CLEAN",
+  };
+
+  it("returns true when objects differ only in fetched_at", () => {
+    const a = { ...base, fetched_at: "2025-01-01T00:00:00Z" };
+    const b = { ...base, fetched_at: "2025-01-01T00:00:05Z" };
+    expect(isPrStatusEqual(a, b)).toBe(true);
+  });
+
+  it("returns false when state differs", () => {
+    const a = { ...base, state: "open" as const };
+    const b = { ...base, state: "merged" as const };
+    expect(isPrStatusEqual(a, b)).toBe(false);
+  });
+
+  it("returns false when checks array differs", () => {
+    const a = { ...base, checks: [{ name: "CI", status: "success" as const }] };
+    const b = { ...base, checks: [{ name: "CI", status: "failure" as const }] };
+    expect(isPrStatusEqual(a, b)).toBe(false);
+  });
+
+  it("returns false when reviews array differs", () => {
+    const a = { ...base, reviews: [{ ...baseReview, state: "APPROVED" }] };
+    const b = { ...base, reviews: [{ ...baseReview, state: "CHANGES_REQUESTED" }] };
+    expect(isPrStatusEqual(a, b)).toBe(false);
+  });
+
+  it("returns true for identical objects", () => {
+    expect(isPrStatusEqual(base, { ...base })).toBe(true);
+  });
+});
 
 describe("PrStatusProvider", () => {
   beforeEach(() => {

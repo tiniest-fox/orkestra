@@ -1,20 +1,23 @@
 // Tests for StatusSymbol — status symbol and color selection by task state.
 
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createMockWorkflowTaskView } from "../../test/mocks/fixtures";
+import type { PrStatus } from "../../types/workflow";
 import { StatusSymbol } from "./StatusSymbol";
 
-const mockGetPrStatus = vi.fn();
-
-vi.mock("../../providers/PrStatusProvider", () => ({
-  usePrStatus: () => ({ getPrStatus: mockGetPrStatus }),
-}));
-
-beforeEach(() => {
-  mockGetPrStatus.mockReset();
-  mockGetPrStatus.mockReturnValue(undefined);
-});
+function makePrStatus(state: PrStatus["state"]): PrStatus {
+  return {
+    url: "https://github.com/owner/repo/pull/42",
+    state,
+    checks: [],
+    reviews: [],
+    comments: [],
+    fetched_at: "2025-01-01T00:00:00Z",
+    mergeable: true,
+    merge_state_status: null,
+  };
+}
 
 describe("StatusSymbol — chatting task", () => {
   it("renders ⋯ when task is chatting", () => {
@@ -57,7 +60,6 @@ describe("StatusSymbol — done task", () => {
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
     });
-    mockGetPrStatus.mockReturnValue(undefined);
     render(<StatusSymbol task={task} />);
     expect(screen.getByText("↑")).toBeInTheDocument();
   });
@@ -67,8 +69,7 @@ describe("StatusSymbol — done task", () => {
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
     });
-    mockGetPrStatus.mockReturnValue({ state: "open" });
-    render(<StatusSymbol task={task} />);
+    render(<StatusSymbol task={task} prStatus={makePrStatus("open")} />);
     expect(screen.getByText("↑")).toBeInTheDocument();
   });
 
@@ -77,8 +78,7 @@ describe("StatusSymbol — done task", () => {
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
     });
-    mockGetPrStatus.mockReturnValue({ state: "merged" });
-    render(<StatusSymbol task={task} />);
+    render(<StatusSymbol task={task} prStatus={makePrStatus("merged")} />);
     expect(screen.getByText("✓")).toBeInTheDocument();
   });
 
@@ -87,8 +87,7 @@ describe("StatusSymbol — done task", () => {
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
     });
-    mockGetPrStatus.mockReturnValue({ state: "closed" });
-    render(<StatusSymbol task={task} />);
+    render(<StatusSymbol task={task} prStatus={makePrStatus("closed")} />);
     expect(screen.getByText("✕")).toBeInTheDocument();
   });
 });

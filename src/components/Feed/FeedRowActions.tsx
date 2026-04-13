@@ -3,8 +3,7 @@
 //! the enclosing HotkeyScope (on the focused row) dispatches matching keypresses.
 
 import { useWorkflowConfig } from "../../providers";
-import { usePrStatus } from "../../providers/PrStatusProvider";
-import type { WorkflowTaskView } from "../../types/workflow";
+import type { PrStatus, WorkflowTaskView } from "../../types/workflow";
 import { openExternal } from "../../utils/openExternal";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 import { Button } from "../ui/Button";
@@ -19,6 +18,7 @@ interface FeedRowActionsProps {
   onOpenPr: () => void;
   onArchive: () => void;
   fullWidth?: boolean;
+  prStatus?: PrStatus;
 }
 
 export function FeedRowActions({
@@ -30,9 +30,9 @@ export function FeedRowActions({
   onOpenPr,
   onArchive,
   fullWidth = false,
+  prStatus,
 }: FeedRowActionsProps) {
   const config = useWorkflowConfig();
-  const { getPrStatus } = usePrStatus();
   const { derived } = task;
   const containerCls = fullWidth ? "flex gap-1.5 w-full" : "flex items-center gap-1.5";
   const btnCls = fullWidth ? "flex-1 justify-center" : undefined;
@@ -117,7 +117,6 @@ export function FeedRowActions({
 
   if (derived.is_done && task.pr_url) {
     const prUrl = task.pr_url;
-    const prStatus = getPrStatus(task.id);
 
     if (prStatus?.state === "merged") {
       return (

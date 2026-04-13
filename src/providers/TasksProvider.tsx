@@ -11,6 +11,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -335,18 +336,32 @@ export function TasksProvider({ children }: TasksProviderProps) {
     [config],
   );
 
-  const value: TasksContextValue = {
-    tasks,
-    archivedTasks,
-    loading,
-    error,
-    isStale,
-    createTask,
-    createSubtask,
-    deleteTask,
-    applyOptimistic,
-    refetch: fetchTasks,
-  };
+  const value = useMemo<TasksContextValue>(
+    () => ({
+      tasks,
+      archivedTasks,
+      loading,
+      error,
+      isStale,
+      createTask,
+      createSubtask,
+      deleteTask,
+      applyOptimistic,
+      refetch: fetchTasks,
+    }),
+    [
+      tasks,
+      archivedTasks,
+      loading,
+      error,
+      isStale,
+      createTask,
+      createSubtask,
+      deleteTask,
+      applyOptimistic,
+      fetchTasks,
+    ],
+  );
 
   return <TasksContext.Provider value={value}>{children}</TasksContext.Provider>;
 }

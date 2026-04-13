@@ -1,7 +1,7 @@
 //! Individual question card — free-text and multiple-choice, with answered/unanswered
 //! visual states and keyboard navigation focus ring.
 
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import { isOptionKey, optionKey } from "../../lib/optionKey";
 import type { WorkflowQuestion } from "../../types/workflow";
 import { useNavItem } from "../ui/NavigationScope";
@@ -31,7 +31,7 @@ interface QuestionCardProps {
   onTextareaEscape?: () => void;
 }
 
-export function QuestionCard({
+export const QuestionCard = memo(function QuestionCard({
   index,
   question,
   value,
@@ -165,4 +165,4 @@ export function QuestionCard({
       </div>
     </div>
   );
-}
+});

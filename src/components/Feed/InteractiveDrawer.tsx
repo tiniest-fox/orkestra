@@ -170,15 +170,25 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   // -- Poll logs and session while agent is running --
   const pollSession = useCallback(async () => {
     if (!session?.id) return;
-    const [newLogs, allSessions] = await Promise.all([
-      transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
-      transport.call<AssistantSession[]>("assistant_list_sessions", {}),
-    ]);
-    setLogs(newLogs);
-    const updated = allSessions.find(
-      (s) => s.task_id === task.id && s.session_type === "interactive",
-    );
-    if (updated) setSession(updated);
+    try {
+      const [newLogs, allSessions] = await Promise.all([
+        transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
+        transport.call<AssistantSession[]>("assistant_list_sessions", {}),
+      ]);
+      setLogs((prev) => (JSON.stringify(prev) === JSON.stringify(newLogs) ? prev : newLogs));
+      const updated = allSessions.find(
+        (s) => s.task_id === task.id && s.session_type === "interactive",
+      );
+      if (updated) {
+        setSession((prev) => {
+          if (prev && prev.agent_pid === updated.agent_pid && prev.title === updated.title)
+            return prev;
+          return updated;
+        });
+      }
+    } catch (err) {
+      if (!isDisconnectError(err)) console.error("Failed to poll session:", err);
+    }
   }, [transport, session?.id, task.id]);
 
   usePolling(isAgentRunning ? pollSession : null, 1000);

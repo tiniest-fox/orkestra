@@ -212,6 +212,22 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     [transport],
   );
 
+  const handleAssistantClose = useCallback(() => {
+    setAssistantOpen(false);
+    setTaskAssistantId(null);
+  }, []);
+
+  const handleAssistantBack = useCallback(() => {
+    if (taskAssistantId) {
+      setActiveTaskId(taskAssistantId);
+      setTaskAssistantId(null);
+    }
+  }, [taskAssistantId]);
+
+  const handleInteractiveClose = useCallback(() => {
+    setInteractiveTaskId(null);
+  }, []);
+
   const onStripRowClick = useCallback(
     (taskId: string) => {
       const task = tasks.find((t) => t.id === taskId);
@@ -502,23 +518,13 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
       )}
       {(assistantOpen || taskAssistantId) && (
         <AssistantDrawer
-          onClose={() => {
-            setAssistantOpen(false);
-            setTaskAssistantId(null);
-          }}
-          onBack={
-            taskAssistantId
-              ? () => {
-                  setActiveTaskId(taskAssistantId);
-                  setTaskAssistantId(null);
-                }
-              : undefined
-          }
+          onClose={handleAssistantClose}
+          onBack={taskAssistantId ? handleAssistantBack : undefined}
           taskId={taskAssistantId ?? undefined}
         />
       )}
       {interactiveTask && (
-        <InteractiveDrawer task={interactiveTask} onClose={() => setInteractiveTaskId(null)} />
+        <InteractiveDrawer task={interactiveTask} onClose={handleInteractiveClose} />
       )}
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}
       {activeTask && (

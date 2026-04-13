@@ -218,51 +218,46 @@ fn unchanged_subtask_excluded() {
     assert!(result.deleted_ids.is_empty());
 }
 
-/// Parent's `updated_at` is cascaded when a subtask is created, so the parent
-/// appears in the differential response whenever the client's since map contains
-/// a pre-creation timestamp for the parent.
-///
-/// Subtask creation calls `create_initial_iteration`, which calls
-/// `cascade_touch_to_parent`. This is the most reliable point to verify the
-/// cascade end-to-end: it happens synchronously, within the same API call,
-/// without depending on how many orchestrator ticks are needed to end an
-/// iteration under a particular gate configuration.
+/// When a subtask's `updated_at` changes (any state change), the parent must
+/// appear in the differential response even if the parent's own `updated_at`
+/// hasn't changed. This ensures `subtask_progress` stays fresh on the frontend
+/// without requiring every child update path to cascade to the parent.
 #[test]
-fn subtask_creation_cascades_to_parent() {
+fn parent_included_when_subtask_changes() {
     let ctx = TestEnv::with_git(&simple_workflow(), &["worker"]);
 
     let parent = ctx.create_task("Parent", "desc", None);
-
-    // Capture parent timestamp before any subtask exists.
-    let parent_ts_before = ctx.api().get_task(&parent.id).unwrap().updated_at;
-
-    // Brief sleep so the cascade timestamp is strictly greater.
-    std::thread::sleep(std::time::Duration::from_millis(5));
-
-    // Creating the subtask triggers create_initial_iteration → cascade_touch_to_parent.
     let sub = ctx.create_subtask(&parent.id, "Subtask", "desc");
 
-    let parent_ts_after = ctx.api().get_task(&parent.id).unwrap().updated_at;
+    // Capture current timestamps for both.
+    let parent_ts = ctx.api().get_task(&parent.id).unwrap().updated_at;
+    let sub_ts = ctx.api().get_task(&sub.id).unwrap().updated_at;
+    let since = ts_map(&[(&parent.id, &parent_ts), (&sub.id, &sub_ts)]);
 
-    assert_ne!(
-        parent_ts_after, parent_ts_before,
-        "Parent updated_at should be bumped when subtask is created (cascade)"
+    // Brief sleep so the touch timestamp is strictly greater.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Bump ONLY the subtask's updated_at (simulates any child state change
+    // that doesn't cascade to parent — e.g., agent_started, commit_succeeded).
+    ctx.api().touch_task(&sub.id).unwrap();
+
+    // Parent's own updated_at should NOT have changed.
+    let parent_ts_after = ctx.api().get_task(&parent.id).unwrap().updated_at;
+    assert_eq!(
+        parent_ts_after, parent_ts,
+        "Parent updated_at must not change (this test verifies the composite key, not cascade)"
     );
 
-    // Client has only the pre-creation parent timestamp. The subtask is new (not in since map).
-    let since = ts_map(&[(&parent.id, &parent_ts_before)]);
     let result = ctx.api().list_task_views_differential(&since).unwrap();
 
-    // Both parent (timestamp changed via cascade) and subtask (new, not in since) appear.
     let returned_ids: std::collections::HashSet<&str> =
         result.tasks.iter().map(|v| v.task.id.as_str()).collect();
     assert!(
         returned_ids.contains(parent.id.as_str()),
-        "Parent (cascaded) should appear in differential response"
+        "Parent must appear in differential response when subtask changes (composite key)"
     );
     assert!(
         returned_ids.contains(sub.id.as_str()),
-        "New subtask (not in since map) should appear in differential response"
+        "Changed subtask must appear in differential response"
     );
-    assert!(result.deleted_ids.is_empty());
 }

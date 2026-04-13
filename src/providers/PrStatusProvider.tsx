@@ -45,7 +45,7 @@ function isTerminalPrState(state: string | undefined): boolean {
 }
 
 /** Returns true if two PrStatus objects are equal, ignoring fetched_at. */
-function isPrStatusEqual(a: PrStatus, b: PrStatus): boolean {
+export function isPrStatusEqual(a: PrStatus, b: PrStatus): boolean {
   const { fetched_at: _a, ...restA } = a;
   const { fetched_at: _b, ...restB } = b;
   return JSON.stringify(restA) === JSON.stringify(restB);

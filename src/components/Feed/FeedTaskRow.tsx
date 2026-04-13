@@ -86,6 +86,6 @@ export const FeedTaskRow = React.memo(FeedTaskRowInner, (prev, next) => {
     prev.isFocused === next.isFocused &&
     prev.waiting === next.waiting &&
     prev.config === next.config &&
-    prev.prStatus?.fetched_at === next.prStatus?.fetched_at
+    prev.prStatus === next.prStatus
   );
 });

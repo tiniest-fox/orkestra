@@ -65,8 +65,9 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process approval -> Done
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done
 }
 
 // =============================================================================
@@ -596,9 +597,9 @@ fn advance_both_through_stage(
     task1_id: &str,
     task2_id: &str,
     artifact_name: &str,
-    is_approval_stage: bool,
+    use_approval_output: bool,
 ) {
-    if is_approval_stage {
+    if use_approval_output {
         ctx.set_output(
             task1_id,
             MockAgentOutput::Approval {
@@ -640,18 +641,16 @@ fn advance_both_through_stage(
         );
     }
     ctx.advance(); // spawn agents
-    ctx.advance(); // process outputs
+    ctx.advance(); // process outputs → AwaitingApproval
 
-    // Approve if tasks need review (non-automated stages)
-    if !is_approval_stage {
-        if ctx.api().get_task(task1_id).unwrap().needs_review() {
-            ctx.api().approve(task1_id).unwrap();
-        }
-        if ctx.api().get_task(task2_id).unwrap().needs_review() {
-            ctx.api().approve(task2_id).unwrap();
-        }
-        ctx.advance(); // commit + advance
+    // Approve both tasks if they need review (Artifact and Approval outputs both pause here)
+    if ctx.api().get_task(task1_id).unwrap().needs_review() {
+        ctx.api().approve(task1_id).unwrap();
     }
+    if ctx.api().get_task(task2_id).unwrap().needs_review() {
+        ctx.api().approve(task2_id).unwrap();
+    }
+    ctx.advance(); // commit pipelines → Done (or integration for approval stages)
 }
 
 /// Integration succeeds even when `sync_base_branch` fails (network/auth issues).

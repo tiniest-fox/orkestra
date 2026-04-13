@@ -640,12 +640,12 @@ fn test_chat_structured_output_completes_stage() {
 
     assert!(detected, "Valid approval JSON should be detected");
 
-    // Task should be in Finishing state — approval via chat enters commit pipeline directly
-    // (same as when the agent produces Approval { approve } in normal mode)
+    // Task should be AwaitingApproval — approval via chat stores the verdict but still
+    // requires a human confirmation step (same as when the agent produces Approval { approve }).
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
-        matches!(task.state, TaskState::Finishing { .. }),
-        "Task should be Finishing after approval via chat, got: {:?}",
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Task should be AwaitingApproval after approval via chat, got: {:?}",
         task.state
     );
 

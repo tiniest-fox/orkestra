@@ -61,8 +61,9 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
             resources: vec![],
         },
     );
-    ctx.advance();
-    ctx.advance();
+    ctx.advance(); // spawn reviewer → AwaitingApproval
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit pipeline → Done
 }
 
 // =============================================================================

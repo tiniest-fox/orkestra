@@ -682,8 +682,8 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Step 4: Reviewer's approval is final — enters commit pipeline directly (no extra human step)
-        assert!(matches!(task.state, TaskState::Finishing { .. }));
+        // Step 4: Reviewer approval pauses for human sign-off when auto_mode=false
+        assert!(matches!(task.state, TaskState::AwaitingApproval { .. }));
         assert_eq!(task.current_stage(), Some("review"));
     }
 

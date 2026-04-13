@@ -1,7 +1,7 @@
 // Sticky section header with task rows for one feed section.
 
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
+import type { PrStatus, WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import type { FeedSection as FeedSectionData } from "../../utils/feedGrouping";
 import { FeedSubtaskRow } from "./FeedSubtaskRow";
 import { FeedTaskRow } from "./FeedTaskRow";
@@ -11,6 +11,7 @@ interface FeedSectionProps {
   surfacedSubtasks?: WorkflowTaskView[];
   config: WorkflowConfig;
   focusedId: string | null;
+  getPrStatus?: (taskId: string) => PrStatus | undefined;
   onFocusRow: (id: string) => void;
   onReview: (taskId: string) => void;
   onAnswer: (taskId: string) => void;
@@ -26,6 +27,7 @@ export function FeedSection({
   surfacedSubtasks,
   config,
   focusedId,
+  getPrStatus,
   onFocusRow,
   onReview,
   onAnswer,
@@ -63,6 +65,7 @@ export function FeedSection({
                 task={task}
                 config={config}
                 isFocused={focusedId === task.id}
+                prStatus={getPrStatus?.(task.id)}
                 onMouseEnter={() => onFocusRow(task.id)}
                 onReview={() => onReview(task.id)}
                 onAnswer={() => onAnswer(task.id)}

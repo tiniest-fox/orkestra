@@ -1,4 +1,4 @@
-//! Tests for FeedRowActions — Approve button behavior and merged PR archive button.
+// Tests for FeedRowActions — Approve button behavior and merged PR archive button.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -9,17 +9,6 @@ const mockConfig = createMockWorkflowConfig();
 
 vi.mock("../../providers", () => ({
   useWorkflowConfig: vi.fn(() => mockConfig),
-}));
-
-const mockGetPrStatus = vi.fn((_taskId: string): PrStatus | undefined => undefined);
-
-vi.mock("../../providers/PrStatusProvider", () => ({
-  usePrStatus: vi.fn(() => ({
-    getPrStatus: mockGetPrStatus,
-    isLoading: vi.fn(() => false),
-    requestFetch: vi.fn(),
-    setActivePoll: vi.fn(),
-  })),
 }));
 
 import { FeedRowActions } from "./FeedRowActions";
@@ -92,12 +81,12 @@ describe("FeedRowActions — Approve button", () => {
 
 describe("FeedRowActions — Archive button (merged PR)", () => {
   it("renders Archive button when task is done with merged PR", () => {
-    mockGetPrStatus.mockReturnValue(makePrStatus("merged"));
     const props = makeProps({
       task: createMockWorkflowTaskView({
         state: { type: "done" },
         pr_url: "https://github.com/owner/repo/pull/42",
       }),
+      prStatus: makePrStatus("merged"),
     });
     render(<FeedRowActions {...props} />);
 
@@ -106,12 +95,12 @@ describe("FeedRowActions — Archive button (merged PR)", () => {
   });
 
   it("renders PR button when task is done with open PR", () => {
-    mockGetPrStatus.mockReturnValue(makePrStatus("open"));
     const props = makeProps({
       task: createMockWorkflowTaskView({
         state: { type: "done" },
         pr_url: "https://github.com/owner/repo/pull/42",
       }),
+      prStatus: makePrStatus("open"),
     });
     render(<FeedRowActions {...props} />);
 
@@ -120,12 +109,12 @@ describe("FeedRowActions — Archive button (merged PR)", () => {
   });
 
   it("calls onArchive when Archive is clicked", () => {
-    mockGetPrStatus.mockReturnValue(makePrStatus("merged"));
     const props = makeProps({
       task: createMockWorkflowTaskView({
         state: { type: "done" },
         pr_url: "https://github.com/owner/repo/pull/42",
       }),
+      prStatus: makePrStatus("merged"),
     });
     render(<FeedRowActions {...props} />);
 
@@ -135,7 +124,6 @@ describe("FeedRowActions — Archive button (merged PR)", () => {
   });
 
   it("falls back to PR button when PrStatus not loaded", () => {
-    mockGetPrStatus.mockReturnValue(undefined);
     const props = makeProps({
       task: createMockWorkflowTaskView({
         state: { type: "done" },

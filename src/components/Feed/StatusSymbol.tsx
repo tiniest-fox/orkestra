@@ -1,13 +1,13 @@
 // Text symbol indicating task status with signal color, background chip, and optional pulse.
 
-import { usePrStatus } from "../../providers/PrStatusProvider";
-import type { WorkflowTaskView } from "../../types/workflow";
+import type { PrStatus, WorkflowTaskView } from "../../types/workflow";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 
 interface StatusSymbolProps {
   task: WorkflowTaskView;
   /** When true, renders a dotted-circle waiting indicator instead of the task's derived status. */
   waiting?: boolean;
+  prStatus?: PrStatus;
 }
 
 interface StatusColors {
@@ -154,9 +154,8 @@ function resolveColors(
   return { colors: { bg: TRANSPARENT, icon: "text-text-quaternary" }, symbol: "~", extraClass };
 }
 
-export function StatusSymbol({ task, waiting }: StatusSymbolProps) {
-  const { getPrStatus } = usePrStatus();
-  const prState = task.derived.is_done && task.pr_url ? getPrStatus(task.id)?.state : undefined;
+export function StatusSymbol({ task, waiting, prStatus }: StatusSymbolProps) {
+  const prState = task.derived.is_done && task.pr_url ? prStatus?.state : undefined;
   const { colors, symbol, extraClass } = waiting
     ? {
         colors: { bg: "bg-transparent", icon: "text-text-tertiary" },

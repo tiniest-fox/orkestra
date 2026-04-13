@@ -221,6 +221,7 @@ impl OrchestratorLoop {
     /// Call this on callers that create the orchestrator with a pre-built
     /// `stage_executor` (Tauri desktop app, headless daemon). Enables duplicate-
     /// orchestrator detection for the given project directory.
+    #[must_use]
     pub fn with_project_root(mut self, project_root: PathBuf) -> Self {
         self.project_root = Some(project_root);
         self

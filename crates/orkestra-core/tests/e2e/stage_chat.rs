@@ -364,13 +364,10 @@ fn test_send_message_during_interrupted() {
         "chat_active should be true after message during Interrupted"
     );
 
-    // Verify DerivedTaskState.is_chatting is true
-    let views = ctx.api().list_task_views().unwrap();
-    let view = views.iter().find(|v| v.task.id == task_id).unwrap();
-    assert!(
-        view.derived.is_chatting,
-        "DerivedTaskState.is_chatting should be true during Interrupted"
-    );
+    // Note: is_chatting is derived from chat_active; derivation is unit-tested in task_view.rs.
+    // We can't assert is_chatting=true here via list_task_views() because the mock cat process
+    // exits immediately and the background reader thread clears chat_active before the view
+    // query can observe it. The chat_active=true assertion above is the authoritative check.
 
     // Verify log entry with resume_type "chat"
     let (logs, _cursor) = ctx
@@ -964,5 +961,88 @@ fn test_chat_structured_output_activity_log_on_correct_iteration() {
         chat_iter.activity_log.as_deref(),
         Some("- Reviewed implementation\n- Found no issues"),
         "Activity log should be on the ChatCompletion iteration, not the previous one"
+    );
+}
+
+// =============================================================================
+// Test: send_chat_message bumps task updated_at
+// =============================================================================
+
+/// Sending a chat message (entering chat mode) must bump the task's `updated_at`
+/// so differential sync detects the state change and delivers `is_chatting: true`.
+#[test]
+fn send_message_bumps_task_updated_at() {
+    let ctx = TestEnv::with_git(&chat_test_workflow(), &["worker"]);
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Seed a session ID so send_chat_message can resume
+    seed_session_id(&ctx, &task_id, "work");
+
+    // Record updated_at before chat
+    let before = ctx.api().get_task(&task_id).unwrap().updated_at;
+
+    // Brief sleep to ensure timestamps differ
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Send a chat message — this should bump updated_at (enters chat mode on first message)
+    ctx.api()
+        .send_chat_message(&task_id, "Hello agent")
+        .unwrap();
+
+    let after = ctx.api().get_task(&task_id).unwrap().updated_at;
+    assert_ne!(
+        after, before,
+        "send_chat_message must bump task updated_at when entering chat mode"
+    );
+}
+
+// =============================================================================
+// Test: chat_active is cleared when agent exits without structured output
+// =============================================================================
+
+/// When a chat agent exits without producing valid structured output,
+/// `chat_active` must be cleared — not left stale — so approve and
+/// return-to-work buttons re-enable on the frontend.
+#[test]
+fn chat_exit_clears_chat_active_on_exit_without_structured_output() {
+    let ctx = TestEnv::with_git(&chat_test_workflow(), &["worker"]);
+    let task = ctx.create_task("Chat exit test", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+    seed_session_id(&ctx, &task_id, "work");
+
+    // Send a message — spawns a `cat` mock process (via MockProcessSpawner) that
+    // echoes the message and exits immediately. chat_active goes true here.
+    ctx.api()
+        .send_chat_message(&task_id, "Hello agent")
+        .unwrap();
+
+    // Verify chat_active is true immediately after send
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("session should exist");
+    assert!(session.chat_active, "chat_active should be true after send");
+
+    // The mock process (cat) exits immediately after stdin closes.
+    // The background reader thread calls clear_agent_pid_for_session which clears
+    // chat_active. Poll until it clears (up to ~500ms).
+    let cleared = (0..50).any(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        ctx.api()
+            .get_stage_session(&task_id, "work")
+            .unwrap()
+            .is_some_and(|s| !s.chat_active)
+    });
+
+    assert!(
+        cleared,
+        "chat_active should be false after chat agent exits without structured output"
     );
 }

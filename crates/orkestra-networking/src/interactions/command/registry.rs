@@ -58,6 +58,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_current_stage",
     "get_rejection_feedback",
     "list_branches",
+    "list_project_files",
     "get_logs",
     "get_latest_log",
     "get_pr_status",
@@ -92,6 +93,7 @@ pub const TRANSPORT_SPECIFIC_COMMANDS: &[&str] = &[
     // Diff commands (different DiffCacheState/SyntaxHighlighter types per transport)
     "get_task_diff",
     "get_file_content",
+    "get_project_file_content",
     "get_syntax_css",
     "get_commit_log",
     "get_batch_file_counts",

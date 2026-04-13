@@ -245,6 +245,61 @@ pub(super) async fn handle_get_file_content(
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
 }
 
+/// Handle the `get_project_file_content` method — returns project root file with syntax highlighting.
+///
+/// Expected params: `{ "file_path": "<path>" }`
+pub(super) async fn handle_get_project_file_content(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let file_path = params
+        .get("file_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("missing field: file_path"))?
+        .to_string();
+
+    let api = Arc::clone(&ctx.api);
+    let highlighter = Arc::clone(&ctx.highlighter);
+
+    tokio::task::spawn_blocking(move || {
+        let content = {
+            let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+            api.get_project_file_content(&file_path)
+                .map_err(ErrorPayload::from)?
+        };
+
+        let Some(content) = content else {
+            return Ok(Value::Null);
+        };
+
+        let extension = std::path::Path::new(&file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+
+        #[allow(clippy::cast_possible_truncation)]
+        let lines: Vec<HighlightedLine> = content
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let line_with_newline = format!("{line}\n");
+                let html = highlighter.highlight_line(&line_with_newline, extension);
+                HighlightedLine {
+                    line_type: LineType::Context,
+                    content: line.to_string(),
+                    html,
+                    old_line_number: Some((i + 1) as u32),
+                    new_line_number: Some((i + 1) as u32),
+                }
+            })
+            .collect();
+
+        Ok(serde_json::to_value(lines).unwrap_or(Value::Array(vec![])))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
 // ============================================================================
 // Syntax CSS
 // ============================================================================

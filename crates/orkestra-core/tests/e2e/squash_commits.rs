@@ -862,6 +862,7 @@ fn test_integration_with_no_commits_succeeds() {
 
 /// User-triggered `merge_task()` should squash commits the same way auto-merge does.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_merge_task_squashes_commits() {
     let ctx = TestEnv::with_git(
         &disable_auto_merge(test_default_workflow()),

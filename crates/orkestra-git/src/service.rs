@@ -106,6 +106,12 @@ impl GitService for Git2GitService {
         interactions::worktree::get_state::execute(worktree_path)
     }
 
+    // -- Files --
+
+    fn list_files(&self) -> Result<Vec<String>, GitError> {
+        interactions::worktree::list_files::execute(&self.repo_path)
+    }
+
     // -- Branch --
 
     fn list_branches(&self) -> Result<Vec<String>, GitError> {

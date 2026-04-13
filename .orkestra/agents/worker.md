@@ -90,6 +90,17 @@ When adding conditional UI elements, associated state must follow the same condi
 
 Apply this check before submitting: for every error/loading state you add, verify its render site is within the same conditional branch as the buttons that generate it.
 
+### Verify All Production Callers Are Wired
+
+When you add an opt-in feature (a new constructor, builder method, or configuration flag), production code only benefits if callers actually use it. A feature that works in tests but is never reached in production is dead code.
+
+Before submitting:
+1. Search for all call sites of the type or constructor you modified (`grep -r "OrchestratorLoop::new\|for_project"`)
+2. For each production caller (Tauri commands, daemon `main.rs`, service binaries), confirm it uses the new path
+3. If existing callers can't easily switch (e.g., they use a different constructor with custom setup), add a builder method or extension that lets them opt in
+
+The canonical failure mode: you add a feature gated on a new constructor variant, write tests using that variant, all tests pass — but production callers use a different constructor and never trigger the feature. The flow reviewer will catch this.
+
 ### Start Quickly, Stay Focused
 Don't over-analyze. Once you understand the Trak:
 1. Find similar code to reference

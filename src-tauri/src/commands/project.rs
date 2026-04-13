@@ -444,8 +444,10 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
     let window_label_for_log = window_label.to_string();
 
     std::thread::spawn(move || {
-        // Create orchestrator with the shared executor
-        let orchestrator = orkestra_core::workflow::OrchestratorLoop::new(api, stage_executor);
+        // Create orchestrator with the shared executor. Pass project_root so the
+        // orchestrator acquires a PID lock file, preventing duplicate instances.
+        let orchestrator = orkestra_core::workflow::OrchestratorLoop::new(api, stage_executor)
+            .with_project_root(project_root);
 
         // Share stop flag with orchestrator
         let orch_stop = orchestrator.stop_flag();

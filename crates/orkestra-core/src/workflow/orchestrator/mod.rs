@@ -14,7 +14,10 @@
 //! - `integration::find_next_candidate` — pick next task to integrate
 
 mod commit_pipeline;
+mod lock;
 mod recovery;
+
+pub use lock::LockError;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -145,6 +148,8 @@ pub struct OrchestratorLoop {
     /// (e.g., git integration) run synchronously on the tick thread instead.
     /// Used by tests for deterministic control over execution order.
     sync_background: bool,
+    /// Project root for PID lock file acquisition. `None` in tests (no locking).
+    project_root: Option<PathBuf>,
 }
 
 impl OrchestratorLoop {
@@ -164,6 +169,7 @@ impl OrchestratorLoop {
             scheduler: Mutex::new(scheduler),
             stop_flag: Arc::new(AtomicBool::new(false)),
             sync_background: false,
+            project_root: None,
         }
     }
 
@@ -192,12 +198,14 @@ impl OrchestratorLoop {
 
         let stage_executor = Arc::new(StageExecutionService::new(
             workflow,
-            project_root,
+            project_root.clone(),
             store,
             iteration_service,
         ));
 
-        Self::new(api, stage_executor)
+        let mut orchestrator = Self::new(api, stage_executor);
+        orchestrator.project_root = Some(project_root);
+        orchestrator
     }
 
     /// Create with a custom stage executor (for testing).
@@ -206,6 +214,17 @@ impl OrchestratorLoop {
         stage_executor: Arc<StageExecutionService>,
     ) -> Self {
         Self::new(api, stage_executor)
+    }
+
+    /// Set the project root to enable PID lock file acquisition in `run()`.
+    ///
+    /// Call this on callers that create the orchestrator with a pre-built
+    /// `stage_executor` (Tauri desktop app, headless daemon). Enables duplicate-
+    /// orchestrator detection for the given project directory.
+    #[must_use]
+    pub fn with_project_root(mut self, project_root: PathBuf) -> Self {
+        self.project_root = Some(project_root);
+        self
     }
 
     /// Get the stop flag for external control.
@@ -222,10 +241,36 @@ impl OrchestratorLoop {
     ///
     /// This blocks the current thread and runs until `stop()` is called.
     /// Uses adaptive sleep: 500ms when events occurred, 2000ms when idle.
+    /// When `project_root` is set (production use via `for_project()`), acquires a
+    /// PID lock file before starting. Returns immediately if another orchestrator
+    /// is already running for the same project.
     pub fn run<F>(&self, mut on_event: F)
     where
         F: FnMut(OrchestratorEvent) + Send,
     {
+        // Acquire orchestrator lock (only when project_root is set)
+        let _lock = if let Some(ref root) = self.project_root {
+            match lock::OrchestratorLock::acquire(root) {
+                Ok(guard) => Some(guard),
+                Err(lock::LockError::AlreadyRunning(pid)) => {
+                    on_event(OrchestratorEvent::Error {
+                        task_id: None,
+                        error: format!("Another orchestrator is already running (PID {pid})"),
+                    });
+                    return;
+                }
+                Err(lock::LockError::Io(e)) => {
+                    on_event(OrchestratorEvent::Error {
+                        task_id: None,
+                        error: format!("Failed to acquire orchestrator lock: {e}"),
+                    });
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
         for event in self.run_startup_recovery() {
             on_event(event);
         }

@@ -77,7 +77,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
           )
         ) : (
           <div className="p-4">
-            <FeedLogList logs={logs} error={error} />
+            <FeedLogList logs={logs} error={error} artifacts={task.artifacts} />
           </div>
         )}
       </div>

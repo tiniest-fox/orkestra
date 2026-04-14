@@ -10,7 +10,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { Virtualizer } from "virtua";
-import type { LogEntry, ResumeType } from "../../types/workflow";
+import type { LogEntry, ResumeType, WorkflowArtifact } from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -18,6 +18,7 @@ import { toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { groupLogEntries } from "../Logs/useGroupedLogs";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
+import { ArtifactLogCard } from "./ArtifactLogCard";
 import { ErrorLine, ToolLine } from "./FeedEntryComponents";
 
 // ============================================================================
@@ -126,7 +127,13 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 type VirtualItem =
   | { kind: "user-block"; msg: UserMessage; label: string; isHuman: boolean; isBlockEnd: boolean }
   | { kind: "agent-header"; label: string }
-  | { kind: "agent-entry"; entry: GroupedLogEntry; projectRoot?: string; isBlockEnd: boolean }
+  | {
+      kind: "agent-entry";
+      entry: GroupedLogEntry;
+      projectRoot?: string;
+      artifacts?: Record<string, WorkflowArtifact>;
+      isBlockEnd: boolean;
+    }
   | { kind: "extra"; content: React.ReactNode }
   | { kind: "spinner" };
 
@@ -141,6 +148,7 @@ export function buildVirtualItems(
     userLabel: string;
     classifyUser?: (msg: UserMessage) => UserClassification;
     projectRoot?: string;
+    artifacts?: Record<string, WorkflowArtifact>;
     isAgentRunning: boolean;
     lastAgentExtra?: React.ReactNode;
   },
@@ -164,6 +172,7 @@ export function buildVirtualItems(
           kind: "agent-entry",
           entry: grouped[j],
           projectRoot: opts.projectRoot,
+          artifacts: opts.artifacts,
           isBlockEnd: isLast,
         });
       }
@@ -225,9 +234,11 @@ const AssistantTextLine = memo(function AssistantTextLine({ content }: { content
 export const AgentEntry = memo(function AgentEntry({
   entry,
   projectRoot,
+  artifacts,
 }: {
   entry: GroupedLogEntry;
   projectRoot?: string;
+  artifacts?: Record<string, WorkflowArtifact>;
 }) {
   if (entry.type === "subagent_group") {
     const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
@@ -278,6 +289,12 @@ export const AgentEntry = memo(function AgentEntry({
 
     case "error":
       return <ErrorLine message={entry.message} />;
+
+    case "artifact_produced": {
+      const artifact = artifacts?.[entry.name];
+      if (!artifact) return null;
+      return <ArtifactLogCard artifact={artifact} />;
+    }
 
     case "user_message":
     case "tool_result":
@@ -337,7 +354,11 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
         <div
           className={`bg-canvas px-6 text-text-secondary ${item.isBlockEnd ? "pb-3.5 border-b border-border" : ""}`}
         >
-          <AgentEntry entry={item.entry} projectRoot={item.projectRoot} />
+          <AgentEntry
+            entry={item.entry}
+            projectRoot={item.projectRoot}
+            artifacts={item.artifacts}
+          />
         </div>
       );
     case "extra":
@@ -369,6 +390,8 @@ export interface MessageListProps {
   classifyUser?: (msg: UserMessage) => UserClassification;
   /** Transforms user message content before rendering. Defaults to identity. */
   contentFilter?: (content: string) => string;
+  /** Artifacts produced by agents, keyed by artifact name. Used to render artifact_produced log entries. */
+  artifacts?: Record<string, WorkflowArtifact>;
   /** Content rendered below the last agent message block (e.g. question cards). */
   lastAgentExtra?: React.ReactNode;
   /** Text shown when there are no messages and the agent is not running. */
@@ -386,6 +409,7 @@ export function MessageList({
   userLabel = "You",
   classifyUser,
   contentFilter,
+  artifacts,
   lastAgentExtra,
   emptyText = "No messages yet.",
   containerRef,
@@ -401,10 +425,20 @@ export function MessageList({
         userLabel,
         classifyUser,
         projectRoot,
+        artifacts,
         isAgentRunning,
         lastAgentExtra,
       }),
-    [messages, agentLabel, userLabel, classifyUser, projectRoot, isAgentRunning, lastAgentExtra],
+    [
+      messages,
+      agentLabel,
+      userLabel,
+      classifyUser,
+      projectRoot,
+      artifacts,
+      isAgentRunning,
+      lastAgentExtra,
+    ],
   );
 
   // Object ref for Virtualizer's scrollRef prop

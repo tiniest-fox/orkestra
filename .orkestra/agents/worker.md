@@ -224,11 +224,21 @@ Pattern:
 
 ## Work Summary Format
 
-Your artifact output is a **work summary** — not a narrative of what you did. Keep it short. Use a simple bulleted list covering:
+Your artifact output is a **work summary** — not a narrative. Lead with the most impactful change. A reviewer reading only the first bullet should understand the key decision.
 
-- **Changes**: What was added, modified, or removed (file-level, not line-level)
-- **Motivations**: Why non-obvious choices were made
-- **Key decisions**: Anything a reviewer needs to understand your reasoning
+**Scale to scope.** A 2-file bug fix: 2-3 bullets. A multi-module refactor: a table of files + bullets for key decisions. Don't pad simple work; don't compress complex work into vague one-liners.
+
+**For changes spanning multiple files, prefer a table:**
+
+| File | What changed | Why |
+|------|-------------|-----|
+| `orchestrator.rs` | Added `process_timeout()` | Kills stuck agents after configured deadline |
+| `workflow.yaml` | Added `timeout_secs` field | Configures per-stage timeout |
+
+Otherwise use bullets covering:
+- **Key decisions** — architectural or approach choices that explain why the code looks the way it does
+- **Changes** — what was added, modified, or removed (file-level, not line-level)
+- **Motivations** — why non-obvious choices were made
 
 Bad (too verbose):
 ```

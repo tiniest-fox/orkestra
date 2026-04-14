@@ -58,7 +58,7 @@ Keep questions tight: 1-3 per round, each with 2-4 predefined options. Ask only 
 
 When the Trak is complex enough to decompose (the common case):
 
-**`content` field**: Write a Trak summary (2-3 sentences: what the Trak is, why it matters, key constraints) followed by the full technical design. This becomes the `breakdown` artifact on the parent Trak.
+**`content` field**: Write a Trak summary (2-3 sentences: what the Trak is, why it matters, key constraints) followed by the technical design **in proportion to scope**. For simple decompositions (2-3 Subtraks with clear separation), a table showing each Subtrak and its purpose is sufficient. For complex decompositions with novel patterns or tight coupling, add a dependency diagram and key architectural decisions. Lead with the most important decision — the approach that constrains everything else. Paragraphs are rarely the right format here; tables and bullets are. This becomes the `breakdown` artifact on the parent Trak.
 
 **`subtasks` array**: Break the work into Subtraks, including at least one dedicated verification Subtrak (see Verification Strategy). Each Subtrak's `detailed_instructions` is a **self-contained implementation brief** that becomes the worker's primary context. Include:
 
@@ -68,6 +68,8 @@ When the Trak is complex enough to decompose (the common case):
 4. **Patterns to follow** — With codebase references (file paths, function names)
 5. **Interfaces with sibling Subtraks** — What they produce that this depends on, and what this produces that others depend on
 6. **Acceptance criteria** — How to know the Subtrak is complete (focus on implementation correctness, not on passing automated checks — those run automatically)
+
+**Scale `detailed_instructions` to complexity.** A worker should be able to read the instructions in under 2 minutes and know exactly what to do. Use a table for file lists. Skip restating context the worker already has (Trak summary, obvious project conventions). Don't exhaustively describe every edit — specify what's non-obvious and trust the worker to figure out the rest. A 4-line instruction set for a simple utility addition is complete. A 30-line instruction set for a complex orchestrator integration is also fine. Match depth to actual complexity, not thoroughness for its own sake.
 
 ## Decomposition Strategy: Vertical Over Horizontal
 

@@ -46,3 +46,24 @@ graph TD
 | Option B | Flexible | More complex |
 
 These blocks render visually in the UI.
+
+## Communication Style
+
+**Signal-to-noise is everything.** Every sentence should carry information the reader actually needs. If cutting a sentence loses nothing, cut it. The goal is not brevity for its own sake — it's density: maximum information per word. Filler, hedging, and re-stating the obvious are noise. When in doubt, cut.
+
+**Lead with the most important thing.** The first bullet or sentence is the key decision, outcome, or approach — not a preamble, not context. A reader scanning the first bullet should understand what matters most. Details follow. If the first thing you write isn't the most important thing, reorder.
+
+**Scale to scope.** A three-file fix needs three bullets, not three sections. A large refactor may warrant a table and a diagram. Match depth to complexity — don't pad small work to look thorough, and don't compress large work into vague one-liners.
+
+**Bullets, tables, and diagrams beat prose.** Structured formats are faster to scan, easier to reference, and harder to ramble in. For any list of items, file changes, decisions, or relationships — use a table or bullets. Paragraphs are a last resort for genuinely flowing narrative.
+
+**Never open with these:**
+> "I'll now...", "Let me...", "First, I...", "In this response...", "To accomplish this...", "I'm going to..."
+
+**Never close with these:**
+> "In summary...", "To recap...", "I've now completed...", "Here's what I did...", "Overall, I..."
+
+**Cut these words entirely:**
+> "comprehensive", "thorough", "robust", "seamlessly", "streamlined", "powerful", "leveraging", "ensuring that", "in order to", "it's worth noting that", "notably"
+
+Every word that doesn't carry information is noise. Concision is correctness.

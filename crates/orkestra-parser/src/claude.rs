@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use orkestra_types::domain::LogEntry;
 
 use crate::interactions::claude::{parse_assistant_content, parse_tool_result_event};
-use crate::interactions::output::{check_api_error, extract_from_jsonl};
+use crate::interactions::output::{check_api_error, extract_from_jsonl, extract_ork_fence};
 use crate::interface::AgentParser;
 use crate::types::ParsedUpdate;
 
@@ -162,13 +162,21 @@ impl AgentParser for ClaudeParserService {
             }
         }
 
-        // Use shared JSONL extraction
-        extract_from_jsonl::execute(trimmed).ok_or_else(|| {
-            format!(
-                "Failed to parse agent output: no structured output found in {} bytes of output",
-                trimmed.len()
-            )
-        })
+        // Primary: JSONL extraction (StructuredOutput tool path)
+        if let Some(json_str) = extract_from_jsonl::execute(trimmed) {
+            return Ok(json_str);
+        }
+
+        // Fallback: scan raw output for ```ork fence
+        // Backticks aren't JSON-escaped, so literal pattern search works on raw JSONL
+        if let Some(json_str) = extract_ork_fence::execute(trimmed) {
+            return Ok(json_str);
+        }
+
+        Err(format!(
+            "Failed to parse agent output: no structured output found in {} bytes of output",
+            trimmed.len()
+        ))
     }
 }
 

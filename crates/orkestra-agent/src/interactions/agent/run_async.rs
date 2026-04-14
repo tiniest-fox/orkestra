@@ -12,7 +12,7 @@ use orkestra_types::domain::LogEntry;
 
 use crate::orkestra_debug;
 use crate::registry::ProviderRegistry;
-use crate::types::{RunConfig, RunError, RunEvent};
+use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
 
 use super::run_sync::{collect_stderr, stderr_error_message};
 
@@ -145,7 +145,9 @@ fn stream_stdout_lines(
 
                 if let Some(error_msg) = check_api_error::execute(&line) {
                     orkestra_debug!("runner", "Agent error detected: {}", error_msg);
-                    let _ = tx.send(RunEvent::Completed(Err(error_msg)));
+                    let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
+                        error_msg,
+                    ))));
                     return None;
                 }
 
@@ -169,8 +171,8 @@ fn stream_stdout_lines(
             }
             Err(e) => {
                 orkestra_debug!("runner", "Error reading stdout: {}", e);
-                let _ = tx.send(RunEvent::Completed(Err(format!(
-                    "Failed to read agent output: {e}"
+                let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
+                    format!("Failed to read agent output: {e}"),
                 ))));
                 return None;
             }
@@ -212,7 +214,9 @@ fn send_completion(
     if line_count == 0 {
         let error_msg = stderr_error_message(&stderr_lines);
         orkestra_debug!("runner", "Zero stdout lines — agent crashed: {}", error_msg);
-        let _ = tx.send(RunEvent::Completed(Err(error_msg)));
+        let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
+            error_msg,
+        ))));
         return;
     }
 
@@ -230,7 +234,7 @@ fn send_completion(
             full_output.len(),
             full_output
         );
-        format!("{e}\n\nRaw output:\n{full_output}")
+        AgentCompletionError::MalformedOutput(format!("{e}\n\nRaw output:\n{full_output}"))
     });
 
     orkestra_debug!("runner", "parse result: {:?}", result.is_ok());

@@ -3,7 +3,7 @@
 //! This service centralizes all iteration creation and lifecycle operations,
 //! ensuring consistent ID formats, numbering schemes, and state transitions.
 
-use crate::workflow::domain::{ArtifactSnapshot, Iteration, IterationTrigger};
+use crate::workflow::domain::{Iteration, IterationTrigger};
 use crate::workflow::ports::WorkflowStore;
 use crate::workflow::runtime::Outcome;
 use crate::workflow::WorkflowResult;
@@ -130,23 +130,6 @@ impl IterationService {
     ) -> WorkflowResult<()> {
         if let Some(mut iteration) = self.store.get_active_iteration(task_id, stage)? {
             iteration.activity_log = Some(activity_log.to_string());
-            self.store.save_iteration(&iteration)?;
-        }
-        Ok(())
-    }
-
-    /// Set the artifact snapshot on the active iteration for a task/stage.
-    ///
-    /// Called when an agent produces artifact output, capturing the content
-    /// at that point in time. If no active iteration exists, this is a no-op.
-    pub fn set_artifact_snapshot(
-        &self,
-        task_id: &str,
-        stage: &str,
-        snapshot: ArtifactSnapshot,
-    ) -> WorkflowResult<()> {
-        if let Some(mut iteration) = self.store.get_active_iteration(task_id, stage)? {
-            iteration.artifact_snapshot = Some(snapshot);
             self.store.save_iteration(&iteration)?;
         }
         Ok(())
@@ -354,56 +337,6 @@ mod activity_log_tests {
 
         // Should not error when no iteration exists
         let result = service.set_activity_log("nonexistent", "work", "Some log");
-        assert!(result.is_ok());
-    }
-}
-
-#[cfg(test)]
-mod artifact_snapshot_tests {
-    use super::*;
-    use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::{ArtifactSnapshot, Task};
-    use crate::workflow::ports::WorkflowStore;
-
-    #[test]
-    fn test_set_artifact_snapshot() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        store
-            .save_task(&Task::new(
-                "task-1",
-                "T",
-                "D",
-                "work",
-                "2020-01-01T00:00:00Z",
-            ))
-            .unwrap();
-        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
-
-        service.create_initial_iteration("task-1", "work").unwrap();
-
-        let snapshot = ArtifactSnapshot {
-            name: "summary".to_string(),
-            content: "## Work done\n\nImplemented feature X.".to_string(),
-        };
-        service
-            .set_artifact_snapshot("task-1", "work", snapshot.clone())
-            .unwrap();
-
-        let iteration = service.get_active("task-1", "work").unwrap().unwrap();
-        assert_eq!(iteration.artifact_snapshot, Some(snapshot));
-    }
-
-    #[test]
-    fn test_set_artifact_snapshot_no_active_iteration() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = IterationService::new(store);
-
-        let snapshot = ArtifactSnapshot {
-            name: "plan".to_string(),
-            content: "# Plan".to_string(),
-        };
-        // Should not error when no iteration exists
-        let result = service.set_artifact_snapshot("nonexistent", "work", snapshot);
         assert!(result.is_ok());
     }
 }

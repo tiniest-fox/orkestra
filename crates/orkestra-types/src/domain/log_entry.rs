@@ -164,6 +164,16 @@ pub enum LogEntry {
     ProcessExit { code: Option<i32> },
     /// Error message.
     Error { message: String },
+    /// Agent produced a named artifact (plan, breakdown, summary, etc.).
+    ///
+    /// Emitted when an agent output is accepted and stored in `workflow_artifacts`.
+    /// The `artifact_id` references the corresponding row for content lookup.
+    ArtifactProduced {
+        /// Artifact slot name (e.g., "plan", "breakdown", "summary").
+        name: String,
+        /// ID of the artifact record in the `workflow_artifacts` table.
+        artifact_id: String,
+    },
 }
 
 /// A log entry with associated database metadata.
@@ -194,6 +204,7 @@ impl LogEntry {
             LogEntry::SubagentToolResult { .. } => "subagent_tool_result",
             LogEntry::ProcessExit { .. } => "process_exit",
             LogEntry::Error { .. } => "error",
+            LogEntry::ArtifactProduced { .. } => "artifact_produced",
         }
     }
 
@@ -234,6 +245,7 @@ impl LogEntry {
                     .trim_end()
                     .to_string(),
             ),
+            LogEntry::ArtifactProduced { name, .. } => Some(format!("produced {name}")),
             _ => None,
         }
     }
@@ -411,5 +423,34 @@ mod tests {
         assert_eq!(entry.type_name(), "tool_use");
         let entry = LogEntry::ProcessExit { code: Some(0) };
         assert_eq!(entry.type_name(), "process_exit");
+        let entry = LogEntry::ArtifactProduced {
+            name: "plan".to_string(),
+            artifact_id: "art-1".to_string(),
+        };
+        assert_eq!(entry.type_name(), "artifact_produced");
+    }
+
+    #[test]
+    fn test_artifact_produced_serialization() {
+        let entry = LogEntry::ArtifactProduced {
+            name: "plan".to_string(),
+            artifact_id: "art-abc123".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"type\":\"artifact_produced\""));
+        assert!(json.contains("\"name\":\"plan\""));
+        assert!(json.contains("\"artifact_id\":\"art-abc123\""));
+
+        let parsed: LogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn test_artifact_produced_push_summary() {
+        let entry = LogEntry::ArtifactProduced {
+            name: "breakdown".to_string(),
+            artifact_id: "art-1".to_string(),
+        };
+        assert_eq!(entry.push_summary(), Some("produced breakdown".to_string()));
     }
 }

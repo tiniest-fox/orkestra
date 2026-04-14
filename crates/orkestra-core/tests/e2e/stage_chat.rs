@@ -1014,13 +1014,11 @@ fn chat_exit_clears_chat_active_on_exit_without_structured_output() {
         .send_chat_message(&task_id, "Hello agent")
         .unwrap();
 
-    // Verify chat_active is true immediately after send
-    let session = ctx
-        .api()
-        .get_stage_session(&task_id, "work")
-        .unwrap()
-        .expect("session should exist");
-    assert!(session.chat_active, "chat_active should be true after send");
+    // `send_chat_message` sets chat_active = true and saves the session, then spawns a
+    // background reader thread. The mock process (cat) exits immediately when stdin
+    // closes, so the background thread may call clear_agent_pid_for_session (which also
+    // clears chat_active) before we can observe the true state. We skip asserting the
+    // transient true state — verifying it eventually becomes false is sufficient.
 
     // The mock process (cat) exits immediately after stdin closes.
     // The background reader thread calls clear_agent_pid_for_session which clears

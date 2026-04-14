@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use orkestra_types::domain::{
     AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionType,
-    StageSession, Task, TaskHeader,
+    StageSession, Task, TaskHeader, WorkflowArtifact,
 };
 use rusqlite::Connection;
 
@@ -315,5 +315,37 @@ impl WorkflowStore for SqliteWorkflowStore {
     ) -> WorkflowResult<Vec<LogEntry>> {
         let conn = self.lock_conn()?;
         interactions::assistant::get_logs::execute(&conn, assistant_session_id)
+    }
+
+    // -- Artifact --
+
+    fn save_artifact(&self, artifact: &WorkflowArtifact) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::save::execute(&conn, artifact)
+    }
+
+    fn get_artifact(&self, id: &str) -> WorkflowResult<Option<WorkflowArtifact>> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::get::execute(&conn, id)
+    }
+
+    fn get_latest_artifact(
+        &self,
+        task_id: &str,
+        stage: &str,
+        name: &str,
+    ) -> WorkflowResult<Option<WorkflowArtifact>> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::get_latest::execute(&conn, task_id, stage, name)
+    }
+
+    fn list_artifacts_for_task(&self, task_id: &str) -> WorkflowResult<Vec<WorkflowArtifact>> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::list_for_task::execute(&conn, task_id)
+    }
+
+    fn delete_artifacts_for_task(&self, task_id: &str) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::artifact::delete_for_task::execute(&conn, task_id)
     }
 }

@@ -1,7 +1,7 @@
 //! Handle approval output: approve stores artifact and advances, reject sends to rejection target.
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{ArtifactSnapshot, Task};
+use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, TaskState};
@@ -17,7 +17,7 @@ pub fn execute(
     content: &str,
     route_to: Option<&str>,
     now: &str,
-) -> WorkflowResult<()> {
+) -> WorkflowResult<Option<String>> {
     // Verify stage has approval capability
     let stage_config = workflow.stage(&task.flow, current_stage).ok_or_else(|| {
         WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
@@ -31,34 +31,19 @@ pub fn execute(
 
     match decision {
         "approve" => {
-            // Store the reviewer's approval content as artifact, then auto-advance
-            // or pause for human review based on auto_mode.
-            let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+            // Delegate to handle_artifact which stores the artifact and auto-advances.
+            super::handle_artifact::execute(
                 workflow,
-                &task.flow,
-                current_stage,
-                "artifact",
-            );
-            task.artifacts
-                .set(Artifact::new(&artifact_name, content, current_stage, now));
-            iteration_service.set_artifact_snapshot(
-                &task.id,
-                current_stage,
-                ArtifactSnapshot {
-                    name: artifact_name,
-                    content: content.to_string(),
-                },
-            )?;
-            stage::auto_advance_or_review::execute(
                 iteration_service,
-                workflow,
                 task,
+                content,
                 current_stage,
                 now,
             )
         }
         "reject" => {
-            // Store rejection content as artifact (same name as approvals, overwrite semantics)
+            // Store rejection content as artifact (same name as approvals, overwrite semantics).
+            // Rejections do NOT persist to workflow_artifacts — they are not accepted outputs.
             let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
                 workflow,
                 &task.flow,
@@ -67,16 +52,6 @@ pub fn execute(
             );
             task.artifacts
                 .set(Artifact::new(&artifact_name, content, current_stage, now));
-
-            // Snapshot rejection content on iteration before any state transition
-            iteration_service.set_artifact_snapshot(
-                &task.id,
-                current_stage,
-                ArtifactSnapshot {
-                    name: artifact_name.clone(),
-                    content: content.to_string(),
-                },
-            )?;
 
             // Resolve rejection target: agent route_to → previous stage in flow
             let target = stage::execute_rejection::resolve_rejection_target(
@@ -111,7 +86,7 @@ pub fn execute(
                 task.state = TaskState::awaiting_rejection_confirmation(current_stage.to_string());
                 task.updated_at = now.to_string();
             }
-            Ok(())
+            Ok(None)
         }
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Invalid approval decision: {decision}"

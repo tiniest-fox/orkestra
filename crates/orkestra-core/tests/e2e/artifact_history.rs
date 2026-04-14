@@ -1,24 +1,14 @@
-//! E2E tests for artifact snapshots on iterations and `iteration_id` tagging on log entries.
+//! E2E tests for artifact history via the `workflow_artifacts` table.
 //!
-//! Covers:
-//! - Artifact snapshots stored on iterations for artifact, subtask, and approval-reject outputs
-//! - Rejection preserving artifact history across iterations
-//! - Chat-mode completion storing a snapshot via the handler path
-//! - Log entries tagged with `iteration_id` for normal agent runs
-//! - Chat-mode log entries having no `iteration_id` (None)
+//! Covers artifact storage, iteration tagging, and `ArtifactProduced` log entries.
+//! These tests verify that the agent dispatch path correctly saves artifact rows
+//! and emits log entries when an agent produces an accepted artifact.
 
-use orkestra_core::{
-    adapters::sqlite::DatabaseConnection,
-    workflow::{
-        config::{GateConfig, StageConfig, WorkflowConfig},
-        domain::{IterationTrigger, LogEntry},
-        execution::SubtaskOutput,
-        ports::WorkflowStore,
-        runtime::TaskState,
-        SqliteWorkflowStore,
-    },
+use orkestra_core::workflow::{
+    config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
+    domain::LogEntry,
+    execution::SubtaskOutput,
 };
-use std::sync::Arc;
 
 use crate::helpers::{workflows, MockAgentOutput, TestEnv};
 
@@ -26,455 +16,428 @@ use crate::helpers::{workflows, MockAgentOutput, TestEnv};
 // Helpers
 // =============================================================================
 
-/// Single-stage workflow with approval, used by most tests here.
-fn approval_workflow() -> WorkflowConfig {
-    WorkflowConfig::new(vec![StageConfig::new("work", "summary")
-        .with_prompt("worker.md")
-        .with_gate(GateConfig::Agentic)])
+/// Single-stage workflow: planning only, no approval gate.
+///
+/// After the agent produces its output, the task immediately transitions to Done.
+/// Simplest setup for verifying artifact storage.
+fn planning_only_workflow() -> WorkflowConfig {
+    WorkflowConfig::new(vec![StageConfig::new("planning", "plan")])
 }
 
-/// Seed a fake `claude_session_id` so `send_chat_message` can resume.
-fn seed_session_id(ctx: &TestEnv, task_id: &str, stage: &str) {
-    ctx.api()
-        .set_session_id(task_id, stage, "test-session-id")
-        .expect("seed claude_session_id");
-}
-
-/// Advance a task to `AwaitingApproval` in the "work" stage.
-fn advance_to_awaiting_approval(ctx: &TestEnv, task_id: &str, content: &str) {
-    ctx.set_output(task_id, MockAgentOutput::artifact("summary", content));
-    ctx.advance(); // spawn agent → completion ready
-    ctx.advance(); // process output → AwaitingApproval
-}
-
-/// Open a second DB connection to access store methods not on `WorkflowApi`.
-fn open_store(ctx: &TestEnv) -> Arc<dyn WorkflowStore> {
-    let db_path = ctx.temp_dir().join(".orkestra/.database/orkestra.db");
-    let conn = DatabaseConnection::open(&db_path).expect("open db");
-    Arc::new(SqliteWorkflowStore::new(conn.shared()))
+/// Two-stage workflow with agentic gate on planning.
+///
+/// After the agent produces output, the task waits at `AwaitingApproval`
+/// so tests can reject and trigger a retry iteration.
+fn planning_with_gate() -> WorkflowConfig {
+    WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan").with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary"),
+    ])
+    .with_integration(IntegrationConfig::new("work"))
 }
 
 // =============================================================================
-// Test 1: artifact snapshot stored on normal iteration
+// Test 1: Artifact row created on agent output
 // =============================================================================
 
+/// Artifact output from an agent creates a row in `workflow_artifacts`.
 #[test]
-fn test_artifact_snapshot_stored_on_iteration() {
-    let workflow = approval_workflow();
-    let ctx = TestEnv::with_git(&workflow, &["worker"]);
-
-    let task = ctx.create_task("Snapshot test", "Test artifact snapshot", None);
+fn test_artifact_row_created_on_agent_output() {
+    let ctx = TestEnv::with_workflow(planning_only_workflow());
+    let task = ctx.create_task("Implement login", "Add login page", None);
     let task_id = task.id.clone();
 
-    advance_to_awaiting_approval(&ctx, &task_id, "The plan content");
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::artifact("plan", "# Plan\n\nDo the thing."),
+    );
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → persist artifact
 
-    // Verify task is in AwaitingApproval
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(
-        task.is_awaiting_review(),
-        "Task should be awaiting review, got: {:?}",
-        task.state
+    let artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(artifacts.len(), 1, "Should have exactly one artifact row");
+
+    let artifact = &artifacts[0];
+    assert_eq!(artifact.task_id, task_id);
+    assert_eq!(artifact.stage, "planning");
+    assert_eq!(artifact.name, "plan");
+    assert_eq!(artifact.content, "# Plan\n\nDo the thing.");
+}
+
+// =============================================================================
+// Test 2: Artifact row is tagged with iteration ID
+// =============================================================================
+
+/// The `iteration_id` on the artifact row matches the active iteration when the
+/// artifact was produced.
+#[test]
+fn test_artifact_tagged_with_iteration_id() {
+    let ctx = TestEnv::with_workflow(planning_only_workflow());
+    let task = ctx.create_task("Build feature", "Build it", None);
+    let task_id = task.id.clone();
+
+    // Capture the iteration that will be active during planning.
+    let iterations_before = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(iterations_before.len(), 1);
+    let planning_iteration_id = iterations_before[0].id.clone();
+
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "Plan content"));
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → persist artifact
+
+    let artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(artifacts.len(), 1);
+
+    assert_eq!(
+        artifacts[0].iteration_id,
+        Some(planning_iteration_id),
+        "Artifact should be tagged with the active iteration ID"
+    );
+}
+
+// =============================================================================
+// Test 3: ArtifactProduced log entry emitted
+// =============================================================================
+
+/// Accepting an artifact emits an `ArtifactProduced` log entry in the stage session.
+#[test]
+fn test_artifact_produced_log_entry_emitted() {
+    let ctx = TestEnv::with_workflow(planning_only_workflow());
+    let task = ctx.create_task("Design system", "Design it", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "Design plan"));
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → persist artifact, emit log entry
+
+    let (entries, _cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, None)
+        .unwrap();
+
+    let produced_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| matches!(e, LogEntry::ArtifactProduced { .. }))
+        .collect();
+
+    assert_eq!(
+        produced_entries.len(),
+        1,
+        "Should have exactly one ArtifactProduced log entry"
     );
 
-    // Task-level artifact has the content
-    assert_eq!(task.artifact("summary"), Some("The plan content"));
+    let LogEntry::ArtifactProduced { name, artifact_id } = &produced_entries[0] else {
+        panic!("Expected ArtifactProduced variant")
+    };
+    assert_eq!(name, "plan");
+    assert!(!artifact_id.is_empty(), "artifact_id should be non-empty");
 
-    // Iteration has artifact_snapshot
-    let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let work_iter = iterations.iter().find(|i| i.stage == "work").unwrap();
-    let snapshot = work_iter
-        .artifact_snapshot
-        .as_ref()
-        .expect("Iteration should have artifact_snapshot");
-    assert_eq!(snapshot.name, "summary");
-    assert_eq!(snapshot.content, "The plan content");
+    // The artifact_id should correspond to the stored artifact row.
+    let artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts[0].id, *artifact_id,
+        "Log artifact_id should match stored row ID"
+    );
 }
 
 // =============================================================================
-// Test 2: rejected iteration preserves artifact snapshot
+// Test 4: Rejection creates a new artifact row per iteration
 // =============================================================================
 
+/// Each accepted artifact output creates a new `workflow_artifacts` row, so the
+/// history across rejection cycles is preserved.
 #[test]
-fn test_rejected_iteration_preserves_artifact_snapshot() {
-    let workflow = approval_workflow();
-    let ctx = TestEnv::with_git(&workflow, &["worker"]);
-
-    let task = ctx.create_task("Rejection test", "Test snapshot across rejections", None);
+fn test_rejection_creates_new_artifact_row() {
+    let ctx = TestEnv::with_workflow(planning_with_gate());
+    let task = ctx.create_task("Write docs", "Write documentation", None);
     let task_id = task.id.clone();
 
-    // First attempt
-    advance_to_awaiting_approval(&ctx, &task_id, "First attempt");
+    // First iteration: agent produces plan v1 → task awaits approval.
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "Plan v1"));
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → AwaitingApproval, persist artifact row 1
 
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_awaiting_review(), "Should be awaiting review");
+    let artifacts_after_first = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts_after_first.len(),
+        1,
+        "One artifact row after first iteration"
+    );
+    assert_eq!(artifacts_after_first[0].content, "Plan v1");
 
-    // Human rejects
-    ctx.api()
-        .reject(&task_id, "Try again")
-        .expect("Should reject");
+    // Human rejects — starts a new iteration.
+    ctx.api().reject(&task_id, "Needs more detail").unwrap();
 
-    // Second attempt
-    advance_to_awaiting_approval(&ctx, &task_id, "Second attempt");
+    // Second iteration: agent produces plan v2 → another artifact row.
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::artifact("plan", "Plan v2 — detailed"),
+    );
+    ctx.advance(); // spawn agent (retry)
+    ctx.advance(); // process output → AwaitingApproval, persist artifact row 2
 
-    // Both iterations should have their respective snapshots
-    let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let work_iters: Vec<_> = iterations.iter().filter(|i| i.stage == "work").collect();
-    assert_eq!(work_iters.len(), 2, "Should have 2 work iterations");
+    let artifacts_after_second = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts_after_second.len(),
+        2,
+        "Two artifact rows after rejection and retry"
+    );
 
-    // Sort by iteration_number to ensure order
-    let mut work_iters = work_iters;
-    work_iters.sort_by_key(|i| i.iteration_number);
+    // Both rows belong to the same task and stage.
+    assert!(artifacts_after_second.iter().all(|a| a.task_id == task_id));
+    assert!(artifacts_after_second.iter().all(|a| a.stage == "planning"));
 
-    let snap1 = work_iters[0]
-        .artifact_snapshot
-        .as_ref()
-        .expect("Iteration 1 should have snapshot");
-    assert_eq!(snap1.content, "First attempt");
+    // The two rows have different iteration IDs.
+    let iter_id_1 = artifacts_after_second[0].iteration_id.as_deref();
+    let iter_id_2 = artifacts_after_second[1].iteration_id.as_deref();
+    assert_ne!(
+        iter_id_1, iter_id_2,
+        "Each artifact row should be tagged with its own iteration ID"
+    );
 
-    let snap2 = work_iters[1]
-        .artifact_snapshot
-        .as_ref()
-        .expect("Iteration 2 should have snapshot");
-    assert_eq!(snap2.content, "Second attempt");
-
-    // Task-level artifact has latest content
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.artifact("summary"), Some("Second attempt"));
+    // The newest row has the updated content.
+    assert_eq!(artifacts_after_second[1].content, "Plan v2 — detailed");
 }
 
 // =============================================================================
-// Test 3: subtask artifact snapshot contains human-readable markdown
+// Test 5: Failed output produces no artifact rows
 // =============================================================================
 
+/// When an agent reports failure, no artifact row is written to `workflow_artifacts`.
 #[test]
-fn test_subtask_artifact_snapshot() {
-    let workflow = workflows::with_subtasks();
-    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-
-    let task = ctx.create_task("Subtask snapshot test", "Test subtask snapshot", None);
+fn test_failed_output_produces_no_artifact_row() {
+    let ctx = TestEnv::with_workflow(planning_only_workflow());
+    let task = ctx.create_task("Failing task", "Task that fails", None);
     let task_id = task.id.clone();
 
-    // Advance through planning stage
-    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan"));
-    ctx.advance(); // spawn planner
-    ctx.advance(); // process plan output → AwaitingApproval
-    ctx.api().approve(&task_id).expect("approve plan");
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Agent crashed unexpectedly.".to_string(),
+        },
+    );
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → Failed state, no artifact row
+
+    let artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert!(
+        artifacts.is_empty(),
+        "Failed output should produce no artifact rows, got: {artifacts:?}"
+    );
+}
+
+// =============================================================================
+// Test 6: Subtask artifact is stored with the subtask's task_id
+// =============================================================================
+
+/// When a subtask agent produces an artifact, the `workflow_artifacts` row uses
+/// the subtask's own `task_id` — not the parent's.
+#[test]
+fn test_subtask_artifact_stored_with_subtask_task_id() {
+    let ctx = TestEnv::with_workflow(planning_only_workflow());
+
+    // Create and complete the parent task first.
+    let parent = ctx.create_task("Parent task", "Parent description", None);
+    let parent_id = parent.id.clone();
+
+    ctx.set_output(
+        &parent_id,
+        MockAgentOutput::artifact("plan", "Parent plan."),
+    );
+    ctx.advance(); // spawn parent agent
+    ctx.advance(); // process output → Done
+
+    // Create the subtask (parent is now Done — valid state for subtask creation).
+    let subtask = ctx
+        .api()
+        .create_subtask(&parent_id, "Subtask", "Subtask description")
+        .expect("Should create subtask");
+    let subtask_id = subtask.id.clone();
+
+    ctx.advance(); // set up subtask (AwaitingSetup → Idle)
+
+    // Drive subtask agent to produce an artifact.
+    ctx.set_output(
+        &subtask_id,
+        MockAgentOutput::artifact("plan", "Subtask plan."),
+    );
+    ctx.advance(); // spawn subtask agent
+    ctx.advance(); // process output → Done, persist artifact
+
+    // Subtask artifact must reference the subtask, not the parent.
+    let subtask_artifacts = ctx.api().list_workflow_artifacts(&subtask_id).unwrap();
+    assert_eq!(
+        subtask_artifacts.len(),
+        1,
+        "Subtask should have exactly one artifact row"
+    );
+    assert_eq!(
+        subtask_artifacts[0].task_id, subtask_id,
+        "Artifact task_id should match the subtask's ID, not the parent's"
+    );
+
+    // Parent's artifact list must not contain the subtask's artifact.
+    let parent_artifacts = ctx.api().list_workflow_artifacts(&parent_id).unwrap();
+    assert_eq!(
+        parent_artifacts.len(),
+        1,
+        "Parent should have exactly one artifact row (its own)"
+    );
+    assert_eq!(parent_artifacts[0].task_id, parent_id);
+}
+
+// =============================================================================
+// Test 7: Chat-mode completion produces an artifact row
+// =============================================================================
+
+/// When structured output is detected in accumulated chat text, the artifact is
+/// saved to `workflow_artifacts` via the same `dispatch_output` path as normal
+/// agent completion.
+#[test]
+fn test_chat_mode_completion_produces_artifact_row() {
+    let ctx = TestEnv::with_git(&planning_with_gate(), &["planning", "work"]);
+    let task = ctx.create_task("Chat artifact test", "Test chat completion artifact", None);
+    let task_id = task.id.clone();
+
+    // Drive planning agent to produce output → AwaitingApproval (agentic gate pauses here).
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "Initial plan."));
+    ctx.advance(); // spawn planning agent
+    ctx.advance(); // process output → AwaitingApproval, artifact row 1 stored
+
+    let artifacts_before_chat = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts_before_chat.len(),
+        1,
+        "One artifact row from the initial agent output"
+    );
+
+    // For a stage with an agentic gate, the schema excludes the artifact type name from the
+    // type enum — "approval" replaces it. Use approval JSON with decision="approve"; the
+    // content becomes the artifact body (handle_approval delegates "approve" to handle_artifact).
+    let chat_approval_json =
+        r#"{"type":"approval","decision":"approve","content":"Plan approved via chat."}"#;
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "planning", "default", chat_approval_json)
+        .expect("detect_chat_completion should not error");
+    assert!(
+        detected,
+        "Valid approval JSON should be detected as structured output"
+    );
+
+    // A second artifact row should have been stored for the chat completion iteration.
+    // handle_approval("approve") delegates to handle_artifact, which calls persist_and_emit_artifact.
+    let artifacts_after_chat = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts_after_chat.len(),
+        2,
+        "Two artifact rows: one from the initial agent, one from the chat approval"
+    );
+    assert!(
+        artifacts_after_chat.iter().all(|a| a.task_id == task_id),
+        "All artifact rows should belong to the same task"
+    );
+    assert!(
+        artifacts_after_chat.iter().all(|a| a.name == "plan"),
+        "All artifact rows should have name 'plan'"
+    );
+
+    // The chat completion artifact should contain the approval content.
+    let chat_artifact = artifacts_after_chat
+        .iter()
+        .find(|a| a.content == "Plan approved via chat.")
+        .expect("Should find the chat completion artifact by content");
+    assert_eq!(chat_artifact.stage, "planning");
+}
+
+// =============================================================================
+// Test 8: Breakdown stage artifact is stored in workflow_artifacts
+// =============================================================================
+
+/// Subtask breakdown output from an agent creates a row in `workflow_artifacts`.
+/// The `_structured` companion artifact is intentionally NOT stored in the table —
+/// only the human-readable breakdown artifact is persisted.
+#[test]
+fn test_breakdown_artifact_stored_in_workflow_artifacts() {
+    let ctx = TestEnv::with_workflow(workflows::with_subtasks());
+    let task = ctx.create_task("Build feature", "Feature description", None);
+    let task_id = task.id.clone();
+
+    // Drive through planning stage.
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan."));
+    ctx.advance(); // spawn planning agent
+    ctx.advance(); // process output → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit pipeline → advance to breakdown
 
-    // Breakdown stage: produce 2 subtasks
-    let subtask_outputs = vec![
-        SubtaskOutput {
-            title: "First subtask".to_string(),
-            description: "Do the first thing".to_string(),
-            detailed_instructions: "Details for first".to_string(),
-            depends_on: vec![],
-        },
-        SubtaskOutput {
-            title: "Second subtask".to_string(),
-            description: "Do the second thing".to_string(),
-            detailed_instructions: "Details for second".to_string(),
-            depends_on: vec![0],
-        },
-    ];
+    // Drive breakdown stage: produce multiple subtasks.
     ctx.set_output(
         &task_id,
         MockAgentOutput::Subtasks {
-            content: "Technical design overview".to_string(),
-            subtasks: subtask_outputs,
+            content: "Technical design".into(),
+            subtasks: vec![
+                SubtaskOutput {
+                    title: "Subtask A".into(),
+                    description: "Do A".into(),
+                    detailed_instructions: "Instructions A".into(),
+                    depends_on: vec![],
+                },
+                SubtaskOutput {
+                    title: "Subtask B".into(),
+                    description: "Do B".into(),
+                    detailed_instructions: "Instructions B".into(),
+                    depends_on: vec![0],
+                },
+            ],
             activity_log: None,
             resources: vec![],
         },
     );
     ctx.advance(); // spawn breakdown agent
-    ctx.advance(); // process subtask output → AwaitingApproval
+    ctx.advance(); // process output → AwaitingApproval, persist breakdown artifact
 
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(
-        task.is_awaiting_review(),
-        "Should be awaiting review after breakdown, got: {:?}",
-        task.state
-    );
+    let all_artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
 
-    // Get breakdown iteration
-    let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let breakdown_iter = iterations
+    // The breakdown artifact row should exist.
+    let breakdown_artifacts: Vec<_> = all_artifacts
         .iter()
-        .find(|i| i.stage == "breakdown")
-        .expect("Should have breakdown iteration");
-
-    let snapshot = breakdown_iter
-        .artifact_snapshot
-        .as_ref()
-        .expect("Breakdown iteration should have artifact_snapshot");
-
-    // Snapshot should contain human-readable markdown
-    assert!(
-        snapshot.content.contains("Technical design overview"),
-        "Snapshot should contain the design overview"
+        .filter(|a| a.stage == "breakdown")
+        .collect();
+    assert_eq!(
+        breakdown_artifacts.len(),
+        1,
+        "Should have exactly one breakdown artifact row"
     );
-    assert!(
-        snapshot.content.contains("## Proposed Subtasks"),
-        "Snapshot should contain subtask markdown heading"
-    );
-    assert!(
-        snapshot.content.contains("First subtask"),
-        "Snapshot should contain subtask titles"
-    );
+    assert_eq!(breakdown_artifacts[0].name, "breakdown");
+    assert_eq!(breakdown_artifacts[0].task_id, task_id);
 
-    // Snapshot should NOT contain the raw JSON (that's the _structured artifact)
-    assert!(
-        !snapshot.content.starts_with('['),
-        "Snapshot should not be JSON array"
-    );
-    assert!(
-        !snapshot.content.contains("\"detailed_instructions\""),
-        "Snapshot should not contain JSON field names"
-    );
-}
-
-// =============================================================================
-// Test 4: approval rejection artifact snapshot
-// =============================================================================
-
-#[test]
-fn test_approval_rejection_artifact_snapshot() {
-    // Two-stage workflow: planning → work.
-    // The work agent can reject back to planning (previous stage).
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("planning", "plan")
-            .with_prompt("planner.md")
-            .with_gate(GateConfig::Agentic),
-        StageConfig::new("work", "summary")
-            .with_prompt("worker.md")
-            .with_gate(GateConfig::Agentic),
-    ]);
-    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
-
-    let task = ctx.create_task(
-        "Rejection snapshot",
-        "Test approval rejection snapshot",
-        None,
-    );
-    let task_id = task.id.clone();
-
-    // Advance through planning stage
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "plan".to_string(),
-            content: "Plan for implementation".to_string(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawn planner
-    ctx.advance(); // process plan → AwaitingApproval
-    ctx.api().approve(&task_id).expect("approve planning");
-    ctx.advance(); // commit pipeline → advance to work
-
-    // Work agent produces a reject decision
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Approval {
-            decision: "reject".to_string(),
-            content: "Needs more work on edge cases".to_string(),
-            route_to: None,
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawn work agent
-    ctx.advance(); // process rejection output
-
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(
-        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
-        "Task should be awaiting rejection confirmation, got: {:?}",
-        task.state
-    );
-
-    // The work iteration should have a snapshot with the rejection content
-    let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let work_iter = iterations
+    // The `_structured` companion artifact must NOT appear in workflow_artifacts —
+    // it holds raw JSON for internal use and is excluded intentionally.
+    let structured_artifacts: Vec<_> = all_artifacts
         .iter()
-        .find(|i| i.stage == "work")
-        .expect("Should have work iteration");
-
-    let snapshot = work_iter
-        .artifact_snapshot
-        .as_ref()
-        .expect("Work iteration should have artifact_snapshot");
-    assert_eq!(snapshot.content, "Needs more work on edge cases");
-}
-
-// =============================================================================
-// Test 5: chat-mode completion stores artifact snapshot
-// =============================================================================
-
-#[test]
-fn test_chat_completion_artifact_snapshot() {
-    let workflow = approval_workflow();
-    let ctx = TestEnv::with_git(&workflow, &["worker"]);
-
-    let task = ctx.create_task("Chat completion snapshot", "Test chat snapshot", None);
-    let task_id = task.id.clone();
-
-    // Advance to AwaitingApproval via normal path
-    advance_to_awaiting_approval(&ctx, &task_id, "Work is done.");
-
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_awaiting_review(), "Should be awaiting review");
-
-    // Seed session ID for chat
-    seed_session_id(&ctx, &task_id, "work");
-
-    // Detect chat completion with a valid approval JSON
-    let approval_json =
-        r#"{"type":"approval","decision":"approve","content":"Chat completion content."}"#;
-    let detected = ctx
-        .api()
-        .detect_chat_completion(&task_id, "work", "default", approval_json)
-        .expect("detect_chat_completion should not error");
-
-    assert!(detected, "Valid approval JSON should be detected");
-
-    // A ChatCompletion iteration should exist and have a snapshot
-    let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let chat_iter = iterations.iter().find(|i| {
-        i.stage == "work" && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))
-    });
+        .filter(|a| a.name.ends_with("_structured"))
+        .collect();
     assert!(
-        chat_iter.is_some(),
-        "Should have a ChatCompletion iteration. Iterations: {iterations:?}"
+        structured_artifacts.is_empty(),
+        "Structured companion artifacts should not be stored in workflow_artifacts, got: {structured_artifacts:?}"
     );
 
-    let chat_iter = chat_iter.unwrap();
-    let snapshot = chat_iter
-        .artifact_snapshot
-        .as_ref()
-        .expect("ChatCompletion iteration should have artifact_snapshot");
-    assert_eq!(snapshot.content, "Chat completion content.");
-}
-
-// =============================================================================
-// Test 6: log entries tagged with iteration_id
-// =============================================================================
-
-#[test]
-fn test_log_entries_tagged_with_iteration_id() {
-    let workflow = approval_workflow();
-    let ctx = TestEnv::with_git(&workflow, &["worker"]);
-
-    let task = ctx.create_task("Log iteration tag test", "Test log iteration_id", None);
-    let task_id = task.id.clone();
-
-    advance_to_awaiting_approval(&ctx, &task_id, "Done.");
-
-    // Get the stage session for the work stage
-    let session = ctx
+    // An ArtifactProduced log entry should have been emitted for the breakdown stage.
+    let (entries, _cursor) = ctx
         .api()
-        .get_stage_session(&task_id, "work")
-        .unwrap()
-        .expect("Stage session should exist");
-    let session_id = session.id.clone();
-
-    // Get the iteration for the work stage
-    let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let work_iter = iterations
+        .get_task_logs(&task_id, Some("breakdown"), None, None)
+        .unwrap();
+    let produced_entries: Vec<_> = entries
         .iter()
-        .find(|i| i.stage == "work")
-        .expect("Should have work iteration");
-    let iteration_id = work_iter.id.clone();
-
-    // Open DB directly to access get_annotated_log_entries
-    let store = open_store(&ctx);
-    let annotated = store
-        .get_annotated_log_entries(&session_id)
-        .expect("get_annotated_log_entries should succeed");
-
-    assert!(
-        !annotated.is_empty(),
-        "Should have log entries for the session"
+        .filter(|e| matches!(e, LogEntry::ArtifactProduced { .. }))
+        .collect();
+    assert_eq!(
+        produced_entries.len(),
+        1,
+        "Should have exactly one ArtifactProduced log entry for breakdown"
     );
-
-    // All entries should have the iteration_id set
-    for entry in &annotated {
-        assert_eq!(
-            entry.iteration_id.as_deref(),
-            Some(iteration_id.as_str()),
-            "Log entry should be tagged with iteration_id {iteration_id}. Entry: {:?}",
-            entry.entry
-        );
-    }
-}
-
-// =============================================================================
-// Test 7: chat log entries have no iteration_id
-// =============================================================================
-
-#[test]
-fn test_chat_log_entries_have_no_iteration_id() {
-    let workflow = approval_workflow();
-    let ctx = TestEnv::with_git(&workflow, &["worker"]);
-
-    let task = ctx.create_task(
-        "Chat log no iteration",
-        "Test chat log no iteration_id",
-        None,
-    );
-    let task_id = task.id.clone();
-
-    advance_to_awaiting_approval(&ctx, &task_id, "Work is done.");
-
-    // Seed session ID before chatting
-    seed_session_id(&ctx, &task_id, "work");
-
-    // Get the session before sending a chat message
-    let session = ctx
-        .api()
-        .get_stage_session(&task_id, "work")
-        .unwrap()
-        .expect("Stage session should exist");
-    let session_id = session.id.clone();
-
-    // Get annotated log entries written during the agent spawn (should have iteration_id)
-    let store = open_store(&ctx);
-    let entries_before_chat = store
-        .get_annotated_log_entries(&session_id)
-        .expect("get_annotated_log_entries should succeed");
-
-    // Send a chat message — writes log entry with iteration_id=None
-    ctx.api()
-        .send_chat_message(&task_id, "How is the work going?")
-        .expect("send_chat_message should succeed");
-
-    // Get annotated log entries again
-    let entries_after_chat = store
-        .get_annotated_log_entries(&session_id)
-        .expect("get_annotated_log_entries should succeed");
-
-    // There should be more entries now (the chat message was logged)
-    assert!(
-        entries_after_chat.len() > entries_before_chat.len(),
-        "Should have more entries after chat message"
-    );
-
-    // Find the UserMessage entry (chat message)
-    let chat_entry = entries_after_chat.iter().find(|e| {
-        matches!(
-            &e.entry,
-            LogEntry::UserMessage { resume_type, .. } if resume_type == "chat"
-        )
-    });
-    assert!(
-        chat_entry.is_some(),
-        "Should have a UserMessage entry for the chat. Entries: {entries_after_chat:?}"
-    );
-
-    let chat_entry = chat_entry.unwrap();
-    assert!(
-        chat_entry.iteration_id.is_none(),
-        "Chat UserMessage log entry should have no iteration_id, got: {:?}",
-        chat_entry.iteration_id
-    );
+    let LogEntry::ArtifactProduced { name, .. } = &produced_entries[0] else {
+        panic!("Expected ArtifactProduced variant");
+    };
+    assert_eq!(name, "breakdown");
 }

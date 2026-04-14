@@ -236,6 +236,21 @@ The crate has extensive e2e tests in `tests/e2e/`:
 
 For unit tests, use `InMemoryWorkflowStore` and mock generators.
 
+### Manual State Advancement Requires a Matching Iteration
+
+Unit tests that directly set `task.state = TaskState::agent_working("stage_name")` must also call `create_iteration` for that stage. `process_agent_output` (and `dispatch_output`) require an active iteration row to exist — they fail fast with `InvalidState` when none is found. The pattern used by tests throughout `workflow/agent/service.rs`:
+
+```rust
+// Advance state manually
+task.state = TaskState::agent_working("review");
+api.task_service.save_task(&task).unwrap();
+
+// REQUIRED: create the matching iteration
+api.iteration_service.create_iteration(&task.id, "review", None).unwrap();
+```
+
+Forgetting this used to produce a silent fallback artifact ID. Now it surfaces as an error, exposing the gap.
+
 ### Known Test Gaps in `init.rs`
 
 Two gaps exist in `test_checks_script_is_executable` (the `ensure_orkestra_project` test):

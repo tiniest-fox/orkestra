@@ -68,12 +68,11 @@ describe("SecretsDrawer", () => {
     await waitFor(() => expect(screen.getByText("API_KEY")).toBeInTheDocument());
   });
 
-  it("shows Add Secret button in list view", async () => {
+  it("shows Add Secret button in list view", () => {
     mockListSecrets.mockResolvedValue([]);
     renderDrawer();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Add Secret" })).toBeInTheDocument(),
-    );
+    // Button is in the footer and renders immediately — not gated on load state.
+    expect(screen.getByRole("button", { name: "Add Secret" })).toBeInTheDocument();
   });
 
   it("shows error banner when fetch fails", async () => {

@@ -63,6 +63,16 @@ pub fn execute(
     let iteration_service = IterationService::new(Arc::clone(store));
     iteration_service.create_iteration(task_id, stage, Some(IterationTrigger::ChatCompletion))?;
 
+    // Capture the active iteration ID for artifact tagging and log entry association.
+    let iteration_id = store
+        .get_active_iteration(task_id, stage)?
+        .ok_or_else(|| {
+            crate::workflow::ports::WorkflowError::InvalidState(format!(
+                "no active iteration for task {task_id} in stage {stage}"
+            ))
+        })?
+        .id;
+
     // Persist activity log if present (now writes to the ChatCompletion iteration)
     if let Some(log) = output.activity_log() {
         iteration_service.set_activity_log(task_id, stage, log)?;
@@ -71,7 +81,16 @@ pub fn execute(
     let now = chrono::Utc::now().to_rfc3339();
 
     // Dispatch the output through the shared handler (same as normal agent completion)
-    dispatch_output(workflow, &iteration_service, &mut task, output, stage, &now)?;
+    dispatch_output(
+        store.as_ref(),
+        workflow,
+        &iteration_service,
+        &mut task,
+        output,
+        stage,
+        &now,
+        &iteration_id,
+    )?;
 
     // Save updated task
     store.save_task(&task)?;

@@ -17,7 +17,7 @@ pub fn execute(
     content: &str,
     route_to: Option<&str>,
     now: &str,
-) -> WorkflowResult<()> {
+) -> WorkflowResult<Option<String>> {
     // Verify stage has approval capability
     let stage_config = workflow.stage(&task.flow, current_stage).ok_or_else(|| {
         WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
@@ -31,26 +31,19 @@ pub fn execute(
 
     match decision {
         "approve" => {
-            // Store the reviewer's approval content as artifact, then auto-advance
-            // or pause for human review based on auto_mode.
-            let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
+            // Delegate to handle_artifact which stores the artifact and auto-advances.
+            super::handle_artifact::execute(
                 workflow,
-                &task.flow,
-                current_stage,
-                "artifact",
-            );
-            task.artifacts
-                .set(Artifact::new(&artifact_name, content, current_stage, now));
-            stage::auto_advance_or_review::execute(
                 iteration_service,
-                workflow,
                 task,
+                content,
                 current_stage,
                 now,
             )
         }
         "reject" => {
-            // Store rejection content as artifact (same name as approvals, overwrite semantics)
+            // Store rejection content as artifact (same name as approvals, overwrite semantics).
+            // Rejections do NOT persist to workflow_artifacts — they are not accepted outputs.
             let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
                 workflow,
                 &task.flow,
@@ -93,7 +86,7 @@ pub fn execute(
                 task.state = TaskState::awaiting_rejection_confirmation(current_stage.to_string());
                 task.updated_at = now.to_string();
             }
-            Ok(())
+            Ok(None)
         }
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Invalid approval decision: {decision}"

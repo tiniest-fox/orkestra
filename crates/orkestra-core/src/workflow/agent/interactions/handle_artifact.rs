@@ -14,7 +14,7 @@ pub fn execute(
     content: &str,
     stage_name: &str,
     now: &str,
-) -> WorkflowResult<()> {
+) -> WorkflowResult<Option<String>> {
     let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
         workflow, &task.flow, stage_name, "artifact",
     );
@@ -31,8 +31,9 @@ pub fn execute(
     {
         task.state = TaskState::awaiting_gate(stage_name);
         task.updated_at = now.to_string();
-        return Ok(());
+        return Ok(Some(artifact_name));
     }
 
-    stage::auto_advance_or_review::execute(iteration_service, workflow, task, stage_name, now)
+    stage::auto_advance_or_review::execute(iteration_service, workflow, task, stage_name, now)?;
+    Ok(Some(artifact_name))
 }

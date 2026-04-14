@@ -314,6 +314,14 @@ impl GitService for MockGitService {
         Ok(vec![])
     }
 
+    fn read_file_at_head(
+        &self,
+        _worktree_path: &Path,
+        _file_path: &str,
+    ) -> Result<Option<String>, GitError> {
+        Ok(None)
+    }
+
     // -- Branch --
 
     fn list_branches(&self) -> Result<Vec<String>, GitError> {
@@ -379,14 +387,6 @@ impl GitService for MockGitService {
 
     fn batch_file_counts(&self, _hashes: &[String]) -> Result<HashMap<String, usize>, GitError> {
         Ok(HashMap::new())
-    }
-
-    fn read_file_at_head(
-        &self,
-        _worktree_path: &Path,
-        _file_path: &str,
-    ) -> Result<Option<String>, GitError> {
-        Ok(None)
     }
 
     // -- Diff --

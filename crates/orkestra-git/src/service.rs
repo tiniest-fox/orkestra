@@ -112,6 +112,14 @@ impl GitService for Git2GitService {
         interactions::file::list::execute(&self.repo_path)
     }
 
+    fn read_file_at_head(
+        &self,
+        worktree_path: &Path,
+        file_path: &str,
+    ) -> Result<Option<String>, GitError> {
+        interactions::commit::read_file_at_head::execute(worktree_path, file_path)
+    }
+
     // -- Branch --
 
     fn list_branches(&self) -> Result<Vec<String>, GitError> {
@@ -159,14 +167,6 @@ impl GitService for Git2GitService {
 
     fn batch_file_counts(&self, hashes: &[String]) -> Result<HashMap<String, usize>, GitError> {
         interactions::commit::batch_file_counts::execute(&self.repo_path, hashes)
-    }
-
-    fn read_file_at_head(
-        &self,
-        worktree_path: &Path,
-        file_path: &str,
-    ) -> Result<Option<String>, GitError> {
-        interactions::commit::read_file_at_head::execute(worktree_path, file_path)
     }
 
     // -- Diff --

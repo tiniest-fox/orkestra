@@ -1,7 +1,7 @@
 // File viewer drawer with syntax-highlighted content and auto-refresh polling.
 
 import { X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { HighlightedLine } from "../../hooks/useDiff";
 import { usePolling } from "../../hooks/usePolling";
 import { useConnectionState, useTransport } from "../../transport";
@@ -19,6 +19,12 @@ export function FileViewerDrawer({ filePath, onClose }: FileViewerDrawerProps) {
   const connectionState = useConnectionState();
   const [lines, setLines] = useState<HighlightedLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filePath is the trigger, not read inside the effect body
+  useEffect(() => {
+    setLines(null);
+    setError(null);
+  }, [filePath]);
 
   const fetchContent = useCallback(async () => {
     try {

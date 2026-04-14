@@ -81,6 +81,15 @@ pub trait GitService: Send + Sync {
     /// List all git-tracked files in the repository.
     fn list_files(&self) -> Result<Vec<String>, GitError>;
 
+    /// Read the content of a file at HEAD in a worktree.
+    ///
+    /// Returns the file content as a string, or None if the file doesn't exist.
+    fn read_file_at_head(
+        &self,
+        worktree_path: &Path,
+        file_path: &str,
+    ) -> Result<Option<String>, GitError>;
+
     // -- Branch --
 
     /// List local branches, excluding task/* worktree branches.
@@ -142,15 +151,6 @@ pub trait GitService: Send + Sync {
     /// Returns a map from commit hash to the number of files changed.
     /// Hashes that can't be resolved are silently omitted.
     fn batch_file_counts(&self, hashes: &[String]) -> Result<HashMap<String, usize>, GitError>;
-
-    /// Read the content of a file at HEAD in a worktree.
-    ///
-    /// Returns the file content as a string, or None if the file doesn't exist.
-    fn read_file_at_head(
-        &self,
-        worktree_path: &Path,
-        file_path: &str,
-    ) -> Result<Option<String>, GitError>;
 
     // -- Diff --
 

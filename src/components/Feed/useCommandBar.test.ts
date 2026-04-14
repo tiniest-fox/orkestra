@@ -1,4 +1,4 @@
-//! Unit tests for useCommandBar hook and taskMatchesFilter utility.
+// Unit tests for useCommandBar hook and taskMatchesFilter utility.
 
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";

@@ -1,4 +1,4 @@
-//! Hook managing autocomplete state, command definitions, and keyboard navigation for CommandBar.
+// Hook managing autocomplete state, command definitions, and keyboard navigation for CommandBar.
 
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useState } from "react";

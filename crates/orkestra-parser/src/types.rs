@@ -3,6 +3,20 @@
 use orkestra_types::domain::Question;
 use serde::{Deserialize, Serialize};
 
+/// Deserialize an optional string, normalizing empty strings to `None`.
+///
+/// Ensures `ResourceOutput.url` has the same invariant as `Resource.url`:
+/// `url` is either `Some(non_empty_string)` or `None`, never `Some("")`.
+fn deserialize_optional_non_empty_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.is_empty()))
+}
+
 use orkestra_types::domain::LogEntry;
 
 // ============================================================================
@@ -39,7 +53,11 @@ pub struct ResourceOutput {
     /// Unique name for this resource (used as key).
     pub name: String,
     /// URL or file path. Optional for description-only resources.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_empty_string"
+    )]
     pub url: Option<String>,
     /// What this resource is and why it matters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -394,5 +412,40 @@ impl From<QuestionJson> for Question {
             question = question.with_option(&opt.label, opt.description.as_deref());
         }
         question
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resource_output_deserialize_empty_url_normalized_to_none() {
+        // Ensures ResourceOutput.url has the same invariant as Resource.url:
+        // an agent emitting {"url": ""} must not produce Some("").
+        let json = r#"{"name":"x","url":""}"#;
+        let r: ResourceOutput = serde_json::from_str(json).unwrap();
+        assert!(
+            r.url.is_none(),
+            "deserializing url='' should produce None, not Some(\"\")"
+        );
+    }
+
+    #[test]
+    fn test_resource_output_deserialize_non_empty_url_preserved() {
+        let json = r#"{"name":"x","url":"https://example.com"}"#;
+        let r: ResourceOutput = serde_json::from_str(json).unwrap();
+        assert_eq!(r.url.as_deref(), Some("https://example.com"));
+    }
+
+    #[test]
+    fn test_resource_output_deserialize_absent_url_is_none() {
+        let json = r#"{"name":"x"}"#;
+        let r: ResourceOutput = serde_json::from_str(json).unwrap();
+        assert!(r.url.is_none());
     }
 }

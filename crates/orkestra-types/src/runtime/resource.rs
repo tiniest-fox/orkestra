@@ -7,6 +7,20 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Deserialize an optional string, normalizing empty strings to `None`.
+///
+/// Covers the deserialization path that `Resource::new()` cannot: JSON like
+/// `{"url": ""}` would otherwise produce `Some("")`, bypassing the constructor guard.
+fn deserialize_optional_non_empty_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.is_empty()))
+}
+
 /// A named external resource registered by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Resource {
@@ -14,7 +28,11 @@ pub struct Resource {
     pub name: String,
 
     /// URL or file path. Optional — a resource may be description-only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_empty_string"
+    )]
     pub url: Option<String>,
 
     /// What this resource is and why it matters.
@@ -177,6 +195,18 @@ mod tests {
         assert!(
             resource.url.is_none(),
             "empty string url should be normalized to None"
+        );
+    }
+
+    #[test]
+    fn test_resource_deserialize_empty_url_normalized_to_none() {
+        // Deserialization path bypasses Resource::new(); the deserialize_with helper
+        // must enforce the same invariant.
+        let json = r#"{"name":"x","url":"","stage":"s","created_at":"t"}"#;
+        let resource: Resource = serde_json::from_str(json).unwrap();
+        assert!(
+            resource.url.is_none(),
+            "deserializing url='' should produce None, not Some(\"\")"
         );
     }
 

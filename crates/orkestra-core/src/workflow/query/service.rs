@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::{
     DifferentialTaskResponse, Iteration, LogEntry, Question, StageSession, TaskView,
+    WorkflowArtifact,
 };
 use crate::workflow::ports::{SyncStatus, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::Artifact;
@@ -20,6 +21,14 @@ impl WorkflowApi {
     /// Get a specific artifact by name.
     pub fn get_artifact(&self, task_id: &str, name: &str) -> WorkflowResult<Option<Artifact>> {
         query::artifacts::get_artifact(self.store.as_ref(), task_id, name)
+    }
+
+    /// List all `WorkflowArtifact` records for a task from the `workflow_artifacts` table.
+    ///
+    /// Returns every artifact row ever produced for this task, including those from
+    /// rejected iterations, in insertion order.
+    pub fn list_workflow_artifacts(&self, task_id: &str) -> WorkflowResult<Vec<WorkflowArtifact>> {
+        self.store.list_artifacts_for_task(task_id)
     }
 
     /// Get all iterations for a task.

@@ -16,7 +16,7 @@ pub fn execute(
     subtasks: &[SubtaskOutput],
     stage_name: &str,
     now: &str,
-) -> WorkflowResult<()> {
+) -> WorkflowResult<Option<String>> {
     let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
         workflow,
         &task.flow,
@@ -59,7 +59,8 @@ pub fn execute(
         ));
     }
 
-    stage::auto_advance_or_review::execute(iteration_service, workflow, task, stage_name, now)
+    stage::auto_advance_or_review::execute(iteration_service, workflow, task, stage_name, now)?;
+    Ok(Some(artifact_name))
 }
 
 // -- Helpers --

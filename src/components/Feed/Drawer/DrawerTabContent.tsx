@@ -218,14 +218,16 @@ function StageResources({ resources }: { resources: WorkflowResource[] }) {
       {resources.map((r) => (
         <div key={r.name} className="flex flex-col gap-1">
           <span className="text-forge-mono-sm font-semibold text-text-primary">{r.name}</span>
-          <a
-            href={r.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-forge-mono-sm text-accent truncate"
-          >
-            {r.url}
-          </a>
+          {r.url && (
+            <a
+              href={r.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-forge-mono-sm text-accent truncate"
+            >
+              {r.url}
+            </a>
+          )}
           {r.description && (
             <span className="text-forge-mono-sm text-text-secondary">{r.description}</span>
           )}

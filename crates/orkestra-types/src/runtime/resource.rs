@@ -39,7 +39,7 @@ impl Resource {
     ) -> Self {
         Self {
             name: name.into(),
-            url: url.map(Into::into),
+            url: url.map(Into::into).filter(|s: &String| !s.is_empty()),
             description: description.map(Into::into),
             stage: stage.into(),
             created_at: created_at.into(),
@@ -168,6 +168,16 @@ mod tests {
 
         let parsed: Resource = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, resource);
+    }
+
+    #[test]
+    fn test_resource_new_empty_url_normalized_to_none() {
+        let resource = Resource::new("foo", Some(""), Some("bar"), "work", "2025-01-01T00:00:00Z");
+
+        assert!(
+            resource.url.is_none(),
+            "empty string url should be normalized to None"
+        );
     }
 
     #[test]

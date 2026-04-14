@@ -8,10 +8,10 @@
         "type": "object",
         "properties": {
           "name": { "type": "string", "description": "Unique name for this resource (used as key — re-registering the same name updates it)" },
-          "url": { "type": "string", "description": "URL or file path" },
+          "url": { "type": "string", "description": "URL or file path. Optional — omit for description-only notes. At least one of url or description should be present." },
           "description": { "type": "string", "description": "What this resource is and why it matters" }
         },
-        "required": ["name", "url"],
+        "required": ["name"],
         "additionalProperties": false
       }
     }

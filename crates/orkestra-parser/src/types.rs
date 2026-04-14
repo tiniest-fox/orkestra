@@ -31,14 +31,16 @@ pub enum StageOutputError {
 
 /// A resource registered in agent output.
 ///
-/// `name`, `url`, and optional `description` come from the agent JSON.
-/// The `stage` and `created_at` fields are added by the system during persistence.
+/// `name` is required. `url` and `description` are both optional — a resource may
+/// be description-only (no URL). The `stage` and `created_at` fields are added by
+/// the system during persistence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResourceOutput {
     /// Unique name for this resource (used as key).
     pub name: String,
-    /// URL or file path.
-    pub url: String,
+    /// URL or file path. Optional for description-only resources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
     /// What this resource is and why it matters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

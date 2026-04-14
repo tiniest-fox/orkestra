@@ -24,8 +24,9 @@ The following artifacts from prior stages are available in your worktree. You MU
 {{#if resources}}
 **Resources** (external references registered by prior stages):
 {{#each resources}}
-- **{{this.name}}**: `{{this.url}}`{{#if this.description}} — {{this.description}}{{/if}}
-{{/each}}
+{{#if this.url}}- **{{this.name}}**: `{{this.url}}`{{#if this.description}} — {{this.description}}{{/if}}
+{{else}}- **{{this.name}}**{{#if this.description}} — {{this.description}}{{/if}}
+{{/if}}{{/each}}
 {{/if}}
 {{/if}}
 

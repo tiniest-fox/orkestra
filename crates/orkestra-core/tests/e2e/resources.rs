@@ -50,7 +50,7 @@ fn test_resources_persist_across_stages() {
             activity_log: None,
             resources: vec![ResourceOutput {
                 name: "blog-doc".to_string(),
-                url: "https://docs.google.com/blog-draft".to_string(),
+                url: Some("https://docs.google.com/blog-draft".to_string()),
                 description: Some("Draft blog post document".to_string()),
             }],
         },
@@ -69,7 +69,10 @@ fn test_resources_persist_across_stages() {
         .resources
         .get("blog-doc")
         .expect("blog-doc resource should exist");
-    assert_eq!(resource.url, "https://docs.google.com/blog-draft");
+    assert_eq!(
+        resource.url.as_deref(),
+        Some("https://docs.google.com/blog-draft")
+    );
     assert_eq!(
         resource.description.as_deref(),
         Some("Draft blog post document")
@@ -116,7 +119,7 @@ fn test_subtask_sees_parent_resources() {
             activity_log: None,
             resources: vec![ResourceOutput {
                 name: "parent-doc".to_string(),
-                url: "https://parent.example.com/doc".to_string(),
+                url: Some("https://parent.example.com/doc".to_string()),
                 description: None,
             }],
         },
@@ -210,7 +213,7 @@ fn test_resource_upsert_on_rejection_retry() {
             activity_log: None,
             resources: vec![ResourceOutput {
                 name: "doc".to_string(),
-                url: "https://example.com/v1".to_string(),
+                url: Some("https://example.com/v1".to_string()),
                 description: None,
             }],
         },
@@ -221,7 +224,7 @@ fn test_resource_upsert_on_rejection_retry() {
     // Verify v1 is stored
     let task = env.api().get_task(&task_id).unwrap();
     assert_eq!(
-        task.resources.get("doc").map(|r| r.url.as_str()),
+        task.resources.get("doc").and_then(|r| r.url.as_deref()),
         Some("https://example.com/v1")
     );
 
@@ -239,7 +242,7 @@ fn test_resource_upsert_on_rejection_retry() {
             activity_log: None,
             resources: vec![ResourceOutput {
                 name: "doc".to_string(),
-                url: "https://example.com/v2".to_string(),
+                url: Some("https://example.com/v2".to_string()),
                 description: Some("Updated document".to_string()),
             }],
         },
@@ -254,7 +257,8 @@ fn test_resource_upsert_on_rejection_retry() {
         .get("doc")
         .expect("resource 'doc' should exist");
     assert_eq!(
-        resource.url, "https://example.com/v2",
+        resource.url.as_deref(),
+        Some("https://example.com/v2"),
         "Resource URL should be updated to v2 after upsert"
     );
     assert_eq!(
@@ -268,5 +272,73 @@ fn test_resource_upsert_on_rejection_retry() {
         task.resources.len(),
         1,
         "Should have exactly one resource after upsert"
+    );
+}
+
+// =============================================================================
+// Test 4: Description-only resource renders without URL
+// =============================================================================
+
+/// Verify that a resource with `url: None` renders as `**name** — description`
+/// in the work stage prompt, without empty backtick-wrapped content.
+#[test]
+fn test_description_only_resource_renders_without_url() {
+    let workflow = two_stage_workflow();
+    let env = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = env.create_task("Notes feature", "Use notes as resources", None);
+    let task_id = task.id.clone();
+
+    // Planning stage: produce a plan + register a description-only resource (no URL)
+    env.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Plan for the feature".into(),
+            activity_log: None,
+            resources: vec![ResourceOutput {
+                name: "implementation-note".to_string(),
+                url: None,
+                description: Some("Key implementation decision: use feature flags".to_string()),
+            }],
+        },
+    );
+    env.advance(); // spawns planner
+    env.advance(); // processes plan output, persists resource
+
+    // Approve planning stage
+    env.api().approve(&task_id).unwrap();
+    env.advance(); // commit pipeline → advance to work stage
+
+    // Verify resource was persisted with no URL
+    let task = env.api().get_task(&task_id).unwrap();
+    let resource = task
+        .resources
+        .get("implementation-note")
+        .expect("implementation-note resource should exist");
+    assert!(resource.url.is_none(), "Resource URL should be None");
+    assert_eq!(
+        resource.description.as_deref(),
+        Some("Key implementation decision: use feature flags")
+    );
+
+    // Set work output so the spawn doesn't hang
+    env.set_output(&task_id, MockAgentOutput::artifact("summary", "Work done"));
+    env.advance(); // spawns work agent
+
+    // Verify the work stage prompt contains the resource name and description
+    let prompt = env.last_prompt_for(&task_id);
+    assert!(
+        prompt.contains("implementation-note"),
+        "Work stage prompt should contain resource name. Got prompt:\n{prompt}"
+    );
+    assert!(
+        prompt.contains("Key implementation decision: use feature flags"),
+        "Work stage prompt should contain resource description. Got prompt:\n{prompt}"
+    );
+    // Must NOT contain backtick-wrapped empty URL
+    assert!(
+        !prompt.contains("`: `"),
+        "Work stage prompt should not have empty backtick-wrapped URL. Got prompt:\n{prompt}"
     );
 }

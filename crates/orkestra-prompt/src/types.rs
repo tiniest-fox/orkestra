@@ -68,8 +68,8 @@ pub struct StagePromptContext<'a> {
 pub struct ResourceContext {
     /// Resource name.
     pub name: String,
-    /// URL or file path.
-    pub url: String,
+    /// URL or file path. None for description-only resources.
+    pub url: Option<String>,
     /// What this resource is.
     pub description: Option<String>,
 }

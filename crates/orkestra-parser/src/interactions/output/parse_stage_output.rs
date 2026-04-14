@@ -379,13 +379,16 @@ mod tests {
         let resources = output.resources();
         assert_eq!(resources.len(), 2);
         assert_eq!(resources[0].name, "design-doc");
-        assert_eq!(resources[0].url, "https://docs.example.com");
+        assert_eq!(
+            resources[0].url.as_deref(),
+            Some("https://docs.example.com")
+        );
         assert_eq!(
             resources[0].description,
             Some("Architecture doc".to_string())
         );
         assert_eq!(resources[1].name, "screenshot");
-        assert_eq!(resources[1].url, "/tmp/img.png");
+        assert_eq!(resources[1].url.as_deref(), Some("/tmp/img.png"));
         assert!(resources[1].description.is_none());
     }
 
@@ -459,7 +462,10 @@ mod tests {
         let resources = output.resources();
         assert_eq!(resources.len(), 1);
         assert_eq!(resources[0].name, "spec");
-        assert_eq!(resources[0].url, "https://example.com/spec");
+        assert_eq!(
+            resources[0].url.as_deref(),
+            Some("https://example.com/spec")
+        );
         assert_eq!(resources[0].description, Some("API spec".to_string()));
     }
 
@@ -497,7 +503,7 @@ mod tests {
         let resources = output.resources();
         assert_eq!(resources.len(), 1);
         assert_eq!(resources[0].name, "doc");
-        assert_eq!(resources[0].url, "https://example.com");
+        assert_eq!(resources[0].url.as_deref(), Some("https://example.com"));
         assert_eq!(resources[0].description, Some("A doc".to_string()));
     }
 }

@@ -138,8 +138,8 @@ export type TaskState =
 export interface WorkflowResource {
   /** Resource name (unique key). */
   name: string;
-  /** URL or file path for the resource. */
-  url: string;
+  /** URL or file path for the resource. Optional for description-only resources. */
+  url?: string;
   /** Optional description of what the resource is. */
   description?: string;
   /** Stage that registered this resource. */

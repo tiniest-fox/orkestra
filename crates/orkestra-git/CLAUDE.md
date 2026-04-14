@@ -17,6 +17,7 @@ src/
     ├── branch/      # create_from_oid, current, delete, get_commit_oid, is_merged, list, resolve_working_dir
     ├── commit/      # batch_file_counts, create, has_pending_changes, log, read_file_at_head
     ├── diff/        # against_base, collect, commit, parse_output, uncommitted, untracked_file
+    ├── file/        # list (git-tracked files in repo)
     ├── merge/       # fast_forward, rebase, squash
     ├── remote/      # pull, push, sync_base, sync_status
     └── stash/       # pop, push

@@ -4,9 +4,10 @@ import { History, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
+import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast } from "../../providers/ToastProvider";
-import { useTransport } from "../../transport";
-import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
+import { useConnectionState, useTransport } from "../../transport";
+import type { AssistantSession, WorkflowQuestion } from "../../types/workflow";
 import { parseAssistantQuestions } from "../../utils/assistantQuestions";
 import { relativeTime } from "../../utils/relativeTime";
 import { isDisconnectError } from "../../utils/transportErrors";
@@ -34,10 +35,11 @@ interface AssistantDrawerProps {
 
 export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProps) {
   const transport = useTransport();
+  const connectionState = useConnectionState();
   const { showError } = useToast();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const { logs, fetchLogs: fetchSessionLogs } = useSessionLogs(activeSessionId);
   const [showSessionList, setShowSessionList] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [sending, setSending] = useState(false);
@@ -86,32 +88,17 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     }
   }, [transport, taskId]);
 
-  // -- Fetch logs when session changes --
-  useEffect(() => {
-    if (!activeSessionId) {
-      setLogs([]);
-      return;
-    }
-    transport
-      .call<LogEntry[]>("assistant_get_logs", { session_id: activeSessionId })
-      .then(setLogs)
-      .catch(console.error);
-  }, [transport, activeSessionId]);
-
   // -- Fetch the active task session by session ID (task mode only) --
   const fetchTaskSession = useCallback(async (): Promise<AssistantSession | undefined> => {
     const allSessions = await transport.call<AssistantSession[]>("assistant_list_sessions", {});
     return allSessions.find((s) => s.id === activeSessionId);
   }, [transport, activeSessionId]);
 
-  // -- Poll logs while agent is running --
-  const fetchLogs = useCallback(async () => {
+  // -- Poll logs and session while agent is running --
+  const pollSession = useCallback(async () => {
     if (!activeSessionId) return;
     try {
-      const newLogs = await transport.call<LogEntry[]>("assistant_get_logs", {
-        session_id: activeSessionId,
-      });
-      setLogs((prev) => (JSON.stringify(prev) === JSON.stringify(newLogs) ? prev : newLogs));
+      await fetchSessionLogs();
       if (taskId) {
         // Task mode: update just the task's session to track agent_pid.
         const taskSession = await fetchTaskSession();
@@ -142,9 +129,9 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     } catch (err) {
       if (!isDisconnectError(err)) console.error(err);
     }
-  }, [transport, activeSessionId, taskId, fetchTaskSession]);
+  }, [fetchSessionLogs, transport, activeSessionId, taskId, fetchTaskSession]);
 
-  usePolling(isAgentRunning ? fetchLogs : null, 1000);
+  usePolling(isAgentRunning && connectionState === "connected" ? pollSession : null, 1000);
 
   // -- Escape closes session list before panel --
   useEffect(() => {
@@ -177,22 +164,19 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
         });
         setActiveSessionId(session.id);
         setSessions([session]);
-        const newLogs = await transport.call<LogEntry[]>("assistant_get_logs", {
-          session_id: session.id,
-        });
-        setLogs(newLogs);
+        // Logs refresh via the hook's effect when activeSessionId changes.
       } else {
         session = await transport.call<AssistantSession>("assistant_send_message", {
           session_id: activeSessionId,
           message,
         });
         setActiveSessionId(session.id);
-        const [updatedSessions, newLogs] = await Promise.all([
-          transport.call<AssistantSession[]>("assistant_list_project_sessions", {}),
-          transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
-        ]);
+        const updatedSessions = await transport.call<AssistantSession[]>(
+          "assistant_list_project_sessions",
+          {},
+        );
         setSessions(updatedSessions);
-        setLogs(newLogs);
+        // Logs refresh via the hook's effect (session ID change) or event listener.
       }
     },
     [transport, activeSessionId, taskId],
@@ -250,7 +234,6 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
   // -- New session --
   const handleNewSession = useCallback(() => {
     setActiveSessionId(null);
-    setLogs([]);
     setShowSessionList(false);
     setInputValue("");
   }, []);

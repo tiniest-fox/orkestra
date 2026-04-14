@@ -7,9 +7,10 @@ import { Check } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
+import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast, useWorkflowConfig } from "../../providers";
-import { useTransport } from "../../transport";
-import type { AssistantSession, LogEntry, WorkflowTaskView } from "../../types/workflow";
+import { useConnectionState, useTransport } from "../../transport";
+import type { AssistantSession, WorkflowTaskView } from "../../types/workflow";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { resolveFlowStageNames } from "../../utils/workflowNavigation";
@@ -127,11 +128,12 @@ interface InteractiveDrawerBodyProps {
 
 function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   const transport = useTransport();
+  const connectionState = useConnectionState();
   const config = useWorkflowConfig();
   const { showError } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>("agent");
   const [session, setSession] = useState<AssistantSession | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const { logs, fetchLogs: fetchSessionLogs } = useSessionLogs(session?.id ?? null);
   const [inputValue, setInputValue] = useState("");
   const [sending, setSending] = useState(false);
   const [exiting, setExiting] = useState(false);
@@ -158,24 +160,14 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
       .catch(console.error);
   }, [transport, task.id]);
 
-  // -- Fetch logs when session changes --
-  useEffect(() => {
-    if (!session?.id) return;
-    transport
-      .call<LogEntry[]>("assistant_get_logs", { session_id: session.id })
-      .then(setLogs)
-      .catch(console.error);
-  }, [transport, session?.id]);
-
-  // -- Poll logs and session while agent is running --
+  // -- Poll session while agent is running (logs are managed by useSessionLogs) --
   const pollSession = useCallback(async () => {
     if (!session?.id) return;
     try {
-      const [newLogs, allSessions] = await Promise.all([
-        transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
+      const [, allSessions] = await Promise.all([
+        fetchSessionLogs(),
         transport.call<AssistantSession[]>("assistant_list_sessions", {}),
       ]);
-      setLogs((prev) => (JSON.stringify(prev) === JSON.stringify(newLogs) ? prev : newLogs));
       const updated = allSessions.find(
         (s) => s.task_id === task.id && s.session_type === "interactive",
       );
@@ -189,9 +181,9 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     } catch (err) {
       if (!isDisconnectError(err)) console.error("Failed to poll session:", err);
     }
-  }, [transport, session?.id, task.id]);
+  }, [fetchSessionLogs, transport, session?.id, task.id]);
 
-  usePolling(isAgentRunning ? pollSession : null, 1000);
+  usePolling(isAgentRunning && connectionState === "connected" ? pollSession : null, 1000);
 
   // -- Send message --
   const handleSend = useCallback(async () => {
@@ -209,10 +201,7 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
       );
       if (found) {
         setSession(found);
-        const updatedLogs = await transport.call<LogEntry[]>("assistant_get_logs", {
-          session_id: found.id,
-        });
-        setLogs(updatedLogs);
+        // Logs refresh via the hook's effect when session.id changes.
       }
     } catch (err) {
       setError(String(err));

@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/christianwhitehouse/Documents/Repos/orkestra && bin/validate-mermaid"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/christianwhitehouse/Documents/Repos/orkestra && bin/validate-mermaid"
+          }
+        ]
+      }
+    ]
+  }
+}

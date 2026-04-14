@@ -70,7 +70,7 @@ export function DrawerFooter({ task, activeTab, stageReviewType, state }: Drawer
       />
     );
   }
-  if (task.derived.is_chatting && (activeTab === "logs" || activeTab === "agent")) {
+  if (task.derived.is_chatting && activeTab === "agent") {
     return (
       <ChatFooter
         chatAgentActive={task.derived.chat_agent_active}
@@ -106,7 +106,7 @@ export function DrawerFooter({ task, activeTab, stageReviewType, state }: Drawer
         />
       );
     }
-    if (task.derived.is_working && activeTab !== "logs") {
+    if (task.derived.is_working) {
       return (
         <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />
       );

@@ -126,6 +126,8 @@ pub enum IterationTrigger {
     /// The agent produced structured output during a chat conversation,
     /// completing the stage without requiring `return_to_work`.
     ChatCompletion,
+    /// Agent produced output that couldn't be parsed as structured JSON.
+    MalformedOutput { error: String },
 }
 
 /// A single iteration (attempt) within a stage.

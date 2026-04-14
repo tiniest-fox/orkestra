@@ -16,6 +16,14 @@ Produce your output as valid JSON with a `type` field. Your output artifact is: 
 ```
 {{/if}}
 
+**If you cannot use the StructuredOutput tool**, you MUST wrap your JSON output in a fenced code block labeled `ork`:
+
+```ork
+{"type": "{{artifact_name}}", "content": "Your content here"}
+```
+
+Do NOT output raw JSON without either the StructuredOutput tool or an `ork` fence — it will be automatically rejected.
+
 {{#if has_approval}}
 ### Approve or reject
 ```json

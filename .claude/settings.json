@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/christianwhitehouse/Documents/Repos/orkestra && bin/validate-mermaid"
+            "command": "node bin/validate-mermaid"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/christianwhitehouse/Documents/Repos/orkestra && bin/validate-mermaid"
+            "command": "node bin/validate-mermaid"
           }
         ]
       }

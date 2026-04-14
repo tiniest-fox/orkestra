@@ -232,12 +232,12 @@ mod tests {
             resources: vec![
                 ResourceOutput {
                     name: "design-doc".into(),
-                    url: "https://docs.example.com".into(),
+                    url: Some("https://docs.example.com".into()),
                     description: Some("Architecture doc".into()),
                 },
                 ResourceOutput {
                     name: "screenshot".into(),
-                    url: "/tmp/img.png".into(),
+                    url: Some("/tmp/img.png".into()),
                     description: None,
                 },
             ],
@@ -256,13 +256,13 @@ mod tests {
         assert_eq!(task.resources.len(), 2);
 
         let doc = task.resources.get("design-doc").unwrap();
-        assert_eq!(doc.url, "https://docs.example.com");
+        assert_eq!(doc.url.as_deref(), Some("https://docs.example.com"));
         assert_eq!(doc.description, Some("Architecture doc".into()));
         assert_eq!(doc.stage, "planning");
         assert_eq!(doc.created_at, FIXTURE_TIMESTAMP);
 
         let shot = task.resources.get("screenshot").unwrap();
-        assert_eq!(shot.url, "/tmp/img.png");
+        assert_eq!(shot.url.as_deref(), Some("/tmp/img.png"));
         assert!(shot.description.is_none());
     }
 
@@ -308,7 +308,7 @@ mod tests {
         // Pre-populate a resource from a prior stage
         task.resources.set(Resource::new(
             "existing",
-            "https://prior.example.com",
+            Some("https://prior.example.com"),
             None::<String>,
             "setup",
             FIXTURE_TIMESTAMP,
@@ -322,7 +322,7 @@ mod tests {
             activity_log: None,
             resources: vec![ResourceOutput {
                 name: "new-doc".into(),
-                url: "https://new.example.com".into(),
+                url: Some("https://new.example.com".into()),
                 description: None,
             }],
         };

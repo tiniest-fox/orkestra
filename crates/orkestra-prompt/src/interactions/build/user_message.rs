@@ -327,6 +327,93 @@ mod tests {
     }
 
     #[test]
+    fn test_resource_with_url_renders_link() {
+        let templates = test_templates();
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Test", "Description", "work", "now");
+        task.resources.set(orkestra_types::runtime::Resource::new(
+            "design-doc",
+            Some("https://docs.example.com/design"),
+            Some("Architecture decision record"),
+            "planning",
+            "now",
+        ));
+
+        let ctx = builder
+            .build_context(
+                "work",
+                &task,
+                &["plan".to_string()],
+                None,
+                None,
+                false,
+                &[],
+                None,
+            )
+            .unwrap();
+
+        let user_message = execute(&templates, &ctx);
+
+        // URL path: name + url in backticks + description
+        assert!(
+            user_message.contains("**design-doc**: `https://docs.example.com/design`"),
+            "Expected url resource format. Got:\n{user_message}"
+        );
+        assert!(
+            user_message.contains("Architecture decision record"),
+            "Expected description to appear. Got:\n{user_message}"
+        );
+    }
+
+    #[test]
+    fn test_resource_without_url_renders_description_only() {
+        let templates = test_templates();
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Test", "Description", "work", "now");
+        task.resources.set(orkestra_types::runtime::Resource::new(
+            "implementation-note",
+            None::<String>,
+            Some("Key decision: use feature flags"),
+            "planning",
+            "now",
+        ));
+
+        let ctx = builder
+            .build_context(
+                "work",
+                &task,
+                &["plan".to_string()],
+                None,
+                None,
+                false,
+                &[],
+                None,
+            )
+            .unwrap();
+
+        let user_message = execute(&templates, &ctx);
+
+        // Else path: name + description, no backtick-wrapped URL
+        assert!(
+            user_message.contains("**implementation-note**"),
+            "Expected resource name. Got:\n{user_message}"
+        );
+        assert!(
+            user_message.contains("Key decision: use feature flags"),
+            "Expected description to appear. Got:\n{user_message}"
+        );
+        // Must NOT contain empty backtick url
+        assert!(
+            !user_message.contains("`: `"),
+            "Must not render empty backtick-wrapped URL. Got:\n{user_message}"
+        );
+    }
+
+    #[test]
     fn test_integration_error_pr_path() {
         let templates = test_templates();
         let workflow = test_workflow();

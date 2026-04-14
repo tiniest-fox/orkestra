@@ -30,14 +30,16 @@ export function ResourcesTab({ task, bodyRef }: ResourcesTabProps) {
           <span className="text-forge-mono-sm font-semibold text-text-primary">
             {resource.name}
           </span>
-          <a
-            href={resource.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-forge-mono-sm text-accent truncate"
-          >
-            {resource.url}
-          </a>
+          {resource.url && (
+            <a
+              href={resource.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-forge-mono-sm text-accent truncate"
+            >
+              {resource.url}
+            </a>
+          )}
           {resource.description && (
             <span className="text-forge-mono-sm text-text-secondary">{resource.description}</span>
           )}

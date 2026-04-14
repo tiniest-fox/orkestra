@@ -40,6 +40,14 @@ pub(crate) fn execute(store: &dyn WorkflowStore, script: &mut ActiveScript) -> S
                         e
                     );
                 }
+                if let Err(e) = store.touch_task(&script.task_id) {
+                    crate::orkestra_debug!(
+                        "stage",
+                        "Failed to touch task {} after gate result: {}",
+                        script.task_id,
+                        e
+                    );
+                }
             }
 
             ScriptPollResult::Completed(ScriptCompletion {
@@ -64,6 +72,14 @@ pub(crate) fn execute(store: &dyn WorkflowStore, script: &mut ActiveScript) -> S
                                 "stage",
                                 "Failed to save gate result for {}: {}",
                                 iteration_id,
+                                e
+                            );
+                        }
+                        if let Err(e) = store.touch_task(&script.task_id) {
+                            crate::orkestra_debug!(
+                                "stage",
+                                "Failed to touch task {} after gate result: {}",
+                                script.task_id,
                                 e
                             );
                         }

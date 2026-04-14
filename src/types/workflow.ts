@@ -639,7 +639,8 @@ export type LogEntry =
       parent_task_id: string;
     }
   | { type: "process_exit"; code?: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "artifact_produced"; name: string; stage: string };
 
 // =============================================================================
 // PR Status

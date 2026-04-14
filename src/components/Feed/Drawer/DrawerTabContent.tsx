@@ -88,6 +88,7 @@ export function DrawerTabContent({
           logs={logs}
           error={logsError}
           isAgentRunning={task.derived.is_working || task.derived.chat_agent_active}
+          artifacts={task.artifacts}
           containerRef={logContainerRef}
           onScroll={handleLogScroll}
         />

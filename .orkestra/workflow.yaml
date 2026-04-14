@@ -132,3 +132,26 @@ flows:
           timeout_seconds: 1200
     integration:
       on_failure: work
+
+  prompt-iteration:
+    stages:
+      - name: requirements
+        description: Gathers requirements about what to change in the prompt and why, researches best practices
+        artifact: requirements
+        prompt: prompt_requirements.md
+        model: opus
+
+      - name: write
+        description: Implements the prompt changes based on the requirements
+        artifact: summary
+        prompt: prompt_writer.md
+        model: sonnet
+
+      - name: review
+        description: Reviews the revised prompt for consistency, coverage, and prompt engineering best practices
+        artifact: verdict
+        prompt: prompt_reviewer.md
+        model: opus
+        gate: true
+    integration:
+      on_failure: write

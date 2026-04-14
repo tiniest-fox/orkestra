@@ -1,7 +1,7 @@
 //! Handle approval output: approve stores artifact and advances, reject sends to rejection target.
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{ArtifactSnapshot, Task};
+use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, TaskState};
@@ -41,14 +41,6 @@ pub fn execute(
             );
             task.artifacts
                 .set(Artifact::new(&artifact_name, content, current_stage, now));
-            iteration_service.set_artifact_snapshot(
-                &task.id,
-                current_stage,
-                ArtifactSnapshot {
-                    name: artifact_name,
-                    content: content.to_string(),
-                },
-            )?;
             stage::auto_advance_or_review::execute(
                 iteration_service,
                 workflow,
@@ -67,16 +59,6 @@ pub fn execute(
             );
             task.artifacts
                 .set(Artifact::new(&artifact_name, content, current_stage, now));
-
-            // Snapshot rejection content on iteration before any state transition
-            iteration_service.set_artifact_snapshot(
-                &task.id,
-                current_stage,
-                ArtifactSnapshot {
-                    name: artifact_name.clone(),
-                    content: content.to_string(),
-                },
-            )?;
 
             // Resolve rejection target: agent route_to → previous stage in flow
             let target = stage::execute_rejection::resolve_rejection_target(

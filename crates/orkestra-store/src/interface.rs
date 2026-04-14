@@ -5,7 +5,7 @@
 
 use orkestra_types::domain::{
     AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionType,
-    StageSession, Task, TaskHeader,
+    StageSession, Task, TaskHeader, WorkflowArtifact,
 };
 
 // ============================================================================
@@ -394,8 +394,33 @@ pub trait WorkflowStore: Send + Sync {
             self.delete_log_entries_for_task(id)?;
             self.delete_stage_sessions(id)?;
             self.delete_iterations(id)?;
+            self.delete_artifacts_for_task(id)?;
             self.delete_task(id)?;
         }
         Ok(())
     }
+
+    // -- Artifact --
+
+    /// Save a workflow artifact (insert or replace by ID).
+    fn save_artifact(&self, artifact: &WorkflowArtifact) -> WorkflowResult<()>;
+
+    /// Get a workflow artifact by ID.
+    fn get_artifact(&self, id: &str) -> WorkflowResult<Option<WorkflowArtifact>>;
+
+    /// Get the most recent artifact for a task/stage/name combination.
+    ///
+    /// Returns `None` if no artifact has been produced for this combination.
+    fn get_latest_artifact(
+        &self,
+        task_id: &str,
+        stage: &str,
+        name: &str,
+    ) -> WorkflowResult<Option<WorkflowArtifact>>;
+
+    /// List all artifacts for a task, ordered by creation time ascending.
+    fn list_artifacts_for_task(&self, task_id: &str) -> WorkflowResult<Vec<WorkflowArtifact>>;
+
+    /// Delete all artifacts for a task.
+    fn delete_artifacts_for_task(&self, task_id: &str) -> WorkflowResult<()>;
 }

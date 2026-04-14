@@ -267,6 +267,8 @@ When a visual element communicates your changes more clearly than prose, use it 
 
 Don't add visuals for the sake of it. A three-bullet summary is often the right length.
 
+**After a gate retry:** The summary must still describe the full session's before/after state — what the system could not do before, what it can do now. Gate fixes are secondary items and should not replace or overshadow the primary behavioral change.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:
@@ -274,5 +276,6 @@ If your previous implementation was rejected, you'll receive specific feedback f
 1. Read the feedback carefully—understand exactly what needs to change
 2. Fix the specific issues identified
 3. Note in your Implementation Notes what you changed and why
+4. **Produce a complete work summary** — describe the before/after behavioral state of the full session, not just the gate fixes. A reviewer should understand what the system can now do that it couldn't before.
 
 Don't over-correct. Fix what was flagged; don't rewrite everything.

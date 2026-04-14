@@ -1,11 +1,25 @@
 //! Resource storage and retrieval.
 //!
-//! Resources are named external references (URLs, file paths) registered by agents.
-//! They persist at the task level and are visible to all subsequent stages.
+//! Resources are named external references (URLs, file paths, or description-only notes)
+//! registered by agents. They persist at the task level and are visible to all subsequent stages.
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+
+/// Deserialize an optional string, normalizing empty strings to `None`.
+///
+/// Covers the deserialization path that `Resource::new()` cannot: JSON like
+/// `{"url": ""}` would otherwise produce `Some("")`, bypassing the constructor guard.
+fn deserialize_optional_non_empty_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.is_empty()))
+}
 
 /// A named external resource registered by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -13,8 +27,13 @@ pub struct Resource {
     /// Unique name for this resource (used as key).
     pub name: String,
 
-    /// URL or file path.
-    pub url: String,
+    /// URL or file path. Optional — a resource may be description-only.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_empty_string"
+    )]
+    pub url: Option<String>,
 
     /// What this resource is and why it matters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -31,14 +50,14 @@ impl Resource {
     /// Create a new resource.
     pub fn new(
         name: impl Into<String>,
-        url: impl Into<String>,
+        url: Option<impl Into<String>>,
         description: Option<impl Into<String>>,
         stage: impl Into<String>,
         created_at: impl Into<String>,
     ) -> Self {
         Self {
             name: name.into(),
-            url: url.into(),
+            url: url.map(Into::into).filter(|s: &String| !s.is_empty()),
             description: description.map(Into::into),
             stage: stage.into(),
             created_at: created_at.into(),
@@ -108,14 +127,17 @@ mod tests {
     fn test_resource_new() {
         let resource = Resource::new(
             "design-doc",
-            "https://docs.example.com/design",
+            Some("https://docs.example.com/design"),
             Some("Architecture decision record"),
             "planning",
             "2025-01-01T00:00:00Z",
         );
 
         assert_eq!(resource.name, "design-doc");
-        assert_eq!(resource.url, "https://docs.example.com/design");
+        assert_eq!(
+            resource.url.as_deref(),
+            Some("https://docs.example.com/design")
+        );
         assert_eq!(
             resource.description,
             Some("Architecture decision record".to_string())
@@ -128,7 +150,7 @@ mod tests {
     fn test_resource_new_without_description() {
         let resource = Resource::new(
             "screenshot",
-            "/tmp/screenshot.png",
+            Some("/tmp/screenshot.png"),
             None::<String>,
             "work",
             "now",
@@ -139,6 +161,56 @@ mod tests {
     }
 
     #[test]
+    fn test_resource_new_without_url() {
+        let resource = Resource::new(
+            "note",
+            None::<String>,
+            Some("A description-only note"),
+            "planning",
+            "2025-01-01T00:00:00Z",
+        );
+
+        assert_eq!(resource.name, "note");
+        assert!(resource.url.is_none());
+        assert_eq!(
+            resource.description.as_deref(),
+            Some("A description-only note")
+        );
+
+        // Serialization round-trip: url must NOT appear in JSON
+        let json = serde_json::to_string(&resource).unwrap();
+        assert!(
+            !json.contains("\"url\""),
+            "url key should be absent when None: {json}"
+        );
+
+        let parsed: Resource = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, resource);
+    }
+
+    #[test]
+    fn test_resource_new_empty_url_normalized_to_none() {
+        let resource = Resource::new("foo", Some(""), Some("bar"), "work", "2025-01-01T00:00:00Z");
+
+        assert!(
+            resource.url.is_none(),
+            "empty string url should be normalized to None"
+        );
+    }
+
+    #[test]
+    fn test_resource_deserialize_empty_url_normalized_to_none() {
+        // Deserialization path bypasses Resource::new(); the deserialize_with helper
+        // must enforce the same invariant.
+        let json = r#"{"name":"x","url":"","stage":"s","created_at":"t"}"#;
+        let resource: Resource = serde_json::from_str(json).unwrap();
+        assert!(
+            resource.url.is_none(),
+            "deserializing url='' should produce None, not Some(\"\")"
+        );
+    }
+
+    #[test]
     fn test_resource_store_basic() {
         let mut store = ResourceStore::new();
         assert!(store.is_empty());
@@ -146,7 +218,7 @@ mod tests {
 
         let resource = Resource::new(
             "doc",
-            "https://example.com",
+            Some("https://example.com"),
             None::<String>,
             "planning",
             "now",
@@ -162,7 +234,7 @@ mod tests {
         let mut store = ResourceStore::new();
         store.set(Resource::new(
             "doc",
-            "https://example.com",
+            Some("https://example.com"),
             None::<String>,
             "planning",
             "now",
@@ -170,7 +242,10 @@ mod tests {
 
         let resource = store.get("doc");
         assert!(resource.is_some());
-        assert_eq!(resource.unwrap().url, "https://example.com");
+        assert_eq!(
+            resource.unwrap().url.as_deref(),
+            Some("https://example.com")
+        );
 
         assert!(store.get("missing").is_none());
     }
@@ -180,21 +255,24 @@ mod tests {
         let mut store = ResourceStore::new();
         store.set(Resource::new(
             "doc",
-            "https://v1.example.com",
+            Some("https://v1.example.com"),
             None::<String>,
             "planning",
             "now",
         ));
         store.set(Resource::new(
             "doc",
-            "https://v2.example.com",
+            Some("https://v2.example.com"),
             None::<String>,
             "work",
             "later",
         ));
 
         assert_eq!(store.len(), 1);
-        assert_eq!(store.get("doc").unwrap().url, "https://v2.example.com");
+        assert_eq!(
+            store.get("doc").unwrap().url.as_deref(),
+            Some("https://v2.example.com")
+        );
     }
 
     #[test]
@@ -202,14 +280,14 @@ mod tests {
         let mut store = ResourceStore::new();
         store.set(Resource::new(
             "doc1",
-            "https://a.com",
+            Some("https://a.com"),
             None::<String>,
             "planning",
             "now",
         ));
         store.set(Resource::new(
             "doc2",
-            "https://b.com",
+            Some("https://b.com"),
             None::<String>,
             "work",
             "now",
@@ -224,14 +302,14 @@ mod tests {
         let mut store_a = ResourceStore::new();
         store_a.set(Resource::new(
             "doc1",
-            "https://a.com",
+            Some("https://a.com"),
             None::<String>,
             "planning",
             "now",
         ));
         store_a.set(Resource::new(
             "shared",
-            "https://a-shared.com",
+            Some("https://a-shared.com"),
             None::<String>,
             "planning",
             "now",
@@ -240,14 +318,14 @@ mod tests {
         let mut store_b = ResourceStore::new();
         store_b.set(Resource::new(
             "doc2",
-            "https://b.com",
+            Some("https://b.com"),
             None::<String>,
             "work",
             "now",
         ));
         store_b.set(Resource::new(
             "shared",
-            "https://b-shared.com",
+            Some("https://b-shared.com"),
             None::<String>,
             "work",
             "later",
@@ -261,14 +339,17 @@ mod tests {
         assert!(store_a.get("doc2").is_some());
 
         // store_b's "shared" overwrites store_a's "shared"
-        assert_eq!(store_a.get("shared").unwrap().url, "https://b-shared.com");
+        assert_eq!(
+            store_a.get("shared").unwrap().url.as_deref(),
+            Some("https://b-shared.com")
+        );
     }
 
     #[test]
     fn test_resource_serialization() {
         let resource = Resource::new(
             "doc",
-            "https://example.com",
+            Some("https://example.com"),
             Some("A document"),
             "planning",
             "2025-01-01T00:00:00Z",
@@ -288,7 +369,7 @@ mod tests {
         let mut store = ResourceStore::new();
         store.set(Resource::new(
             "doc",
-            "https://example.com",
+            Some("https://example.com"),
             None::<String>,
             "planning",
             "now",
@@ -297,7 +378,10 @@ mod tests {
         let json = serde_json::to_string(&store).unwrap();
         let parsed: ResourceStore = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(parsed.get("doc").unwrap().url, "https://example.com");
+        assert_eq!(
+            parsed.get("doc").unwrap().url.as_deref(),
+            Some("https://example.com")
+        );
     }
 
     #[test]

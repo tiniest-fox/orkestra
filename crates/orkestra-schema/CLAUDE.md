@@ -68,4 +68,4 @@ Use these when building prompts that need concrete output examples.
 
 - **Don't add I/O.** This crate is pure logic. File reading, network calls, etc. belong elsewhere.
 - **Don't hardcode schemas.** Use `generate_stage_schema` with appropriate `SchemaConfig`. New stage types should work with the existing generation logic.
-- **Don't use `oneOf`.** The flat discriminated union pattern is intentional for simpler parsing.
+- **Don't use `oneOf` or `anyOf` in any agent-facing schema** — generated or static. LLMs have poor reliability with these combinators. For discriminated unions, use the flat `type` field pattern. For "at least one of X/Y required" constraints, enforce in code at the parse boundary rather than in the schema.

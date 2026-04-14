@@ -151,6 +151,22 @@ pub fn artifact_file_path(name: &str) -> String {
 
 **DON'T**: Define the same path/constant independently in multiple crates. If orkestra-core uses `.orkestra/.artifacts` and orkestra-prompt uses a different string, they'll diverge and break.
 
+## Shared Serde Helpers
+
+Custom serde functions used in multiple crates belong in `orkestra-types`, not duplicated across crates. Since almost every crate depends on `orkestra-types`, this is the lowest-friction sharing point.
+
+Example: `deserialize_optional_non_empty_string` normalizes `Some("")` → `None` during deserialization. It lives in `runtime/resource.rs` and should be re-exported if needed by `orkestra-parser` or other crates. Do not copy it — reference it.
+
+```rust
+fn deserialize_optional_non_empty_string<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(d)?;
+    Ok(s.filter(|s| !s.is_empty()))
+}
+```
+
 ## Anti-Patterns
 
 - **Don't add I/O here**: Storage, network, file operations belong in other crates

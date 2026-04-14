@@ -50,6 +50,22 @@ Good: "- Added `process_timeout()` to app.rs — handles stuck processes by kill
 
 Omit anything obvious from the diff. Explain intent, not mechanics.
 
+## Compound Notes
+
+Before submitting your final output, consider whether anything noteworthy happened during implementation: confusion about project patterns, failed approaches others should know about, workarounds for unclear documentation, or surprising behavior.
+
+If something genuinely noteworthy occurred:
+
+1. Check if a `compound-notes:work` resource already exists in your output resources. If so, read its description and append your observations rather than replacing.
+2. Register the resource with `name: "compound-notes:work"`, no `url`, and the accumulated notes as `description`.
+
+Example:
+```json
+{"name": "compound-notes:work", "description": "Spent 3 iterations finding the right pattern for X — CLAUDE.md doesn't document Y convention"}
+```
+
+Most implementations need no notes. Only register when something genuinely surprised or confused you.
+
 ## Rules
 
 - Do NOT ask questions or wait for input. Make reasonable assumptions and document them.

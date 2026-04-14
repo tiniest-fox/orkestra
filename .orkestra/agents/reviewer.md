@@ -89,6 +89,14 @@ The synthesis reviewer will:
 - Determine the final verdict (REJECT or APPROVE)
 - Format the output as specified
 
+### 6.5 Compound Notes
+
+Before outputting the final verdict, consider whether the synthesis findings reveal anything worth capturing for the compound agent — patterns the worker missed that indicate a documentation gap, recurring issues across review cycles, or architectural observations that should be codified.
+
+If noteworthy observations exist, register a resource with `name: "compound-notes:review"`, no `url`, and the observations as `description`. If a `compound-notes:review` resource already exists, append rather than replace.
+
+Most reviews need no notes. Only register when something is genuinely useful for future guidance.
+
 ### 7. Output the Final Verdict
 
 For large scope reviews, output exactly what the synthesis reviewer produces. For small/medium scope reviews where you did the review yourself or synthesized fewer outputs, produce the verdict directly in the same format.

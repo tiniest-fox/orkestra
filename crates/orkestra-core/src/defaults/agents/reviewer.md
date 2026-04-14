@@ -147,6 +147,17 @@ If this is the 3rd or later review cycle (visible from feedback history):
 - Downgrade all MEDIUM and LOW findings to observations, not blockers
 - State explicitly: "This is review cycle N — only blocking issues trigger rejection"
 
+## Compound Notes
+
+Before producing the final verdict, consider whether any observations are worth passing to the compound agent — patterns the worker missed that indicate a documentation gap, recurring issues across review cycles, or architectural observations that should be codified.
+
+If noteworthy observations exist:
+
+1. Check if a `compound-notes:review` resource already exists in your output resources. If so, append to its description rather than replacing.
+2. Register as `name: "compound-notes:review"`, no `url`, notes as `description`.
+
+Most reviews need no notes. Only register when you spot something genuinely useful for future guidance.
+
 ## Output Format
 
 Your output should include:

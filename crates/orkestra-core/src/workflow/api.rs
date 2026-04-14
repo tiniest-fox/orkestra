@@ -296,6 +296,29 @@ impl WorkflowApi {
         )
     }
 
+    /// List all git-tracked files at the project root.
+    pub fn list_project_files(&self) -> WorkflowResult<Vec<String>> {
+        let git = self
+            .git_service
+            .as_ref()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+        git.list_files()
+            .map_err(|e| WorkflowError::GitError(e.to_string()))
+    }
+
+    /// Read a file from the project root's working tree.
+    ///
+    /// Unlike `get_file_content` (which reads from a task worktree at HEAD),
+    /// this reads the live filesystem content at the project root, including
+    /// uncommitted changes.
+    pub fn get_project_file_content(&self, file_path: &str) -> WorkflowResult<Option<String>> {
+        let project_root = self
+            .project_root
+            .as_ref()
+            .ok_or_else(|| WorkflowError::InvalidState("No project root configured".into()))?;
+        crate::workflow::query::interactions::read_project_file::execute(project_root, file_path)
+    }
+
     /// Force a task into `GateRunning` state without validation.
     ///
     /// Used by tests to simulate a crash while a gate was running.
@@ -511,5 +534,148 @@ mod tests {
 
         // On failure with empty title, should fall back to "Task {id}"
         assert_eq!(message, "Task task-456");
+    }
+
+    // ============================================================================
+    // list_project_files
+    // ============================================================================
+
+    #[test]
+    fn test_list_project_files_returns_tracked_files() {
+        use orkestra_git::MockGitService;
+
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let mock_git = Arc::new(MockGitService::new());
+        mock_git.set_next_list_files_result(Ok(vec![
+            "src/main.rs".to_string(),
+            "Cargo.toml".to_string(),
+        ]));
+
+        let api = WorkflowApi::with_git(workflow, store, mock_git);
+        let files = api.list_project_files().unwrap();
+
+        assert_eq!(files, vec!["src/main.rs", "Cargo.toml"]);
+    }
+
+    #[test]
+    fn test_list_project_files_no_git_service_returns_error() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let result = api.list_project_files();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("No git service"), "error was: {err}");
+    }
+
+    // ============================================================================
+    // get_project_file_content
+    // ============================================================================
+
+    fn api_with_project_root(dir: &std::path::Path) -> WorkflowApi {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        WorkflowApi::new(workflow, store).with_project_root(dir.to_path_buf())
+    }
+
+    #[test]
+    fn test_get_project_file_content_valid_path_returns_content() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hello.txt"), "hello world").unwrap();
+
+        let api = api_with_project_root(dir.path());
+        let content = api.get_project_file_content("hello.txt").unwrap();
+        assert_eq!(content, Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_get_project_file_content_nonexistent_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let api = api_with_project_root(dir.path());
+
+        let result = api.get_project_file_content("does_not_exist.txt").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_get_project_file_content_dotdot_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let api = api_with_project_root(dir.path());
+
+        let result = api.get_project_file_content("../etc/passwd");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid file path"), "error was: {err}");
+    }
+
+    #[test]
+    fn test_get_project_file_content_absolute_path_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let api = api_with_project_root(dir.path());
+
+        let result = api.get_project_file_content("/etc/passwd");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid file path"), "error was: {err}");
+    }
+
+    #[test]
+    fn test_get_project_file_content_null_byte_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let api = api_with_project_root(dir.path());
+
+        let result = api.get_project_file_content("file\0name.txt");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid file path"), "error was: {err}");
+    }
+
+    #[test]
+    fn test_get_project_file_content_symlink_escape_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "secret").unwrap();
+
+        // Create a symlink inside project root pointing outside
+        let link_path = dir.path().join("escape_link.txt");
+        std::os::unix::fs::symlink(outside.path().join("secret.txt"), &link_path).unwrap();
+
+        let api = api_with_project_root(dir.path());
+        let result = api.get_project_file_content("escape_link.txt");
+
+        // Should fail: canonical path escapes project root
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("escapes project root"), "error was: {err}");
+    }
+
+    #[test]
+    fn test_get_project_file_content_over_1mb_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        // Write a file just over 1MB
+        let large: Vec<u8> = vec![b'a'; 1_048_577];
+        std::fs::write(dir.path().join("large.txt"), &large).unwrap();
+
+        let api = api_with_project_root(dir.path());
+        let result = api.get_project_file_content("large.txt");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("too large"), "error was: {err}");
+    }
+
+    #[test]
+    fn test_get_project_file_content_binary_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        // Write bytes that are not valid UTF-8
+        let binary: Vec<u8> = vec![0xFF, 0xFE, 0x00, 0x01, 0x80];
+        std::fs::write(dir.path().join("binary.bin"), &binary).unwrap();
+
+        let api = api_with_project_root(dir.path());
+        let result = api.get_project_file_content("binary.bin");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Binary file"), "error was: {err}");
     }
 }

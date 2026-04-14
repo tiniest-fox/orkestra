@@ -182,6 +182,13 @@ pub fn list_branches(ctx: &CommandContext, _params: &Value) -> Result<Value, Err
     .unwrap_or(Value::Null))
 }
 
+/// List git-tracked files at the project root.
+pub fn list_project_files(ctx: &CommandContext, _params: &Value) -> Result<Value, ErrorPayload> {
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let files = api.list_project_files().map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(files).unwrap_or(Value::Array(vec![])))
+}
+
 // ============================================================================
 // Log queries
 // ============================================================================

@@ -1,4 +1,4 @@
-//! Unit tests for useCommandBar hook and taskMatchesFilter utility.
+// Unit tests for useCommandBar hook and taskMatchesFilter utility.
 
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -40,16 +40,29 @@ function makeTask(id: string, title: string): WorkflowTaskView {
 }
 
 const NO_TASKS: WorkflowTaskView[] = [];
+const NO_FILES: string[] = [];
 
-function makeHook(filterText: string, tasks: WorkflowTaskView[] = NO_TASKS) {
+function makeHook(
+  filterText: string,
+  tasks: WorkflowTaskView[] = NO_TASKS,
+  projectFiles: string[] = NO_FILES,
+) {
   const onExecuteCommand = vi.fn();
   const onSelectTask = vi.fn();
+  const onSelectFile = vi.fn();
   const { result, rerender } = renderHook(
-    ({ filter, ts }: { filter: string; ts: WorkflowTaskView[] }) =>
-      useCommandBar({ tasks: ts, filterText: filter, onExecuteCommand, onSelectTask }),
-    { initialProps: { filter: filterText, ts: tasks } },
+    ({ filter, ts, pf }: { filter: string; ts: WorkflowTaskView[]; pf: string[] }) =>
+      useCommandBar({
+        tasks: ts,
+        projectFiles: pf,
+        filterText: filter,
+        onExecuteCommand,
+        onSelectTask,
+        onSelectFile,
+      }),
+    { initialProps: { filter: filterText, ts: tasks, pf: projectFiles } },
   );
-  return { result, rerender, onExecuteCommand, onSelectTask };
+  return { result, rerender, onExecuteCommand, onSelectTask, onSelectFile };
 }
 
 // ============================================================================
@@ -302,6 +315,76 @@ describe("executeItem", () => {
 });
 
 // ============================================================================
+// File matching
+// ============================================================================
+
+describe("file matching", () => {
+  it("returns files matching substring of the full path", () => {
+    const files = ["src/components/Feed/FeedView.tsx", "src/hooks/useDiff.ts", "README.md"];
+    const { result } = makeHook("useDiff", NO_TASKS, files);
+    const fileItems = result.current.items.filter((i) => i.type === "file");
+    expect(fileItems).toHaveLength(1);
+    expect(fileItems[0].id).toBe("src/hooks/useDiff.ts");
+  });
+
+  it("file label shows filename and description shows directory", () => {
+    const files = ["src/components/Feed/FeedView.tsx"];
+    const { result } = makeHook("feedview", NO_TASKS, files);
+    const fileItems = result.current.items.filter((i) => i.type === "file");
+    expect(fileItems).toHaveLength(1);
+    expect(fileItems[0].label).toBe("FeedView.tsx");
+    expect(fileItems[0].description).toBe("src/components/Feed");
+  });
+
+  it("file at root has no description", () => {
+    const files = ["README.md"];
+    const { result } = makeHook("readme", NO_TASKS, files);
+    const fileItems = result.current.items.filter((i) => i.type === "file");
+    expect(fileItems).toHaveLength(1);
+    expect(fileItems[0].label).toBe("README.md");
+    expect(fileItems[0].description).toBeUndefined();
+  });
+
+  it("file results are limited to 10 matches", () => {
+    const files = Array.from({ length: 15 }, (_, i) => `src/component${i}.ts`);
+    const { result } = makeHook("component", NO_TASKS, files);
+    const fileItems = result.current.items.filter((i) => i.type === "file");
+    expect(fileItems).toHaveLength(10);
+  });
+
+  it("file items appear between commands and tasks in results", () => {
+    const files = ["src/push-helper.ts"];
+    const tasks = [makeTask("t1", "Push notification service")];
+    const { result } = makeHook("push", tasks, files);
+    const types = result.current.items.map((i) => i.type);
+    const cmdIdx = types.indexOf("command");
+    const fileIdx = types.indexOf("file");
+    const taskIdx = types.indexOf("task");
+    expect(cmdIdx).toBeLessThan(fileIdx);
+    expect(fileIdx).toBeLessThan(taskIdx);
+  });
+
+  it("file selection calls onSelectFile callback", () => {
+    const files = ["src/components/Feed/CommandBar.tsx"];
+    const { result, onSelectFile } = makeHook("commandbar", NO_TASKS, files);
+    const fileItem = result.current.items.find((i) => i.type === "file");
+    expect(fileItem).toBeDefined();
+    if (!fileItem) return;
+    act(() => {
+      result.current.executeItem(fileItem);
+    });
+    expect(onSelectFile).toHaveBeenCalledWith("src/components/Feed/CommandBar.tsx");
+  });
+
+  it("file matching is case-insensitive", () => {
+    const files = ["src/components/Feed/FeedView.tsx"];
+    const { result } = makeHook("FEEDVIEW", NO_TASKS, files);
+    const fileItems = result.current.items.filter((i) => i.type === "file");
+    expect(fileItems).toHaveLength(1);
+  });
+});
+
+// ============================================================================
 // Index resets on item change
 // ============================================================================
 
@@ -316,7 +399,7 @@ describe("index resets on item change", () => {
 
     // Change filter — new items array reference → index should reset
     act(() => {
-      rerender({ filter: "fe", ts: NO_TASKS });
+      rerender({ filter: "fe", ts: NO_TASKS, pf: NO_FILES });
     });
 
     expect(result.current.highlightedIndex).toBe(0);

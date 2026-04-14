@@ -5,8 +5,8 @@ use std::sync::Arc;
 use orkestra_core::workflow::ports::CommitInfo;
 use orkestra_networking::diff as shared_diff;
 use orkestra_networking::diff_types::{
-    cache_key_for_sha, combined_diff_sha, file_content_hash, highlight_file_diff,
-    HighlightedFileDiff, HighlightedLine, HighlightedTaskDiff, LineType, SyntaxCss,
+    cache_key_for_sha, combined_diff_sha, file_content_hash, highlight_file_content,
+    highlight_file_diff, HighlightedFileDiff, HighlightedLine, HighlightedTaskDiff, SyntaxCss,
 };
 use serde_json::Value;
 use tauri::State;
@@ -160,29 +160,43 @@ pub async fn workflow_get_file_content(
             return Ok(None);
         };
 
-        // Extract file extension for syntax highlighting
         let extension = std::path::Path::new(&file_path)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
 
-        // Highlight each line as context
-        #[allow(clippy::cast_possible_truncation)]
-        let lines: Vec<HighlightedLine> = content
-            .lines()
-            .enumerate()
-            .map(|(i, line)| {
-                let line_with_newline = format!("{line}\n");
-                let html = highlighter.highlight_line(&line_with_newline, extension);
-                HighlightedLine {
-                    line_type: LineType::Context,
-                    content: line.to_string(),
-                    html,
-                    old_line_number: Some((i + 1) as u32),
-                    new_line_number: Some((i + 1) as u32),
-                }
-            })
-            .collect();
+        let lines = highlight_file_content(&content, extension, &|line, ext| {
+            highlighter.highlight_line(line, ext)
+        });
+
+        Ok(Some(lines))
+    })
+}
+
+/// Get the content of a file at the project root, with syntax highlighting.
+#[tauri::command]
+pub async fn workflow_get_project_file_content(
+    file_path: String,
+    registry: tauri::State<'_, ProjectRegistry>,
+    window: tauri::Window,
+    highlighter: tauri::State<'_, SyntaxHighlighter>,
+) -> Result<Option<Vec<HighlightedLine>>, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
+        let content = api.get_project_file_content(&file_path)?;
+
+        let Some(content) = content else {
+            return Ok(None);
+        };
+
+        let extension = std::path::Path::new(&file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+
+        let lines = highlight_file_content(&content, extension, &|line, ext| {
+            highlighter.highlight_line(line, ext)
+        });
 
         Ok(Some(lines))
     })

@@ -40,6 +40,7 @@ pub struct MockGitService {
     force_push_error: Mutex<Option<GitError>>,
     branch_commits_results: Mutex<std::collections::VecDeque<Result<Vec<CommitInfo>, GitError>>>,
     commit_log_at_results: Mutex<std::collections::VecDeque<Result<Vec<CommitInfo>, GitError>>>,
+    next_list_files_result: Mutex<Option<Result<Vec<String>, GitError>>>,
 }
 
 impl MockGitService {
@@ -73,7 +74,13 @@ impl MockGitService {
             force_push_error: Mutex::new(None),
             branch_commits_results: Mutex::new(std::collections::VecDeque::new()),
             commit_log_at_results: Mutex::new(std::collections::VecDeque::new()),
+            next_list_files_result: Mutex::new(None),
         }
+    }
+
+    /// Set the result for the next `list_files` call.
+    pub fn set_next_list_files_result(&self, result: Result<Vec<String>, GitError>) {
+        *self.next_list_files_result.lock().unwrap() = Some(result);
     }
 
     /// Configure whether `has_pending_changes` returns `true` or `false`.
@@ -298,6 +305,23 @@ impl GitService for MockGitService {
         })
     }
 
+    // -- Files --
+
+    fn list_files(&self) -> Result<Vec<String>, GitError> {
+        if let Some(result) = self.next_list_files_result.lock().unwrap().take() {
+            return result;
+        }
+        Ok(vec![])
+    }
+
+    fn read_file_at_head(
+        &self,
+        _worktree_path: &Path,
+        _file_path: &str,
+    ) -> Result<Option<String>, GitError> {
+        Ok(None)
+    }
+
     // -- Branch --
 
     fn list_branches(&self) -> Result<Vec<String>, GitError> {
@@ -363,14 +387,6 @@ impl GitService for MockGitService {
 
     fn batch_file_counts(&self, _hashes: &[String]) -> Result<HashMap<String, usize>, GitError> {
         Ok(HashMap::new())
-    }
-
-    fn read_file_at_head(
-        &self,
-        _worktree_path: &Path,
-        _file_path: &str,
-    ) -> Result<Option<String>, GitError> {
-        Ok(None)
     }
 
     // -- Diff --

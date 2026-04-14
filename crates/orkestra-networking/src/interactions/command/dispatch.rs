@@ -164,6 +164,7 @@ pub async fn execute(
         "get_current_stage" => run_sync(ctx, params, query::get_current_stage).await,
         "get_rejection_feedback" => run_sync(ctx, params, query::get_rejection_feedback).await,
         "list_branches" => run_sync(ctx, params, query::list_branches).await,
+        "list_project_files" => run_sync(ctx, params, query::list_project_files).await,
         "get_logs" => run_sync(ctx, params, query::get_logs).await,
         "get_latest_log" => run_sync(ctx, params, query::get_latest_log).await,
         "get_pr_status" => run_sync(ctx, params, query::get_pr_status).await,
@@ -172,6 +173,7 @@ pub async fn execute(
         // -- Diffs --
         "get_task_diff" => diff::handle_get_task_diff(ctx, params).await,
         "get_file_content" => diff::handle_get_file_content(ctx, params).await,
+        "get_project_file_content" => diff::handle_get_project_file_content(ctx, params).await,
         "get_syntax_css" => Ok(diff::handle_get_syntax_css(&ctx, params)),
         "get_branch_commits" => run_sync(ctx, params, diff::get_branch_commits).await,
         "get_uncommitted_diff" => run_sync(ctx, params, diff::get_uncommitted_diff).await,

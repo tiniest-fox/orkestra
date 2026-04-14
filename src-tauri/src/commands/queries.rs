@@ -202,3 +202,14 @@ pub fn workflow_get_latest_log(
 pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
     fetch_pr_status(&pr_url).await.map_err(Into::into)
 }
+
+/// List all git-tracked files at the project root.
+#[tauri::command]
+pub fn workflow_list_project_files(
+    registry: State<ProjectRegistry>,
+    window: Window,
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        query::list_project_files(state.command_context(), &Value::Null).map_err(Into::into)
+    })
+}

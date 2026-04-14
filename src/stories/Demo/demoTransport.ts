@@ -37,6 +37,18 @@ export function createDemoTransport(): Transport {
             current: "main",
             branches: ["main", "task/rate-limiting", "task/db-pooling"],
           });
+        case "list_project_files":
+          return resolve(["src/App.tsx", "src/main.tsx", "package.json"]);
+        case "get_project_file_content":
+          return resolve([
+            {
+              line_type: "context",
+              content: "// Demo file content",
+              html: "// Demo file content",
+              old_line_number: 1,
+              new_line_number: 1,
+            },
+          ]);
         case "git_sync_status":
           return resolve({ ahead: 0, behind: 0 });
         case "get_diff":

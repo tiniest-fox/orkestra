@@ -7,6 +7,7 @@ pub mod file_content;
 pub mod iterations;
 pub mod logs;
 pub mod questions;
+pub mod read_project_file;
 pub mod sessions;
 pub mod task_sync_status;
 pub mod task_views;

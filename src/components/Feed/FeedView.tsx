@@ -9,7 +9,7 @@ import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { usePrStatus } from "../../providers/PrStatusProvider";
 import { useTasks } from "../../providers/TasksProvider";
 import { useToast } from "../../providers/ToastProvider";
-import { useTransport } from "../../transport";
+import { useConnectionState, useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { confirmAction } from "../../utils/confirmAction";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
@@ -23,6 +23,7 @@ import { TaskDrawer } from "./Drawer/TaskDrawer";
 import { FeedHeader } from "./FeedHeader";
 import { FeedSection } from "./FeedSection";
 import { FeedStatusLine } from "./FeedStatusLine";
+import { FileViewerDrawer } from "./FileViewerDrawer";
 import { GitHistoryDrawer } from "./GitHistoryDrawer";
 import { InteractiveDrawer } from "./InteractiveDrawer";
 import { MobileTabBar } from "./MobileTabBar";
@@ -46,6 +47,7 @@ type DrawerMode =
   | "answer"
   | "focus"
   | "ship"
+  | "file-viewer"
   | null;
 
 function deriveDrawerMode(
@@ -54,6 +56,7 @@ function deriveDrawerMode(
   assistantOpen: boolean,
   taskAssistantOpen: boolean,
   interactiveTaskOpen: boolean,
+  fileViewerOpen: boolean,
   activeTask: WorkflowTaskView | null,
   rejectMode: boolean,
 ): DrawerMode {
@@ -61,6 +64,7 @@ function deriveDrawerMode(
   if (assistantOpen || taskAssistantOpen) return "assistant";
   if (gitHistoryOpen) return "git-history";
   if (interactiveTaskOpen) return "interactive";
+  if (fileViewerOpen) return "file-viewer";
   if (!activeTask) return null;
   if (activeTask.derived.needs_review) return rejectMode ? "review-reject" : "review";
   if (activeTask.derived.has_questions) return "answer";
@@ -77,6 +81,7 @@ interface FeedViewProps {
 
 export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: FeedViewProps) {
   const transport = useTransport();
+  const connectionState = useConnectionState();
   const { applyOptimistic, isStale } = useTasks();
   const { showError } = useToast();
   const isMobile = useIsMobile();
@@ -87,6 +92,8 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [taskAssistantId, setTaskAssistantId] = useState<string | null>(null);
   const [interactiveTaskId, setInteractiveTaskId] = useState<string | null>(null);
+  const [fileViewerPath, setFileViewerPath] = useState<string | null>(null);
+  const [projectFiles, setProjectFiles] = useState<string[]>([]);
   const commandBarInputRef = useRef<HTMLInputElement>(null);
 
   const panelOpen =
@@ -94,7 +101,8 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     gitHistoryOpen ||
     assistantOpen ||
     taskAssistantId !== null ||
-    interactiveTaskId !== null;
+    interactiveTaskId !== null ||
+    fileViewerPath !== null;
   const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
   const { getPrStatus } = usePrStatus();
@@ -111,6 +119,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     setAssistantOpen(false);
     setTaskAssistantId(null);
     setInteractiveTaskId(null);
+    setFileViewerPath(null);
     closeNewTask();
   }, [closeNewTask]);
 
@@ -122,6 +131,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     assistantOpen,
     taskAssistantId !== null,
     interactiveTaskId !== null,
+    fileViewerPath !== null,
     activeTask,
     rejectMode,
   );
@@ -180,12 +190,24 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     return ids;
   }, [sections, subtaskRows]);
 
+  // Fetch file list whenever connection is established.
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    transport
+      .call<string[]>("list_project_files")
+      .then(setProjectFiles)
+      .catch((err) => {
+        if (!isDisconnectError(err)) console.error("Failed to load project files:", err);
+      });
+  }, [connectionState, transport]);
+
   const openAssistant = useCallback(() => {
     setAssistantOpen(true);
     setActiveTaskId(null);
     setGitHistoryOpen(false);
     setTaskAssistantId(null);
     setInteractiveTaskId(null);
+    setFileViewerPath(null);
   }, []);
 
   const openTaskAssistant = useCallback((taskId: string) => {
@@ -194,6 +216,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     setAssistantOpen(false);
     setGitHistoryOpen(false);
     setInteractiveTaskId(null);
+    setFileViewerPath(null);
   }, []);
 
   const openInteractive = useCallback(
@@ -205,6 +228,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
         setGitHistoryOpen(false);
         setAssistantOpen(false);
         setTaskAssistantId(null);
+        setFileViewerPath(null);
       } catch (err) {
         console.error(err);
       }
@@ -234,6 +258,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
       setGitHistoryOpen(false);
       setAssistantOpen(false);
       setTaskAssistantId(null);
+      setFileViewerPath(null);
       if (task?.derived.is_interactive) {
         setInteractiveTaskId(taskId);
         setActiveTaskId(null);
@@ -257,6 +282,20 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     currentFocusedId: rawFocusedId,
     onRestoreFocus: setFocusedId,
   });
+
+  const handleSelectFile = useCallback(
+    (filePath: string) => {
+      clearFilter();
+      commandBarInputRef.current?.blur();
+      setActiveTaskId(null);
+      setGitHistoryOpen(false);
+      setAssistantOpen(false);
+      setTaskAssistantId(null);
+      setInteractiveTaskId(null);
+      setFileViewerPath(filePath);
+    },
+    [clearFilter],
+  );
 
   const filteredSections = useMemo(() => {
     if (!filterText) return sections;
@@ -298,6 +337,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           setAssistantOpen(false);
           setTaskAssistantId(null);
           setInteractiveTaskId(null);
+          setFileViewerPath(null);
           break;
       }
     },
@@ -345,6 +385,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
             setGitHistoryOpen(false);
             setTaskAssistantId(null);
             setInteractiveTaskId(null);
+            setFileViewerPath(null);
           }
           return !prev;
         });
@@ -367,10 +408,12 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
       />
       <CommandBar
         tasks={tasks}
+        projectFiles={projectFiles}
         filterText={filterText}
         onFilterChange={handleFilterChange}
         onExecuteCommand={handleExecuteCommand}
         onSelectTask={handleSelectTask}
+        onSelectFile={handleSelectFile}
         inputRef={commandBarInputRef}
       />
       {isMobile && <NotificationBanner />}
@@ -441,6 +484,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           setActiveTaskId(null);
           setAssistantOpen(false);
           setInteractiveTaskId(null);
+          setFileViewerPath(null);
         }}
       />
       {isMobile && (
@@ -455,6 +499,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
             setAssistantOpen(false);
             setTaskAssistantId(null);
             setInteractiveTaskId(null);
+            setFileViewerPath(null);
           }}
           onNewTask={() => {
             setGitHistoryOpen(false);
@@ -462,6 +507,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
             setTaskAssistantId(null);
             setInteractiveTaskId(null);
             setActiveTaskId(null);
+            setFileViewerPath(null);
             openNewTask();
           }}
           onAssistantOpen={() => {
@@ -471,6 +517,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                 setGitHistoryOpen(false);
                 setTaskAssistantId(null);
                 setInteractiveTaskId(null);
+                setFileViewerPath(null);
               }
               return !prev;
             });
@@ -528,6 +575,9 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
         <InteractiveDrawer task={interactiveTask} onClose={handleInteractiveClose} />
       )}
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}
+      {fileViewerPath && (
+        <FileViewerDrawer filePath={fileViewerPath} onClose={() => setFileViewerPath(null)} />
+      )}
       {activeTask && (
         <TaskDrawer
           task={activeTask}

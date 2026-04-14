@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+#
+# Reproduce the Tauri shell env resolution problem at small scale.
+#
+# Problem: Tauri desktop apps inherit launchd's bare environment. Orkestra's
+# Rust code resolves the project env by spawning:
+#
+#   /bin/zsh -l -i -c 'env -0'
+#
+# ...with current_dir set to project_root, stdin=/dev/null, and a 5-second
+# timeout (via thread + channel, not the `timeout` binary). When this times
+# out, agents inherit the Tauri process's bare env — no mise, no rbenv.
+#
+# This script faithfully reproduces that mechanism: we use env -i to simulate
+# launchd's bare env, then spawn zsh with the same flags and our own bash-level
+# timeout (no `timeout` binary needed — it doesn't exist on bare macOS PATH).
+#
+# Usage:
+#   bin/test-env-resolution              # run against current project dir
+#   bin/test-env-resolution ~/code/dewey # run against a specific project
+
+PROJECT_ROOT="${1:-$(pwd)}"
+
+# -- Launchd simulation -------------------------------------------------------
+# macOS launchd gives GUI apps roughly this environment. We simulate it with
+# env -i, keeping only the essentials. This is what the Tauri process inherits
+# when launched from Finder / Spotlight (not from a terminal).
+
+BARE_HOME="$HOME"
+BARE_USER="$USER"
+BARE_SHELL="${SHELL:-/bin/zsh}"
+BARE_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
+# -- Helpers -------------------------------------------------------------------
+
+TIMEOUT_SECS=5
+DIVIDER="────────────────────────────────────────────────────────────"
+TMPDIR_SCRIPT=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_SCRIPT"' EXIT
+
+header() {
+  echo ""
+  echo "$DIVIDER"
+  echo "  $1"
+  echo "$DIVIDER"
+}
+
+# Run a command inside the simulated bare env with a bash-level timeout.
+# This mirrors the Rust implementation: spawn process, wait up to N seconds,
+# kill if it doesn't finish.
+#
+# On success, raw output is in $RESULT_FILE (may contain NUL bytes).
+# On failure, returns non-zero.
+#
+# Usage: run_bare_timed "label" command [args...]
+RESULT_FILE=""
+run_bare_timed() {
+  local label="$1"; shift
+
+  RESULT_FILE="$TMPDIR_SCRIPT/output_$$_$RANDOM"
+
+  local start end elapsed
+
+  start=$(python3 -c 'import time; print(int(time.time()*1e9))')
+
+  # Spawn in bare env, capture raw output (preserving NUL bytes)
+  env -i \
+    HOME="$BARE_HOME" \
+    USER="$BARE_USER" \
+    SHELL="$BARE_SHELL" \
+    PATH="$BARE_PATH" \
+    TERM="xterm-256color" \
+    __CFBundleIdentifier="com.orkestra.dev" \
+    "$@" > "$RESULT_FILE" 2>/dev/null &
+  local pid=$!
+
+  # Poll for completion (100ms intervals, up to TIMEOUT_SECS)
+  local waited=0
+  local max_wait=$((TIMEOUT_SECS * 10))
+  while [ $waited -lt $max_wait ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+
+  end=$(python3 -c 'import time; print(int(time.time()*1e9))')
+  elapsed=$(( (end - start) / 1000000 ))
+
+  if kill -0 "$pid" 2>/dev/null; then
+    # Still running — kill it (mirrors Rust's kill_process_tree)
+    kill -TERM "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    echo "  $label: TIMED OUT after ${elapsed}ms (>${TIMEOUT_SECS}s limit)"
+    return 1
+  fi
+
+  # Process finished — get exit code
+  wait "$pid" 2>/dev/null
+  local exit_code=$?
+
+  if [ $exit_code -ne 0 ]; then
+    echo "  $label: FAILED (exit $exit_code, ${elapsed}ms)"
+    return 1
+  fi
+
+  local size
+  size=$(wc -c < "$RESULT_FILE" | tr -d ' ')
+  echo "  $label: OK (${elapsed}ms, ${size} bytes)"
+  return 0
+}
+
+# Check env quality from NUL-delimited output file
+check_nul_env() {
+  local file="$1"
+
+  # Convert NUL-delimited to newlines for grep
+  local path
+  path=$(tr '\0' '\n' < "$file" | grep "^PATH=" | head -1 | cut -d= -f2-)
+
+  if [ -z "$path" ]; then
+    echo "    PATH: (empty or not captured)"
+    return
+  fi
+
+  if echo "$path" | grep -q "mise"; then
+    echo "    mise in PATH: YES"
+  else
+    echo "    mise in PATH: no"
+  fi
+
+  local ruby_path
+  ruby_path=$(PATH="$path" command -v ruby 2>/dev/null || true)
+  if [ -n "$ruby_path" ]; then
+    local ruby_version
+    ruby_version=$(PATH="$path" "$ruby_path" --version 2>/dev/null || echo "(failed)")
+    echo "    ruby: $ruby_path -> $ruby_version"
+  else
+    echo "    ruby: not found in resolved PATH"
+  fi
+
+  # Count total vars resolved
+  local var_count
+  var_count=$(tr '\0' '\n' < "$file" | grep -c '=' || true)
+  echo "    total env vars: $var_count"
+}
+
+# Check env quality from 'export KEY="value"' line output (mise env format)
+check_export_env() {
+  local file="$1"
+
+  local path
+  path=$(grep "^export PATH=" "$file" | head -1 | sed 's/^export PATH="//' | sed 's/"$//')
+
+  if [ -z "$path" ]; then
+    echo "    PATH: (empty or not captured)"
+    return
+  fi
+
+  if echo "$path" | grep -q "mise"; then
+    echo "    mise in PATH: YES"
+  else
+    echo "    mise in PATH: no"
+  fi
+
+  local ruby_path
+  ruby_path=$(PATH="$path" command -v ruby 2>/dev/null || true)
+  if [ -n "$ruby_path" ]; then
+    local ruby_version
+    ruby_version=$(PATH="$path" "$ruby_path" --version 2>/dev/null || echo "(failed)")
+    echo "    ruby: $ruby_path -> $ruby_version"
+  else
+    echo "    ruby: not found in resolved PATH"
+  fi
+
+  local var_count
+  var_count=$(grep -c "^export " "$file" || true)
+  echo "    vars exported: $var_count"
+}
+
+# ==============================================================================
+# Main
+# ==============================================================================
+
+echo "Project root: $PROJECT_ROOT"
+echo "Shell:        $BARE_SHELL"
+echo "Timeout:      ${TIMEOUT_SECS}s"
+echo ""
+echo "Simulating launchd bare env (what Tauri inherits from Finder):"
+echo "  PATH=$BARE_PATH"
+echo "  HOME=$BARE_HOME"
+echo ""
+echo "The Rust code does: Command::new(\"/bin/zsh\").args([\"-l\",\"-i\",\"-c\",\"env -0\"])"
+echo "with stdin=null, stdout=piped, current_dir=project_root, 5s thread timeout."
+
+# -- Baseline: what does the real terminal env look like? ----------------------
+
+header "0. Baseline (your current terminal env)"
+echo "  PATH (first 3 entries):"
+echo "$PATH" | tr ':' '\n' | head -3 | sed 's/^/    /'
+terminal_ruby=$(command -v ruby 2>/dev/null || echo "not found")
+echo "  ruby: $terminal_ruby -> $(ruby --version 2>/dev/null || echo 'N/A')"
+
+# -- Strategy 1: Current approach (zsh -l -i -c 'env -0') ---------------------
+# Exact reproduction of resolve_project_env.rs:31
+# Uses /bin/zsh (absolute path) with login+interactive flags, stdin=/dev/null.
+
+header "1. Current Orkestra approach: /bin/zsh -l -i -c 'env -0'"
+echo "  (reproduces resolve_project_env.rs line 31)"
+if run_bare_timed "resolve" /bin/zsh -l -i -c "cd '$PROJECT_ROOT' && env -0"; then
+  check_nul_env "$RESULT_FILE"
+fi
+
+# -- Strategy 2: Login shell, non-interactive (zsh -l -c) ----------------------
+# Skips .zshrc (only sources .zprofile/.zlogin). May miss mise if it's
+# activated in .zshrc rather than .zprofile.
+
+header "2. Login, non-interactive: /bin/zsh -l -c 'env -0'"
+if run_bare_timed "resolve" /bin/zsh -l -c "cd '$PROJECT_ROOT' && env -0"; then
+  check_nul_env "$RESULT_FILE"
+fi
+
+# -- Locate mise binary (used by strategies 3-5) ------------------------------
+
+MISE_BIN=""
+for candidate in "$HOME/.local/bin/mise" "/opt/homebrew/bin/mise" "/usr/local/bin/mise"; do
+  if [ -x "$candidate" ]; then
+    MISE_BIN="$candidate"
+    break
+  fi
+done
+
+# -- Strategy 3: mise env (targeted, no shell init) ----------------------------
+# Call mise binary directly at a known absolute path. No shell init overhead.
+
+header "3. mise env (direct binary): $MISE_BIN env -C <project> -s zsh"
+if [ -n "$MISE_BIN" ]; then
+  echo "  mise binary: $MISE_BIN"
+  if run_bare_timed "resolve" "$MISE_BIN" env -C "$PROJECT_ROOT" -s zsh; then
+    check_export_env "$RESULT_FILE"
+  fi
+else
+  echo "  mise binary: not found at known paths, skipping"
+fi
+
+# -- Strategy 4: Direct mise activation in subshell ----------------------------
+# Activate mise inside a minimal zsh (no login, no interactive) to get
+# the full env including hooks. Uses absolute paths throughout.
+
+header "4. mise activate in minimal zsh"
+if [ -n "$MISE_BIN" ]; then
+  if run_bare_timed "resolve" /bin/zsh -c "eval \"\$('$MISE_BIN' activate zsh)\" && cd '$PROJECT_ROOT' && eval \"\$('$MISE_BIN' hook-env -s zsh 2>/dev/null)\" && env -0"; then
+    check_nul_env "$RESULT_FILE"
+  fi
+else
+  echo "  skipped (no mise binary found)"
+fi
+
+# -- Strategy 5: mise env, run 3x to test consistency/caching -----------------
+# If we cache the result, how fast is it to just re-call mise?
+
+header "5. mise env 3x (consistency + caching potential)"
+if [ -n "$MISE_BIN" ]; then
+  for i in 1 2 3; do
+    run_bare_timed "run $i" "$MISE_BIN" env -C "$PROJECT_ROOT" -s zsh || true
+  done
+else
+  echo "  skipped (no mise binary found)"
+fi
+
+# -- Summary -------------------------------------------------------------------
+
+header "Summary"
+echo ""
+echo "  Strategy 1 (zsh -l -i):      Orkestra's current approach"
+echo "  Strategy 2 (zsh -l):          login-only, skips .zshrc"
+echo "  Strategy 3 (mise env):        direct binary call, no shell"
+echo "  Strategy 4 (mise activate):   activation in minimal zsh"
+echo "  Strategy 5 (mise env x3):     consistency check"
+echo ""
+echo "  Winner: completes in <1s, resolves correct Ruby, works from bare env."

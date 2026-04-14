@@ -34,6 +34,13 @@ pub fn execute(conn: &Connection, task_ids: &[String]) -> WorkflowResult<()> {
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
     }
+    for id in task_ids {
+        tx.execute(
+            "DELETE FROM workflow_artifacts WHERE task_id = ?",
+            params![id],
+        )
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+    }
     // Reverse order: children before parents (parent_id FK)
     for id in task_ids.iter().rev() {
         tx.execute("DELETE FROM workflow_tasks WHERE id = ?", params![id])

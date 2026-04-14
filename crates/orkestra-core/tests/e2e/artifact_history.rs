@@ -197,3 +197,154 @@ fn test_rejection_creates_new_artifact_row() {
     // The newest row has the updated content.
     assert_eq!(artifacts_after_second[1].content, "Plan v2 — detailed");
 }
+
+// =============================================================================
+// Test 5: Failed output produces no artifact rows
+// =============================================================================
+
+/// When an agent reports failure, no artifact row is written to `workflow_artifacts`.
+#[test]
+fn test_failed_output_produces_no_artifact_row() {
+    let ctx = TestEnv::with_workflow(planning_only_workflow());
+    let task = ctx.create_task("Failing task", "Task that fails", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Agent crashed unexpectedly.".to_string(),
+        },
+    );
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → Failed state, no artifact row
+
+    let artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert!(
+        artifacts.is_empty(),
+        "Failed output should produce no artifact rows, got: {artifacts:?}"
+    );
+}
+
+// =============================================================================
+// Test 6: Subtask artifact is stored with the subtask's task_id
+// =============================================================================
+
+/// When a subtask agent produces an artifact, the `workflow_artifacts` row uses
+/// the subtask's own `task_id` — not the parent's.
+#[test]
+fn test_subtask_artifact_stored_with_subtask_task_id() {
+    let ctx = TestEnv::with_workflow(planning_only_workflow());
+
+    // Create and complete the parent task first.
+    let parent = ctx.create_task("Parent task", "Parent description", None);
+    let parent_id = parent.id.clone();
+
+    ctx.set_output(
+        &parent_id,
+        MockAgentOutput::artifact("plan", "Parent plan."),
+    );
+    ctx.advance(); // spawn parent agent
+    ctx.advance(); // process output → Done
+
+    // Create the subtask (parent is now Done — valid state for subtask creation).
+    let subtask = ctx
+        .api()
+        .create_subtask(&parent_id, "Subtask", "Subtask description")
+        .expect("Should create subtask");
+    let subtask_id = subtask.id.clone();
+
+    ctx.advance(); // set up subtask (AwaitingSetup → Idle)
+
+    // Drive subtask agent to produce an artifact.
+    ctx.set_output(
+        &subtask_id,
+        MockAgentOutput::artifact("plan", "Subtask plan."),
+    );
+    ctx.advance(); // spawn subtask agent
+    ctx.advance(); // process output → Done, persist artifact
+
+    // Subtask artifact must reference the subtask, not the parent.
+    let subtask_artifacts = ctx.api().list_workflow_artifacts(&subtask_id).unwrap();
+    assert_eq!(
+        subtask_artifacts.len(),
+        1,
+        "Subtask should have exactly one artifact row"
+    );
+    assert_eq!(
+        subtask_artifacts[0].task_id, subtask_id,
+        "Artifact task_id should match the subtask's ID, not the parent's"
+    );
+
+    // Parent's artifact list must not contain the subtask's artifact.
+    let parent_artifacts = ctx.api().list_workflow_artifacts(&parent_id).unwrap();
+    assert_eq!(
+        parent_artifacts.len(),
+        1,
+        "Parent should have exactly one artifact row (its own)"
+    );
+    assert_eq!(parent_artifacts[0].task_id, parent_id);
+}
+
+// =============================================================================
+// Test 7: Chat-mode completion produces an artifact row
+// =============================================================================
+
+/// When structured output is detected in accumulated chat text, the artifact is
+/// saved to `workflow_artifacts` via the same `dispatch_output` path as normal
+/// agent completion.
+#[test]
+fn test_chat_mode_completion_produces_artifact_row() {
+    let ctx = TestEnv::with_git(&planning_with_gate(), &["planning", "work"]);
+    let task = ctx.create_task("Chat artifact test", "Test chat completion artifact", None);
+    let task_id = task.id.clone();
+
+    // Drive planning agent to produce output → AwaitingApproval (agentic gate pauses here).
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "Initial plan."));
+    ctx.advance(); // spawn planning agent
+    ctx.advance(); // process output → AwaitingApproval, artifact row 1 stored
+
+    let artifacts_before_chat = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts_before_chat.len(),
+        1,
+        "One artifact row from the initial agent output"
+    );
+
+    // For a stage with an agentic gate, the schema excludes the artifact type name from the
+    // type enum — "approval" replaces it. Use approval JSON with decision="approve"; the
+    // content becomes the artifact body (handle_approval delegates "approve" to handle_artifact).
+    let chat_approval_json =
+        r#"{"type":"approval","decision":"approve","content":"Plan approved via chat."}"#;
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "planning", "default", chat_approval_json)
+        .expect("detect_chat_completion should not error");
+    assert!(
+        detected,
+        "Valid approval JSON should be detected as structured output"
+    );
+
+    // A second artifact row should have been stored for the chat completion iteration.
+    // handle_approval("approve") delegates to handle_artifact, which calls persist_and_emit_artifact.
+    let artifacts_after_chat = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts_after_chat.len(),
+        2,
+        "Two artifact rows: one from the initial agent, one from the chat approval"
+    );
+    assert!(
+        artifacts_after_chat.iter().all(|a| a.task_id == task_id),
+        "All artifact rows should belong to the same task"
+    );
+    assert!(
+        artifacts_after_chat.iter().all(|a| a.name == "plan"),
+        "All artifact rows should have name 'plan'"
+    );
+
+    // The chat completion artifact should contain the approval content.
+    let chat_artifact = artifacts_after_chat
+        .iter()
+        .find(|a| a.content == "Plan approved via chat.")
+        .expect("Should find the chat completion artifact by content");
+    assert_eq!(chat_artifact.stage, "planning");
+}

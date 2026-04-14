@@ -19,9 +19,6 @@ pub fn execute(conn: &Connection, task_id: &str) -> WorkflowResult<Vec<WorkflowA
         .query_map(params![task_id], super::from_row::execute)
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
-    let mut artifacts = Vec::new();
-    for row in rows {
-        artifacts.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
-    }
-    Ok(artifacts)
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| WorkflowError::Storage(e.to_string()))
 }

@@ -33,6 +33,9 @@ export function useSessionLogs(sessionId: string | null): UseSessionLogsResult {
     const newLogs = await transport.call<LogEntry[]>("assistant_get_logs", {
       session_id: sessionId,
     });
+    // Length-based comparison is correct because logs are append-only during active sessions
+    // (no UPDATE/DELETE in the store while viewing). If in-place mutation is ever added, this
+    // must be updated to a content-aware comparison.
     setLogs((prev) => (prev.length === newLogs.length ? prev : newLogs));
   }, [transport, sessionId]);
 

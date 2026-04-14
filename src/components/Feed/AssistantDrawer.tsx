@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import { useToast } from "../../providers/ToastProvider";
-import { useTransport } from "../../transport";
+import { useConnectionState, useTransport, useTransportListener } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
 import { parseAssistantQuestions } from "../../utils/assistantQuestions";
 import { relativeTime } from "../../utils/relativeTime";
@@ -34,6 +34,7 @@ interface AssistantDrawerProps {
 
 export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProps) {
   const transport = useTransport();
+  const connectionState = useConnectionState();
   const { showError } = useToast();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -86,17 +87,17 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     }
   }, [transport, taskId]);
 
-  // -- Fetch logs when session changes --
+  // -- Fetch logs when session changes or connection is restored --
   useEffect(() => {
-    if (!activeSessionId) {
-      setLogs([]);
+    if (!activeSessionId || connectionState !== "connected") {
+      if (!activeSessionId) setLogs([]);
       return;
     }
     transport
       .call<LogEntry[]>("assistant_get_logs", { session_id: activeSessionId })
       .then(setLogs)
       .catch(console.error);
-  }, [transport, activeSessionId]);
+  }, [transport, activeSessionId, connectionState]);
 
   // -- Fetch the active task session by session ID (task mode only) --
   const fetchTaskSession = useCallback(async (): Promise<AssistantSession | undefined> => {
@@ -111,7 +112,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
       const newLogs = await transport.call<LogEntry[]>("assistant_get_logs", {
         session_id: activeSessionId,
       });
-      setLogs((prev) => (JSON.stringify(prev) === JSON.stringify(newLogs) ? prev : newLogs));
+      setLogs((prev) => (prev.length === newLogs.length ? prev : newLogs));
       if (taskId) {
         // Task mode: update just the task's session to track agent_pid.
         const taskSession = await fetchTaskSession();
@@ -144,7 +145,14 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     }
   }, [transport, activeSessionId, taskId, fetchTaskSession]);
 
-  usePolling(isAgentRunning ? fetchLogs : null, 1000);
+  usePolling(isAgentRunning && connectionState === "connected" ? fetchLogs : null, 1000);
+
+  // Trigger a log fetch when the backend signals new entries for the active session.
+  useTransportListener<{ task_id: string; session_id: string }>("log_entry_appended", (data) => {
+    if (activeSessionId && data.session_id === activeSessionId) {
+      void fetchLogs();
+    }
+  });
 
   // -- Escape closes session list before panel --
   useEffect(() => {

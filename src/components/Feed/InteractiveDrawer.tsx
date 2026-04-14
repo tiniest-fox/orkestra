@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import { useToast, useWorkflowConfig } from "../../providers";
-import { useTransport } from "../../transport";
+import { useConnectionState, useTransport, useTransportListener } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowTaskView } from "../../types/workflow";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { isDisconnectError } from "../../utils/transportErrors";
@@ -127,6 +127,7 @@ interface InteractiveDrawerBodyProps {
 
 function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   const transport = useTransport();
+  const connectionState = useConnectionState();
   const config = useWorkflowConfig();
   const { showError } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>("agent");
@@ -158,14 +159,14 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
       .catch(console.error);
   }, [transport, task.id]);
 
-  // -- Fetch logs when session changes --
+  // -- Fetch logs when session changes or connection is restored --
   useEffect(() => {
-    if (!session?.id) return;
+    if (!session?.id || connectionState !== "connected") return;
     transport
       .call<LogEntry[]>("assistant_get_logs", { session_id: session.id })
       .then(setLogs)
       .catch(console.error);
-  }, [transport, session?.id]);
+  }, [transport, session?.id, connectionState]);
 
   // -- Poll logs and session while agent is running --
   const pollSession = useCallback(async () => {
@@ -175,7 +176,7 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
         transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
         transport.call<AssistantSession[]>("assistant_list_sessions", {}),
       ]);
-      setLogs((prev) => (JSON.stringify(prev) === JSON.stringify(newLogs) ? prev : newLogs));
+      setLogs((prev) => (prev.length === newLogs.length ? prev : newLogs));
       const updated = allSessions.find(
         (s) => s.task_id === task.id && s.session_type === "interactive",
       );
@@ -191,7 +192,14 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     }
   }, [transport, session?.id, task.id]);
 
-  usePolling(isAgentRunning ? pollSession : null, 1000);
+  usePolling(isAgentRunning && connectionState === "connected" ? pollSession : null, 1000);
+
+  // Trigger a session+log fetch when the backend signals new entries for the active session.
+  useTransportListener<{ task_id: string; session_id: string }>("log_entry_appended", (data) => {
+    if (session?.id && data.session_id === session.id) {
+      void pollSession();
+    }
+  });
 
   // -- Send message --
   const handleSend = useCallback(async () => {

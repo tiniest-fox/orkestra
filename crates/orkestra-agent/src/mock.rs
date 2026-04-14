@@ -9,7 +9,7 @@ use orkestra_parser::StageOutput;
 use orkestra_types::domain::LogEntry;
 
 use crate::interface::AgentRunner;
-use crate::types::{RunConfig, RunError, RunEvent, RunResult};
+use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent, RunResult};
 
 // ============================================================================
 // MockAgentRunner
@@ -184,7 +184,7 @@ impl AgentRunner for MockAgentRunner {
             let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
                 content: "Mock agent activity before failure".to_string(),
             }));
-            let _ = tx.send(RunEvent::Completed(Err(error)));
+            let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(error))));
             return Ok((pid, rx));
         }
 
@@ -235,7 +235,9 @@ impl AgentRunner for MockAgentRunner {
                     Some(id) => format!("No output configured for task {id}"),
                     None => "No output configured (task_id unknown)".to_string(),
                 };
-                let _ = tx.send(RunEvent::Completed(Err(err_msg)));
+                let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
+                    err_msg,
+                ))));
             }
         }
 

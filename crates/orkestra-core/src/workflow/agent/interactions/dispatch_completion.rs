@@ -93,7 +93,9 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
                 }
             }
         }
-        ExecutionResult::AgentFailed(error) | ExecutionResult::PollError { error } => {
+        ExecutionResult::AgentFailed(error)
+        | ExecutionResult::AgentMalformedOutput(error)
+        | ExecutionResult::PollError { error } => {
             if let Err(e) =
                 api.fail_agent_execution(&exec.task_id, &format!("Agent error: {error}"))
             {

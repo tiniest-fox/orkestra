@@ -28,7 +28,7 @@ pub use interface::AgentRunner;
 pub use service::ProcessAgentRunner;
 
 // Types
-pub use types::{RunConfig, RunError, RunEvent, RunResult};
+pub use types::{AgentCompletionError, RunConfig, RunError, RunEvent, RunResult};
 
 // Script
 pub use script_handle::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};

@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Validates mermaid diagram blocks in files and assistant responses.
+
+Called as two different Claude Code hooks:
+
+  PreToolUse (Write, Edit):
+    Checks content before it is written. For Write, checks tool_input.content.
+    For Edit, checks tool_input.new_string (the incoming change, not the full
+    file — we only need to block newly introduced invalid diagrams).
+    Exits 2 on failure, which blocks the write entirely.
+
+  Stop:
+    Checks the assistant's final response text for invalid mermaid blocks.
+    Exits 2 on failure, which blocks the response and forces a retry.
+
+Validation uses mermaid.parse() via bin/mermaid-parse.mjs, so it catches real
+syntax errors — not just wrong diagram type names.
+"""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+_HERE = Path(__file__).parent
+
+
+def extract_mermaid_blocks(content: str) -> list[str]:
+    """Return the body of each ```mermaid...``` block in content."""
+    return re.findall(r"```mermaid\r?\n([\s\S]*?)```", content)
+
+
+def validate_block(diagram: str) -> str | None:
+    """Return an error string if the diagram is invalid, or None if valid."""
+    try:
+        result = subprocess.run(
+            ["node", str(_HERE / "mermaid-parse.mjs"), diagram],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except subprocess.TimeoutExpired:
+        return "mermaid validation timed out"
+    except FileNotFoundError:
+        return "node not found — cannot validate mermaid"
+
+    if result.returncode != 0:
+        return (result.stderr.strip() or "Invalid mermaid syntax")
+
+    return None
+
+
+def validate_blocks(blocks: list[str], source: str) -> list[str]:
+    """Return a list of error strings, one per invalid block."""
+    errors = []
+    for i, block in enumerate(blocks, 1):
+        err = validate_block(block.strip())
+        if err:
+            errors.append(f"Mermaid block {i} in {source}: {err}")
+    return errors
+
+
+def main() -> int:
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return 0
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return 0
+
+    hook_event = payload.get("hook_event_name", "")
+    tool_name = payload.get("tool_name", "")
+
+    # -- Stop hook: validate mermaid in the assistant's response text --
+    if hook_event == "Stop":
+        content = payload.get("last_assistant_message", "")
+        blocks = extract_mermaid_blocks(content)
+        if not blocks:
+            return 0
+        errors = validate_blocks(blocks, "response")
+        if errors:
+            print("Mermaid validation failed in response:\n", file=sys.stderr)
+            for err in errors:
+                print(f"  {err}\n", file=sys.stderr)
+            return 2  # Blocks the response and forces a retry.
+        return 0
+
+    # -- PreToolUse: validate mermaid before the file is written --
+    tool_input = payload.get("tool_input", {})
+
+    if tool_name == "Write":
+        content = tool_input.get("content", "")
+        source = tool_input.get("file_path", "<write>")
+    elif tool_name == "Edit":
+        # Check only new_string — we block newly introduced invalid diagrams.
+        content = tool_input.get("new_string", "")
+        source = tool_input.get("file_path", "<edit>")
+    else:
+        return 0
+
+    blocks = extract_mermaid_blocks(content)
+    if not blocks:
+        return 0
+
+    errors = validate_blocks(blocks, source)
+    if errors:
+        print("Mermaid validation failed:\n", file=sys.stderr)
+        for err in errors:
+            print(f"  {err}\n", file=sys.stderr)
+        return 2  # Exit 2 blocks the write entirely.
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

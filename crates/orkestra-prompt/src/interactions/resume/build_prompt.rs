@@ -20,6 +20,7 @@ const RESUME_RETRY_BLOCKED: &str = include_str!("../../templates/resume/retry_bl
 const RESUME_MANUAL_RESUME: &str = include_str!("../../templates/resume/manual_resume.md");
 const RESUME_PR_COMMENTS: &str = include_str!("../../templates/resume/pr_comments.md");
 const RESUME_RETURN_TO_WORK: &str = include_str!("../../templates/resume/return_to_work.md");
+const RESUME_MALFORMED_OUTPUT: &str = include_str!("../../templates/resume/malformed_output.md");
 
 // ============================================================================
 // Interaction
@@ -78,6 +79,10 @@ pub fn execute(
         ResumeType::ReturnToWork { message } => (
             RESUME_RETURN_TO_WORK,
             serde_json::json!({ "message": message }),
+        ),
+        ResumeType::MalformedOutput { error, attempt } => (
+            RESUME_MALFORMED_OUTPUT,
+            serde_json::json!({ "error": error, "attempt": attempt }),
         ),
     };
 
@@ -431,6 +436,25 @@ mod tests {
         assert!(prompt.contains("Fix this"));
         assert!(prompt.contains("Build failed"));
         assert!(prompt.contains("Address both"));
+    }
+
+    #[test]
+    fn test_malformed_output_resume_prompt() {
+        let prompt = execute(
+            "work",
+            &ResumeType::MalformedOutput {
+                error: "no structured output found".to_string(),
+                attempt: 2,
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:malformed_output>"));
+        assert!(prompt.contains("attempt 2 of 4"));
+        assert!(prompt.contains("no structured output found"));
+        assert!(prompt.contains("```ork"));
     }
 
     #[test]

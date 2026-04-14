@@ -450,6 +450,9 @@ mod tests {
         // Move to review stage (no gate — pauses for human approval)
         task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
+        api.iteration_service
+            .create_iteration(&task.id, "review", None)
+            .unwrap();
 
         let output = StageOutput::Artifact {
             content: "Work done".to_string(),

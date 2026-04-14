@@ -49,7 +49,12 @@ pub fn execute(
     // Used to tag the workflow_artifacts row and ArtifactProduced log entry.
     let iteration_id = store
         .get_active_iteration(task_id, &current_stage)?
-        .map(|it| it.id);
+        .ok_or_else(|| {
+            WorkflowError::InvalidState(format!(
+                "no active iteration for task {task_id} in stage {current_stage}"
+            ))
+        })?
+        .id;
 
     // Persist activity log before processing the output
     if let Some(log) = output.activity_log() {
@@ -64,7 +69,7 @@ pub fn execute(
         output,
         &current_stage,
         &now,
-        iteration_id.as_deref(),
+        &iteration_id,
     )?;
 
     orkestra_debug!(
@@ -96,7 +101,7 @@ pub(crate) fn dispatch_output(
     output: StageOutput,
     current_stage: &str,
     now: &str,
-    iteration_id: Option<&str>,
+    iteration_id: &str,
 ) -> WorkflowResult<()> {
     // Extract resources before the match consumes the output.
     let output_resources = output.resources().to_vec();
@@ -195,7 +200,7 @@ fn persist_and_emit_artifact(
     task: &Task,
     artifact_name: &str,
     current_stage: &str,
-    iteration_id: Option<&str>,
+    iteration_id: &str,
 ) -> WorkflowResult<()> {
     let Some(artifact) = task.artifacts.get(artifact_name) else {
         return Err(WorkflowError::InvalidState(format!(
@@ -203,26 +208,17 @@ fn persist_and_emit_artifact(
         )));
     };
 
-    // Build a unique ID for this artifact record.
-    // When an iteration_id is available, use it so the artifact is tied to the iteration.
-    // This allows artifact history across rejection cycles.
-    let artifact_id = if let Some(iter_id) = iteration_id {
-        format!("{iter_id}-{artifact_name}")
-    } else {
-        format!("{}-{current_stage}-{artifact_name}", task.id)
-    };
+    let artifact_id = format!("{iteration_id}-{artifact_name}");
 
-    let mut workflow_artifact = WorkflowArtifact::new(
+    let workflow_artifact = WorkflowArtifact::new(
         &artifact_id,
         &task.id,
         current_stage,
         artifact_name,
         &artifact.content,
         &artifact.created_at,
-    );
-    if let Some(iter_id) = iteration_id {
-        workflow_artifact = workflow_artifact.with_iteration_id(iter_id);
-    }
+    )
+    .with_iteration_id(iteration_id);
 
     store.save_artifact(&workflow_artifact)?;
 
@@ -236,7 +232,7 @@ fn persist_and_emit_artifact(
             name: artifact_name.to_string(),
             artifact_id,
         },
-        iteration_id,
+        Some(iteration_id),
     )
 }
 
@@ -294,6 +290,11 @@ mod tests {
         iteration_service
             .create_initial_iteration("task-1", "planning")
             .unwrap();
+        let iteration_id = store
+            .get_active_iteration("task-1", "planning")
+            .unwrap()
+            .unwrap()
+            .id;
 
         let output = StageOutput::Artifact {
             content: "The plan".into(),
@@ -320,7 +321,7 @@ mod tests {
             output,
             "planning",
             FIXTURE_TIMESTAMP,
-            None,
+            &iteration_id,
         )
         .unwrap();
 
@@ -335,6 +336,14 @@ mod tests {
         let shot = task.resources.get("screenshot").unwrap();
         assert_eq!(shot.url, "/tmp/img.png");
         assert!(shot.description.is_none());
+
+        // The artifact should be persisted to workflow_artifacts.
+        let stored_artifacts = store.list_artifacts_for_task("task-1").unwrap();
+        assert!(
+            !stored_artifacts.is_empty(),
+            "Artifact output should persist a row to workflow_artifacts"
+        );
+        assert_eq!(stored_artifacts[0].name, "plan");
     }
 
     #[test]
@@ -348,6 +357,11 @@ mod tests {
         iteration_service
             .create_initial_iteration("task-2", "planning")
             .unwrap();
+        let iteration_id = store
+            .get_active_iteration("task-2", "planning")
+            .unwrap()
+            .unwrap()
+            .id;
 
         let output = StageOutput::Artifact {
             content: "The plan".into(),
@@ -363,7 +377,7 @@ mod tests {
             output,
             "planning",
             FIXTURE_TIMESTAMP,
-            None,
+            &iteration_id,
         )
         .unwrap();
 
@@ -389,6 +403,11 @@ mod tests {
         iteration_service
             .create_initial_iteration("task-3", "planning")
             .unwrap();
+        let iteration_id = store
+            .get_active_iteration("task-3", "planning")
+            .unwrap()
+            .unwrap()
+            .id;
 
         let output = StageOutput::Artifact {
             content: "The plan".into(),
@@ -408,7 +427,7 @@ mod tests {
             output,
             "planning",
             FIXTURE_TIMESTAMP,
-            None,
+            &iteration_id,
         )
         .unwrap();
 

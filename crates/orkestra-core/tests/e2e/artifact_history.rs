@@ -7,9 +7,10 @@
 use orkestra_core::workflow::{
     config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
     domain::LogEntry,
+    execution::SubtaskOutput,
 };
 
-use crate::helpers::{MockAgentOutput, TestEnv};
+use crate::helpers::{workflows, MockAgentOutput, TestEnv};
 
 // =============================================================================
 // Helpers
@@ -347,4 +348,96 @@ fn test_chat_mode_completion_produces_artifact_row() {
         .find(|a| a.content == "Plan approved via chat.")
         .expect("Should find the chat completion artifact by content");
     assert_eq!(chat_artifact.stage, "planning");
+}
+
+// =============================================================================
+// Test 8: Breakdown stage artifact is stored in workflow_artifacts
+// =============================================================================
+
+/// Subtask breakdown output from an agent creates a row in `workflow_artifacts`.
+/// The `_structured` companion artifact is intentionally NOT stored in the table —
+/// only the human-readable breakdown artifact is persisted.
+#[test]
+fn test_breakdown_artifact_stored_in_workflow_artifacts() {
+    let ctx = TestEnv::with_workflow(workflows::with_subtasks());
+    let task = ctx.create_task("Build feature", "Feature description", None);
+    let task_id = task.id.clone();
+
+    // Drive through planning stage.
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "The plan."));
+    ctx.advance(); // spawn planning agent
+    ctx.advance(); // process output → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → advance to breakdown
+
+    // Drive breakdown stage: produce multiple subtasks.
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Subtasks {
+            content: "Technical design".into(),
+            subtasks: vec![
+                SubtaskOutput {
+                    title: "Subtask A".into(),
+                    description: "Do A".into(),
+                    detailed_instructions: "Instructions A".into(),
+                    depends_on: vec![],
+                },
+                SubtaskOutput {
+                    title: "Subtask B".into(),
+                    description: "Do B".into(),
+                    detailed_instructions: "Instructions B".into(),
+                    depends_on: vec![0],
+                },
+            ],
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn breakdown agent
+    ctx.advance(); // process output → AwaitingApproval, persist breakdown artifact
+
+    let all_artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+
+    // The breakdown artifact row should exist.
+    let breakdown_artifacts: Vec<_> = all_artifacts
+        .iter()
+        .filter(|a| a.stage == "breakdown")
+        .collect();
+    assert_eq!(
+        breakdown_artifacts.len(),
+        1,
+        "Should have exactly one breakdown artifact row"
+    );
+    assert_eq!(breakdown_artifacts[0].name, "breakdown");
+    assert_eq!(breakdown_artifacts[0].task_id, task_id);
+
+    // The `_structured` companion artifact must NOT appear in workflow_artifacts —
+    // it holds raw JSON for internal use and is excluded intentionally.
+    let structured_artifacts: Vec<_> = all_artifacts
+        .iter()
+        .filter(|a| a.name.ends_with("_structured"))
+        .collect();
+    assert!(
+        structured_artifacts.is_empty(),
+        "Structured companion artifacts should not be stored in workflow_artifacts, got: {structured_artifacts:?}"
+    );
+
+    // An ArtifactProduced log entry should have been emitted for the breakdown stage.
+    let (entries, _cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("breakdown"), None, None)
+        .unwrap();
+    let produced_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| matches!(e, LogEntry::ArtifactProduced { .. }))
+        .collect();
+    assert_eq!(
+        produced_entries.len(),
+        1,
+        "Should have exactly one ArtifactProduced log entry for breakdown"
+    );
+    let LogEntry::ArtifactProduced { name, .. } = &produced_entries[0] else {
+        panic!("Expected ArtifactProduced variant");
+    };
+    assert_eq!(name, "breakdown");
 }

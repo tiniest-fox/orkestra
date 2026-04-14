@@ -64,7 +64,14 @@ pub fn execute(
     iteration_service.create_iteration(task_id, stage, Some(IterationTrigger::ChatCompletion))?;
 
     // Capture the active iteration ID for artifact tagging and log entry association.
-    let iteration_id = store.get_active_iteration(task_id, stage)?.map(|it| it.id);
+    let iteration_id = store
+        .get_active_iteration(task_id, stage)?
+        .ok_or_else(|| {
+            crate::workflow::ports::WorkflowError::InvalidState(format!(
+                "no active iteration for task {task_id} in stage {stage}"
+            ))
+        })?
+        .id;
 
     // Persist activity log if present (now writes to the ChatCompletion iteration)
     if let Some(log) = output.activity_log() {
@@ -82,7 +89,7 @@ pub fn execute(
         output,
         stage,
         &now,
-        iteration_id.as_deref(),
+        &iteration_id,
     )?;
 
     // Save updated task

@@ -3403,6 +3403,7 @@ dependencies = [
 name = "orkestra-agent"
 version = "0.1.2"
 dependencies = [
+ "libc",
  "orkestra-agent",
  "orkestra-debug",
  "orkestra-parser",

@@ -25,6 +25,12 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 /// Without `-i`, Tauri's lean inherited PATH means those managers can't be
 /// found and their shims are never activated.
 ///
+/// `setsid()` creates a new session with no controlling terminal. Without it,
+/// `zsh -i` calls `tcsetpgrp()` to claim the terminal's foreground process
+/// group. When spawned from a GUI process (Tauri), this triggers `SIGTTOU`,
+/// which stops the shell silently until the timeout kills it. `setsid()` removes
+/// the controlling terminal entirely so there is nothing to fight over.
+///
 /// PATH patching (prepending the ork CLI directory) is the caller's responsibility.
 pub fn execute(project_root: &Path, shell: &str) -> Option<HashMap<String, String>> {
     let mut cmd = Command::new(shell);
@@ -37,7 +43,16 @@ pub fn execute(project_root: &Path, shell: &str) -> Option<HashMap<String, Strin
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
+        // setsid() creates a new session with no controlling terminal, preventing
+        // SIGTTOU when zsh -i calls tcsetpgrp() from a background process group.
+        // process_group(0) is redundant after setsid() since setsid() implicitly
+        // makes the process a new process group leader.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
     }
 
     let mut child = match cmd.spawn() {

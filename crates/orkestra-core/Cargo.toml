@@ -38,8 +38,8 @@ tempfile = { version = "3", optional = true }
 handlebars = "6"
 strip-ansi-escapes = "0.2"
 uuid = { version = "1", features = ["v4"] }
+libc = "0.2"
 
 [dev-dependencies]
-libc = "0.2"
 tempfile = "3"
 orkestra-core = { path = ".", features = ["testutil"] }

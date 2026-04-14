@@ -8,6 +8,8 @@
 //! - Generating session titles
 //! - Retrieving session history
 
+#[cfg(unix)]
+use libc;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -19,6 +21,7 @@ use crate::workflow::domain::{AssistantSession, LogEntry, Task};
 use crate::workflow::execution::{AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use orkestra_agent::interactions::spawner::cli_path::prepare_path_env;
+use orkestra_agent::resolve_agent_env;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessGuard};
 use orkestra_types::domain::SessionType;
 
@@ -339,12 +342,13 @@ impl AssistantService {
         system_prompt: &str,
         disallowed_tools: &str,
     ) -> std::io::Result<(u32, std::process::ChildStdout, std::process::ChildStderr)> {
-        let path_env = prepare_path_env();
+        let shell = std::env::var("SHELL").ok();
+        let env = resolve_agent_env(working_dir, shell.as_deref());
         let is_resume = session.spawn_count > 0;
 
         let mut child = spawn_claude_process(
             working_dir,
-            &path_env,
+            env,
             session.claude_session_id.as_deref(),
             is_resume,
             system_prompt,
@@ -610,7 +614,7 @@ fn generate_and_set_title(
 /// - Interactive (edit-capable): use `INTERACTIVE_DISALLOWED_TOOLS`
 fn spawn_claude_process(
     working_dir: &std::path::Path,
-    path_env: &str,
+    env: Option<std::collections::HashMap<String, String>>,
     session_id: Option<&str>,
     is_resume: bool,
     system_prompt: &str,
@@ -640,15 +644,29 @@ fn spawn_claude_process(
         cmd.args(["--system-prompt", system_prompt]);
     }
 
-    cmd.env("PATH", path_env)
-        .env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
-        .current_dir(working_dir)
+    if let Some(env_map) = env {
+        cmd.env_clear();
+        cmd.envs(env_map);
+        cmd.env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+    } else {
+        cmd.env("PATH", prepare_path_env())
+            .env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+    }
+
+    cmd.current_dir(working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     #[cfg(unix)]
-    cmd.process_group(0);
+    // setsid() creates a new session with no controlling terminal, preventing
+    // SIGTTOU when zsh -i calls tcsetpgrp() from a background process group.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
 
     cmd.spawn()
 }

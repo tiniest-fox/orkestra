@@ -104,7 +104,10 @@ mod tests {
         .unwrap();
 
         let annotated = execute(&conn, "session-1").unwrap();
-        assert!(annotated.is_empty(), "unknown variant should be skipped, not error");
+        assert!(
+            annotated.is_empty(),
+            "unknown variant should be skipped, not error"
+        );
     }
 
     #[test]

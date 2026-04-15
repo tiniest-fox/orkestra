@@ -107,7 +107,7 @@ impl PrService for GhPrService {
 
     fn get_pull_request_body(&self, repo_root: &Path, branch: &str) -> Result<String, PrError> {
         let output = Command::new("gh")
-            .args(["pr", "view", "--head", branch, "--json", "body"])
+            .args(["pr", "view", branch, "--json", "body"])
             .current_dir(repo_root)
             .output()
             .map_err(|e| {
@@ -140,7 +140,7 @@ impl PrService for GhPrService {
         body: &str,
     ) -> Result<(), PrError> {
         let output = Command::new("gh")
-            .args(["pr", "edit", "--head", branch, "--body", body])
+            .args(["pr", "edit", branch, "--body", body])
             .current_dir(repo_root)
             .output()
             .map_err(|e| {

@@ -71,7 +71,10 @@ mod tests {
         .unwrap();
 
         let entries = execute(&conn, "asst-1").unwrap();
-        assert!(entries.is_empty(), "unknown variant should be skipped, not error");
+        assert!(
+            entries.is_empty(),
+            "unknown variant should be skipped, not error"
+        );
     }
 
     #[test]

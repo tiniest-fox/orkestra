@@ -100,7 +100,10 @@ mod tests {
         .unwrap();
 
         let result = execute(&conn, "session-1").unwrap();
-        assert!(result.is_none(), "unknown variant should return None, not error");
+        assert!(
+            result.is_none(),
+            "unknown variant should return None, not error"
+        );
     }
 
     #[test]

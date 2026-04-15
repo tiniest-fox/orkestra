@@ -1,13 +1,12 @@
-//! Tests for `availableTabs`, `currentArtifact`, and related drawer helpers.
+// Tests for `availableTabs`, `defaultTab`, and related drawer helpers.
 
 import { describe, expect, it } from "vitest";
 import {
-  createMockArtifact,
   createMockWorkflowConfig,
   createMockWorkflowTaskView,
 } from "../../../test/mocks/fixtures";
 import type { WorkflowIteration } from "../../../types/workflow";
-import { availableTabs, canUseRunScript, currentArtifact, defaultTab } from "./drawerTabs";
+import { availableTabs, canUseRunScript, defaultTab } from "./drawerTabs";
 
 describe("defaultTab", () => {
   it("returns 'error' for a failed task", () => {
@@ -351,43 +350,3 @@ describe("availableTabs — resources tab visibility", () => {
   });
 });
 
-describe("currentArtifact — terminal task fallback", () => {
-  it("returns artifact for active task via current_stage", () => {
-    const config = createMockWorkflowConfig();
-    const artifact = createMockArtifact({ name: "summary", content: "work done" });
-    const task = {
-      ...createMockWorkflowTaskView({
-        state: { type: "awaiting_approval", stage: "work" },
-        derived: { current_stage: "work", needs_review: true },
-        artifacts: { summary: artifact },
-      }),
-    };
-    expect(currentArtifact(task, config)).toEqual(artifact);
-  });
-
-  it("returns artifact for done task via last iteration stage", () => {
-    const config = createMockWorkflowConfig();
-    const artifact = createMockArtifact({ name: "summary", content: "work done" });
-    const iteration: WorkflowIteration = {
-      id: "iter-1",
-      task_id: "test-task-123",
-      stage: "work",
-      iteration_number: 1,
-      started_at: "2025-01-01T00:00:00Z",
-    };
-    const task = {
-      ...createMockWorkflowTaskView({
-        state: { type: "done" },
-        artifacts: { summary: artifact },
-      }),
-      iterations: [iteration],
-    };
-    expect(currentArtifact(task, config)).toEqual(artifact);
-  });
-
-  it("returns null for done task with no iterations", () => {
-    const config = createMockWorkflowConfig();
-    const task = createMockWorkflowTaskView({ state: { type: "done" } });
-    expect(currentArtifact(task, config)).toBeNull();
-  });
-});

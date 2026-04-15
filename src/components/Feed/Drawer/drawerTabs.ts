@@ -3,11 +3,9 @@
 import type {
   PrCheckData,
   PrCommentData,
-  WorkflowArtifact,
   WorkflowConfig,
   WorkflowTaskView,
 } from "../../../types/workflow";
-import { artifactName } from "../../../types/workflow";
 import type { DrawerTab } from "../DrawerTabBar";
 
 // ============================================================================
@@ -57,26 +55,6 @@ export function canUseRunScript(
   hasRunScript: boolean | undefined,
 ): boolean {
   return !!hasRunScript && !!task.worktree_path && !task.derived.is_archived;
-}
-
-export function currentArtifact(
-  task: WorkflowTaskView,
-  config: WorkflowConfig,
-): WorkflowArtifact | null {
-  // For active tasks, resolve the artifact from the current stage.
-  // For terminal tasks (done, failed, blocked), current_stage is null — fall back
-  // to the last iteration's stage so the artifact remains visible.
-  const stageName =
-    task.derived.current_stage ??
-    (task.iterations.length > 0 ? task.iterations[task.iterations.length - 1].stage : null);
-  // Search the task's flow stages, then fall back to all flows for historical iterations.
-  const stageEntry =
-    config.flows[task.flow]?.stages.find((s) => s.name === stageName) ??
-    Object.values(config.flows)
-      .flatMap((f) => f.stages)
-      .find((s) => s.name === stageName);
-  if (!stageEntry) return null;
-  return task.artifacts[artifactName(stageEntry.artifact)] ?? null;
 }
 
 export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig): StageReviewType {

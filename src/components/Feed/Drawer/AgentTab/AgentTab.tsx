@@ -101,7 +101,7 @@ export function AgentTab({
       : undefined;
 
     return { actions, questionsElement };
-  }, [latestArtifactId, derived, task, state, scrollContainerRef, verdict, rejectionTarget]);
+  }, [latestArtifactId, derived, task, state, verdict, rejectionTarget]);
 
   // Fallback approve bar: review state but no artifact_produced entry in the log.
   const lastAgentExtra =

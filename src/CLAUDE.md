@@ -786,6 +786,21 @@ See `src/stories/Demo/AppShell.stories.tsx` for the reference pattern.
 
 **Build limitation**: `pnpm build-storybook` only bundles JavaScript — it does not render stories, so runtime errors (missing providers, undefined hooks, broken context) are invisible to the build step and to `checks.sh`. The only way to catch these is manual story review or a dedicated Storybook test runner (not yet set up).
 
+**Story requirement**: Every new UI component and every existing component with changed props, new visual states, or modified appearance must have a Storybook story. A component without a story cannot be visually reviewed — this is a hard requirement, not a nice-to-have. Specifically:
+
+- New components in `src/components/` — at minimum one story showing the default/happy path
+- Conditional rendering branches (loading, error, empty, disabled) — each meaningful state gets its own named story
+- Changed components — update existing stories to cover the new behavior; add stories for states that didn't exist before
+
+**Visual review workflow**: Because `pnpm build-storybook` doesn't render stories, visual verification requires running Storybook locally:
+
+1. Start the dev server: `pnpm storybook` (serves at `http://localhost:6006`)
+2. Navigate to the component's story in the browser
+3. Verify every story variant renders correctly — check layout, spacing, and edge-case states
+4. Fix any runtime errors (missing providers, broken context) before submitting
+
+To run the automated test runner against a live instance: `pnpm test-storybook --url http://localhost:6006` (requires the dev server to be running first).
+
 ## Keyboard Navigation
 
 <!-- compound: beauteously-liberal-pollock -->

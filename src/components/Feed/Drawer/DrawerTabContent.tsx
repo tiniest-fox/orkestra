@@ -10,7 +10,6 @@ import type {
   WorkflowResource,
   WorkflowTaskView,
 } from "../../../types/workflow";
-import { formatTimestamp } from "../../../utils";
 import { EmptyState } from "../../ui/EmptyState";
 import { ActivityLog } from "../ActivityLog";
 import { ArtifactView } from "../ArtifactView";
@@ -22,6 +21,7 @@ import type { DrawerTabId } from "./drawerTabs";
 import { LogsChatInput } from "./Footer/LogsChatInput";
 import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
+import { ResourceItem } from "./Sections/ResourceItem";
 import { ResourcesTab } from "./Sections/ResourcesTab";
 import { RunTab } from "./Sections/RunTab";
 import { SubtasksSection } from "./Sections/SubtasksSection";
@@ -217,25 +217,7 @@ function StageResources({ resources }: { resources: WorkflowResource[] }) {
   return (
     <div className="border-t border-border p-4 flex flex-col gap-3">
       {resources.map((r) => (
-        <div key={r.name} className="flex flex-col gap-1">
-          <span className="text-forge-mono-sm font-semibold text-text-primary">{r.name}</span>
-          {r.url && (
-            <a
-              href={r.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-forge-mono-sm text-accent truncate"
-            >
-              {r.url}
-            </a>
-          )}
-          {r.description && (
-            <span className="text-forge-mono-sm text-text-secondary">{r.description}</span>
-          )}
-          <span className="text-forge-mono-label text-text-tertiary">
-            {r.stage} · {formatTimestamp(r.created_at)}
-          </span>
-        </div>
+        <ResourceItem key={r.name} resource={r} />
       ))}
     </div>
   );

@@ -93,9 +93,7 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
                 }
             }
         }
-        ExecutionResult::AgentFailed(error)
-        | ExecutionResult::AgentMalformedOutput(error)
-        | ExecutionResult::PollError { error } => {
+        ExecutionResult::AgentFailed(error) | ExecutionResult::PollError { error } => {
             if let Err(e) =
                 api.fail_agent_execution(&exec.task_id, &format!("Agent error: {error}"))
             {
@@ -110,6 +108,33 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
                 task_id: Some(exec.task_id),
                 error,
             })
+        }
+        ExecutionResult::AgentMalformedOutput(error) => {
+            match api.auto_retry_malformed_output(&exec.task_id, &error) {
+                Ok(_) => Ok(OrchestratorEvent::OutputProcessed {
+                    task_id: exec.task_id,
+                    stage: exec.stage,
+                    output_type: "malformed_retry".to_string(),
+                }),
+                Err(e) => {
+                    // Fallback: if retry write fails, fail the task to avoid a stuck state.
+                    if let Err(fe) = api.fail_agent_execution(
+                        &exec.task_id,
+                        &format!("Malformed output retry failed: {e}"),
+                    ) {
+                        orkestra_debug!(
+                            "orchestrator",
+                            "Failed to record retry failure for {}: {}",
+                            exec.task_id,
+                            fe
+                        );
+                    }
+                    Ok(OrchestratorEvent::Error {
+                        task_id: Some(exec.task_id),
+                        error: e.to_string(),
+                    })
+                }
+            }
         }
         ExecutionResult::GateSuccess => match api.process_gate_success(&exec.task_id) {
             Ok(_) => Ok(OrchestratorEvent::GatePassed {

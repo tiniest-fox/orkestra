@@ -65,6 +65,20 @@ impl WorkflowApi {
         agent::fail_execution::execute(self.store.as_ref(), &self.iteration_service, task_id, error)
     }
 
+    /// Auto-retry malformed agent output. Re-queues with corrective prompt, up to budget.
+    pub(crate) fn auto_retry_malformed_output(
+        &self,
+        task_id: &str,
+        error: &str,
+    ) -> WorkflowResult<Task> {
+        agent::auto_retry_malformed::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
+            task_id,
+            error,
+        )
+    }
+
     /// Record a successful commit. Transitions Committing → Committed.
     pub fn commit_succeeded(&self, task_id: &str) -> WorkflowResult<Task> {
         stage::commit_succeeded::execute(self.store.as_ref(), task_id)

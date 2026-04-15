@@ -77,7 +77,7 @@ export function ArtifactLogCard({
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-2">
-            {needsReview && !verdict && (
+            {needsReview && (
               <Button
                 variant="violet"
                 onClick={(e) => {

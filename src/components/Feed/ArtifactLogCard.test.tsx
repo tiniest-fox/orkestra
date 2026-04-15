@@ -84,7 +84,7 @@ describe("ArtifactLogCard", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
   });
 
-  it("hides approve button when verdict is set", () => {
+  it("shows approve button even when verdict is set", () => {
     const onApprove = vi.fn();
     render(
       <ArtifactLogCard
@@ -95,7 +95,7 @@ describe("ArtifactLogCard", () => {
         loading={false}
       />,
     );
-    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
   it("shows verdict badge when verdict is approved", () => {

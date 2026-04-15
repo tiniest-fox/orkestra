@@ -30,8 +30,6 @@ export function toolSummary(input: ToolInput, projectRoot?: string): string {
       return `${input.todos.length} item${input.todos.length !== 1 ? "s" : ""}`;
     case "ork":
       return orkSummary(input.ork_action);
-    case "structured_output":
-      return input.output_type ?? "";
     case "other":
       return input.summary ?? "";
     default:

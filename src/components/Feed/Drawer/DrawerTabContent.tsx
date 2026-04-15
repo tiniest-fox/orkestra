@@ -1,27 +1,15 @@
 // Tab body content switcher — renders the correct panel based on the active tab.
 
-import { FileText } from "lucide-react";
 import type { RefCallback } from "react";
 import type { UseRunScriptResult } from "../../../hooks/useRunScript";
-import type {
-  LogEntry,
-  WorkflowArtifact,
-  WorkflowConfig,
-  WorkflowResource,
-  WorkflowTaskView,
-} from "../../../types/workflow";
-import { EmptyState } from "../../ui/EmptyState";
+import type { LogEntry, WorkflowConfig, WorkflowTaskView } from "../../../types/workflow";
 import { ActivityLog } from "../ActivityLog";
-import { ArtifactView } from "../ArtifactView";
 import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerGateTab } from "../DrawerGateTab";
 import { DrawerPrTab } from "../DrawerPrTab";
-import { FeedLogList } from "../FeedLogList";
+import { AgentTab } from "./AgentTab/AgentTab";
 import type { DrawerTabId } from "./drawerTabs";
-import { LogsChatInput } from "./Footer/LogsChatInput";
 import { ErrorTab } from "./Sections/ErrorTab";
-import { QuestionsSection } from "./Sections/QuestionsSection";
-import { ResourceItem } from "./Sections/ResourceItem";
 import { ResourcesTab } from "./Sections/ResourcesTab";
 import { RunTab } from "./Sections/RunTab";
 import { SubtasksSection } from "./Sections/SubtasksSection";
@@ -35,7 +23,6 @@ interface DrawerTabContentProps {
   task: WorkflowTaskView;
   allTasks: WorkflowTaskView[];
   activeTab: DrawerTabId;
-  artifact: WorkflowArtifact | null;
   config: WorkflowConfig;
   logs: LogEntry[];
   logsError: unknown;
@@ -55,7 +42,6 @@ export function DrawerTabContent({
   task,
   allTasks,
   activeTab,
-  artifact,
   config,
   logs,
   logsError,
@@ -66,7 +52,18 @@ export function DrawerTabContent({
   onOpenTask,
   runScript,
 }: DrawerTabContentProps) {
-  const { submitRef } = state;
+  if (activeTab === "agent") {
+    return (
+      <AgentTab
+        task={task}
+        logs={logs}
+        logsError={logsError}
+        state={state}
+        logContainerRef={logContainerRef}
+        handleLogScroll={handleLogScroll}
+      />
+    );
+  }
 
   if (activeTab === "diff") {
     return (
@@ -81,87 +78,11 @@ export function DrawerTabContent({
     );
   }
 
-  if (activeTab === "logs") {
-    return (
-      <>
-        <FeedLogList
-          logs={logs}
-          error={logsError}
-          isAgentRunning={task.derived.is_working || task.derived.chat_agent_active}
-          artifacts={task.artifacts}
-          containerRef={logContainerRef}
-          onScroll={handleLogScroll}
-        />
-        {(task.derived.needs_review ||
-          task.derived.has_questions ||
-          task.derived.is_interrupted ||
-          task.derived.is_chatting ||
-          task.derived.is_working) && (
-          <LogsChatInput
-            chatMessage={state.chatMessage}
-            onChatMessageChange={state.setChatMessage}
-            chatTextareaRef={state.chatTextareaRef}
-            chatSending={state.chatSending}
-            chatAgentActive={task.derived.chat_agent_active || task.derived.is_working}
-            onSendChat={state.handleSendChat}
-            onInterrupt={
-              task.derived.chat_agent_active ? state.handleChatStop : state.handleInterrupt
-            }
-            chatError={state.chatError}
-          />
-        )}
-      </>
-    );
-  }
-
-  if (activeTab === "artifact") {
-    const verdict = task.derived.pending_rejection
-      ? ("rejected" as const)
-      : task.derived.pending_approval
-        ? ("approved" as const)
-        : undefined;
-    const rejection = task.derived.pending_rejection;
-    const rejectionTarget =
-      rejection && rejection.target !== rejection.from_stage ? rejection.target : undefined;
-
-    const stageResources = artifact
-      ? Object.values(task.resources)
-          .filter((r) => r.stage === artifact.stage)
-          .sort((a, b) => a.created_at.localeCompare(b.created_at))
-      : [];
-
-    return (
-      <div ref={bodyRef} className="flex-1 overflow-y-auto">
-        {artifact ? (
-          <>
-            <ArtifactView artifact={artifact} verdict={verdict} rejectionTarget={rejectionTarget} />
-            {stageResources.length > 0 && <StageResources resources={stageResources} />}
-          </>
-        ) : (
-          <EmptyState icon={FileText} message="No artifact yet." />
-        )}
-      </div>
-    );
-  }
-
   if (activeTab === "history") {
     return (
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
         <ActivityLog iterations={task.iterations} />
       </div>
-    );
-  }
-
-  if (activeTab === "questions") {
-    return (
-      <QuestionsSection
-        task={task}
-        questions={task.derived.pending_questions}
-        answers={state.answers}
-        setAnswer={state.setAnswer}
-        onFocusSubmit={() => submitRef.current?.focus()}
-        loading={state.loading}
-      />
     );
   }
 
@@ -207,18 +128,4 @@ export function DrawerTabContent({
   }
 
   return null;
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function StageResources({ resources }: { resources: WorkflowResource[] }) {
-  return (
-    <div className="border-t border-border p-4 flex flex-col gap-3">
-      {resources.map((r) => (
-        <ResourceItem key={r.name} resource={r} />
-      ))}
-    </div>
-  );
 }

@@ -23,12 +23,8 @@ pub fn execute(conn: &Connection, stage_session_id: &str) -> WorkflowResult<Opti
         .optional()
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
-    result
-        .map(|json| {
-            serde_json::from_str::<LogEntry>(&json)
-                .map_err(|e| WorkflowError::Storage(e.to_string()))
-        })
-        .transpose()
+    // Skip rows with unknown variants (e.g., removed types like `structured_output`).
+    Ok(result.and_then(|json| serde_json::from_str::<LogEntry>(&json).ok()))
 }
 
 // ============================================================================
@@ -91,6 +87,20 @@ mod tests {
             LE::Text { content } => assert_eq!(content, "third"),
             _ => panic!("unexpected entry type"),
         }
+    }
+
+    #[test]
+    fn unknown_variant_returns_none() {
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO log_entries (id, stage_session_id, sequence_number, content, created_at)
+             VALUES ('id-1', 'session-1', 1, '{\"type\":\"structured_output\",\"content\":\"old\"}', '')",
+            [],
+        )
+        .unwrap();
+
+        let result = execute(&conn, "session-1").unwrap();
+        assert!(result.is_none(), "unknown variant should return None, not error");
     }
 
     #[test]

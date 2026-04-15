@@ -32,6 +32,12 @@ pub fn execute(
                 }
             }
             Some("tool_use") => {
+                // Skip StructuredOutput tool calls — they are redundant with ArtifactProduced
+                // log entries which render richer artifact cards.
+                let tool_name = item.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                if tool_name == "StructuredOutput" {
+                    continue;
+                }
                 entries.push(parse_tool_use(
                     item,
                     is_subagent,

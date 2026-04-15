@@ -21,7 +21,7 @@
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::{
     config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
-    domain::{Question, QuestionAnswer, QuestionOption},
+    domain::{LogEntry, Question, QuestionAnswer, QuestionOption},
     runtime::{Outcome, TaskState},
     TaskCreationMode,
 };
@@ -3123,6 +3123,33 @@ fn test_artifact_generation_for_all_output_types() {
     assert!(
         plan_content.contains("Include caching?"),
         "Questions artifact should contain all questions. Got: {plan_content}"
+    );
+
+    // ASSERT: Questions output emits an ArtifactProduced log entry so the
+    // frontend can render the card at the correct log position.
+    let (log_entries, _cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, None)
+        .unwrap();
+    let produced_entries: Vec<_> = log_entries
+        .iter()
+        .filter(|e| matches!(e, LogEntry::ArtifactProduced { .. }))
+        .collect();
+    assert_eq!(
+        produced_entries.len(),
+        1,
+        "Questions output should emit exactly one ArtifactProduced log entry"
+    );
+    let LogEntry::ArtifactProduced {
+        name: artifact_name,
+        ..
+    } = &produced_entries[0]
+    else {
+        panic!("Expected ArtifactProduced variant")
+    };
+    assert_eq!(
+        artifact_name, "plan",
+        "ArtifactProduced name should match the stage artifact name"
     );
 
     // Human answers questions (should NOT change the artifact)
@@ -9533,5 +9560,106 @@ fn test_route_to_invalid_stage_returns_error() {
     assert!(
         matches!(result, Err(WorkflowError::InvalidTransition(_))),
         "Invalid route_to should return InvalidTransition error, got: {result:?}"
+    );
+}
+
+/// Rejection artifacts are persisted to `workflow_artifacts` and logged as `ArtifactProduced`.
+///
+/// Before this fix, `handle_approval.rs` returned `Ok(None)` for rejections, which caused the
+/// artifact to be stored in memory only and never written to the database. The Agents tab
+/// rendered blank for rejected iterations because no `ArtifactProduced` log entry was emitted.
+#[test]
+fn test_rejection_artifact_persisted() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_gate(GateConfig::Agentic),
+    ])
+    .with_integration(IntegrationConfig::new("work"));
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Rejection artifact test",
+        "Verify artifacts are persisted for rejections",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Advance work stage: produce artifact and approve to move to review
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation summary".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output → awaiting review
+    ctx.api().approve(&task_id).unwrap(); // approve → moves to review stage
+
+    // Reviewer rejects
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "The implementation needs improvement".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns reviewer
+    ctx.advance(); // processes rejection output
+
+    // ASSERT: rejection artifact was persisted to workflow_artifacts
+    let workflow_artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    let rejection_artifacts: Vec<_> = workflow_artifacts
+        .iter()
+        .filter(|a| a.stage == "review")
+        .collect();
+    assert_eq!(
+        rejection_artifacts.len(),
+        1,
+        "Rejection should produce exactly one workflow_artifact in the review stage. Got: {workflow_artifacts:?}"
+    );
+    assert_eq!(
+        rejection_artifacts[0].content, "The implementation needs improvement",
+        "Rejection artifact content should match the reviewer's rejection content"
+    );
+    assert_eq!(
+        rejection_artifacts[0].name, "verdict",
+        "Rejection artifact name should be the stage's artifact name"
+    );
+
+    // ASSERT: ArtifactProduced log entry was emitted for the review stage
+    let (log_entries, _cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("review"), None, None)
+        .unwrap();
+    let produced_entries: Vec<_> = log_entries
+        .iter()
+        .filter(|e| matches!(e, LogEntry::ArtifactProduced { .. }))
+        .collect();
+    assert_eq!(
+        produced_entries.len(),
+        1,
+        "Rejection should emit exactly one ArtifactProduced log entry. Got: {produced_entries:?}"
+    );
+    let LogEntry::ArtifactProduced {
+        name: artifact_name,
+        ..
+    } = &produced_entries[0]
+    else {
+        panic!("Expected ArtifactProduced variant")
+    };
+    assert_eq!(
+        artifact_name, "verdict",
+        "ArtifactProduced name should match the stage's artifact name"
     );
 }

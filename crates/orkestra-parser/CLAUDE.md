@@ -16,7 +16,7 @@ src/
     │   ├── parse_assistant_content.rs   # Extract log entries from assistant messages
     │   └── parse_tool_result_event.rs   # Extract Agent tool results
     ├── opencode/        # OpenCode format parsing
-    │   ├── classify_buffered_text.rs    # Classify final text as StructuredOutput or plain
+    │   ├── classify_buffered_text.rs    # Classify final text; suppress structured JSON, emit Text for prose
     │   ├── extract_text_content.rs      # Extract text from v1.1+ or legacy events
     │   ├── extract_tool_result_event.rs # Extract tool results
     │   └── extract_tool_use_event.rs    # Extract tool use from v1.1+ or legacy events
@@ -65,7 +65,7 @@ The trait handles provider differences; `parse_stage_output` is the single sourc
 
 **Claude ork fence extraction requires `last_text`, not raw JSONL**: Newlines inside JSON string values in JSONL are stored escaped (`\n` = `0x5C 0x6E`), not as real newlines (`0x0A`). `extract_ork_fence` searches for real newlines, so it would find nothing on raw JSONL. The fix: `ClaudeParserService` accumulates text content in `last_text` during streaming — `serde_json` unescapes string values when deserializing, so `last_text` contains real newlines. Ork fence extraction runs on `last_text`, not on the raw JSONL bytes.
 
-**OpenCode text buffering**: Text events are buffered until the next non-text event because the final structured output arrives as a plain text event. `finalize()` classifies the last buffered text as either `StructuredOutput` (if valid JSON with `type` field) or plain `Text`.
+**OpenCode text buffering**: Text events are buffered until the next non-text event because the final structured output arrives as a plain text event. `finalize()` classifies the last buffered text: structured JSON (valid JSON with a `type` field) returns an empty vec — no log entry is emitted, since `ArtifactProduced` already renders the output — while plain text returns a `Text` entry.
 
 **API error detection**: Both parsers check for API errors in the output. Claude embeds them in JSONL; OpenCode may emit error events. Always surface these as descriptive errors rather than generic parse failures.
 

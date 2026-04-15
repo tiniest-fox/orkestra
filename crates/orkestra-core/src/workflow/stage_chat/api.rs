@@ -46,6 +46,9 @@ impl WorkflowApi {
     ///
     /// Used in e2e tests to exercise the detection logic directly without spawning a real
     /// chat agent. The schema is computed from the workflow config for the given stage.
+    ///
+    /// Returns `true` if valid structured output was detected and the stage was completed,
+    /// `false` if no valid output was detected or schema validation failed.
     #[cfg(feature = "testutil")]
     pub fn detect_chat_completion(
         &self,
@@ -54,6 +57,8 @@ impl WorkflowApi {
         task_flow: &str,
         accumulated_text: &str,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        use interactions::try_complete_from_output::DetectionResult;
+
         let effective_stage = self
             .workflow
             .stage(task_flow, stage)
@@ -64,7 +69,7 @@ impl WorkflowApi {
         let schema: serde_json::Value = serde_json::from_str(&schema_str)
             .map_err(|e| format!("Generated schema is not valid JSON: {e}"))?;
 
-        interactions::try_complete_from_output::execute(
+        let result = interactions::try_complete_from_output::execute(
             &self.store,
             &self.workflow,
             &schema,
@@ -72,6 +77,8 @@ impl WorkflowApi {
             stage,
             accumulated_text,
         )
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+
+        Ok(matches!(result, DetectionResult::Completed))
     }
 }

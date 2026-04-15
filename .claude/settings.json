@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node bin/validate-mermaid"
+            "command": "node bin/validate-mermaid.mjs"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node bin/validate-mermaid"
+            "command": "node bin/validate-mermaid.mjs"
           }
         ]
       }

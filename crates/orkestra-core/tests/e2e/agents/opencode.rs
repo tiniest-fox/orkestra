@@ -360,21 +360,6 @@ fn opencode_structured_tool_call_logs() {
         "Should have a Bash tool call with ls. Tool uses: {tool_uses:?}"
     );
 
-    // Verify a StructuredOutput tool call exists (final agent output)
-    let has_structured_output = logs.iter().any(|e| {
-        matches!(
-            e,
-            LogEntry::ToolUse {
-                input: ToolInput::StructuredOutput { .. },
-                ..
-            }
-        )
-    });
-    assert!(
-        has_structured_output,
-        "Should have a StructuredOutput tool call. Tool uses: {tool_uses:?}"
-    );
-
     // Verify the file was actually created
     let task = env.get_task(&task_id);
     let worktree = task.worktree_path.as_ref().expect("Should have worktree");

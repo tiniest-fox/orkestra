@@ -37,12 +37,15 @@ pub fn execute(
     let mut max_seq: Option<u64> = None;
     for row in rows {
         let (json, seq) = row.map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        let entry: LogEntry =
-            serde_json::from_str(&json).map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        entries.push(entry);
+        // Advance the cursor past every row, including those with unknown variants
+        // (e.g., removed types like `structured_output`). Without this, the same
+        // unknown rows would be re-fetched on every poll.
         let seq = u64::try_from(seq)
             .map_err(|_| WorkflowError::Storage("negative sequence_number in database".into()))?;
         max_seq = Some(max_seq.map_or(seq, |m| m.max(seq)));
+        if let Ok(entry) = serde_json::from_str::<LogEntry>(&json) {
+            entries.push(entry);
+        }
     }
 
     Ok((entries, max_seq))
@@ -184,5 +187,54 @@ mod tests {
         let (entries, cursor) = execute(&conn, "sess-1", 100).unwrap();
         assert!(entries.is_empty());
         assert!(cursor.is_none());
+    }
+
+    #[test]
+    fn unknown_variant_is_skipped_and_cursor_advances() {
+        // Regression guard: rows with unknown variants (e.g., `structured_output` from
+        // an older schema) must be skipped, not errored. Critically, `max_seq` must still
+        // advance past the skipped row — otherwise every poll would re-fetch the same
+        // unknown row and the caller would be stuck.
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO log_entries (id, stage_session_id, sequence_number, content, created_at)
+             VALUES ('id-1', 'sess-1', 1, '{\"type\":\"structured_output\",\"content\":\"old\"}', '')",
+            [],
+        )
+        .unwrap();
+
+        let (entries, cursor) = execute(&conn, "sess-1", 0).unwrap();
+        assert!(entries.is_empty(), "unknown variant should be skipped");
+        assert_eq!(cursor, Some(1), "cursor must advance past the skipped row");
+    }
+
+    #[test]
+    fn unknown_variant_skipped_valid_entries_returned() {
+        // A mix of unknown and known entries: the unknown row is dropped, the known
+        // entries are returned, and the cursor advances past everything.
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO log_entries (id, stage_session_id, sequence_number, content, created_at)
+             VALUES ('id-1', 'sess-1', 1, '{\"type\":\"structured_output\",\"content\":\"old\"}', '')",
+            [],
+        )
+        .unwrap();
+        append::execute(
+            &conn,
+            "sess-1",
+            &LE::Text {
+                content: "after".into(),
+            },
+            None,
+        )
+        .unwrap();
+
+        let (entries, cursor) = execute(&conn, "sess-1", 0).unwrap();
+        assert_eq!(entries.len(), 1);
+        match &entries[0] {
+            LE::Text { content } => assert_eq!(content, "after"),
+            _ => panic!("unexpected entry type"),
+        }
+        assert_eq!(cursor, Some(2));
     }
 }

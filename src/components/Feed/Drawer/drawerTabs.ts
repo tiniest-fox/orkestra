@@ -3,11 +3,9 @@
 import type {
   PrCheckData,
   PrCommentData,
-  WorkflowArtifact,
   WorkflowConfig,
   WorkflowTaskView,
 } from "../../../types/workflow";
-import { artifactName } from "../../../types/workflow";
 import type { DrawerTab } from "../DrawerTabBar";
 
 // ============================================================================
@@ -15,8 +13,10 @@ import type { DrawerTab } from "../DrawerTabBar";
 // ============================================================================
 
 export type DrawerTabId =
-  | "questions"
+  | "agent"
   | "subtasks"
+  // "logs" and "artifact" remain in the union for HistoricalRunView, which manages
+  // its own internal tab bar for past stage runs and is not routed through availableTabs().
   | "logs"
   | "diff"
   | "artifact"
@@ -57,26 +57,6 @@ export function canUseRunScript(
   return !!hasRunScript && !!task.worktree_path && !task.derived.is_archived;
 }
 
-export function currentArtifact(
-  task: WorkflowTaskView,
-  config: WorkflowConfig,
-): WorkflowArtifact | null {
-  // For active tasks, resolve the artifact from the current stage.
-  // For terminal tasks (done, failed, blocked), current_stage is null — fall back
-  // to the last iteration's stage so the artifact remains visible.
-  const stageName =
-    task.derived.current_stage ??
-    (task.iterations.length > 0 ? task.iterations[task.iterations.length - 1].stage : null);
-  // Search the task's flow stages, then fall back to all flows for historical iterations.
-  const stageEntry =
-    config.flows[task.flow]?.stages.find((s) => s.name === stageName) ??
-    Object.values(config.flows)
-      .flatMap((f) => f.stages)
-      .find((s) => s.name === stageName);
-  if (!stageEntry) return null;
-  return task.artifacts[artifactName(stageEntry.artifact)] ?? null;
-}
-
 export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig): StageReviewType {
   const stage = config.flows[task.flow]?.stages.find((s) => s.name === task.derived.current_stage);
   return stage?.capabilities.subtasks ? "teal" : "violet";
@@ -85,14 +65,14 @@ export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig):
 export function defaultTab(task: WorkflowTaskView): DrawerTabId {
   if (task.derived.is_failed) return "error";
   if (task.derived.is_blocked) return "error";
-  if (task.derived.is_chatting) return "logs";
-  if (task.derived.has_questions) return "questions";
-  if (task.derived.needs_review) return "artifact";
+  if (task.derived.is_chatting) return "agent";
+  if (task.derived.has_questions) return "agent";
+  if (task.derived.needs_review) return "agent";
   if (task.state.type === "gate_running" || task.state.type === "awaiting_gate") return "gate";
-  if (task.derived.is_working || task.derived.is_interrupted) return "logs";
+  if (task.derived.is_working || task.derived.is_interrupted) return "agent";
   if (task.derived.is_done) return task.pr_url ? "pr" : "diff";
   if (task.derived.is_waiting_on_children) return "subtasks";
-  return "logs";
+  return "agent";
 }
 
 export function findGateStage(config: WorkflowConfig, flow: string) {
@@ -117,10 +97,12 @@ export function availableTabs(
   const hasResources = Object.keys(task.resources).length > 0;
   const resourcesTab: DrawerTab = { id: "resources" as const, label: "Resources" };
 
+  const agentTab: DrawerTab = { id: "agent" as const, label: "Agent", hotkey: "l" };
+
   if (task.derived.is_failed) {
     return [
       { id: "error", label: "Error", hotkey: "e" },
-      { id: "logs", label: "Logs", hotkey: "l" },
+      agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
@@ -131,7 +113,7 @@ export function availableTabs(
   if (task.derived.is_blocked) {
     return [
       { id: "error", label: "Error", hotkey: "e" },
-      { id: "logs", label: "Logs", hotkey: "l" },
+      agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
@@ -141,9 +123,8 @@ export function availableTabs(
   }
   if (task.derived.has_questions) {
     return [
-      { id: "questions", label: "Questions", hotkey: "q" },
+      agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
-      { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
@@ -153,6 +134,7 @@ export function availableTabs(
   if (task.derived.is_waiting_on_children) {
     return [
       { id: "subtasks", label: "Subtraks", hotkey: "t" },
+      agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
@@ -165,8 +147,7 @@ export function availableTabs(
       return [
         { id: "pr", label: "PR", hotkey: "p" },
         { id: "diff", label: "Diff", hotkey: "d" },
-        { id: "artifact", label: "Artifact", hotkey: "a" },
-        { id: "logs", label: "Logs", hotkey: "l" },
+        agentTab,
         { id: "history", label: "History", hotkey: "h" },
         ...(showGateTab ? [gateTab] : []),
         ...(showRunTab ? [runTab] : []),
@@ -175,8 +156,7 @@ export function availableTabs(
     }
     return [
       { id: "diff", label: "Diff", hotkey: "d" },
-      { id: "artifact", label: "Artifact", hotkey: "a" },
-      { id: "logs", label: "Logs", hotkey: "l" },
+      agentTab,
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
@@ -185,9 +165,8 @@ export function availableTabs(
   }
   if (task.derived.needs_review) {
     return [
-      { id: "artifact", label: "Artifact" },
+      agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
-      { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
@@ -195,9 +174,8 @@ export function availableTabs(
     ];
   }
   return [
-    { id: "logs", label: "Logs", hotkey: "l" },
+    agentTab,
     { id: "diff", label: "Diff", hotkey: "d" },
-    { id: "artifact", label: "Artifact", hotkey: "a" },
     { id: "history", label: "History", hotkey: "h" },
     ...(showGateTab ? [gateTab] : []),
     ...(showRunTab ? [runTab] : []),

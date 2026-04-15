@@ -28,12 +28,13 @@ pub fn execute(
     let mut entries = Vec::new();
     for row in rows {
         let (json, iteration_id) = row.map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        let entry: LogEntry =
-            serde_json::from_str(&json).map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        entries.push(AnnotatedLogEntry {
-            entry,
-            iteration_id,
-        });
+        // Skip rows with unknown variants (e.g., removed types like `structured_output`).
+        if let Ok(entry) = serde_json::from_str::<LogEntry>(&json) {
+            entries.push(AnnotatedLogEntry {
+                entry,
+                iteration_id,
+            });
+        }
     }
     Ok(entries)
 }
@@ -90,6 +91,20 @@ mod tests {
         let annotated = execute(&conn, "session-1").unwrap();
         assert_eq!(annotated.len(), 1);
         assert_eq!(annotated[0].iteration_id, None);
+    }
+
+    #[test]
+    fn unknown_variant_is_skipped() {
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO log_entries (id, stage_session_id, sequence_number, content, created_at)
+             VALUES ('id-1', 'session-1', 1, '{\"type\":\"structured_output\",\"content\":\"old\"}', '')",
+            [],
+        )
+        .unwrap();
+
+        let annotated = execute(&conn, "session-1").unwrap();
+        assert!(annotated.is_empty(), "unknown variant should be skipped, not error");
     }
 
     #[test]

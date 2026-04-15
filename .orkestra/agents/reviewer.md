@@ -67,6 +67,8 @@ Check the activity logs to determine the current review cycle count. If this is 
 
 The rationale: after 2+ rejection cycles, diminishing-returns style issues should not block shipping. HIGH findings (broken flows, missing tests, architectural damage) always block.
 
+**Exception — meaningful changes:** This waiver does not apply automatically when the Trak involves a substantive or complex change (multi-file refactors, new features, architectural changes). For significant work, MEDIUM findings (test coverage gaps, useMemo correctness, component extraction) are still worth a rejection cycle. Apply proportional rejection only for mechanical fixes, small cleanups, or changes the user has explicitly called low-stakes. When in doubt, present the MEDIUM findings and let the human decide — don't silently waive them.
+
 ### 5.6 Stage Routing on Rejection
 
 When rejecting, consider which stage the task should return to by setting `route_to` in your output:

@@ -105,16 +105,22 @@ export function PrReviewsSection({
 }
 
 function ReviewHeader({ review }: { review: PrReview }) {
+  const body = review.body?.trim();
   return (
-    <div className="flex items-center gap-2 mb-2">
-      <span className="font-mono text-forge-mono-sm font-medium text-text-secondary">
-        {review.author}
-      </span>
-      <span
-        className={`font-mono text-forge-mono-label ${REVIEW_STATE_CLASSES[review.state] ?? "text-text-quaternary"}`}
-      >
-        {REVIEW_STATE_LABELS[review.state] ?? review.state.toLowerCase()}
-      </span>
+    <div className="mb-2">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-forge-mono-sm font-medium text-text-secondary">
+          {review.author}
+        </span>
+        <span
+          className={`font-mono text-forge-mono-label ${REVIEW_STATE_CLASSES[review.state] ?? "text-text-quaternary"}`}
+        >
+          {REVIEW_STATE_LABELS[review.state] ?? review.state.toLowerCase()}
+        </span>
+      </div>
+      {body && (
+        <div className="mt-1 text-forge-body text-text-primary whitespace-pre-wrap">{body}</div>
+      )}
     </div>
   );
 }

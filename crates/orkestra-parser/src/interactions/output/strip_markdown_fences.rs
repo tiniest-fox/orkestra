@@ -5,6 +5,10 @@
 /// Handles patterns like:
 /// - ```json\n{...}\n```
 /// - ```\n{...}\n```
+///
+/// When the content contains embedded markdown code fences, finds the outermost
+/// closing fence by selecting the rightmost newline-plus-triple-backtick position
+/// where everything after it is only whitespace.
 pub fn execute(s: &str) -> String {
     let trimmed = s.trim();
 
@@ -12,8 +16,11 @@ pub fn execute(s: &str) -> String {
     if trimmed.starts_with("```") && trimmed.ends_with("```") {
         // Find the end of the opening fence line
         let start = trimmed.find('\n').map_or(3, |i| i + 1);
-        // Find the start of the closing fence
-        let end = trimmed.rfind("\n```").unwrap_or(trimmed.len() - 3);
+
+        // Find the outer closing fence: the rightmost \n``` where everything
+        // after it is only whitespace (confirming it's the outer fence, not an
+        // embedded one).
+        let end = find_outer_close(trimmed).unwrap_or(trimmed.len() - 3);
 
         if start < end {
             return trimmed[start..end].trim().to_string();
@@ -21,6 +28,22 @@ pub fn execute(s: &str) -> String {
     }
 
     trimmed.to_string()
+}
+
+// -- Helpers --
+
+/// Find the byte offset of the outer closing fence marker in `s`.
+///
+/// Reuses `fence_close_positions` from the sibling module and returns the rightmost
+/// position where everything after it is only whitespace — confirming it is the outer
+/// fence delimiter rather than an embedded inner fence.
+fn find_outer_close(s: &str) -> Option<usize> {
+    let positions = super::extract_fenced_json::fence_close_positions(s);
+    positions
+        .iter()
+        .rev()
+        .find(|&&candidate| s[candidate + "\n```".len()..].trim().is_empty())
+        .copied()
 }
 
 // ============================================================================
@@ -50,5 +73,14 @@ mod tests {
         let input = "{\"type\": \"summary\", \"content\": \"done\"}";
         let result = execute(input);
         assert_eq!(result, input);
+    }
+
+    #[test]
+    fn nested_fence_in_content() {
+        let inner = r#"{"type": "artifact", "content": "```python\ndef hello():\n    pass\n```"}"#;
+        let input = format!("```json\n{inner}\n```");
+        let result = execute(&input);
+        // Should return the full JSON, not truncated at the inner ```
+        assert!(serde_json::from_str::<serde_json::Value>(&result).is_ok());
     }
 }

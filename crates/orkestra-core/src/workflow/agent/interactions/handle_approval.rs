@@ -43,7 +43,7 @@ pub fn execute(
         }
         "reject" => {
             // Store rejection content as artifact (same name as approvals, overwrite semantics).
-            // Rejections do NOT persist to workflow_artifacts — they are not accepted outputs.
+            // Rejection content is persisted as an artifact so it appears in the Agents tab.
             let artifact_name = stage::finalize_advancement::artifact_name_for_stage(
                 workflow,
                 &task.flow,
@@ -86,7 +86,7 @@ pub fn execute(
                 task.state = TaskState::awaiting_rejection_confirmation(current_stage.to_string());
                 task.updated_at = now.to_string();
             }
-            Ok(None)
+            Ok(Some(artifact_name))
         }
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Invalid approval decision: {decision}"

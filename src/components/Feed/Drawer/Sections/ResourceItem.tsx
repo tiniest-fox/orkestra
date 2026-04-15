@@ -10,7 +10,7 @@ import { formatTimestamp } from "../../../../utils";
 
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|svg)$/i;
 
-function isImageUrl(url: string): boolean {
+export function isImageUrl(url: string): boolean {
   return IMAGE_EXTENSIONS.test(url);
 }
 

@@ -9,7 +9,6 @@
     "core:window:allow-create",
     "core:window:allow-close",
     "core:window:allow-set-focus",
-    "core:asset:default",
     "shell:allow-open",
     "notification:default",
     "dialog:default",

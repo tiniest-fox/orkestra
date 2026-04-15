@@ -801,6 +801,19 @@ See `src/stories/Demo/AppShell.stories.tsx` for the reference pattern.
 
 To run the automated test runner against a live instance: `pnpm test-storybook --url http://localhost:6006` (requires the dev server to be running first).
 
+**Screenshot-as-resource workflow**: When stories are added or modified, generate screenshots and register them as resources so they appear in the Trak drawer throughout the workflow. The expected workflow:
+
+1. Run Storybook: `pnpm storybook` (serves at `http://localhost:6006`)
+2. Take screenshots — either via `pnpm test-storybook` with a snapshot configuration, or manually from the browser
+3. Save screenshots to a stable path in the worktree (e.g., `.orkestra/screenshots/ResourceItem.png`)
+4. Register each screenshot as a resource in the agent's structured output, using the component name as the key so multiple screenshots coexist without collision:
+   ```json
+   {"name": "screenshot:ResourceItem", "url": "/absolute/path/to/.orkestra/screenshots/ResourceItem.png", "description": "ResourceItem — image and link variants"}
+   {"name": "screenshot:FeedRow", "url": "/absolute/path/to/.orkestra/screenshots/FeedRow.png", "description": "FeedRow — default and selected states"}
+   ```
+
+In Tauri, resources with a local image path (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) render as inline `<img>` tags in the Trak drawer's Resources tab. In web/daemon mode they render as plain text.
+
 ## Keyboard Navigation
 
 <!-- compound: beauteously-liberal-pollock -->

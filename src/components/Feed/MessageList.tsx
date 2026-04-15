@@ -10,7 +10,12 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { Virtualizer } from "virtua";
-import type { LogEntry, ResumeType, WorkflowArtifact, WorkflowResource } from "../../types/workflow";
+import type {
+  LogEntry,
+  ResumeType,
+  WorkflowArtifact,
+  WorkflowResource,
+} from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -19,8 +24,8 @@ import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { groupLogEntries } from "../Logs/useGroupedLogs";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ArtifactLogCard } from "./ArtifactLogCard";
-import { ErrorLine, ToolLine } from "./FeedEntryComponents";
 import { ResourceItem } from "./Drawer/Sections/ResourceItem";
+import { ErrorLine, ToolLine } from "./FeedEntryComponents";
 
 // ============================================================================
 // Markdown HTML cache

@@ -718,11 +718,11 @@ fn test_chat_invalid_json_silently_ignored() {
 }
 
 // =============================================================================
-// Test: JSON with wrong schema is silently ignored
+// Test: JSON with wrong schema returns not-detected (triggers CorrectionNeeded in production)
 // =============================================================================
 
 #[test]
-fn test_chat_wrong_schema_json_silently_ignored() {
+fn test_chat_wrong_schema_json_returns_not_detected() {
     let workflow = chat_test_workflow();
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
@@ -991,8 +991,9 @@ fn test_chat_structured_output_activity_log_on_correct_iteration() {
 #[test]
 fn test_chat_artifact_output_creates_artifact_row_and_log_entry() {
     // Single gateless stage: "summary" stays in the schema type enum.
-    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
-        .with_prompt("worker.md")]);
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
     let task = ctx.create_task(
@@ -1055,9 +1056,9 @@ fn test_chat_artifact_output_creates_artifact_row_and_log_entry() {
         .api()
         .get_task_logs(&task_id, Some("work"), None, None)
         .unwrap();
-    let has_artifact_produced = logs.iter().any(|e| {
-        matches!(e, LogEntry::ArtifactProduced { name, .. } if name == "summary")
-    });
+    let has_artifact_produced = logs
+        .iter()
+        .any(|e| matches!(e, LogEntry::ArtifactProduced { name, .. } if name == "summary"));
     assert!(
         has_artifact_produced,
         "Should have ArtifactProduced log entry for 'summary'. Got: {logs:?}"

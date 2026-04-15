@@ -34,29 +34,16 @@ pub fn execute(s: &str) -> String {
 
 /// Find the byte offset of the outer closing fence marker in `s`.
 ///
-/// Collects all newline-plus-triple-backtick positions and returns the rightmost
-/// one where everything after it (the rest of `s`) is only whitespace —
-/// confirming it is the outer fence delimiter rather than an embedded inner fence.
+/// Reuses `fence_close_positions` from the sibling module and returns the rightmost
+/// position where everything after it is only whitespace — confirming it is the outer
+/// fence delimiter rather than an embedded inner fence.
 fn find_outer_close(s: &str) -> Option<usize> {
-    let mut positions: Vec<usize> = Vec::new();
-    let mut start = 0;
-    while start < s.len() {
-        match s[start..].find("\n```") {
-            Some(pos) => {
-                positions.push(start + pos);
-                start += pos + 1;
-            }
-            None => break,
-        }
-    }
-
-    for &candidate in positions.iter().rev() {
-        if s[candidate + "\n```".len()..].trim().is_empty() {
-            return Some(candidate);
-        }
-    }
-
-    None
+    let positions = super::extract_fenced_json::fence_close_positions(s);
+    positions
+        .iter()
+        .rev()
+        .find(|&&candidate| s[candidate + "\n```".len()..].trim().is_empty())
+        .copied()
 }
 
 // ============================================================================

@@ -298,15 +298,25 @@ struct GhGraphQLRepository {
 
 #[derive(Deserialize)]
 struct GhGraphQLPullRequest {
-    #[serde(rename = "reviewComments")]
-    review_comments: GhGraphQLReviewComments,
+    #[serde(rename = "reviewThreads")]
+    review_threads: GhGraphQLReviewThreads,
 }
 
 #[derive(Deserialize)]
-struct GhGraphQLReviewComments {
-    nodes: Vec<GhGraphQLReviewComment>,
+struct GhGraphQLReviewThreads {
+    nodes: Vec<GhGraphQLReviewThread>,
     #[serde(rename = "pageInfo")]
     page_info: GhGraphQLPageInfo,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLReviewThread {
+    comments: GhGraphQLReviewThreadComments,
+}
+
+#[derive(Deserialize)]
+struct GhGraphQLReviewThreadComments {
+    nodes: Vec<GhGraphQLReviewComment>,
 }
 
 #[derive(Deserialize)]
@@ -350,20 +360,28 @@ struct GhCheckRun {
 
 const GH_TIMEOUT: Duration = Duration::from_secs(10);
 
+// GitHub's GraphQL schema does not expose a `reviewComments` field on PullRequest.
+// Inline review comments are reached via `reviewThreads { nodes { comments { nodes {...} } } }`.
+// Each thread groups the original comment and any replies on a specific line; we flatten
+// them into a single list keyed by each comment's databaseId.
 const REVIEW_COMMENTS_QUERY: &str = r"
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      reviewComments(first: 100) {
+      reviewThreads(first: 100) {
         nodes {
-          databaseId
-          author { login }
-          body
-          path
-          line
-          createdAt
-          pullRequestReview { databaseId }
-          outdated
+          comments(first: 100) {
+            nodes {
+              databaseId
+              author { login }
+              body
+              path
+              line
+              createdAt
+              pullRequestReview { databaseId }
+              outdated
+            }
+          }
         }
         pageInfo { hasNextPage }
       }
@@ -675,17 +693,18 @@ async fn fetch_graphql_comments(
         ErrorPayload::new("GH_GRAPHQL_ERROR", "GraphQL response missing data field")
     })?;
 
-    let comments_data = data.repository.pull_request.review_comments;
+    let threads_data = data.repository.pull_request.review_threads;
 
-    if comments_data.page_info.has_next_page {
+    if threads_data.page_info.has_next_page {
         tracing::warn!(
-            "[pr] GraphQL reviewComments has more than 100 results; pagination not yet implemented"
+            "[pr] GraphQL reviewThreads has more than 100 results; pagination not yet implemented"
         );
     }
 
-    Ok(comments_data
+    Ok(threads_data
         .nodes
         .into_iter()
+        .flat_map(|thread| thread.comments.nodes.into_iter())
         .map(|c| PrComment {
             id: c.database_id,
             author: c.author.map_or_else(|| "ghost".into(), |a| a.login),

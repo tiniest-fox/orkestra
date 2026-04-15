@@ -50,6 +50,27 @@ fn save_session_for_test(ctx: &TestEnv, task_id: &str, stage: &str, session_id: 
     store.save_stage_session(&session).expect("save session");
 }
 
+/// Directly set `chat_active = true` and a fake `agent_pid` on an existing stage session.
+///
+/// Bypasses `send_chat_message` to avoid the race condition where the mock `cat` process
+/// exits immediately and the background reader clears `chat_active` via
+/// `clear_agent_pid_for_session` before the test can assert the pre-recovery state.
+fn seed_active_chat(ctx: &TestEnv, task_id: &str, stage: &str, fake_pid: u32) {
+    let db_path = ctx.temp_dir().join(".orkestra/.database/orkestra.db");
+    let conn = DatabaseConnection::open(&db_path).expect("open db");
+    let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut session = store
+        .get_stage_session(task_id, stage)
+        .expect("store op succeeds")
+        .expect("session should exist before seeding active chat");
+    session.enter_chat(&now);
+    session.agent_spawned(fake_pid, &now);
+    store
+        .save_stage_session(&session)
+        .expect("save session with active chat");
+}
+
 /// Seed a fake `claude_session_id` on the stage session so `send_chat_message` can resume.
 ///
 /// Mock agents don't emit `SessionId` events, so `claude_session_id` is always `None`
@@ -395,14 +416,14 @@ fn test_recover_stale_chat_at_startup() {
     );
     let task_id = task.id.clone();
 
-    // Advance to AwaitingApproval and enter chat mode
+    // Advance to AwaitingApproval, then directly seed chat_active=true with a fake agent_pid.
+    // Using send_chat_message here would race: the mock `cat` process exits immediately and
+    // the background reader clears chat_active via clear_agent_pid_for_session before we can
+    // assert the pre-recovery state.
     advance_to_awaiting_approval(&ctx, &task_id);
-    seed_session_id(&ctx, &task_id, "work");
-    ctx.api()
-        .send_chat_message(&task_id, "Quick question.")
-        .expect("send_chat_message should succeed");
+    seed_active_chat(&ctx, &task_id, "work", 99999);
 
-    // Verify chat_active is true
+    // Verify chat_active is true (no background thread race — we seeded it directly)
     let session = ctx
         .api()
         .get_stage_session(&task_id, "work")

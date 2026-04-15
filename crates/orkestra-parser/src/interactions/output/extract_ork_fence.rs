@@ -24,6 +24,16 @@ pub fn execute(text: &str) -> Option<String> {
 
         // Find the end of the opening fence line (skip optional trailing text like ```ork json)
         let after_tag = abs_fence_start + "```ork".len();
+
+        // Reject matches like ```orkestra or ```ork-json: the character after "ork"
+        // must be whitespace, newline, or end-of-string.
+        if let Some(next_char) = text[after_tag..].chars().next() {
+            if !next_char.is_whitespace() {
+                // Not a valid ork fence — skip past this match and keep searching
+                search_from = abs_fence_start + 1;
+                continue;
+            }
+        }
         let Some(newline_pos) = text[after_tag..].find('\n') else {
             break; // No newline after opening fence — malformed
         };
@@ -99,6 +109,28 @@ mod tests {
     fn empty_content_returns_none() {
         let text = "```ork\n\n```";
         assert!(execute(text).is_none());
+    }
+
+    #[test]
+    fn orkestra_fence_is_not_matched() {
+        let text = "```orkestra\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        assert!(execute(text).is_none());
+    }
+
+    #[test]
+    fn ork_hyphen_fence_is_not_matched() {
+        let text = "```ork-json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        assert!(execute(text).is_none());
+    }
+
+    #[test]
+    fn ork_fence_after_false_match() {
+        // An ```orkestra fence followed by a real ```ork fence — only the real one should match.
+        let text = "```orkestra\n{\"type\":\"wrong\"}\n```\n\n```ork\n{\"type\":\"right\",\"content\":\"ok\"}\n```";
+        let result = execute(text);
+        assert!(result.is_some());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "right");
     }
 
     #[test]

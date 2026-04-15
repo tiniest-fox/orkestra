@@ -9354,14 +9354,32 @@ fn test_malformed_output_retry_succeeds_on_second_attempt() {
         iterations[0].outcome
     );
 
-    // Second iteration should have MalformedOutput trigger.
+    // Second iteration should have MalformedOutput trigger with attempt=2 (original was 1).
     assert!(
         matches!(
             &iterations[1].incoming_context,
-            Some(IterationTrigger::MalformedOutput { attempt: 1, .. })
+            Some(IterationTrigger::MalformedOutput { attempt: 2, .. })
         ),
-        "Second iteration should have MalformedOutput trigger with attempt=1, got: {:?}",
+        "Second iteration should have MalformedOutput trigger with attempt=2, got: {:?}",
         iterations[1].incoming_context
+    );
+
+    // The corrective prompt sent on the retry must include the error message and ork fence
+    // instructions — that is the entire point of auto-retry.
+    let calls = ctx.runner_calls();
+    assert_eq!(calls.len(), 2, "Should have exactly 2 agent spawns");
+    let retry_prompt = format!(
+        "{} {}",
+        calls[1].system_prompt.as_deref().unwrap_or(""),
+        calls[1].prompt
+    );
+    assert!(
+        retry_prompt.contains("unexpected output format"),
+        "Retry prompt must include the original error message, got: {retry_prompt}"
+    );
+    assert!(
+        retry_prompt.contains("```ork"),
+        "Retry prompt must include ork fence instructions, got: {retry_prompt}"
     );
 }
 
@@ -9420,7 +9438,7 @@ fn test_malformed_output_budget_exhaustion_fails_task() {
         "Should have exactly 3 MalformedOutput retry iterations"
     );
 
-    // Verify attempt numbers are 1, 2, 3.
+    // Verify attempt numbers are 2, 3, 4 (original attempt was 1, so retries start at 2).
     let mut attempts: Vec<u32> = malformed_iterations
         .iter()
         .filter_map(|i| {
@@ -9432,7 +9450,11 @@ fn test_malformed_output_budget_exhaustion_fails_task() {
         })
         .collect();
     attempts.sort_unstable();
-    assert_eq!(attempts, vec![1, 2, 3], "Attempt numbers should be 1, 2, 3");
+    assert_eq!(
+        attempts,
+        vec![2, 3, 4],
+        "Attempt numbers should be 2, 3, 4 (original attempt was 1)"
+    );
 }
 
 /// Valid output on the first attempt flows through normally (no retry needed).

@@ -19,10 +19,18 @@ use crate::types::ParsedUpdate;
 /// - `tool_use_map`: maps `tool_use_id` → `tool_name` for result correlation
 /// - `agent_tool_ids`: tracks Agent tool invocations for subagent detection
 /// - `task_agent_map`: maps Agent `tool_use_id` → agentId
+/// - `last_text`: accumulated assistant text content with real newlines (for ork fence fallback)
 pub struct ClaudeParserService {
     tool_use_map: HashMap<String, String>,
     agent_tool_ids: HashSet<String>,
     task_agent_map: HashMap<String, String>,
+    /// Accumulated assistant text content across all JSONL events.
+    ///
+    /// Claude JSONL stores text as JSON string values where newlines are
+    /// JSON-escaped (`\n` = bytes `0x5C 0x6E`). `serde_json` unescapes them
+    /// when deserializing, so appending here gives us real newlines — the
+    /// same representation that `extract_ork_fence` expects.
+    last_text: Option<String>,
 }
 
 impl Default for ClaudeParserService {
@@ -37,6 +45,7 @@ impl ClaudeParserService {
             tool_use_map: HashMap::new(),
             agent_tool_ids: HashSet::new(),
             task_agent_map: HashMap::new(),
+            last_text: None,
         }
     }
 
@@ -104,6 +113,25 @@ impl ClaudeParserService {
                 .and_then(|m| m.get("content"))
                 .and_then(|c| c.as_array())
             {
+                // Accumulate text content with real newlines for ork fence fallback.
+                // serde_json unescapes JSON string escapes when deserializing, so
+                // `.as_str()` gives us real newlines even though JSONL stores them escaped.
+                if !is_subagent {
+                    for item in content {
+                        if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                if !text.trim().is_empty() {
+                                    let acc = self.last_text.get_or_insert_with(String::new);
+                                    if !acc.is_empty() {
+                                        acc.push('\n');
+                                    }
+                                    acc.push_str(text);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 return parse_assistant_content::execute(
                     content,
                     is_subagent,
@@ -167,10 +195,15 @@ impl AgentParser for ClaudeParserService {
             return Ok(json_str);
         }
 
-        // Fallback: scan raw output for ```ork fence
-        // Backticks aren't JSON-escaped, so literal pattern search works on raw JSONL
-        if let Some(json_str) = extract_ork_fence::execute(trimmed) {
-            return Ok(json_str);
+        // Fallback: ork fence in accumulated text content.
+        //
+        // Text content is accumulated during streaming with real newlines (serde_json
+        // unescapes JSON string escapes when deserializing). Running extract_ork_fence
+        // on raw JSONL would not work because the fence newlines are JSON-escaped there.
+        if let Some(ref text) = self.last_text {
+            if let Some(json_str) = extract_ork_fence::execute(text) {
+                return Ok(json_str);
+            }
         }
 
         Err(format!(
@@ -531,5 +564,54 @@ mod tests {
         let result = parser.extract_output("");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("no output"));
+    }
+
+    #[test]
+    fn extract_ork_fence_from_jsonl_text_content() {
+        // Regression: ork fence in Claude JSONL text content must be extracted correctly.
+        // The text field is JSON-unescaped by serde_json, so the accumulated `last_text`
+        // has real newlines — `extract_ork_fence` operates on that, not raw JSONL.
+        let mut parser = ClaudeParserService::new();
+
+        // Simulate the agent outputting an ork fence in a text content block.
+        // The JSON text value contains \n which serde_json unescapes to real newlines.
+        let ork_content = "```ork\n{\"type\":\"summary\",\"content\":\"done via ork fence\"}\n```";
+        let jsonl_line = assistant_text(ork_content);
+        parser.parse_line(&jsonl_line);
+
+        // extract_output should find the ork fence in accumulated last_text
+        let result = parser.extract_output(&jsonl_line);
+        assert!(
+            result.is_ok(),
+            "Expected ork fence extraction to succeed: {result:?}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "summary");
+        assert_eq!(json["content"], "done via ork fence");
+    }
+
+    #[test]
+    fn extract_ork_fence_from_jsonl_multi_message() {
+        // Multiple assistant messages with text content — ork fence in last message wins.
+        let mut parser = ClaudeParserService::new();
+
+        parser.parse_line(&assistant_text("Here is my analysis..."));
+        parser.parse_line(&assistant_text(
+            "```ork\n{\"type\":\"artifact\",\"content\":\"result\"}\n```",
+        ));
+
+        // Use a JSONL output string that would not contain a direct structured_output field
+        let output = format!(
+            "{}\n{}",
+            assistant_text("Here is my analysis..."),
+            assistant_text("```ork\n{\"type\":\"artifact\",\"content\":\"result\"}\n```"),
+        );
+        let result = parser.extract_output(&output);
+        assert!(
+            result.is_ok(),
+            "Expected ork fence extraction from multi-message: {result:?}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "artifact");
     }
 }

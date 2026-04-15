@@ -31,16 +31,32 @@ pub fn execute(
         .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
         .to_string();
 
-    // Count existing MalformedOutput iterations for this stage (completed retries).
+    // Count existing MalformedOutput iterations for the CURRENT PASS through this stage.
+    //
+    // A "pass" starts at the most recent non-MalformedOutput iteration for this stage.
+    // Counting all MalformedOutput iterations across all passes would prematurely exhaust
+    // the budget when a task re-enters a stage after rejection (e.g., work → review →
+    // rejected back to work → malformed: the prior-pass retries must not count).
     let iterations = store.get_iterations(task_id)?;
-    let malformed_count = iterations
+    let pass_start = iterations
         .iter()
-        .filter(|i| i.stage == current_stage)
+        .rposition(|i| {
+            i.stage == current_stage
+                && !matches!(
+                    i.incoming_context,
+                    Some(IterationTrigger::MalformedOutput { .. })
+                )
+        })
+        .map_or(0, |idx| idx + 1);
+
+    let malformed_count = iterations[pass_start..]
+        .iter()
         .filter(|i| {
-            matches!(
-                i.incoming_context,
-                Some(IterationTrigger::MalformedOutput { .. })
-            )
+            i.stage == current_stage
+                && matches!(
+                    i.incoming_context,
+                    Some(IterationTrigger::MalformedOutput { .. })
+                )
         })
         .count();
 
@@ -74,9 +90,10 @@ pub fn execute(
     task.updated_at = now;
 
     // Create new iteration with MalformedOutput trigger so the agent gets the corrective prompt.
-    // The attempt count is 1-indexed (malformed_count = existing retries before this one).
+    // `attempt` is the total attempt number (original was 1, first retry is 2, etc.).
+    // This makes "attempt 2 of 4" unambiguous: the agent knows it has 2 retries remaining.
     #[allow(clippy::cast_possible_truncation)]
-    let attempt = (malformed_count + 1) as u32;
+    let attempt = (malformed_count + 2) as u32;
     iteration_service.create_iteration(
         &task.id,
         &current_stage,

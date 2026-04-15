@@ -147,7 +147,7 @@ function CommitDetailPanel({
               {bodyExpanded ? "hide description" : "show description"}
             </button>
             {bodyExpanded && (
-              <pre className="font-mono text-[11px] text-text-tertiary leading-relaxed whitespace-pre-wrap">
+              <pre className="font-mono text-[11px] text-text-tertiary leading-relaxed whitespace-pre-wrap max-h-36 overflow-y-auto">
                 {commit.body}
               </pre>
             )}

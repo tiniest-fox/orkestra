@@ -30,8 +30,8 @@ pub struct OpenCodeParserService {
     /// Buffered text event awaiting the next event before emission.
     ///
     /// Text events are deferred so that the final structured output JSON (which
-    /// arrives as a plain text event in `OpenCode`) can be emitted as a synthetic
-    /// `StructuredOutput` tool call in `finalize()` instead of a raw `Text` entry.
+    /// arrives as a plain text event in `OpenCode`) can be classified in `finalize()`
+    /// and suppressed rather than emitted as a spurious `Text` entry.
     pending_text: Option<String>,
 }
 
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn finalize_emits_structured_output_from_last_text() {
+    fn finalize_drops_structured_json() {
         let mut parser = OpenCodeParserService::new();
         let line = serde_json::json!({
             "type": "text",
@@ -677,22 +677,13 @@ mod tests {
         .to_string();
         parser.parse_line(&line);
 
+        // Pure structured JSON produces no log entries — output is extracted separately.
         let finalized = parser.finalize();
-        assert_eq!(finalized.len(), 1);
-        assert_eq!(
-            finalized[0],
-            LogEntry::ToolUse {
-                tool: "StructuredOutput".to_string(),
-                id: "structured-output".to_string(),
-                input: ToolInput::StructuredOutput {
-                    output_type: "artifact".to_string(),
-                },
-            }
-        );
+        assert!(finalized.is_empty());
     }
 
     #[test]
-    fn finalize_emits_structured_output_with_markdown_fences() {
+    fn finalize_drops_structured_json_with_markdown_fences() {
         let mut parser = OpenCodeParserService::new();
         let line = serde_json::json!({
             "type": "text",
@@ -701,18 +692,9 @@ mod tests {
         .to_string();
         parser.parse_line(&line);
 
+        // Fenced structured JSON also produces no log entries.
         let finalized = parser.finalize();
-        assert_eq!(finalized.len(), 1);
-        assert_eq!(
-            finalized[0],
-            LogEntry::ToolUse {
-                tool: "StructuredOutput".to_string(),
-                id: "structured-output".to_string(),
-                input: ToolInput::StructuredOutput {
-                    output_type: "summary".to_string(),
-                },
-            }
-        );
+        assert!(finalized.is_empty());
     }
 
     #[test]
@@ -896,7 +878,7 @@ mod tests {
     // -- Mixed prose + fenced JSON tests — finalize --
 
     #[test]
-    fn finalize_mixed_prose_and_json_emits_text_and_structured_output() {
+    fn finalize_mixed_prose_and_json_emits_text_only() {
         let mut parser = OpenCodeParserService::new();
         let mixed =
             "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
@@ -908,21 +890,11 @@ mod tests {
         parser.parse_line(&line);
 
         let finalized = parser.finalize();
-        assert_eq!(finalized.len(), 2);
+        assert_eq!(finalized.len(), 1);
         assert_eq!(
             finalized[0],
             LogEntry::Text {
                 content: "The fix is complete.".to_string()
-            }
-        );
-        assert_eq!(
-            finalized[1],
-            LogEntry::ToolUse {
-                tool: "StructuredOutput".to_string(),
-                id: "structured-output".to_string(),
-                input: ToolInput::StructuredOutput {
-                    output_type: "summary".to_string(),
-                },
             }
         );
     }
@@ -960,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn finalize_mixed_empty_prose_emits_structured_output_only() {
+    fn finalize_mixed_empty_prose_emits_nothing() {
         let mut parser = OpenCodeParserService::new();
         let mixed = "\n```json\n{\"type\":\"artifact\",\"content\":\"result\"}\n```";
         let line = serde_json::json!({
@@ -970,18 +942,9 @@ mod tests {
         .to_string();
         parser.parse_line(&line);
 
+        // No prose, no StructuredOutput entry — JSON-only output produces empty vec.
         let finalized = parser.finalize();
-        assert_eq!(finalized.len(), 1);
-        assert_eq!(
-            finalized[0],
-            LogEntry::ToolUse {
-                tool: "StructuredOutput".to_string(),
-                id: "structured-output".to_string(),
-                input: ToolInput::StructuredOutput {
-                    output_type: "artifact".to_string(),
-                },
-            }
-        );
+        assert!(finalized.is_empty());
     }
 
     // -- Mixed prose + fenced JSON tests — extract_output --

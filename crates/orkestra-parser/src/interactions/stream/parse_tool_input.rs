@@ -37,13 +37,6 @@ pub fn execute(tool_name: &str, input: &serde_json::Value) -> ToolInput {
         "todowrite" => ToolInput::TodoWrite {
             todos: parse_todo_items(input),
         },
-        "structuredoutput" => ToolInput::StructuredOutput {
-            output_type: input
-                .get("type")
-                .and_then(|t| t.as_str())
-                .unwrap_or("unknown")
-                .to_string(),
-        },
         "websearch" => ToolInput::WebSearch {
             query: get_str_field(input, "query"),
         },

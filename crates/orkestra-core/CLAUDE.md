@@ -185,7 +185,7 @@ if let Some(content) = file.diff_content.as_ref().filter(|d| !d.is_empty()) {
 
 ### `ok_or_else()` not `unwrap_or_default()` on required Optional fields
 
-Domain model fields like `branch_name: Option<String>` that represent required state at a given phase must fail fast with an actionable error when `None`. Use `ok_or_else(|| WorkflowError::Internal("branch_name missing".into()))?` rather than `.unwrap_or_default()`. `unwrap_or_default()` silently converts `None` to empty string, masking bugs and violating Fail Fast. This is a HIGH-severity pattern violation.
+Domain model fields like `branch_name: Option<String>` that represent required state at a given phase must fail fast with an actionable error when `None`. Use `ok_or_else(|| WorkflowError::InvalidState("branch_name missing".into()))?` rather than `.unwrap_or_default()`. `unwrap_or_default()` silently converts `None` to empty string, masking bugs and violating Fail Fast. This is a HIGH-severity pattern violation.
 
 ### `Instant::elapsed()` over `checked_sub()`
 

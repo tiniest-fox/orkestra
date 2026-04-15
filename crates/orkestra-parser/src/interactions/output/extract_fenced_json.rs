@@ -8,6 +8,10 @@
 /// - The entire string is already a fence (defer to `strip_markdown_fences`)
 /// - No fence is found in the text
 /// - The fenced content is not valid JSON
+///
+/// Handles JSON content containing embedded markdown code fences by trying each
+/// candidate closing position from furthest to nearest and validating JSON at
+/// each candidate.
 pub fn execute(text: &str) -> Option<(String, String)> {
     let trimmed = text.trim();
 
@@ -26,30 +30,52 @@ pub fn execute(text: &str) -> Option<(String, String)> {
         .find('\n')
         .map(|i| after_backticks + i + 1)?;
 
-    // Find the closing ```
-    let closing = trimmed[fence_line_end..].find("\n```").or_else(|| {
-        // The closing fence might be at the very end without a trailing newline
-        if trimmed[fence_line_end..].ends_with("```") {
-            Some(
-                trimmed[fence_line_end..]
-                    .rfind("\n```")
-                    .unwrap_or(trimmed[fence_line_end..].len() - 3),
-            )
-        } else {
-            None
+    let content_slice = &trimmed[fence_line_end..];
+
+    // Collect all candidate closing positions and try from furthest to nearest.
+    // A premature closing position truncates the JSON, making it invalid; the
+    // real closing fence produces valid JSON.
+    let candidates = fence_close_positions(content_slice);
+
+    let mut json_str: Option<String> = None;
+
+    for &offset in candidates.iter().rev() {
+        let candidate = content_slice[..offset].trim();
+        if !candidate.is_empty() && serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
+            json_str = Some(candidate.to_string());
+            break;
         }
-    })?;
-    let content_end = fence_line_end + closing;
-
-    let json_str = trimmed[fence_line_end..content_end].trim();
-
-    // Validate it's actually JSON
-    if serde_json::from_str::<serde_json::Value>(json_str).is_err() {
-        return None;
     }
 
+    // End-of-string fallback: closing ``` without a preceding newline
+    if json_str.is_none() && content_slice.ends_with("```") {
+        let candidate = content_slice[..content_slice.len() - 3].trim();
+        if !candidate.is_empty() && serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
+            json_str = Some(candidate.to_string());
+        }
+    }
+
+    let json_str = json_str?;
     let prose = trimmed[..fence_start].trim().to_string();
-    Some((prose, json_str.to_string()))
+    Some((prose, json_str))
+}
+
+// -- Helpers --
+
+/// Collect all byte offsets where a newline followed by triple backticks appears in `s`.
+pub(super) fn fence_close_positions(s: &str) -> Vec<usize> {
+    let mut positions = Vec::new();
+    let mut start = 0;
+    while start < s.len() {
+        match s[start..].find("\n```") {
+            Some(pos) => {
+                positions.push(start + pos);
+                start += pos + 1;
+            }
+            None => break,
+        }
+    }
+    positions
 }
 
 // ============================================================================
@@ -98,5 +124,21 @@ mod tests {
     fn mixed_helper_returns_none_for_no_fence() {
         let text = "Just some plain text without any fences";
         assert!(execute(text).is_none());
+    }
+
+    #[test]
+    fn nested_fence_in_json_content() {
+        let json_content = serde_json::json!({
+            "type": "summary",
+            "content": "```python\ndef hello():\n    pass\n```"
+        })
+        .to_string();
+        let text = format!("Here is my output:\n\n```json\n{json_content}\n```");
+        let result = execute(&text);
+        assert!(result.is_some());
+        let (prose, json_str) = result.unwrap();
+        assert_eq!(prose, "Here is my output:");
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(json["type"], "summary");
     }
 }

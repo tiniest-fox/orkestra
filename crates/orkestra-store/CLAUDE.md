@@ -166,6 +166,7 @@ This allows using the last word as a readable short display ID in the UI.
 - **Don't add business logic here** — This crate is pure persistence. Validation, state transitions, and orchestration belong in orkestra-core.
 - **Don't skip transactions for multi-step operations** — Use `delete_task_tree()` for cascade deletes, not multiple `delete_task()` calls.
 - **Don't access `interactions/` from outside this crate** — They're implementation details. Use the trait.
+- **`WorkflowError::Storage` is for SQLite/persistence failures only** — Provider resolution failures, process spawning errors, stdin write failures, and other non-storage runtime errors should not map to `Storage`. The enum currently lacks a general-purpose variant (tech debt); use `WorkflowError::InvalidState` as the closest stand-in for "unexpected internal error" until an `Internal` variant is added. Misusing `Storage` spreads a copyable anti-pattern and makes error codes at the API layer misleading (`STORAGE_ERROR` for a process spawn failure).
 
 ## SQLite `get_or_create` Atomicity
 

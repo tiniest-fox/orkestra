@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 
-use super::try_complete_from_output;
+use super::try_complete_from_output::{self, DetectionResult};
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{LogEntry, LogNotification};
@@ -32,7 +32,7 @@ pub const CHAT_RESUME_TYPE: &str = "chat";
 /// `LogNotification` per batch of log entries, enabling push-based frontend updates.
 pub fn execute(
     store: Arc<dyn WorkflowStore>,
-    registry: &ProviderRegistry,
+    registry: &Arc<ProviderRegistry>,
     workflow: &WorkflowConfig,
     project_root: &Path,
     task_id: &str,
@@ -109,6 +109,7 @@ pub fn execute(
         message,
         &now,
         log_notify_tx,
+        1,
     )
 }
 
@@ -156,7 +157,7 @@ fn schema_type_hint(schema: &serde_json::Value) -> String {
 #[allow(clippy::too_many_arguments)]
 fn spawn_chat_agent(
     store: Arc<dyn WorkflowStore>,
-    registry: &ProviderRegistry,
+    registry: &Arc<ProviderRegistry>,
     workflow: &WorkflowConfig,
     task_flow: &str,
     session: &mut crate::workflow::domain::StageSession,
@@ -166,6 +167,7 @@ fn spawn_chat_agent(
     message: &str,
     now: &str,
     log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
+    remaining_corrections: u32,
 ) -> WorkflowResult<()> {
     // Kill any existing chat agent process
     if let Some(pid) = session.agent_pid {
@@ -248,6 +250,11 @@ fn spawn_chat_agent(
     // Take stderr before moving handle into background thread
     let stderr = handle.take_stderr();
 
+    // Clone retry context before moving into thread
+    let registry_owned = Arc::clone(registry);
+    let project_root_owned = project_root.to_path_buf();
+    let task_flow_owned = task_flow.to_string();
+
     // Spawn background reader — writes log entries and detects structured output
     let task_id_owned = session.task_id.clone();
     let session_id_owned = session.id.clone();
@@ -267,6 +274,10 @@ fn spawn_chat_agent(
             &workflow_owned,
             &schema_owned,
             log_notify_tx.as_ref(),
+            &registry_owned,
+            project_root_owned.as_path(),
+            task_flow_owned.as_str(),
+            remaining_corrections,
         );
     });
 
@@ -281,6 +292,9 @@ fn spawn_chat_agent(
 ///
 /// Sends one `LogNotification` per batch of entries written (main loop + finalized entries),
 /// enabling push-based frontend updates when a `log_notify_tx` sender is provided.
+///
+/// When the agent produces JSON that fails schema validation, logs the error and
+/// re-spawns the agent with a corrective message (up to `remaining_corrections` times).
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
 fn read_chat_output(
@@ -295,6 +309,10 @@ fn read_chat_output(
     workflow: &WorkflowConfig,
     schema: &serde_json::Value,
     log_notify_tx: Option<&std::sync::mpsc::Sender<LogNotification>>,
+    registry: &Arc<ProviderRegistry>,
+    project_root: &Path,
+    task_flow: &str,
+    remaining_corrections: u32,
 ) {
     use std::io::BufRead;
 
@@ -388,7 +406,7 @@ fn read_chat_output(
         let full_text = accumulated_text.join("");
         match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &full_text)
         {
-            Ok(true) => {
+            Ok(DetectionResult::Completed) => {
                 orkestra_debug!(
                     "stage_chat",
                     "Detected structured output in chat, stage completed for task {}",
@@ -396,7 +414,120 @@ fn read_chat_output(
                 );
                 detection_succeeded = true;
             }
-            Ok(false) => {} // No structured output detected, continue normal flow
+            Ok(DetectionResult::NotDetected) => {} // No structured output detected, continue normal flow
+            Ok(DetectionResult::CorrectionNeeded(error)) => {
+                orkestra_debug!(
+                    "stage_chat",
+                    "Structured output correction needed for task {}: {}",
+                    task_id,
+                    error
+                );
+
+                // Log the error as a visible system message
+                let system_msg = format!("[System] {error}");
+                if let Err(e) = store.append_log_entry(
+                    session_id,
+                    &LogEntry::Text {
+                        content: system_msg,
+                    },
+                    None,
+                ) {
+                    orkestra_debug!(
+                        "stage_chat",
+                        "Failed to append corrective system message: {}",
+                        e
+                    );
+                }
+
+                // Auto-retry: re-spawn agent with corrective message (once)
+                if remaining_corrections > 0 {
+                    let corrective_msg = error;
+                    // Log as UserMessage so the agent sees it in context on resume
+                    if let Err(e) = store.append_log_entry(
+                        session_id,
+                        &LogEntry::UserMessage {
+                            resume_type: CHAT_RESUME_TYPE.to_string(),
+                            content: corrective_msg.clone(),
+                        },
+                        None,
+                    ) {
+                        orkestra_debug!(
+                            "stage_chat",
+                            "Failed to append corrective user message: {}",
+                            e
+                        );
+                    }
+
+                    // Notify frontend
+                    if let Some(tx) = log_notify_tx {
+                        if let Err(e) = tx.send(LogNotification {
+                            task_id: task_id.to_string(),
+                            session_id: session_id.to_string(),
+                            last_entry_summary: None,
+                        }) {
+                            orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
+                        }
+                    }
+
+                    // Reload session and re-spawn
+                    match store.get_stage_session(task_id, stage) {
+                        Ok(Some(mut session)) => {
+                            let now = chrono::Utc::now().to_rfc3339();
+                            let worktree_path = if let Ok(Some(task)) = store.get_task(task_id) {
+                                resolve_worktree_path(
+                                    task.worktree_path.as_deref(),
+                                    project_root,
+                                    task_id,
+                                )
+                            } else {
+                                resolve_worktree_path(None, project_root, task_id)
+                            };
+
+                            if let Err(e) = spawn_chat_agent(
+                                Arc::clone(store),
+                                registry,
+                                workflow,
+                                task_flow,
+                                &mut session,
+                                stage,
+                                &worktree_path,
+                                project_root,
+                                &corrective_msg,
+                                &now,
+                                log_notify_tx.cloned(),
+                                remaining_corrections - 1,
+                            ) {
+                                orkestra_debug!(
+                                    "stage_chat",
+                                    "Failed to spawn corrective agent: {}",
+                                    e
+                                );
+                            } else {
+                                // The new spawn's read_chat_output handles ProcessExit and PID cleanup
+                                handle.disarm();
+                                return;
+                            }
+                        }
+                        Ok(None) => {
+                            orkestra_debug!(
+                                "stage_chat",
+                                "Session not found for corrective re-spawn (task={}, stage={})",
+                                task_id,
+                                stage
+                            );
+                        }
+                        Err(e) => {
+                            orkestra_debug!(
+                                "stage_chat",
+                                "Failed to reload session for corrective re-spawn (task={}, stage={}): {}",
+                                task_id,
+                                stage,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
             Err(e) => {
                 orkestra_debug!(
                     "stage_chat",
@@ -475,4 +606,54 @@ fn read_chat_output(
 
     handle.disarm();
     orkestra_debug!("stage_chat", "Chat output reader finished for pid={}", pid);
+}
+
+/// Determine whether a corrective re-spawn should be attempted.
+///
+/// Returns the corrective message string when correction is warranted: the result
+/// is `CorrectionNeeded` and there are remaining correction attempts. Returns
+/// `None` when no correction should be attempted (wrong result type or exhausted budget).
+///
+/// Extracted as a pure function so the retry-gate logic can be tested independently
+/// of the process-spawning path.
+#[cfg(test)]
+fn should_attempt_correction(result: &DetectionResult, remaining: u32) -> Option<&str> {
+    match result {
+        DetectionResult::CorrectionNeeded(msg) if remaining > 0 => Some(msg.as_str()),
+        _ => None,
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_attempt_correction_when_remaining() {
+        let result = DetectionResult::CorrectionNeeded("bad schema".to_string());
+        assert_eq!(should_attempt_correction(&result, 1), Some("bad schema"));
+        assert_eq!(should_attempt_correction(&result, 2), Some("bad schema"));
+    }
+
+    #[test]
+    fn should_not_attempt_correction_when_exhausted() {
+        let result = DetectionResult::CorrectionNeeded("bad schema".to_string());
+        assert_eq!(should_attempt_correction(&result, 0), None);
+    }
+
+    #[test]
+    fn should_not_attempt_correction_when_completed() {
+        let result = DetectionResult::Completed;
+        assert_eq!(should_attempt_correction(&result, 1), None);
+    }
+
+    #[test]
+    fn should_not_attempt_correction_when_not_detected() {
+        let result = DetectionResult::NotDetected;
+        assert_eq!(should_attempt_correction(&result, 1), None);
+    }
 }

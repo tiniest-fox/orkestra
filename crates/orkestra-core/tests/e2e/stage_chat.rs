@@ -50,6 +50,27 @@ fn save_session_for_test(ctx: &TestEnv, task_id: &str, stage: &str, session_id: 
     store.save_stage_session(&session).expect("save session");
 }
 
+/// Directly set `chat_active = true` and a fake `agent_pid` on an existing stage session.
+///
+/// Bypasses `send_chat_message` to avoid the race condition where the mock `cat` process
+/// exits immediately and the background reader clears `chat_active` via
+/// `clear_agent_pid_for_session` before the test can assert the pre-recovery state.
+fn seed_active_chat(ctx: &TestEnv, task_id: &str, stage: &str, fake_pid: u32) {
+    let db_path = ctx.temp_dir().join(".orkestra/.database/orkestra.db");
+    let conn = DatabaseConnection::open(&db_path).expect("open db");
+    let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut session = store
+        .get_stage_session(task_id, stage)
+        .expect("store op succeeds")
+        .expect("session should exist before seeding active chat");
+    session.enter_chat(&now);
+    session.agent_spawned(fake_pid, &now);
+    store
+        .save_stage_session(&session)
+        .expect("save session with active chat");
+}
+
 /// Seed a fake `claude_session_id` on the stage session so `send_chat_message` can resume.
 ///
 /// Mock agents don't emit `SessionId` events, so `claude_session_id` is always `None`
@@ -395,14 +416,14 @@ fn test_recover_stale_chat_at_startup() {
     );
     let task_id = task.id.clone();
 
-    // Advance to AwaitingApproval and enter chat mode
+    // Advance to AwaitingApproval, then directly seed chat_active=true with a fake agent_pid.
+    // Using send_chat_message here would race: the mock `cat` process exits immediately and
+    // the background reader clears chat_active via clear_agent_pid_for_session before we can
+    // assert the pre-recovery state.
     advance_to_awaiting_approval(&ctx, &task_id);
-    seed_session_id(&ctx, &task_id, "work");
-    ctx.api()
-        .send_chat_message(&task_id, "Quick question.")
-        .expect("send_chat_message should succeed");
+    seed_active_chat(&ctx, &task_id, "work", 99999);
 
-    // Verify chat_active is true
+    // Verify chat_active is true (no background thread race — we seeded it directly)
     let session = ctx
         .api()
         .get_stage_session(&task_id, "work")
@@ -697,11 +718,11 @@ fn test_chat_invalid_json_silently_ignored() {
 }
 
 // =============================================================================
-// Test: JSON with wrong schema is silently ignored
+// Test: JSON with wrong schema returns not-detected (triggers CorrectionNeeded in production)
 // =============================================================================
 
 #[test]
-fn test_chat_wrong_schema_json_silently_ignored() {
+fn test_chat_wrong_schema_json_returns_not_detected() {
     let workflow = chat_test_workflow();
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
@@ -953,6 +974,94 @@ fn test_chat_structured_output_activity_log_on_correct_iteration() {
         chat_iter.activity_log.as_deref(),
         Some("- Reviewed implementation\n- Found no issues"),
         "Activity log should be on the ChatCompletion iteration, not the previous one"
+    );
+}
+
+// =============================================================================
+// Test: chat detection creates workflow_artifacts row and ArtifactProduced log entry
+// =============================================================================
+
+/// Artifact-producing output detected in chat must create a `workflow_artifacts` row
+/// and emit an `ArtifactProduced` log entry — the same as the normal agent path.
+///
+/// Uses a gateless workflow. With `has_approval: true` (agentic gate), the schema drops
+/// the artifact type name from its type enum and substitutes "approval", so
+/// `{"type":"summary",...}` would be rejected. A gateless stage keeps the artifact
+/// type in the enum, letting us exercise the `StageOutput::Artifact` path.
+#[test]
+fn test_chat_artifact_output_creates_artifact_row_and_log_entry() {
+    // Single gateless stage: "summary" stays in the schema type enum.
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Artifact via chat",
+        "Test artifact row + log entry on chat detection",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval (auto_mode=false keeps the task paused even without a gate).
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial run output.".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process output → AwaitingApproval
+
+    let task_state = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task_state.is_awaiting_review(),
+        "Task should be awaiting review, got: {:?}",
+        task_state.state
+    );
+
+    let artifacts_before = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    let count_before = artifacts_before.len();
+
+    // Detect a second "summary" artifact through chat.
+    let summary_json = r#"{"type":"summary","content":"Implementation is complete."}"#;
+    let detected = ctx
+        .api()
+        .detect_chat_completion(&task_id, "work", "default", summary_json)
+        .expect("detection should not error");
+
+    assert!(detected, "Summary artifact JSON should be detected");
+
+    // A new workflow_artifacts row must exist with the chat-produced content.
+    let artifacts_after = ctx.api().list_workflow_artifacts(&task_id).unwrap();
+    assert_eq!(
+        artifacts_after.len(),
+        count_before + 1,
+        "Should gain exactly one new artifact row from chat detection"
+    );
+
+    let chat_artifact = artifacts_after
+        .iter()
+        .find(|a| a.content == "Implementation is complete.")
+        .expect("Should find artifact row with chat-produced content");
+    assert_eq!(chat_artifact.task_id, task_id);
+    assert_eq!(chat_artifact.stage, "work");
+    assert_eq!(chat_artifact.name, "summary");
+
+    // An ArtifactProduced log entry must be emitted on the stage session.
+    let (logs, _) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("work"), None, None)
+        .unwrap();
+    let has_artifact_produced = logs
+        .iter()
+        .any(|e| matches!(e, LogEntry::ArtifactProduced { name, .. } if name == "summary"));
+    assert!(
+        has_artifact_produced,
+        "Should have ArtifactProduced log entry for 'summary'. Got: {logs:?}"
     );
 }
 

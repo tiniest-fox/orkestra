@@ -1,6 +1,7 @@
 //! Agent execution interactions: output processing, completion dispatch.
 
 pub mod agent_started;
+pub mod auto_retry_malformed;
 pub mod dispatch_completion;
 pub mod fail_execution;
 pub mod handle_approval;

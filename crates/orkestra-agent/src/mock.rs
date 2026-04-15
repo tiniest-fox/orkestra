@@ -26,6 +26,8 @@ pub struct MockAgentRunner {
     activity_outputs: Mutex<HashMap<String, Vec<StageOutput>>>,
     /// Queue of outputs that send activity (`LogLine`) then fail.
     failure_with_activity: Mutex<HashMap<String, Vec<String>>>,
+    /// Queue of malformed output errors: sends a `LogLine` then `MalformedOutput` error.
+    malformed_outputs: Mutex<HashMap<String, Vec<String>>>,
     /// Next PID to assign.
     next_pid: AtomicU32,
     /// Recorded calls.
@@ -45,6 +47,7 @@ impl MockAgentRunner {
             outputs: Mutex::new(HashMap::new()),
             activity_outputs: Mutex::new(HashMap::new()),
             failure_with_activity: Mutex::new(HashMap::new()),
+            malformed_outputs: Mutex::new(HashMap::new()),
             next_pid: AtomicU32::new(10000),
             calls: Mutex::new(Vec::new()),
         }
@@ -81,6 +84,21 @@ impl MockAgentRunner {
             .entry(task_id.to_string())
             .or_default()
             .push(error);
+    }
+
+    /// Queue a malformed-output error for the next agent spawn.
+    ///
+    /// The mock sends a `LogLine` (to simulate activity) then emits
+    /// `RunEvent::Completed(Err(AgentCompletionError::MalformedOutput(error)))`.
+    /// Participates in the same per-task queue as `set_failure_with_activity` —
+    /// checked before the regular output queue.
+    pub fn set_malformed_output(&self, task_id: &str, error: impl Into<String>) {
+        self.malformed_outputs
+            .lock()
+            .unwrap()
+            .entry(task_id.to_string())
+            .or_default()
+            .push(error.into());
     }
 
     /// Get recorded calls.
@@ -164,7 +182,32 @@ impl AgentRunner for MockAgentRunner {
             .clone()
             .or_else(|| Self::extract_task_id(&config.prompt));
 
-        // Check failure_with_activity first (send LogLine then error)
+        // Check malformed_outputs first (send LogLine then MalformedOutput error)
+        let malformed_error = task_id.as_ref().and_then(|id| {
+            self.malformed_outputs
+                .lock()
+                .unwrap()
+                .get_mut(id)
+                .and_then(|queue| {
+                    if queue.is_empty() {
+                        None
+                    } else {
+                        Some(queue.remove(0))
+                    }
+                })
+        });
+
+        if let Some(error) = malformed_error {
+            let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+                content: "Mock agent activity before malformed output".to_string(),
+            }));
+            let _ = tx.send(RunEvent::Completed(Err(
+                AgentCompletionError::MalformedOutput(error),
+            )));
+            return Ok((pid, rx));
+        }
+
+        // Check failure_with_activity next (send LogLine then Crash error)
         let failure_error = task_id.as_ref().and_then(|id| {
             self.failure_with_activity
                 .lock()

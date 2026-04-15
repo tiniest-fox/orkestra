@@ -445,11 +445,11 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
             ResumeType::Continue
         }
         // MalformedOutput resumes in the existing session with a corrective prompt.
-        // The attempt count is a placeholder; subtask 3 (auto-retry orchestration)
-        // will thread the actual count from iteration queries through this mapping.
-        Some(IterationTrigger::MalformedOutput { error }) => ResumeType::MalformedOutput {
+        // The attempt count is stored in the trigger when the retry iteration is created
+        // by auto_retry_malformed::execute(), so it's read directly here.
+        Some(IterationTrigger::MalformedOutput { error, attempt }) => ResumeType::MalformedOutput {
             error: error.clone(),
-            attempt: 1,
+            attempt: *attempt,
         },
     }
 }

@@ -595,6 +595,12 @@ impl TestEnv {
         self.runner.set_failure_with_activity(task_id, error);
     }
 
+    /// Queue a malformed-output error for the next agent spawn.
+    /// The mock sends a `LogLine` then `MalformedOutput` error, triggering auto-retry.
+    pub fn set_malformed_output(&self, task_id: &str, error: impl Into<String>) {
+        self.runner.set_malformed_output(task_id, error);
+    }
+
     /// Get the number of calls made to the mock runner.
     pub fn call_count(&self) -> usize {
         self.runner.calls().len()

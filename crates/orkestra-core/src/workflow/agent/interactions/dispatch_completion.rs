@@ -10,10 +10,13 @@ use crate::workflow::OrchestratorEvent;
 // Helpers
 // ============================================================================
 
-/// Persist the activity flag for a stage session on successful agent completion.
+/// Persist the activity flag for a stage session when the agent produced output.
 ///
-/// This is called only when an agent successfully produces output, ensuring that
-/// `has_activity` is never set for failed or garbage sessions.
+/// Called on `AgentSuccess` (valid structured output) and `AgentMalformedOutput`
+/// (agent produced output but it wasn't parseable). Setting `has_activity=true`
+/// allows the next spawn to resume the existing session (`is_resume=true`) rather
+/// than starting a fresh one. Not called on crashes or poll errors — those indicate
+/// the agent produced nothing useful and resuming would perpetuate a broken session.
 fn persist_activity_flag(
     store: &dyn WorkflowStore,
     task_id: &str,
@@ -108,6 +111,47 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
                 task_id: Some(exec.task_id),
                 error,
             })
+        }
+        ExecutionResult::AgentMalformedOutput(error) => {
+            // Persist activity flag so the retry spawn resumes the existing session.
+            // The agent produced output (just not valid structured output), so the
+            // session should continue with a corrective prompt rather than start fresh.
+            // Without this, session.has_activity stays false → is_resume=false → fresh
+            // initial prompt is sent instead of the corrective malformed_output template.
+            if let Err(e) = persist_activity_flag(api.store.as_ref(), &exec.task_id, &exec.stage) {
+                orkestra_debug!(
+                    "orchestrator",
+                    "Failed to persist activity flag for malformed output {}/{}: {}",
+                    exec.task_id,
+                    exec.stage,
+                    e
+                );
+            }
+            match api.auto_retry_malformed_output(&exec.task_id, &error) {
+                Ok(_) => Ok(OrchestratorEvent::OutputProcessed {
+                    task_id: exec.task_id,
+                    stage: exec.stage,
+                    output_type: "malformed_retry".to_string(),
+                }),
+                Err(e) => {
+                    // Fallback: if retry write fails, fail the task to avoid a stuck state.
+                    if let Err(fe) = api.fail_agent_execution(
+                        &exec.task_id,
+                        &format!("Malformed output retry failed: {e}"),
+                    ) {
+                        orkestra_debug!(
+                            "orchestrator",
+                            "Failed to record retry failure for {}: {}",
+                            exec.task_id,
+                            fe
+                        );
+                    }
+                    Ok(OrchestratorEvent::Error {
+                        task_id: Some(exec.task_id),
+                        error: e.to_string(),
+                    })
+                }
+            }
         }
         ExecutionResult::GateSuccess => match api.process_gate_success(&exec.task_id) {
             Ok(_) => Ok(OrchestratorEvent::GatePassed {

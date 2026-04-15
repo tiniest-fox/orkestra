@@ -444,6 +444,18 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
             // continue in the existing session without special context.
             ResumeType::Continue
         }
+        // MalformedOutput resumes in the existing session with a corrective prompt.
+        // The attempt count and max_attempts are stored in the trigger when the retry iteration
+        // is created by auto_retry_malformed::execute(), so they're read directly here.
+        Some(IterationTrigger::MalformedOutput {
+            error,
+            attempt,
+            max_attempts,
+        }) => ResumeType::MalformedOutput {
+            error: error.clone(),
+            attempt: *attempt,
+            max_attempts: *max_attempts,
+        },
     }
 }
 

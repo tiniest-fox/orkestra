@@ -30,8 +30,9 @@ pub use orkestra_agent::AgentRunner as AgentRunnerTrait;
 pub use orkestra_agent::ProcessAgentRunner as AgentRunner;
 pub use orkestra_agent::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider, RunConfig, RunError,
-    RunEvent, RunResult, ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult,
+    AgentCompletionError, ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider,
+    RunConfig, RunError, RunEvent, RunResult, ScriptEnv, ScriptHandle, ScriptPollState,
+    ScriptResult,
 };
 
 #[cfg(any(test, feature = "testutil"))]

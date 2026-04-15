@@ -126,6 +126,18 @@ pub enum IterationTrigger {
     /// The agent produced structured output during a chat conversation,
     /// completing the stage without requiring `return_to_work`.
     ChatCompletion,
+    /// Agent produced output that couldn't be parsed as structured JSON.
+    MalformedOutput {
+        error: String,
+        /// Total attempt number (original was 1, first retry is 2, second is 3, etc.).
+        /// Defaults to 0 for rows written before this field was added.
+        #[serde(default)]
+        attempt: u32,
+        /// Total number of attempts allowed (original + retries).
+        /// Defaults to 0 for rows written before this field was added.
+        #[serde(default)]
+        max_attempts: u32,
+    },
 }
 
 /// A single iteration (attempt) within a stage.

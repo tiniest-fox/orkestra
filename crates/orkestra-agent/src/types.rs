@@ -124,6 +124,27 @@ pub struct RunResult {
 }
 
 // ============================================================================
+// Agent Completion Error
+// ============================================================================
+
+/// Distinguishes how an agent execution failed.
+#[derive(Debug, Clone)]
+pub enum AgentCompletionError {
+    /// Agent crashed (zero output, API error, stdout read failure).
+    Crash(String),
+    /// Agent produced output but it couldn't be parsed as structured output.
+    MalformedOutput(String),
+}
+
+impl std::fmt::Display for AgentCompletionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Crash(msg) | Self::MalformedOutput(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+// ============================================================================
 // Run Events
 // ============================================================================
 
@@ -136,7 +157,7 @@ pub enum RunEvent {
     /// `OpenCode` that generate their own session IDs).
     SessionId(String),
     /// Agent completed with parsed output.
-    Completed(Result<StageOutput, String>),
+    Completed(Result<StageOutput, AgentCompletionError>),
 }
 
 // ============================================================================

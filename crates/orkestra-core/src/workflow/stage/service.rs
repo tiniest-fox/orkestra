@@ -16,7 +16,9 @@ use std::time::{Duration, Instant};
 use super::types::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, LogEntry, LogNotification, Task};
-use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput};
+use crate::workflow::execution::{
+    AgentCompletionError, AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput,
+};
 use crate::workflow::ports::WorkflowStore;
 
 use super::agents::{AgentExecutionService, ExecutionHandle};
@@ -33,7 +35,7 @@ enum AgentPoll {
     /// Agent is still running (possibly with log entries collected this poll).
     Running(Vec<LogEntry>),
     /// Agent completed (possibly with log entries collected before completion).
-    Completed(Result<StageOutput, String>, Vec<LogEntry>),
+    Completed(Result<StageOutput, AgentCompletionError>, Vec<LogEntry>),
     /// Error polling.
     Error(String),
 }
@@ -689,7 +691,12 @@ impl StageExecutionService {
                         to_remove.push(task_id.clone());
                         let exec_result = match result {
                             Ok(output) => ExecutionResult::AgentSuccess(output),
-                            Err(error) => ExecutionResult::AgentFailed(error),
+                            Err(AgentCompletionError::Crash(error)) => {
+                                ExecutionResult::AgentFailed(error)
+                            }
+                            Err(AgentCompletionError::MalformedOutput(error)) => {
+                                ExecutionResult::AgentMalformedOutput(error)
+                            }
                         };
                         completed.push(ExecutionComplete {
                             task_id: task_id.clone(),
@@ -899,8 +906,10 @@ pub struct ExecutionComplete {
 pub enum ExecutionResult {
     /// Agent completed with structured output.
     AgentSuccess(StageOutput),
-    /// Agent failed with error message.
+    /// Agent failed with error message (crash, API error, zero output).
     AgentFailed(String),
+    /// Agent produced output but it couldn't be parsed as structured output.
+    AgentMalformedOutput(String),
     /// Gate script passed.
     GateSuccess,
     /// Gate script failed.

@@ -9301,6 +9301,200 @@ fn test_route_to_fallback_routes_to_previous_stage() {
     );
 }
 
+// =============================================================================
+// Malformed Output Auto-Retry Tests
+// =============================================================================
+
+/// Malformed output on first attempt retries and succeeds on the second.
+///
+/// Flow:
+/// 1. Task created → Work queued
+/// 2. Agent produces malformed output → auto-retry queues new iteration
+/// 3. Agent produces valid artifact → stage succeeds
+#[test]
+fn test_malformed_output_retry_succeeds_on_second_attempt() {
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Retry test", "Test auto-retry on malformed output", None);
+    let task_id = task.id.clone();
+
+    // Queue: first spawn returns malformed, second returns valid artifact.
+    ctx.set_malformed_output(&task_id, "unexpected output format");
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::artifact("summary", "Work summary content"),
+    );
+
+    ctx.advance(); // spawns work agent (picks up malformed)
+    ctx.advance(); // processes malformed → auto_retry → task re-queued
+    ctx.advance(); // spawns work agent again (picks up valid artifact)
+    ctx.advance(); // processes artifact → AwaitingApproval
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be awaiting approval after successful retry, got: {:?}",
+        task.state
+    );
+
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iterations.len(),
+        2,
+        "Should have 2 iterations: original (malformed) + retry (success). Got: {iterations:?}"
+    );
+
+    // First iteration ends with AgentError (malformed output).
+    assert!(
+        matches!(&iterations[0].outcome, Some(Outcome::AgentError { .. })),
+        "First iteration should end with AgentError, got: {:?}",
+        iterations[0].outcome
+    );
+
+    // Second iteration should have MalformedOutput trigger with attempt=2 (original was 1).
+    assert!(
+        matches!(
+            &iterations[1].incoming_context,
+            Some(IterationTrigger::MalformedOutput { attempt: 2, .. })
+        ),
+        "Second iteration should have MalformedOutput trigger with attempt=2, got: {:?}",
+        iterations[1].incoming_context
+    );
+
+    // The corrective prompt sent on the retry must include the error message and ork fence
+    // instructions — that is the entire point of auto-retry.
+    let calls = ctx.runner_calls();
+    assert_eq!(calls.len(), 2, "Should have exactly 2 agent spawns");
+    let retry_prompt = format!(
+        "{} {}",
+        calls[1].system_prompt.as_deref().unwrap_or(""),
+        calls[1].prompt
+    );
+    assert!(
+        retry_prompt.contains("unexpected output format"),
+        "Retry prompt must include the original error message, got: {retry_prompt}"
+    );
+    assert!(
+        retry_prompt.contains("```ork"),
+        "Retry prompt must include ork fence instructions, got: {retry_prompt}"
+    );
+}
+
+/// Four consecutive malformed outputs exhaust the retry budget and fail the task.
+///
+/// Budget: `MAX_MALFORMED_RETRIES` = 3 (so 4 total attempts: 1 original + 3 retries).
+/// On the 4th attempt the budget is exhausted and the task transitions to Failed.
+#[test]
+fn test_malformed_output_budget_exhaustion_fails_task() {
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Budget test", "Test retry budget exhaustion", None);
+    let task_id = task.id.clone();
+
+    // Queue 4 malformed outputs — one per attempt.
+    for _ in 0..4 {
+        ctx.set_malformed_output(&task_id, "bad json");
+    }
+
+    // Each spawn+process cycle takes 2 advances.
+    for _ in 0..4 {
+        ctx.advance(); // spawns agent
+        ctx.advance(); // processes result
+    }
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be Failed after exhausting retry budget, got: {:?}",
+        task.state
+    );
+
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iterations.len(),
+        4,
+        "Should have 4 iterations: 1 original + 3 MalformedOutput retries. Got: {iterations:?}"
+    );
+
+    // The 3 retry iterations should each have a MalformedOutput trigger.
+    let malformed_iterations: Vec<_> = iterations
+        .iter()
+        .filter(|i| {
+            matches!(
+                i.incoming_context,
+                Some(IterationTrigger::MalformedOutput { .. })
+            )
+        })
+        .collect();
+    assert_eq!(
+        malformed_iterations.len(),
+        3,
+        "Should have exactly 3 MalformedOutput retry iterations"
+    );
+
+    // Verify attempt numbers are 2, 3, 4 (original attempt was 1, so retries start at 2).
+    let mut attempts: Vec<u32> = malformed_iterations
+        .iter()
+        .filter_map(|i| {
+            if let Some(IterationTrigger::MalformedOutput { attempt, .. }) = &i.incoming_context {
+                Some(*attempt)
+            } else {
+                None
+            }
+        })
+        .collect();
+    attempts.sort_unstable();
+    assert_eq!(
+        attempts,
+        vec![2, 3, 4],
+        "Attempt numbers should be 2, 3, 4 (original attempt was 1)"
+    );
+}
+
+/// Valid output on the first attempt flows through normally (no retry needed).
+///
+/// Regression guard: malformed retry logic must not interfere with the success path.
+#[test]
+fn test_malformed_output_normal_flow_unchanged() {
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Normal test", "Test normal flow is unaffected", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::artifact("summary", "Work done successfully"),
+    );
+
+    ctx.advance(); // spawns work agent
+    ctx.advance(); // processes artifact → AwaitingApproval
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be awaiting approval on first success, got: {:?}",
+        task.state
+    );
+
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iterations.len(),
+        1,
+        "Normal flow should produce exactly 1 iteration"
+    );
+    assert!(
+        iterations[0].incoming_context.is_none(),
+        "First iteration should have no trigger context"
+    );
+}
+
 /// Test that an invalid `route_to` stage name returns `WorkflowError::InvalidTransition`.
 #[test]
 fn test_route_to_invalid_stage_returns_error() {

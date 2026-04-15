@@ -95,11 +95,6 @@ pub enum ToolInput {
     Ork {
         ork_action: OrkAction,
     },
-    /// Structured output generation (final agent response).
-    StructuredOutput {
-        /// The output type (e.g., "plan", "summary", "questions", "subtasks")
-        output_type: String,
-    },
     /// Web search tool - searching the internet.
     WebSearch {
         query: String,
@@ -269,7 +264,6 @@ fn summarize_tool_input(input: &ToolInput) -> String {
             format!("{n} item{}", if n == 1 { "" } else { "s" })
         }
         ToolInput::Ork { ork_action } => summarize_ork_action(ork_action),
-        ToolInput::StructuredOutput { output_type } => output_type.clone(),
         ToolInput::Other { summary } => summary.clone(),
     }
 }

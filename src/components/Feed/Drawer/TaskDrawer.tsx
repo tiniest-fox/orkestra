@@ -19,13 +19,7 @@ import { DrawerTaskProvider } from "../DrawerTaskProvider";
 import { HistoricalRunView } from "../HistoricalRunView";
 import { DrawerTabContent } from "./DrawerTabContent";
 import type { DrawerTabId } from "./drawerTabs";
-import {
-  availableTabs,
-  canUseRunScript,
-  currentArtifact,
-  defaultTab,
-  stageReviewType,
-} from "./drawerTabs";
+import { availableTabs, canUseRunScript, defaultTab, stageReviewType } from "./drawerTabs";
 import { DrawerFooter } from "./Footer/DrawerFooter";
 import { useDrawerHotkeys } from "./useDrawerHotkeys";
 import { useTaskDrawerState } from "./useTaskDrawerState";
@@ -95,7 +89,7 @@ function TaskDrawerBody({
   }, [rejectMode, onRejectModeChange]);
 
   // -- Logs (logs tab) --
-  const showLogs = activeTab === "logs" && selectedRunIdx === null;
+  const showLogs = activeTab === "agent" && selectedRunIdx === null;
   const isChatting = task.derived.is_chatting;
   const { logs, error: logsError } = useLogs(task, showLogs, undefined, isChatting);
   const logScrollRef = useRef<HTMLDivElement>(null);
@@ -126,7 +120,6 @@ function TaskDrawerBody({
   });
 
   // -- Derived --
-  const artifact = currentArtifact(task, config);
   const selectedRun = selectedRunIdx !== null ? runs[selectedRunIdx] : null;
   const reviewType = stageReviewType(task, config);
 
@@ -184,7 +177,6 @@ function TaskDrawerBody({
             task={task}
             allTasks={allTasks}
             activeTab={activeTab}
-            artifact={artifact}
             config={config}
             logs={logs}
             logsError={logsError}
@@ -200,7 +192,6 @@ function TaskDrawerBody({
           <DrawerFooter
             task={task}
             activeTab={activeTab}
-            questions={task.derived.pending_questions}
             stageReviewType={reviewType}
             state={state}
           />

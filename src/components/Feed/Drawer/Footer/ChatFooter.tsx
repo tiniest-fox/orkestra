@@ -1,5 +1,4 @@
 // Footer action buttons for chat mode — Return to Work, Approve, and error display.
-// The compose area (textarea + send/stop) lives in the Logs tab via LogsChatInput.
 
 import { Button } from "../../../ui/Button";
 import { FooterBar } from "./FooterBar";

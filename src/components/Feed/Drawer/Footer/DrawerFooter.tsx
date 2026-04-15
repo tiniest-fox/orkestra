@@ -1,6 +1,6 @@
 //! Thin state switcher — picks the correct footer component based on task state.
 
-import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
+import type { WorkflowTaskView } from "../../../../types/workflow";
 import type { DrawerTabId } from "../drawerTabs";
 import type { TaskDrawerState } from "../useTaskDrawerState";
 import { ChatFooter } from "./ChatFooter";
@@ -8,7 +8,6 @@ import { DoneFooter } from "./DoneFooter";
 import { FailedFooter } from "./FailedFooter";
 import { InterruptedFooter } from "./InterruptedFooter";
 import { LineCommentsFooter } from "./LineCommentsFooter";
-import { QuestionsFooter } from "./QuestionsFooter";
 import { RejectFooter } from "./RejectFooter";
 import { ReviewFooter } from "./ReviewFooter";
 import { WaitingFooter } from "./WaitingFooter";
@@ -21,7 +20,6 @@ import { WorkingFooter } from "./WorkingFooter";
 interface DrawerFooterProps {
   task: WorkflowTaskView;
   activeTab: DrawerTabId;
-  questions: WorkflowQuestion[];
   stageReviewType: "violet" | "teal";
   state: TaskDrawerState;
 }
@@ -30,13 +28,7 @@ interface DrawerFooterProps {
 // Component
 // ============================================================================
 
-export function DrawerFooter({
-  task,
-  activeTab,
-  questions,
-  stageReviewType,
-  state,
-}: DrawerFooterProps) {
+export function DrawerFooter({ task, activeTab, stageReviewType, state }: DrawerFooterProps) {
   const progress = task.derived.subtask_progress;
 
   if (task.derived.is_failed) {
@@ -61,18 +53,6 @@ export function DrawerFooter({
       />
     );
   }
-  if (task.derived.has_questions && activeTab === "questions") {
-    return (
-      <QuestionsFooter
-        questions={questions}
-        answeredCount={state.answeredCount}
-        allAnswered={state.allAnswered}
-        loading={state.loading}
-        onSubmitAnswers={state.handleSubmitAnswers}
-        submitRef={state.submitRef}
-      />
-    );
-  }
   if (
     (task.derived.needs_review || task.derived.is_done) &&
     activeTab === "diff" &&
@@ -90,7 +70,7 @@ export function DrawerFooter({
       />
     );
   }
-  if (task.derived.is_chatting && activeTab === "logs") {
+  if (task.derived.is_chatting && activeTab === "agent") {
     return (
       <ChatFooter
         chatAgentActive={task.derived.chat_agent_active}
@@ -102,34 +82,38 @@ export function DrawerFooter({
       />
     );
   }
-  if (task.derived.needs_review && state.rejectMode) {
-    return (
-      <RejectFooter
-        reviewVariant={stageReviewType}
-        feedback={state.feedback}
-        onFeedbackChange={state.setFeedback}
-        feedbackRef={state.feedbackRef}
-        loading={state.loading}
-        onReject={state.handleReject}
-        onExitRejectMode={state.exitRejectMode}
-      />
-    );
-  }
-  if (task.derived.needs_review) {
-    return (
-      <ReviewFooter
-        reviewVariant={stageReviewType}
-        loading={state.loading}
-        onApprove={state.handleApprove}
-        onEnterRejectMode={state.enterRejectMode}
-      />
-    );
+  if (activeTab !== "agent") {
+    if (task.derived.needs_review && state.rejectMode) {
+      return (
+        <RejectFooter
+          reviewVariant={stageReviewType}
+          feedback={state.feedback}
+          onFeedbackChange={state.setFeedback}
+          feedbackRef={state.feedbackRef}
+          loading={state.loading}
+          onReject={state.handleReject}
+          onExitRejectMode={state.exitRejectMode}
+        />
+      );
+    }
+    if (task.derived.needs_review) {
+      return (
+        <ReviewFooter
+          reviewVariant={stageReviewType}
+          loading={state.loading}
+          onApprove={state.handleApprove}
+          onEnterRejectMode={state.enterRejectMode}
+        />
+      );
+    }
+    if (task.derived.is_working) {
+      return (
+        <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />
+      );
+    }
   }
   if (task.derived.is_interrupted) {
     return <InterruptedFooter resuming={state.resuming} onResume={state.handleResume} />;
-  }
-  if (task.derived.is_working && activeTab !== "logs") {
-    return <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />;
   }
   if (task.derived.is_done) {
     return (

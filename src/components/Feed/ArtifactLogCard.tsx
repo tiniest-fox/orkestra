@@ -1,15 +1,39 @@
 // Collapsible card for displaying an artifact produced during agent execution.
 
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useRichCodeBlocks } from "../../hooks/useRichCodeBlocks";
 import type { WorkflowArtifact } from "../../types/workflow";
+import { formatTimestamp } from "../../utils";
 import { PROSE_CLASSES } from "../../utils/prose";
+import { Button } from "../ui/Button";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
+import { ArtifactBadge } from "./OutcomeBadge";
 
-export function ArtifactLogCard({ artifact }: { artifact: WorkflowArtifact }) {
-  const [expanded, setExpanded] = useState(false);
+interface ArtifactLogCardProps {
+  artifact: WorkflowArtifact;
+  /** When provided, renders enhanced header with approve button (latest artifact in drawer). */
+  needsReview?: boolean;
+  verdict?: "approved" | "rejected";
+  rejectionTarget?: string;
+  onApprove?: () => void;
+  loading?: boolean;
+  /** When true, dims the card (superseded by a later artifact). */
+  superseded?: boolean;
+}
+
+export function ArtifactLogCard({
+  artifact,
+  needsReview,
+  verdict,
+  rejectionTarget,
+  onApprove,
+  loading,
+  superseded,
+}: ArtifactLogCardProps) {
+  // Default expanded when latest artifact needs review; collapsed for feed/superseded.
+  const [expanded, setExpanded] = useState(() => !!(onApprove && needsReview));
   const [isOverflowing, setIsOverflowing] = useState(false);
   const [showFull, setShowFull] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -24,21 +48,70 @@ export function ArtifactLogCard({ artifact }: { artifact: WorkflowArtifact }) {
 
   const toggle = () => setExpanded((v) => !v);
 
+  const isActionable = onApprove !== undefined;
+
   return (
-    <div className="bg-surface rounded-lg border border-border my-1">
-      <button
-        type="button"
-        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-2 rounded-lg w-full text-left"
-        onClick={toggle}
-      >
-        <ChevronRight
-          size={14}
-          className={`text-text-tertiary transition-transform ${expanded ? "rotate-90" : ""}`}
-        />
-        <span className="font-mono text-forge-mono-sm text-text-secondary">
-          Generated {artifact.name}
-        </span>
-      </button>
+    <div
+      className={`bg-surface rounded-lg border border-border my-1 ${superseded ? "opacity-50" : ""}`}
+    >
+      {isActionable ? (
+        // Enhanced header for latest artifact — div+role because it contains inner <Button> elements.
+        // biome-ignore lint/a11y/useSemanticElements: contains inner <Button> — nested <button> inside <button> is invalid HTML
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex items-center justify-between px-3 py-2 cursor-pointer select-none hover:bg-surface-2 rounded-lg"
+          onClick={toggle}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") toggle();
+          }}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <ArtifactBadge
+              artifactName={artifact.name}
+              verdict={verdict}
+              rejectionTarget={rejectionTarget}
+            />
+            <span className="text-forge-mono-label text-text-tertiary truncate">
+              Iteration {artifact.iteration} · {formatTimestamp(artifact.created_at)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            {needsReview && !verdict && (
+              <Button
+                variant="violet"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApprove();
+                }}
+                disabled={loading}
+              >
+                Approve
+              </Button>
+            )}
+            {expanded ? (
+              <ChevronUp className="w-4 h-4 text-text-tertiary" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-text-tertiary" />
+            )}
+          </div>
+        </div>
+      ) : (
+        // Simple header for feed/superseded contexts.
+        <button
+          type="button"
+          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-2 rounded-lg w-full text-left"
+          onClick={toggle}
+        >
+          <ChevronRight
+            size={14}
+            className={`text-text-tertiary transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+          <span className="font-mono text-forge-mono-sm text-text-secondary">
+            Generated {artifact.name}
+          </span>
+        </button>
+      )}
       {expanded && (
         <div className="px-3 pb-3">
           <div ref={contentRef} className={showFull ? "" : "max-h-96 overflow-hidden"}>

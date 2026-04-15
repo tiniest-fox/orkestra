@@ -1,5 +1,5 @@
 // Shared compose area — textarea with auto-resize + send/stop button.
-// Used in AssistantDrawer (project/task chat) and LogsChatInput (logs tab).
+// Used in AssistantDrawer (project/task chat) and AgentTab (agent timeline).
 
 import { ArrowUp, Square } from "lucide-react";
 import type React from "react";

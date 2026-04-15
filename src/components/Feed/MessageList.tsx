@@ -10,7 +10,12 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { Virtualizer } from "virtua";
-import type { LogEntry, ResumeType, WorkflowArtifact } from "../../types/workflow";
+import type {
+  LogEntry,
+  ResumeType,
+  WorkflowArtifact,
+  WorkflowResource,
+} from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -19,6 +24,7 @@ import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { groupLogEntries } from "../Logs/useGroupedLogs";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ArtifactLogCard } from "./ArtifactLogCard";
+import { ResourceItem } from "./Drawer/Sections/ResourceItem";
 import { ErrorLine, ToolLine } from "./FeedEntryComponents";
 
 // ============================================================================
@@ -152,6 +158,7 @@ type VirtualItem =
       artifacts?: Record<string, WorkflowArtifact>;
       artifactContext?: ArtifactContext;
       latestArtifactId?: string;
+      taskResources?: Record<string, WorkflowResource>;
       isBlockEnd: boolean;
     }
   | { kind: "extra"; content: React.ReactNode }
@@ -171,6 +178,7 @@ export function buildVirtualItems(
     artifacts?: Record<string, WorkflowArtifact>;
     artifactContext?: ArtifactContext;
     latestArtifactId?: string;
+    taskResources?: Record<string, WorkflowResource>;
     isAgentRunning: boolean;
     lastAgentExtra?: React.ReactNode;
   },
@@ -197,6 +205,7 @@ export function buildVirtualItems(
           artifacts: opts.artifacts,
           artifactContext: opts.artifactContext,
           latestArtifactId: opts.latestArtifactId,
+          taskResources: opts.taskResources,
           isBlockEnd: isLast,
         });
       }
@@ -261,12 +270,14 @@ export const AgentEntry = memo(function AgentEntry({
   artifacts,
   artifactContext,
   latestArtifactId,
+  taskResources,
 }: {
   entry: GroupedLogEntry;
   projectRoot?: string;
   artifacts?: Record<string, WorkflowArtifact>;
   artifactContext?: ArtifactContext;
   latestArtifactId?: string;
+  taskResources?: Record<string, WorkflowResource>;
 }) {
   if (entry.type === "subagent_group") {
     const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
@@ -322,23 +333,44 @@ export const AgentEntry = memo(function AgentEntry({
       const artifact = artifacts?.[entry.name];
       if (!artifact) return null;
       const isLatest = latestArtifactId !== undefined && entry.artifact_id === latestArtifactId;
+      const stageResources = taskResources
+        ? Object.values(taskResources)
+            .filter((r) => r.stage === artifact.stage)
+            .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        : [];
+      const resourcesElement =
+        stageResources.length > 0 ? (
+          <div className="border-t border-border p-4 flex flex-col gap-3">
+            {stageResources.map((r) => (
+              <ResourceItem key={r.name} resource={r} />
+            ))}
+          </div>
+        ) : null;
       if (isLatest && artifactContext?.questionsElement) {
         return <>{artifactContext.questionsElement}</>;
       }
       if (isLatest && artifactContext) {
         const { actions } = artifactContext;
         return (
-          <ArtifactLogCard
-            artifact={artifact}
-            needsReview={actions?.needsReview}
-            verdict={actions?.verdict}
-            rejectionTarget={actions?.rejectionTarget}
-            onApprove={actions?.onApprove}
-            loading={actions?.loading}
-          />
+          <>
+            <ArtifactLogCard
+              artifact={artifact}
+              needsReview={actions?.needsReview}
+              verdict={actions?.verdict}
+              rejectionTarget={actions?.rejectionTarget}
+              onApprove={actions?.onApprove}
+              loading={actions?.loading}
+            />
+            {resourcesElement}
+          </>
         );
       }
-      return <ArtifactLogCard artifact={artifact} superseded={latestArtifactId !== undefined} />;
+      return (
+        <>
+          <ArtifactLogCard artifact={artifact} superseded={latestArtifactId !== undefined} />
+          {resourcesElement}
+        </>
+      );
     }
 
     case "user_message":
@@ -405,6 +437,7 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
             artifacts={item.artifacts}
             artifactContext={item.artifactContext}
             latestArtifactId={item.latestArtifactId}
+            taskResources={item.taskResources}
           />
         </div>
       );
@@ -443,6 +476,8 @@ export interface MessageListProps {
   artifactContext?: ArtifactContext;
   /** The artifact_id of the latest artifact_produced log entry — only this entry gets actions. */
   latestArtifactId?: string;
+  /** All task resources, keyed by name — filtered by stage and shown below each artifact card. */
+  taskResources?: Record<string, WorkflowResource>;
   /** Content rendered below the last agent message block (e.g. approve bar fallback). */
   lastAgentExtra?: React.ReactNode;
   /** Text shown when there are no messages and the agent is not running. */
@@ -463,6 +498,7 @@ export function MessageList({
   artifacts,
   artifactContext,
   latestArtifactId,
+  taskResources,
   lastAgentExtra,
   emptyText = "No messages yet.",
   containerRef,
@@ -481,6 +517,7 @@ export function MessageList({
         artifacts,
         artifactContext,
         latestArtifactId,
+        taskResources,
         isAgentRunning,
         lastAgentExtra,
       }),
@@ -493,6 +530,7 @@ export function MessageList({
       artifacts,
       artifactContext,
       latestArtifactId,
+      taskResources,
       isAgentRunning,
       lastAgentExtra,
     ],

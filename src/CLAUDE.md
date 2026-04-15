@@ -704,6 +704,7 @@ Note: `Array.prototype.findLast` is ES2023 — use `[...arr].reverse().find()` f
 
 - Tests use Vitest + React Testing Library.
 - Test files sit alongside the component: `Component.test.tsx`.
+- **New components require test coverage** — every new or extracted component needs at minimum one test for the default rendering path and one test per meaningful conditional branch (image vs link, loading vs loaded, Tauri vs web, etc.). A component with no test file is incomplete, the same as a component with no story. **New conditional branches added to existing components also require tests** — when you add a new rendering path (e.g., `taskResources ? render(...) : null`) to an existing component, add a test covering each branch of that condition, even though the component already has a test file.
 - **jsdom limitations**: The test environment doesn't implement all DOM APIs. If a component uses `scrollIntoView()`, `IntersectionObserver`, or other browser-specific APIs, mock the component in parent component tests to prevent runtime errors. See `Orkestra.test.tsx` for the pattern.
 - **Document-level event listeners ARE testable in jsdom**: Components that attach `mousedown`, `keydown`, or similar listeners to `document` can be fully tested using `fireEvent.mouseDown(document.body)` / `fireEvent.keyDown(document, { key: "Escape" })`. jsdom's event system bubbles events through the document normally — the limitation is layout (no measurements, no observers), not event dispatch. Don't mark outside-click or keyboard dismissal logic as "manual only."
 - **`@tanstack/react-virtual` renders 0 items in jsdom**: The virtualizer measures DOM element heights to determine which items to render. In jsdom there are no layout measurements, so `virtualItems` is always empty. Tests that exercise virtualizer-dependent behavior (`scrollToFile`, active-path tracking, `onActivePathChange` callbacks) are impractical in unit tests — document them as requiring manual verification and focus test coverage on the hook or logic layer instead (e.g., `useAutoCollapsePaths.test.ts` tests the collapse logic without touching the virtualizer).
@@ -785,6 +786,34 @@ See `src/stories/Demo/AppShell.stories.tsx` for the reference pattern.
 **Provider completeness**: `StorybookProviders` must include every context provider used by app-level components. When adding a new provider to the app, check whether any component in the `Orkestra` tree consumes it — if so, add it (or its stub variant) to `StorybookProviders` in `storybook-helpers.tsx`. Entry-point providers like `ProjectsProvider`/`ProjectDetailProvider` are easy to forget because they live outside `AppProviders`. Use `ProjectDetailProvider` (the stub) rather than the full `ProjectsProvider` — it avoids `localStorage` side effects and provides safe defaults (`projects: []`, `currentProject: null`, mutations throw).
 
 **Build limitation**: `pnpm build-storybook` only bundles JavaScript — it does not render stories, so runtime errors (missing providers, undefined hooks, broken context) are invisible to the build step and to `checks.sh`. The only way to catch these is manual story review or a dedicated Storybook test runner (not yet set up).
+
+**Story requirement**: Every new UI component and every existing component with changed props, new visual states, or modified appearance must have a Storybook story. A component without a story cannot be visually reviewed — this is a hard requirement, not a nice-to-have. Specifically:
+
+- New components in `src/components/` — at minimum one story showing the default/happy path
+- Conditional rendering branches (loading, error, empty, disabled) — each meaningful state gets its own named story
+- Changed components — update existing stories to cover the new behavior; add stories for states that didn't exist before
+
+**Visual review workflow**: Because `pnpm build-storybook` doesn't render stories, visual verification requires running Storybook locally:
+
+1. Start the dev server: `pnpm storybook` (serves at `http://localhost:6006`)
+2. Navigate to the component's story in the browser
+3. Verify every story variant renders correctly — check layout, spacing, and edge-case states
+4. Fix any runtime errors (missing providers, broken context) before submitting
+
+To run the automated test runner against a live instance: `pnpm test-storybook --url http://localhost:6006` (requires the dev server to be running first).
+
+**Screenshot-as-resource workflow**: When stories are added or modified, generate screenshots and register them as resources so they appear in the Trak drawer throughout the workflow. The expected workflow:
+
+1. Run Storybook: `pnpm storybook` (serves at `http://localhost:6006`)
+2. Take screenshots — either via `pnpm test-storybook` with a snapshot configuration, or manually from the browser
+3. Save screenshots to a stable path in the worktree (e.g., `.orkestra/screenshots/ResourceItem.png`)
+4. Register each screenshot as a resource in the agent's structured output, using the component name as the key so multiple screenshots coexist without collision:
+   ```json
+   {"name": "screenshot:ResourceItem", "url": "/absolute/path/to/.orkestra/screenshots/ResourceItem.png", "description": "ResourceItem — image and link variants"}
+   {"name": "screenshot:FeedRow", "url": "/absolute/path/to/.orkestra/screenshots/FeedRow.png", "description": "FeedRow — default and selected states"}
+   ```
+
+In Tauri, resources with a local image path (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) render as inline `<img>` tags in the Trak drawer's Resources tab. In web/daemon mode they render as plain text.
 
 ## Keyboard Navigation
 

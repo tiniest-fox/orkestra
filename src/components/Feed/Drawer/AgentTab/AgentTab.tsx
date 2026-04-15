@@ -162,6 +162,7 @@ export function AgentTab({
         artifacts={task.artifacts}
         artifactContext={artifactContext}
         latestArtifactId={latestArtifactId}
+        taskResources={task.resources}
         lastAgentExtra={lastAgentExtra}
         containerRef={combinedRef}
         onScroll={handleLogScroll}

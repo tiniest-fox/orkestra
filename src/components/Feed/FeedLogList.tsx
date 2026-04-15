@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useProjectInfo } from "../../hooks/useProjectInfo";
-import type { LogEntry, WorkflowArtifact } from "../../types/workflow";
+import type { LogEntry, WorkflowArtifact, WorkflowResource } from "../../types/workflow";
 import { ErrorState } from "../ui";
 import type { ArtifactContext, UserClassification, UserMessage } from "./MessageList";
 import { buildDisplayMessages, MessageList } from "./MessageList";
@@ -45,6 +45,7 @@ interface FeedLogListProps {
   artifacts?: Record<string, WorkflowArtifact>;
   artifactContext?: ArtifactContext;
   latestArtifactId?: string;
+  taskResources?: Record<string, WorkflowResource>;
   lastAgentExtra?: React.ReactNode;
   containerRef?: React.Ref<HTMLDivElement>;
   onScroll?: React.UIEventHandler<HTMLDivElement>;
@@ -57,6 +58,7 @@ export function FeedLogList({
   artifacts,
   artifactContext,
   latestArtifactId,
+  taskResources,
   lastAgentExtra,
   containerRef,
   onScroll,
@@ -83,6 +85,7 @@ export function FeedLogList({
       artifacts={artifacts}
       artifactContext={artifactContext}
       latestArtifactId={latestArtifactId}
+      taskResources={taskResources}
       lastAgentExtra={lastAgentExtra}
       containerRef={containerRef}
       onScroll={onScroll}

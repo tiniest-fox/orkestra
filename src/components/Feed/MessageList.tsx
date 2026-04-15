@@ -121,6 +121,24 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 }
 
 // ============================================================================
+// ArtifactContext
+// ============================================================================
+
+/** Context passed from AgentTab so artifact_produced entries render with actions. */
+export interface ArtifactContext {
+  /** Actions for the latest regular artifact (approve/reject). */
+  actions?: {
+    needsReview: boolean;
+    verdict?: "approved" | "rejected";
+    rejectionTarget?: string;
+    onApprove: () => void;
+    loading: boolean;
+  };
+  /** When the latest artifact has pending questions, render this element instead of ArtifactLogCard. */
+  questionsElement?: React.ReactNode;
+}
+
+// ============================================================================
 // VirtualItem type
 // ============================================================================
 
@@ -132,6 +150,8 @@ type VirtualItem =
       entry: GroupedLogEntry;
       projectRoot?: string;
       artifacts?: Record<string, WorkflowArtifact>;
+      artifactContext?: ArtifactContext;
+      latestArtifactId?: string;
       isBlockEnd: boolean;
     }
   | { kind: "extra"; content: React.ReactNode }
@@ -149,6 +169,8 @@ export function buildVirtualItems(
     classifyUser?: (msg: UserMessage) => UserClassification;
     projectRoot?: string;
     artifacts?: Record<string, WorkflowArtifact>;
+    artifactContext?: ArtifactContext;
+    latestArtifactId?: string;
     isAgentRunning: boolean;
     lastAgentExtra?: React.ReactNode;
   },
@@ -173,6 +195,8 @@ export function buildVirtualItems(
           entry: grouped[j],
           projectRoot: opts.projectRoot,
           artifacts: opts.artifacts,
+          artifactContext: opts.artifactContext,
+          latestArtifactId: opts.latestArtifactId,
           isBlockEnd: isLast,
         });
       }
@@ -235,10 +259,14 @@ export const AgentEntry = memo(function AgentEntry({
   entry,
   projectRoot,
   artifacts,
+  artifactContext,
+  latestArtifactId,
 }: {
   entry: GroupedLogEntry;
   projectRoot?: string;
   artifacts?: Record<string, WorkflowArtifact>;
+  artifactContext?: ArtifactContext;
+  latestArtifactId?: string;
 }) {
   if (entry.type === "subagent_group") {
     const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
@@ -293,7 +321,24 @@ export const AgentEntry = memo(function AgentEntry({
     case "artifact_produced": {
       const artifact = artifacts?.[entry.name];
       if (!artifact) return null;
-      return <ArtifactLogCard artifact={artifact} />;
+      const isLatest = latestArtifactId !== undefined && entry.artifact_id === latestArtifactId;
+      if (isLatest && artifactContext?.questionsElement) {
+        return <>{artifactContext.questionsElement}</>;
+      }
+      if (isLatest && artifactContext) {
+        const { actions } = artifactContext;
+        return (
+          <ArtifactLogCard
+            artifact={artifact}
+            needsReview={actions?.needsReview}
+            verdict={actions?.verdict}
+            rejectionTarget={actions?.rejectionTarget}
+            onApprove={actions?.onApprove}
+            loading={actions?.loading}
+          />
+        );
+      }
+      return <ArtifactLogCard artifact={artifact} superseded={latestArtifactId !== undefined} />;
     }
 
     case "user_message":
@@ -358,6 +403,8 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
             entry={item.entry}
             projectRoot={item.projectRoot}
             artifacts={item.artifacts}
+            artifactContext={item.artifactContext}
+            latestArtifactId={item.latestArtifactId}
           />
         </div>
       );
@@ -392,7 +439,11 @@ export interface MessageListProps {
   contentFilter?: (content: string) => string;
   /** Artifacts produced by agents, keyed by artifact name. Used to render artifact_produced log entries. */
   artifacts?: Record<string, WorkflowArtifact>;
-  /** Content rendered below the last agent message block (e.g. question cards). */
+  /** Context for rendering the latest artifact with actions or questions. */
+  artifactContext?: ArtifactContext;
+  /** The artifact_id of the latest artifact_produced log entry — only this entry gets actions. */
+  latestArtifactId?: string;
+  /** Content rendered below the last agent message block (e.g. approve bar fallback). */
   lastAgentExtra?: React.ReactNode;
   /** Text shown when there are no messages and the agent is not running. */
   emptyText?: string;
@@ -410,6 +461,8 @@ export function MessageList({
   classifyUser,
   contentFilter,
   artifacts,
+  artifactContext,
+  latestArtifactId,
   lastAgentExtra,
   emptyText = "No messages yet.",
   containerRef,
@@ -426,6 +479,8 @@ export function MessageList({
         classifyUser,
         projectRoot,
         artifacts,
+        artifactContext,
+        latestArtifactId,
         isAgentRunning,
         lastAgentExtra,
       }),
@@ -436,6 +491,8 @@ export function MessageList({
       classifyUser,
       projectRoot,
       artifacts,
+      artifactContext,
+      latestArtifactId,
       isAgentRunning,
       lastAgentExtra,
     ],

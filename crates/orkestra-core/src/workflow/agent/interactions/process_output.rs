@@ -116,7 +116,13 @@ pub(crate) fn dispatch_output(
                 current_stage,
                 now,
             )?;
-            None
+            // Emit ArtifactProduced so questions appear at the correct log position.
+            Some(stage::finalize_advancement::artifact_name_for_stage(
+                workflow,
+                &task.flow,
+                current_stage,
+                "artifact",
+            ))
         }
         StageOutput::Artifact { content, .. } => super::handle_artifact::execute(
             workflow,

@@ -1,13 +1,13 @@
 // Unified agent tab — streaming log timeline with inline artifact and question cards.
 
 import type React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { LogEntry, WorkflowArtifact, WorkflowTaskView } from "../../../../types/workflow";
+import { useCallback, useMemo, useRef } from "react";
+import type { LogEntry, WorkflowTaskView } from "../../../../types/workflow";
 import { Button } from "../../../ui/Button";
 import { ChatComposeArea } from "../../ChatComposeArea";
 import { FeedLogList } from "../../FeedLogList";
+import type { ArtifactContext } from "../../MessageList";
 import type { TaskDrawerState } from "../useTaskDrawerState";
-import { InlineArtifactCard } from "./InlineArtifactCard";
 import { InlineQuestionsCard } from "./InlineQuestionsCard";
 
 // ============================================================================
@@ -18,7 +18,6 @@ interface AgentTabProps {
   task: WorkflowTaskView;
   logs: LogEntry[];
   logsError: unknown;
-  artifact: WorkflowArtifact | null;
   state: TaskDrawerState;
   logContainerRef: React.RefCallback<HTMLDivElement>;
   handleLogScroll: (e: React.UIEvent<HTMLDivElement>) => void;
@@ -32,19 +31,16 @@ export function AgentTab({
   task,
   logs,
   logsError,
-  artifact,
   state,
   logContainerRef,
   handleLogScroll,
 }: AgentTabProps) {
   const { derived } = task;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const artifactCardRef = useRef<HTMLDivElement>(null);
-  const [artifactReviewSeen, setArtifactReviewSeen] = useState(false);
 
   // Combine the external logContainerRef (which sets logScrollRef for hotkeys
   // and registers with useAutoScroll from TaskDrawer) with our local ref for
-  // NavigationScope / scroll-into-view of the artifact card.
+  // NavigationScope / InlineQuestionsCard scroll-into-view.
   const combinedRef = useCallback(
     (node: HTMLDivElement | null) => {
       (scrollContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
@@ -53,18 +49,14 @@ export function AgentTab({
     [logContainerRef],
   );
 
-  // When task transitions to review and artifact appears, scroll artifact into view.
-  useEffect(() => {
-    if (derived.needs_review && artifact && !artifactReviewSeen) {
-      setArtifactReviewSeen(true);
-      requestAnimationFrame(() => {
-        artifactCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
+  // The latest artifact in the log — only this one gets approve/questions actions.
+  const latestArtifactId = useMemo(() => {
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const entry = logs[i];
+      if (entry.type === "artifact_produced") return entry.artifact_id;
     }
-    if (!derived.needs_review) {
-      setArtifactReviewSeen(false);
-    }
-  }, [derived.needs_review, artifact, artifactReviewSeen]);
+    return undefined;
+  }, [logs]);
 
   // Derived verdict state
   const verdict = derived.pending_rejection
@@ -75,6 +67,47 @@ export function AgentTab({
   const rejection = derived.pending_rejection;
   const rejectionTarget =
     rejection && rejection.target !== rejection.from_stage ? rejection.target : undefined;
+
+  // Build context passed to AgentEntry for the latest artifact entry.
+  const artifactContext = useMemo((): ArtifactContext | undefined => {
+    if (!latestArtifactId) return undefined;
+
+    // Questions element — rendered at the artifact's log position instead of ArtifactLogCard.
+    const questionsElement =
+      derived.has_questions && task.derived.pending_questions.length > 0 ? (
+        <InlineQuestionsCard
+          taskId={task.id}
+          questions={task.derived.pending_questions}
+          answers={state.answers}
+          setAnswer={state.setAnswer}
+          onSubmitAnswers={state.handleSubmitAnswers}
+          loading={state.loading}
+          submitRef={state.submitRef}
+          scrollContainerRef={scrollContainerRef}
+          answeredCount={state.answeredCount}
+          allAnswered={state.allAnswered}
+        />
+      ) : undefined;
+
+    // Approve/reject actions for the latest artifact.
+    const actions = derived.needs_review
+      ? {
+          needsReview: true,
+          verdict,
+          rejectionTarget,
+          onApprove: state.handleApprove,
+          loading: state.loading,
+        }
+      : undefined;
+
+    return { actions, questionsElement };
+  }, [latestArtifactId, derived, task, state, scrollContainerRef, verdict, rejectionTarget]);
+
+  // Fallback approve bar: review state but no artifact_produced entry in the log.
+  const lastAgentExtra =
+    derived.needs_review && !latestArtifactId ? (
+      <ApproveBar onApprove={state.handleApprove} loading={state.loading} />
+    ) : undefined;
 
   // Input bar visibility:
   // Show when working, review, or chatting.
@@ -94,57 +127,18 @@ export function AgentTab({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Scrollable timeline */}
-      <div ref={combinedRef} className="flex-1 overflow-y-auto" onScroll={handleLogScroll}>
-        {/*
-         * Virtualization is intentionally disabled here: the agent tab uses a shared
-         * scroll container for logs + artifact + questions, but MessageList's virtualized
-         * path creates its own overflow-y-auto wrapper which would conflict. For typical
-         * agent runs this is acceptable; a follow-up can add an "embedded" mode to
-         * MessageList that virtualizes against an external scroll container.
-         */}
-        <FeedLogList
-          logs={logs}
-          error={logsError}
-          isAgentRunning={derived.is_working || derived.chat_agent_active}
-          onScroll={handleLogScroll}
-        />
-
-        {/* Inline artifact card */}
-        {artifact && (
-          <div ref={artifactCardRef}>
-            <InlineArtifactCard
-              artifact={artifact}
-              needsReview={derived.needs_review}
-              verdict={verdict}
-              rejectionTarget={rejectionTarget}
-              onApprove={state.handleApprove}
-              loading={state.loading}
-            />
-          </div>
-        )}
-
-        {/* Fallback approve bar: review state but no artifact */}
-        {derived.needs_review && !artifact && (
-          <ApproveBar onApprove={state.handleApprove} loading={state.loading} />
-        )}
-
-        {/* Inline questions */}
-        {derived.has_questions && task.derived.pending_questions.length > 0 && (
-          <InlineQuestionsCard
-            taskId={task.id}
-            questions={task.derived.pending_questions}
-            answers={state.answers}
-            setAnswer={state.setAnswer}
-            onSubmitAnswers={state.handleSubmitAnswers}
-            loading={state.loading}
-            submitRef={state.submitRef}
-            scrollContainerRef={scrollContainerRef}
-            answeredCount={state.answeredCount}
-            allAnswered={state.allAnswered}
-          />
-        )}
-      </div>
+      {/* Virtualized timeline — containerRef enables Virtua */}
+      <FeedLogList
+        logs={logs}
+        error={logsError}
+        isAgentRunning={derived.is_working || derived.chat_agent_active}
+        artifacts={task.artifacts}
+        artifactContext={artifactContext}
+        latestArtifactId={latestArtifactId}
+        lastAgentExtra={lastAgentExtra}
+        containerRef={combinedRef}
+        onScroll={handleLogScroll}
+      />
 
       {/* Input bar */}
       {showInputBar && (
@@ -166,7 +160,7 @@ export function AgentTab({
 }
 
 // ============================================================================
-// ApproveBar (fallback when review but no artifact)
+// ApproveBar (fallback when review but no artifact_produced log entry)
 // ============================================================================
 
 function ApproveBar({ onApprove, loading }: { onApprove: () => void; loading: boolean }) {

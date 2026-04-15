@@ -4,7 +4,6 @@ import type { RefCallback } from "react";
 import type { UseRunScriptResult } from "../../../hooks/useRunScript";
 import type {
   LogEntry,
-  WorkflowArtifact,
   WorkflowConfig,
   WorkflowTaskView,
 } from "../../../types/workflow";
@@ -28,7 +27,6 @@ interface DrawerTabContentProps {
   task: WorkflowTaskView;
   allTasks: WorkflowTaskView[];
   activeTab: DrawerTabId;
-  artifact: WorkflowArtifact | null;
   config: WorkflowConfig;
   logs: LogEntry[];
   logsError: unknown;
@@ -48,7 +46,6 @@ export function DrawerTabContent({
   task,
   allTasks,
   activeTab,
-  artifact,
   config,
   logs,
   logsError,
@@ -65,7 +62,6 @@ export function DrawerTabContent({
         task={task}
         logs={logs}
         logsError={logsError}
-        artifact={artifact}
         state={state}
         logContainerRef={logContainerRef}
         handleLogScroll={handleLogScroll}

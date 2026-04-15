@@ -22,7 +22,6 @@ import type { DrawerTabId } from "./drawerTabs";
 import {
   availableTabs,
   canUseRunScript,
-  currentArtifact,
   defaultTab,
   stageReviewType,
 } from "./drawerTabs";
@@ -126,7 +125,6 @@ function TaskDrawerBody({
   });
 
   // -- Derived --
-  const artifact = currentArtifact(task, config);
   const selectedRun = selectedRunIdx !== null ? runs[selectedRunIdx] : null;
   const reviewType = stageReviewType(task, config);
 
@@ -184,7 +182,6 @@ function TaskDrawerBody({
             task={task}
             allTasks={allTasks}
             activeTab={activeTab}
-            artifact={artifact}
             config={config}
             logs={logs}
             logsError={logsError}

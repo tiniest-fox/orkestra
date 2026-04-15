@@ -1,5 +1,7 @@
 //! Extract structured JSON output from an ork fence (` ```ork ` ... ` ``` `).
 
+use super::extract_fenced_json::fence_close_positions;
+
 /// Extract structured JSON from an ork fence in the given text.
 ///
 /// Searches for `` ```ork\n `` ... `` \n``` `` blocks. When multiple ork fences
@@ -11,6 +13,11 @@
 /// - No ork fence is present
 /// - The fence content is not valid JSON
 /// - The fence has no content
+///
+/// Handles JSON content containing embedded markdown code fences by trying each
+/// candidate closing position from furthest to nearest and validating JSON at
+/// each candidate. A premature closing position truncates the JSON, making it
+/// invalid, so the first valid candidate (furthest first) is the real fence end.
 pub fn execute(text: &str) -> Option<String> {
     let mut last_json: Option<String> = None;
     let mut search_from = 0;
@@ -39,20 +46,29 @@ pub fn execute(text: &str) -> Option<String> {
         };
         let content_start = after_tag + newline_pos + 1;
 
-        // Find the closing fence
-        let Some(closing_offset) = text[content_start..].find("\n```") else {
-            break; // No closing fence
-        };
-        let content_end = content_start + closing_offset;
+        // Collect all candidate closing positions in the remaining text.
+        // Try from furthest to nearest — a premature candidate truncates the JSON
+        // making it invalid; the real closing fence produces valid JSON.
+        let candidates = fence_close_positions(&text[content_start..]);
 
-        let content = text[content_start..content_end].trim();
-
-        if !content.is_empty() && serde_json::from_str::<serde_json::Value>(content).is_ok() {
-            last_json = Some(content.to_string());
+        if candidates.is_empty() {
+            break; // No closing fence at all
         }
 
-        // Advance past this fence's closing ``` to find subsequent fences
-        search_from = content_start + closing_offset + "\n```".len();
+        let mut matched_offset: Option<usize> = None;
+
+        for &offset in candidates.iter().rev() {
+            let content = text[content_start..content_start + offset].trim();
+            if !content.is_empty() && serde_json::from_str::<serde_json::Value>(content).is_ok() {
+                last_json = Some(content.to_string());
+                matched_offset = Some(offset);
+                break;
+            }
+        }
+
+        // Advance past the matched closing fence, or past all candidates if no match
+        let advance_offset = matched_offset.unwrap_or(*candidates.last().unwrap());
+        search_from = content_start + advance_offset + "\n```".len();
     }
 
     last_json
@@ -141,5 +157,65 @@ mod tests {
         assert!(result.is_some());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json["type"], "artifact");
+    }
+
+    #[test]
+    fn nested_fence_in_json_content() {
+        // JSON with embedded code fences in a string value
+        let text = "```ork\n{\"type\":\"artifact\",\"content\":\"```python\\ndef hello():\\n    pass\\n```\"}\n```";
+        let result = execute(text);
+        assert!(result.is_some());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "artifact");
+    }
+
+    #[test]
+    fn multiple_nested_fences_in_content() {
+        // Content field with multiple code fence blocks
+        let json_content = serde_json::json!({
+            "type": "artifact",
+            "content": "Example:\n```rust\nfn main() {}\n```\nAnd:\n```python\nprint()\n```"
+        })
+        .to_string();
+        let text = format!("```ork\n{json_content}\n```");
+        let result = execute(&text);
+        assert!(result.is_some());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "artifact");
+    }
+
+    #[test]
+    fn nested_ork_fence_in_content() {
+        // Content that itself contains an ork fence example
+        let json_content = serde_json::json!({
+            "type": "artifact",
+            "content": "Use this format:\n```ork\n{\"type\": \"plan\"}\n```"
+        })
+        .to_string();
+        let text = format!("```ork\n{json_content}\n```");
+        let result = execute(&text);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn multiple_candidate_closes_selects_valid_json() {
+        // Text with multiple \n``` sequences — exercises the multi-candidate path.
+        // The outer text wrapping the ork fence contains an additional code block,
+        // producing two \n``` candidates inside the search window.
+        //
+        // The algorithm tries candidates from furthest to nearest. The furthest
+        // candidate includes trailing garbage (invalid JSON). The nearer candidate
+        // gives the complete valid JSON object. Confirms both that the algorithm
+        // iterates candidates and that the correct JSON is returned.
+        let text = "```ork\n{\"type\":\"ok\",\"a\":1}\n```broken\nnot-json-continuation\n```";
+        // candidates in text[content_start..]:
+        //   offset A (nearer):  \n```broken  → content = {"type":"ok","a":1}   → valid
+        //   offset B (furthest):\n```         → content includes trailing garbage → invalid
+        // Furthest-first: B fails, A succeeds.
+        let result = execute(text);
+        assert!(result.is_some());
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "ok");
+        assert_eq!(json["a"], 1);
     }
 }

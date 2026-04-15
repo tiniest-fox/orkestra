@@ -12,7 +12,7 @@
 use libc;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::orkestra_debug;
@@ -483,14 +483,108 @@ impl AssistantService {
 // Background thread for reading agent output
 // ============================================================================
 
+/// Sentinel string Claude Code emits on stderr when `--resume <id>` references
+/// a session it no longer has on disk. Detected to recover from session loss.
+const SESSION_LOST_SENTINEL: &str = "No conversation found with session ID";
+
+/// Outcome of a single agent run, derived from whether visible content was
+/// produced and what (if anything) showed up on stderr.
+#[derive(Debug, PartialEq, Eq)]
+enum CompletionDiagnostic {
+    /// Agent produced visible content (Text / `ToolUse` / `Error` / subagent activity).
+    /// No diagnostic action needed.
+    Healthy,
+    /// Agent exited without visible output. Stderr (possibly empty) is captured
+    /// for inclusion in the surfaced error message.
+    SilentFailure { stderr: String },
+    /// Agent failed because Claude Code lost the resume session. Triggers state
+    /// reset so the next message starts fresh.
+    SessionLost,
+}
+
+/// Classify a finished agent run into one of three buckets.
+///
+/// Pure function so it can be unit tested without spawning a real process.
+fn analyze_completion(produced_visible_content: bool, stderr: &str) -> CompletionDiagnostic {
+    if produced_visible_content {
+        return CompletionDiagnostic::Healthy;
+    }
+    if stderr.contains(SESSION_LOST_SENTINEL) {
+        return CompletionDiagnostic::SessionLost;
+    }
+    CompletionDiagnostic::SilentFailure {
+        stderr: stderr.to_string(),
+    }
+}
+
+/// Build the user-visible message for a non-Healthy diagnostic.
+///
+/// Returns `None` for `Healthy` (nothing to surface).
+fn format_diagnostic_message(diagnostic: &CompletionDiagnostic) -> Option<String> {
+    match diagnostic {
+        CompletionDiagnostic::Healthy => None,
+        CompletionDiagnostic::SessionLost => Some(
+            "The assistant session was lost (Claude Code no longer has the conversation). \
+             Your next message will start a fresh conversation."
+                .to_string(),
+        ),
+        CompletionDiagnostic::SilentFailure { stderr } => {
+            let trimmed = stderr.trim();
+            if trimmed.is_empty() {
+                Some("Assistant agent exited without producing a response.".to_string())
+            } else {
+                Some(format!(
+                    "Assistant agent exited without producing a response.\n\nstderr:\n{trimmed}"
+                ))
+            }
+        }
+    }
+}
+
+/// Whether a parsed log entry constitutes "visible content" — i.e., something
+/// the user would see in the chat UI.
+///
+/// Tool results and process-lifecycle markers don't count; only entries that
+/// render as text, tool calls, or surfaced errors do.
+fn is_visible_log_entry(entry: &LogEntry) -> bool {
+    matches!(
+        entry,
+        LogEntry::Text { .. }
+            | LogEntry::ToolUse { .. }
+            | LogEntry::SubagentToolUse { .. }
+            | LogEntry::Error { .. }
+    )
+}
+
+/// Reset a session whose Claude Code conversation was lost.
+///
+/// Generates a fresh `claude_session_id` and zeroes `spawn_count` so the next
+/// spawn uses `--session-id <new>` instead of `--resume <stale>`.
+fn reset_lost_session(
+    store: &Arc<dyn WorkflowStore>,
+    session_id: &str,
+    now: &str,
+) -> WorkflowResult<()> {
+    let Some(mut session) = store.get_assistant_session(session_id)? else {
+        return Ok(());
+    };
+    session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
+    session.spawn_count = 0;
+    session.updated_at = now.to_string();
+    store.save_assistant_session(&session)?;
+    Ok(())
+}
+
 /// Read agent output, parse log entries, and write to the store.
 ///
 /// This runs in a background thread. It:
 /// 1. Reads stdout lines from the agent process
 /// 2. Parses each line through the `AgentParser`
 /// 3. Writes log entries to the store
-/// 4. On completion, disarms the `ProcessGuard` and updates session state
-/// 5. Triggers title generation if this was the first spawn
+/// 4. Captures stderr in parallel — if the agent produced no visible content,
+///    surfaces stderr as a `LogEntry::Error` and recovers from session loss
+/// 5. On completion, disarms the `ProcessGuard` and updates session state
+/// 6. Triggers title generation if this was the first spawn
 fn read_assistant_output(
     pid: u32,
     store: &Arc<dyn WorkflowStore>,
@@ -505,17 +599,25 @@ fn read_assistant_output(
     // Create ProcessGuard to ensure cleanup on panic/early return
     let guard = ProcessGuard::new(pid);
 
-    // Drain stderr in background thread to prevent pipe deadlock
-    // Claude Code outputs debug info on stderr when --verbose is passed
-    let _stderr_handle = thread::spawn(move || {
+    // Drain stderr in background thread to prevent pipe deadlock.
+    // Lines are both logged (for debug.log analysis) and captured into a shared
+    // buffer so we can surface fatal errors to the UI when the agent produced
+    // no visible stdout content.
+    let stderr_buffer: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let stderr_buffer_writer = Arc::clone(&stderr_buffer);
+    let stderr_handle = thread::spawn(move || {
         let reader = std::io::BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
             orkestra_debug!("assistant", "stderr: {}", line);
+            if let Ok(mut buf) = stderr_buffer_writer.lock() {
+                buf.push(line);
+            }
         }
     });
 
     // Read stdout line by line
     let reader = std::io::BufReader::new(stdout);
+    let mut produced_visible_content = false;
 
     for line in reader.lines() {
         match line {
@@ -529,6 +631,9 @@ fn read_assistant_output(
 
                 // Write each log entry to the store
                 for entry in update.log_entries {
+                    if is_visible_log_entry(&entry) {
+                        produced_visible_content = true;
+                    }
                     if let Err(e) = store.append_assistant_log_entry(session_id, &entry) {
                         orkestra_debug!("assistant", "Failed to append log entry: {}", e);
                     }
@@ -544,8 +649,34 @@ fn read_assistant_output(
     // Finalize the parser (flush any buffered entries)
     let finalized = parser.finalize();
     for entry in finalized {
+        if is_visible_log_entry(&entry) {
+            produced_visible_content = true;
+        }
         if let Err(e) = store.append_assistant_log_entry(session_id, &entry) {
             orkestra_debug!("assistant", "Failed to append finalized log entry: {}", e);
+        }
+    }
+
+    // Wait for the stderr drainer to finish so the buffer captures everything
+    // the process wrote before exit. The thread exits when the process closes
+    // its stderr pipe, so this is a quick join.
+    let _ = stderr_handle.join();
+    let stderr_content = stderr_buffer
+        .lock()
+        .map(|buf| buf.join("\n"))
+        .unwrap_or_default();
+
+    // Classify the run and surface a diagnostic if needed.
+    let now = chrono::Utc::now().to_rfc3339();
+    let diagnostic = analyze_completion(produced_visible_content, &stderr_content);
+    if let Some(message) = format_diagnostic_message(&diagnostic) {
+        if let Err(e) = store.append_assistant_log_entry(session_id, &LogEntry::Error { message }) {
+            orkestra_debug!("assistant", "Failed to append diagnostic log entry: {}", e);
+        }
+    }
+    if matches!(diagnostic, CompletionDiagnostic::SessionLost) {
+        if let Err(e) = reset_lost_session(store, session_id, &now) {
+            orkestra_debug!("assistant", "Failed to reset lost session: {}", e);
         }
     }
 
@@ -556,8 +687,8 @@ fn read_assistant_output(
         orkestra_debug!("assistant", "Failed to append ProcessExit log entry: {}", e);
     }
 
-    // Mark agent as finished
-    let now = chrono::Utc::now().to_rfc3339();
+    // Mark agent as finished. Re-load the session to pick up any state changes
+    // made by `reset_lost_session` above so we don't clobber them.
     if let Ok(Some(mut session)) = store.get_assistant_session(session_id) {
         session.agent_finished(&now);
         let _ = store.save_assistant_session(&session);
@@ -1056,5 +1187,159 @@ mod tests {
             1,
             "Only one session should exist for the task"
         );
+    }
+
+    // ========================================================================
+    // Completion diagnostic tests (visibility + recovery for empty agent runs)
+    // ========================================================================
+
+    #[test]
+    fn analyze_completion_visible_content_is_healthy() {
+        let result = analyze_completion(true, "some stderr noise");
+        assert_eq!(result, CompletionDiagnostic::Healthy);
+    }
+
+    #[test]
+    fn analyze_completion_no_content_no_stderr_is_silent_failure() {
+        let result = analyze_completion(false, "");
+        assert_eq!(
+            result,
+            CompletionDiagnostic::SilentFailure {
+                stderr: String::new()
+            }
+        );
+    }
+
+    #[test]
+    fn analyze_completion_no_content_with_stderr_is_silent_failure() {
+        let result = analyze_completion(false, "some unrecognized error");
+        assert_eq!(
+            result,
+            CompletionDiagnostic::SilentFailure {
+                stderr: "some unrecognized error".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn analyze_completion_session_lost_takes_priority() {
+        let stderr = "some preamble\nNo conversation found with session ID: abc-123\nmore noise";
+        let result = analyze_completion(false, stderr);
+        assert_eq!(result, CompletionDiagnostic::SessionLost);
+    }
+
+    #[test]
+    fn analyze_completion_visible_content_overrides_session_lost_sentinel() {
+        // If the agent did produce content, even a session-lost-shaped stderr
+        // shouldn't trigger recovery — visible content always wins.
+        let stderr = "No conversation found with session ID: abc-123";
+        let result = analyze_completion(true, stderr);
+        assert_eq!(result, CompletionDiagnostic::Healthy);
+    }
+
+    #[test]
+    fn format_diagnostic_message_healthy_returns_none() {
+        let msg = format_diagnostic_message(&CompletionDiagnostic::Healthy);
+        assert_eq!(msg, None);
+    }
+
+    #[test]
+    fn format_diagnostic_message_session_lost_explains_recovery() {
+        let msg = format_diagnostic_message(&CompletionDiagnostic::SessionLost)
+            .expect("session lost should produce a message");
+        assert!(msg.contains("session was lost"));
+        assert!(msg.contains("fresh conversation"));
+    }
+
+    #[test]
+    fn format_diagnostic_message_silent_failure_includes_stderr() {
+        let diagnostic = CompletionDiagnostic::SilentFailure {
+            stderr: "auth: invalid token\n".to_string(),
+        };
+        let msg = format_diagnostic_message(&diagnostic).expect("must produce a message");
+        assert!(msg.contains("exited without producing a response"));
+        assert!(msg.contains("auth: invalid token"));
+    }
+
+    #[test]
+    fn format_diagnostic_message_silent_failure_omits_stderr_section_when_empty() {
+        let diagnostic = CompletionDiagnostic::SilentFailure {
+            stderr: "   \n  ".to_string(),
+        };
+        let msg = format_diagnostic_message(&diagnostic).expect("must produce a message");
+        assert!(msg.contains("exited without producing a response"));
+        assert!(!msg.contains("stderr:"));
+    }
+
+    #[test]
+    fn is_visible_log_entry_classifies_correctly() {
+        assert!(is_visible_log_entry(&LogEntry::Text {
+            content: "hi".into()
+        }));
+        assert!(is_visible_log_entry(&LogEntry::Error {
+            message: "boom".into()
+        }));
+        assert!(is_visible_log_entry(&LogEntry::ToolUse {
+            tool: "Bash".into(),
+            id: "t1".into(),
+            input: orkestra_types::domain::ToolInput::Bash {
+                command: "ls".into()
+            },
+        }));
+        assert!(is_visible_log_entry(&LogEntry::SubagentToolUse {
+            tool: "Read".into(),
+            id: "t2".into(),
+            input: orkestra_types::domain::ToolInput::Read {
+                file_path: "/tmp/x".into()
+            },
+            parent_task_id: "p1".into(),
+        }));
+
+        // Not visible
+        assert!(!is_visible_log_entry(&LogEntry::ProcessExit {
+            code: Some(0)
+        }));
+        assert!(!is_visible_log_entry(&LogEntry::UserMessage {
+            resume_type: "message".into(),
+            content: "user said".into(),
+        }));
+        assert!(!is_visible_log_entry(&LogEntry::ToolResult {
+            tool: "Bash".into(),
+            tool_use_id: "t1".into(),
+            content: "stdout".into(),
+        }));
+    }
+
+    #[test]
+    fn reset_lost_session_assigns_new_claude_session_id_and_zeros_spawn_count() {
+        let store: Arc<dyn crate::workflow::ports::WorkflowStore> =
+            Arc::new(InMemoryWorkflowStore::new());
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut session = AssistantSession::new("session-1", &now);
+        session.claude_session_id = Some("stale-session".to_string());
+        session.spawn_count = 3;
+        store.save_assistant_session(&session).unwrap();
+
+        let later = "2026-04-15T20:30:00Z";
+        reset_lost_session(&store, "session-1", later).unwrap();
+
+        let reloaded = store.get_assistant_session("session-1").unwrap().unwrap();
+        assert_eq!(reloaded.spawn_count, 0);
+        let new_id = reloaded
+            .claude_session_id
+            .expect("claude_session_id should be regenerated, not cleared");
+        assert_ne!(
+            new_id, "stale-session",
+            "claude_session_id should be a new UUID, not the lost one"
+        );
+        assert_eq!(reloaded.updated_at, later);
+    }
+
+    #[test]
+    fn reset_lost_session_is_noop_when_session_missing() {
+        let store: Arc<dyn crate::workflow::ports::WorkflowStore> =
+            Arc::new(InMemoryWorkflowStore::new());
+        // Should not error even though the session doesn't exist.
+        reset_lost_session(&store, "nonexistent", "2026-04-15T20:30:00Z").unwrap();
     }
 }

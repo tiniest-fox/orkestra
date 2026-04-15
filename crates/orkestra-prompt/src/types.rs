@@ -208,7 +208,11 @@ pub enum ResumeType {
     /// "Return to Work", injected into the resume prompt as a closing instruction.
     ReturnToWork { message: Option<String> },
     /// Agent output was malformed — corrective prompt with attempt count.
-    MalformedOutput { error: String, attempt: u32 },
+    MalformedOutput {
+        error: String,
+        attempt: u32,
+        max_attempts: u32,
+    },
 }
 
 /// A failed CI check to address in the resume prompt.

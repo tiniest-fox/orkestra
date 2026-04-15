@@ -129,10 +129,14 @@ pub enum IterationTrigger {
     /// Agent produced output that couldn't be parsed as structured JSON.
     MalformedOutput {
         error: String,
-        /// 1-indexed retry attempt (1 = first retry, 2 = second, etc.).
+        /// Total attempt number (original was 1, first retry is 2, second is 3, etc.).
         /// Defaults to 0 for rows written before this field was added.
         #[serde(default)]
         attempt: u32,
+        /// Total number of attempts allowed (original + retries).
+        /// Defaults to 0 for rows written before this field was added.
+        #[serde(default)]
+        max_attempts: u32,
     },
 }
 

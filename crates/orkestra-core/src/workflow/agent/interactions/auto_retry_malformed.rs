@@ -91,15 +91,19 @@ pub fn execute(
 
     // Create new iteration with MalformedOutput trigger so the agent gets the corrective prompt.
     // `attempt` is the total attempt number (original was 1, first retry is 2, etc.).
+    // `max_attempts` is the total budget (retries + 1 for the original).
     // This makes "attempt 2 of 4" unambiguous: the agent knows it has 2 retries remaining.
     #[allow(clippy::cast_possible_truncation)]
     let attempt = (malformed_count + 2) as u32;
+    #[allow(clippy::cast_possible_truncation)]
+    let max_attempts = (MAX_MALFORMED_RETRIES + 1) as u32;
     iteration_service.create_iteration(
         &task.id,
         &current_stage,
         Some(IterationTrigger::MalformedOutput {
             error: error.to_string(),
             attempt,
+            max_attempts,
         }),
     )?;
 

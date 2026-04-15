@@ -1,6 +1,6 @@
 <!orkestra:resume:{{stage_name}}:malformed_output>
 
-Your previous output could not be parsed as valid structured JSON. This is attempt {{attempt}} of 4.
+Your previous output could not be parsed as valid structured JSON. This is attempt {{attempt}} of {{max_attempts}}.
 
 Error: {{error}}
 

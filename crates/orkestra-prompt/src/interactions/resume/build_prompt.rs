@@ -80,9 +80,13 @@ pub fn execute(
             RESUME_RETURN_TO_WORK,
             serde_json::json!({ "message": message }),
         ),
-        ResumeType::MalformedOutput { error, attempt } => (
+        ResumeType::MalformedOutput {
+            error,
+            attempt,
+            max_attempts,
+        } => (
             RESUME_MALFORMED_OUTPUT,
-            serde_json::json!({ "error": error, "attempt": attempt }),
+            serde_json::json!({ "error": error, "attempt": attempt, "max_attempts": max_attempts }),
         ),
     };
 
@@ -445,6 +449,7 @@ mod tests {
             &ResumeType::MalformedOutput {
                 error: "no structured output found".to_string(),
                 attempt: 2,
+                max_attempts: 4,
             },
             "main",
             &[],

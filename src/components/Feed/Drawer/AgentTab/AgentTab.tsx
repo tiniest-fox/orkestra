@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { useCallback, useMemo, useRef } from "react";
-import type { LogEntry, WorkflowTaskView } from "../../../../types/workflow";
+import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
 import { Button } from "../../../ui/Button";
 import { ChatComposeArea } from "../../ChatComposeArea";
 import { FeedLogList } from "../../FeedLogList";
@@ -68,40 +68,67 @@ export function AgentTab({
   const rejectionTarget =
     rejection && rejection.target !== rejection.from_stage ? rejection.target : undefined;
 
+  // Destructure specific state/task fields for stable memo deps.
+  // Callbacks from useTaskDrawerState are useCallback-wrapped and referentially stable.
+  const {
+    answers,
+    setAnswer,
+    handleSubmitAnswers,
+    loading,
+    submitRef,
+    answeredCount,
+    allAnswered,
+    handleApprove,
+  } = state;
+  const taskId = task.id;
+  const pendingQuestions = task.derived.pending_questions;
+
   // Build context passed to AgentEntry for the latest artifact entry.
   const artifactContext = useMemo((): ArtifactContext | undefined => {
     if (!latestArtifactId) return undefined;
 
-    // Questions element — rendered at the artifact's log position instead of ArtifactLogCard.
     const questionsElement =
-      derived.has_questions && task.derived.pending_questions.length > 0 ? (
-        <InlineQuestionsCard
-          taskId={task.id}
-          questions={task.derived.pending_questions}
-          answers={state.answers}
-          setAnswer={state.setAnswer}
-          onSubmitAnswers={state.handleSubmitAnswers}
-          loading={state.loading}
-          submitRef={state.submitRef}
-          scrollContainerRef={scrollContainerRef}
-          answeredCount={state.answeredCount}
-          allAnswered={state.allAnswered}
-        />
-      ) : undefined;
+      derived.has_questions && pendingQuestions.length > 0
+        ? buildQuestionsElement(
+            taskId,
+            pendingQuestions,
+            answers,
+            setAnswer,
+            handleSubmitAnswers,
+            loading,
+            submitRef,
+            scrollContainerRef,
+            answeredCount,
+            allAnswered,
+          )
+        : undefined;
 
-    // Approve/reject actions for the latest artifact.
-    const actions = derived.needs_review
-      ? {
-          needsReview: true,
-          verdict,
-          rejectionTarget,
-          onApprove: state.handleApprove,
-          loading: state.loading,
-        }
-      : undefined;
+    const actions = buildArtifactActions(
+      derived.needs_review,
+      verdict,
+      rejectionTarget,
+      handleApprove,
+      loading,
+    );
 
     return { actions, questionsElement };
-  }, [latestArtifactId, derived, task, state, verdict, rejectionTarget]);
+  }, [
+    latestArtifactId,
+    derived.has_questions,
+    derived.needs_review,
+    pendingQuestions,
+    taskId,
+    answers,
+    setAnswer,
+    handleSubmitAnswers,
+    loading,
+    submitRef,
+    answeredCount,
+    allAnswered,
+    handleApprove,
+    verdict,
+    rejectionTarget,
+  ]);
 
   // Fallback approve bar: review state but no artifact_produced entry in the log.
   const lastAgentExtra =
@@ -171,4 +198,49 @@ function ApproveBar({ onApprove, loading }: { onApprove: () => void; loading: bo
       </Button>
     </div>
   );
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/** Build the inline questions element for the latest artifact position. */
+function buildQuestionsElement(
+  taskId: string,
+  pendingQuestions: WorkflowQuestion[],
+  answers: string[],
+  setAnswer: (index: number, value: string) => void,
+  handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>,
+  loading: boolean,
+  submitRef: React.RefObject<HTMLButtonElement>,
+  scrollContainerRef: React.RefObject<HTMLDivElement>,
+  answeredCount: number,
+  allAnswered: boolean,
+): React.ReactNode {
+  return (
+    <InlineQuestionsCard
+      taskId={taskId}
+      questions={pendingQuestions}
+      answers={answers}
+      setAnswer={setAnswer}
+      onSubmitAnswers={handleSubmitAnswers}
+      loading={loading}
+      submitRef={submitRef}
+      scrollContainerRef={scrollContainerRef}
+      answeredCount={answeredCount}
+      allAnswered={allAnswered}
+    />
+  );
+}
+
+/** Build the approve/reject actions object for the latest artifact, or undefined if not in review. */
+function buildArtifactActions(
+  needsReview: boolean,
+  verdict: "approved" | "rejected" | undefined,
+  rejectionTarget: string | undefined,
+  onApprove: () => Promise<void>,
+  loading: boolean,
+): ArtifactContext["actions"] {
+  if (!needsReview) return undefined;
+  return { needsReview: true, verdict, rejectionTarget, onApprove, loading };
 }

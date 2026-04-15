@@ -1,8 +1,8 @@
 // Tests for buildDisplayMessages, buildVirtualItems, and related utilities.
 
 import { describe, expect, it } from "vitest";
-import type { LogEntry } from "../../types/workflow";
-import type { DisplayMessage, UserMessage } from "./MessageList";
+import type { LogEntry, WorkflowArtifact } from "../../types/workflow";
+import type { ArtifactContext, DisplayMessage, UserMessage } from "./MessageList";
 import { buildDisplayMessages, buildVirtualItems } from "./MessageList";
 
 describe("buildDisplayMessages", () => {
@@ -148,6 +148,82 @@ describe("buildVirtualItems", () => {
     if (items[0].kind === "user-block") {
       expect(items[0].label).toBe("System");
       expect(items[0].isHuman).toBe(false);
+    }
+  });
+
+  // artifact_produced entries
+
+  it("produces agent-entry items for artifact_produced log entries", () => {
+    const artifactEntry: LogEntry = {
+      type: "artifact_produced",
+      name: "plan",
+      artifact_id: "artifact-1",
+    };
+    const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
+    const items = buildVirtualItems(messages, defaultOpts);
+    const entryItems = items.filter((i) => i.kind === "agent-entry");
+    expect(entryItems.length).toBeGreaterThan(0);
+  });
+
+  it("threads artifactContext into agent-entry items with artifact_produced entries", () => {
+    const artifactEntry: LogEntry = {
+      type: "artifact_produced",
+      name: "plan",
+      artifact_id: "artifact-42",
+    };
+    const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "planning",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    const artifactContext: ArtifactContext = {
+      actions: {
+        needsReview: true,
+        verdict: undefined,
+        rejectionTarget: undefined,
+        onApprove: () => Promise.resolve(),
+        loading: false,
+      },
+    };
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      artifacts: { plan: artifact },
+      artifactContext,
+      latestArtifactId: "artifact-42",
+    });
+    const entryItem = items.find((i) => i.kind === "agent-entry");
+    expect(entryItem).toBeDefined();
+    if (entryItem?.kind === "agent-entry") {
+      expect(entryItem.artifactContext).toBe(artifactContext);
+      expect(entryItem.latestArtifactId).toBe("artifact-42");
+    }
+  });
+
+  it("passes latestArtifactId so superseded entries can be identified", () => {
+    const olderEntry: LogEntry = {
+      type: "artifact_produced",
+      name: "plan",
+      artifact_id: "artifact-1",
+    };
+    const newerEntry: LogEntry = {
+      type: "artifact_produced",
+      name: "plan",
+      artifact_id: "artifact-2",
+    };
+    const messages: DisplayMessage[] = [{ kind: "agent", entries: [olderEntry, newerEntry] }];
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "artifact-2",
+    });
+    const entryItems = items.filter((i) => i.kind === "agent-entry");
+    // Both entries carry the latestArtifactId so AgentEntry can differentiate
+    for (const item of entryItems) {
+      if (item.kind === "agent-entry") {
+        expect(item.latestArtifactId).toBe("artifact-2");
+      }
     }
   });
 });

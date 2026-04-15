@@ -16,6 +16,8 @@ const baseArtifact: WorkflowArtifact = {
 };
 
 describe("ArtifactLogCard", () => {
+  // Simple (feed) mode
+
   it("renders collapsed state with artifact name", () => {
     render(<ArtifactLogCard artifact={baseArtifact} />);
     expect(screen.getByText("Generated plan")).toBeInTheDocument();
@@ -55,5 +57,84 @@ describe("ArtifactLogCard", () => {
     render(<ArtifactLogCard artifact={artifact} />);
     fireEvent.click(screen.getByRole("button"));
     expect(screen.getByText("No content")).toBeInTheDocument();
+  });
+
+  // Actionable mode (latest artifact in drawer with approve/reject)
+
+  it("renders approve button when needsReview and no verdict", () => {
+    const onApprove = vi.fn();
+    render(
+      <ArtifactLogCard artifact={baseArtifact} needsReview onApprove={onApprove} loading={false} />,
+    );
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+  });
+
+  it("calls onApprove when approve button is clicked", () => {
+    const onApprove = vi.fn();
+    render(
+      <ArtifactLogCard artifact={baseArtifact} needsReview onApprove={onApprove} loading={false} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenCalledOnce();
+  });
+
+  it("disables approve button when loading", () => {
+    const onApprove = vi.fn();
+    render(<ArtifactLogCard artifact={baseArtifact} needsReview onApprove={onApprove} loading />);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+  });
+
+  it("hides approve button when verdict is set", () => {
+    const onApprove = vi.fn();
+    render(
+      <ArtifactLogCard
+        artifact={baseArtifact}
+        needsReview
+        verdict="approved"
+        onApprove={onApprove}
+        loading={false}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("shows verdict badge when verdict is approved", () => {
+    render(
+      <ArtifactLogCard
+        artifact={baseArtifact}
+        needsReview
+        verdict="approved"
+        onApprove={vi.fn()}
+        loading={false}
+      />,
+    );
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+  });
+
+  it("shows verdict badge when verdict is rejected", () => {
+    render(
+      <ArtifactLogCard
+        artifact={baseArtifact}
+        needsReview
+        verdict="rejected"
+        onApprove={vi.fn()}
+        loading={false}
+      />,
+    );
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
+  });
+
+  // Superseded mode (earlier artifact, dimmed)
+
+  it("applies opacity-50 when superseded", () => {
+    const { container } = render(<ArtifactLogCard artifact={baseArtifact} superseded />);
+    const card = container.firstChild as HTMLElement;
+    expect(card.className).toContain("opacity-50");
+  });
+
+  it("does not apply opacity-50 when not superseded", () => {
+    const { container } = render(<ArtifactLogCard artifact={baseArtifact} />);
+    const card = container.firstChild as HTMLElement;
+    expect(card.className).not.toContain("opacity-50");
   });
 });

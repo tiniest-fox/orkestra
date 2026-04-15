@@ -21,7 +21,7 @@
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::{
     config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
-    domain::{Question, QuestionAnswer, QuestionOption},
+    domain::{LogEntry, Question, QuestionAnswer, QuestionOption},
     runtime::{Outcome, TaskState},
     TaskCreationMode,
 };
@@ -3123,6 +3123,33 @@ fn test_artifact_generation_for_all_output_types() {
     assert!(
         plan_content.contains("Include caching?"),
         "Questions artifact should contain all questions. Got: {plan_content}"
+    );
+
+    // ASSERT: Questions output emits an ArtifactProduced log entry so the
+    // frontend can render the card at the correct log position.
+    let (log_entries, _cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, None)
+        .unwrap();
+    let produced_entries: Vec<_> = log_entries
+        .iter()
+        .filter(|e| matches!(e, LogEntry::ArtifactProduced { .. }))
+        .collect();
+    assert_eq!(
+        produced_entries.len(),
+        1,
+        "Questions output should emit exactly one ArtifactProduced log entry"
+    );
+    let LogEntry::ArtifactProduced {
+        name: artifact_name,
+        ..
+    } = &produced_entries[0]
+    else {
+        panic!("Expected ArtifactProduced variant")
+    };
+    assert_eq!(
+        artifact_name, "plan",
+        "ArtifactProduced name should match the stage artifact name"
     );
 
     // Human answers questions (should NOT change the artifact)

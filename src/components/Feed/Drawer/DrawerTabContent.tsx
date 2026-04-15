@@ -2,11 +2,7 @@
 
 import type { RefCallback } from "react";
 import type { UseRunScriptResult } from "../../../hooks/useRunScript";
-import type {
-  LogEntry,
-  WorkflowConfig,
-  WorkflowTaskView,
-} from "../../../types/workflow";
+import type { LogEntry, WorkflowConfig, WorkflowTaskView } from "../../../types/workflow";
 import { ActivityLog } from "../ActivityLog";
 import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerGateTab } from "../DrawerGateTab";

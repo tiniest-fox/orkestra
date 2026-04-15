@@ -19,12 +19,7 @@ import { DrawerTaskProvider } from "../DrawerTaskProvider";
 import { HistoricalRunView } from "../HistoricalRunView";
 import { DrawerTabContent } from "./DrawerTabContent";
 import type { DrawerTabId } from "./drawerTabs";
-import {
-  availableTabs,
-  canUseRunScript,
-  defaultTab,
-  stageReviewType,
-} from "./drawerTabs";
+import { availableTabs, canUseRunScript, defaultTab, stageReviewType } from "./drawerTabs";
 import { DrawerFooter } from "./Footer/DrawerFooter";
 import { useDrawerHotkeys } from "./useDrawerHotkeys";
 import { useTaskDrawerState } from "./useTaskDrawerState";

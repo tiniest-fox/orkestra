@@ -1,10 +1,7 @@
 // Tests for `availableTabs`, `defaultTab`, and related drawer helpers.
 
 import { describe, expect, it } from "vitest";
-import {
-  createMockWorkflowConfig,
-  createMockWorkflowTaskView,
-} from "../../../test/mocks/fixtures";
+import { createMockWorkflowConfig, createMockWorkflowTaskView } from "../../../test/mocks/fixtures";
 import type { WorkflowIteration } from "../../../types/workflow";
 import { availableTabs, canUseRunScript, defaultTab } from "./drawerTabs";
 
@@ -349,4 +346,3 @@ describe("availableTabs — resources tab visibility", () => {
     expect(resourcesTab?.hotkey).toBeUndefined();
   });
 });
-

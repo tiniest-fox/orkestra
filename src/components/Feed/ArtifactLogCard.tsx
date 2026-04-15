@@ -7,8 +7,8 @@ import { useRichCodeBlocks } from "../../hooks/useRichCodeBlocks";
 import type { WorkflowArtifact } from "../../types/workflow";
 import { formatTimestamp } from "../../utils";
 import { PROSE_CLASSES } from "../../utils/prose";
-import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { Button } from "../ui/Button";
+import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ArtifactBadge } from "./OutcomeBadge";
 
 interface ArtifactLogCardProps {
@@ -51,7 +51,9 @@ export function ArtifactLogCard({
   const isActionable = onApprove !== undefined;
 
   return (
-    <div className={`bg-surface rounded-lg border border-border my-1 ${superseded ? "opacity-50" : ""}`}>
+    <div
+      className={`bg-surface rounded-lg border border-border my-1 ${superseded ? "opacity-50" : ""}`}
+    >
       {isActionable ? (
         // Enhanced header for latest artifact — div+role because it contains inner <Button> elements.
         // biome-ignore lint/a11y/useSemanticElements: contains inner <Button> — nested <button> inside <button> is invalid HTML

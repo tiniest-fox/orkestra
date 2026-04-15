@@ -55,13 +55,15 @@ The trait handles provider differences; `parse_stage_output` is the single sourc
 |---------|-------------|----------|
 | Output format | JSONL with `structured_output` wrapper | Fenced JSON in text events |
 | Session ID | Caller supplies via `--session-id` | Extracted from `sessionID` field |
-| Stream text | Not buffered | Buffered, classified in `finalize()` |
+| Stream text | Text accumulated in `last_text` for ork fence fallback | Buffered, classified in `finalize()` |
 | Tool result tracking | Maps `tool_use_id` → `tool_name` | Inline in tool_use event (v1.1+) |
 | Subagent detection | Tracks Agent tool IDs | N/A |
 
 ## Gotchas
 
 **Claude JSONL unwrapping**: The `structured_output` field may contain a nested JSON string that needs unwrapping. `extract_from_jsonl` handles this automatically.
+
+**Claude ork fence extraction requires `last_text`, not raw JSONL**: Newlines inside JSON string values in JSONL are stored escaped (`\n` = `0x5C 0x6E`), not as real newlines (`0x0A`). `extract_ork_fence` searches for real newlines, so it would find nothing on raw JSONL. The fix: `ClaudeParserService` accumulates text content in `last_text` during streaming — `serde_json` unescapes string values when deserializing, so `last_text` contains real newlines. Ork fence extraction runs on `last_text`, not on the raw JSONL bytes.
 
 **OpenCode text buffering**: Text events are buffered until the next non-text event because the final structured output arrives as a plain text event. `finalize()` classifies the last buffered text as either `StructuredOutput` (if valid JSON with `type` field) or plain `Text`.
 

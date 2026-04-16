@@ -5,13 +5,7 @@ import { classifyUser } from "./FeedLogList";
 import type { UserMessage } from "./MessageList";
 
 describe("classifyUser", () => {
-  const humanTypes = [
-    "feedback",
-    "answers",
-    "manual_resume",
-    "chat",
-    "return_to_work",
-  ] as const;
+  const humanTypes = ["feedback", "answers", "manual_resume", "chat", "return_to_work"] as const;
   const systemTypes = [
     "initial",
     "continue",

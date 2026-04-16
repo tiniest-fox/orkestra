@@ -3,11 +3,11 @@
 import type React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
+import { titleCase } from "../../../../utils/titleCase";
 import { ChatComposeArea } from "../../ChatComposeArea";
 import { FeedLogList } from "../../FeedLogList";
 import type { ArtifactContext } from "../../MessageList";
 import type { TaskDrawerState } from "../useTaskDrawerState";
-import { titleCase } from "../../../../utils/titleCase";
 import { InlineQuestionsCard } from "./InlineQuestionsCard";
 
 // ============================================================================

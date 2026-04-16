@@ -15,6 +15,7 @@ testutil = []
 
 [dependencies]
 orkestra-types = { path = "../orkestra-types" }
+orkestra-process = { path = "../orkestra-process" }
 serde_json = "1"
 thiserror = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
@@ -22,3 +23,6 @@ refinery = { version = "0.8", features = ["rusqlite"] }
 petname = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3"

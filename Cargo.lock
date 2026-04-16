@@ -3608,11 +3608,13 @@ name = "orkestra-store"
 version = "0.1.2"
 dependencies = [
  "chrono",
+ "orkestra-process",
  "orkestra-types",
  "petname",
  "refinery",
  "rusqlite",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "uuid",
 ]

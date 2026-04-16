@@ -37,6 +37,30 @@ export function toolSummary(input: ToolInput, projectRoot?: string): string {
   }
 }
 
+/**
+ * Joins multiple tool summaries into a compact string.
+ * When all paths share the same parent directory, strips the common prefix
+ * from all but the first entry: "dir/a.ts, b.ts, c.ts" instead of "dir/a.ts, dir/b.ts, dir/c.ts".
+ */
+export function compactGroupSummary(summaries: string[]): string {
+  if (summaries.length <= 1) return summaries[0] ?? "";
+
+  const dirOf = (p: string) => {
+    const idx = p.lastIndexOf("/");
+    return idx >= 0 ? p.slice(0, idx + 1) : "";
+  };
+
+  const dirs = summaries.map(dirOf);
+  const commonDir = dirs[0];
+
+  if (commonDir && dirs.every((d) => d === commonDir)) {
+    const rest = summaries.slice(1).map((p) => p.slice(commonDir.length));
+    return [summaries[0], ...rest].join(", ");
+  }
+
+  return summaries.join(", ");
+}
+
 export function orkSummary(action: OrkAction): string {
   switch (action.action) {
     case "complete":

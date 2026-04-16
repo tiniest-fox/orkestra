@@ -1,13 +1,13 @@
 // Unified agent tab — streaming log timeline with inline artifact and question cards.
 
 import type React from "react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
-import { Button } from "../../../ui/Button";
 import { ChatComposeArea } from "../../ChatComposeArea";
 import { FeedLogList } from "../../FeedLogList";
 import type { ArtifactContext } from "../../MessageList";
 import type { TaskDrawerState } from "../useTaskDrawerState";
+import { titleCase } from "../../../../utils/titleCase";
 import { InlineQuestionsCard } from "./InlineQuestionsCard";
 
 // ============================================================================
@@ -20,27 +20,18 @@ interface AgentTabProps {
   logsError: unknown;
   state: TaskDrawerState;
   logContainerRef: React.RefCallback<HTMLDivElement>;
-  handleLogScroll: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
 // ============================================================================
 // Component
 // ============================================================================
 
-export function AgentTab({
-  task,
-  logs,
-  logsError,
-  state,
-  logContainerRef,
-  handleLogScroll,
-}: AgentTabProps) {
+export function AgentTab({ task, logs, logsError, state, logContainerRef }: AgentTabProps) {
   const { derived } = task;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Combine the external logContainerRef (which sets logScrollRef for hotkeys
-  // and registers with useAutoScroll from TaskDrawer) with our local ref for
-  // NavigationScope / InlineQuestionsCard scroll-into-view.
+  // Combine the external logContainerRef (which sets logScrollRef for hotkey
+  // scrolling in TaskDrawer) with our local ref for InlineQuestionsCard scroll-into-view.
   const combinedRef = useCallback(
     (node: HTMLDivElement | null) => {
       (scrollContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
@@ -48,6 +39,18 @@ export function AgentTab({
     },
     [logContainerRef],
   );
+
+  // When the compose area textarea resizes, scroll to bottom so content stays above the
+  // input bar — but only if the user wasn't already scrolled up reading history.
+  const handleComposeResize = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Threshold of 120px — the max textarea height — so we snap if we were near the bottom.
+    if (distFromBottom < 120) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, []);
 
   // The latest artifact in the log — only this one gets approve/questions actions.
   const latestArtifactId = useMemo(() => {
@@ -130,12 +133,6 @@ export function AgentTab({
     rejectionTarget,
   ]);
 
-  // Fallback approve bar: review state but no artifact_produced entry in the log.
-  const lastAgentExtra =
-    derived.needs_review && !latestArtifactId ? (
-      <ApproveBar onApprove={state.handleApprove} loading={state.loading} />
-    ) : undefined;
-
   // Input bar visibility:
   // Show when working, review, or chatting.
   // Hide when interrupted (InterruptedFooter in DrawerFooter handles that state),
@@ -152,9 +149,15 @@ export function AgentTab({
     ? state.handleChatStop
     : state.handleInterrupt;
 
+  const [sendTrigger, setSendTrigger] = useState(0);
+  const handleSend = useCallback(() => {
+    setSendTrigger((n) => n + 1);
+    state.handleSendChat();
+  }, [state.handleSendChat]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Virtualized timeline — containerRef enables Virtua */}
+      {/* Log timeline — containerRef enables auto-scroll and hotkey scrolling */}
       <FeedLogList
         logs={logs}
         error={logsError}
@@ -163,9 +166,9 @@ export function AgentTab({
         artifactContext={artifactContext}
         latestArtifactId={latestArtifactId}
         taskResources={task.resources}
-        lastAgentExtra={lastAgentExtra}
         containerRef={combinedRef}
-        onScroll={handleLogScroll}
+        initialLabel={`Starting "${titleCase(derived.current_stage ?? task.derived.stages_with_logs[task.derived.stages_with_logs.length - 1]?.stage ?? "")}"\u2026`}
+        scrollToBottomTrigger={sendTrigger}
       />
 
       {/* Input bar */}
@@ -176,27 +179,14 @@ export function AgentTab({
           textareaRef={state.chatTextareaRef}
           sending={state.chatSending}
           agentActive={inputAgentActive}
-          onSend={state.handleSendChat}
+          onSend={handleSend}
           onStop={onInterruptOrStop}
           placeholder="Message the agent…"
           error={state.chatError}
-          className="shrink-0 px-4 pt-0 pb-4"
+          onResize={handleComposeResize}
+          className="shrink-0 px-6 pb-4 bg-canvas"
         />
       )}
-    </div>
-  );
-}
-
-// ============================================================================
-// ApproveBar (fallback when review but no artifact_produced log entry)
-// ============================================================================
-
-function ApproveBar({ onApprove, loading }: { onApprove: () => void; loading: boolean }) {
-  return (
-    <div className="flex items-center gap-2 px-4 py-3 border-t border-border">
-      <Button variant="violet" onClick={onApprove} disabled={loading}>
-        Approve
-      </Button>
     </div>
   );
 }

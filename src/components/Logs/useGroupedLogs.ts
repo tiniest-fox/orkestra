@@ -1,4 +1,5 @@
-// Groups subagent log entries under their parent Agent tool invocations.
+// Groups subagent log entries under their parent Agent tool invocations,
+// and consolidates consecutive same-type tool calls into ToolGroups.
 
 import type { LogEntry, ToolInput } from "../../types/workflow";
 
@@ -9,7 +10,14 @@ export interface SubagentGroup {
   isComplete: boolean;
 }
 
-export type GroupedLogEntry = LogEntry | SubagentGroup;
+/** Two or more consecutive tool_use entries of the same tool type, collapsed for display. */
+export interface ToolGroup {
+  type: "tool_group";
+  tool: string;
+  inputs: ToolInput[];
+}
+
+export type GroupedLogEntry = LogEntry | SubagentGroup | ToolGroup;
 
 interface TaskToolUseEntry {
   type: "tool_use";
@@ -101,5 +109,26 @@ export function groupLogEntries(logs: LogEntry[]): GroupedLogEntry[] {
     result.push(entry);
   }
 
-  return result;
+  // Consolidation pass: collapse consecutive tool_use entries of the same tool type.
+  const consolidated: GroupedLogEntry[] = [];
+  for (const entry of result) {
+    if (entry.type === "tool_use") {
+      const last = consolidated[consolidated.length - 1];
+      if (last?.type === "tool_group" && last.tool === entry.tool) {
+        last.inputs.push(entry.input);
+        continue;
+      }
+      if (last?.type === "tool_use" && last.tool === entry.tool) {
+        consolidated[consolidated.length - 1] = {
+          type: "tool_group",
+          tool: entry.tool,
+          inputs: [last.input, entry.input],
+        };
+        continue;
+      }
+    }
+    consolidated.push(entry);
+  }
+
+  return consolidated;
 }

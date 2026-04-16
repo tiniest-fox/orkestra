@@ -27,7 +27,6 @@ interface DrawerTabContentProps {
   logs: LogEntry[];
   logsError: unknown;
   logContainerRef: RefCallback<HTMLDivElement>;
-  handleLogScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   bodyRef: React.RefObject<HTMLDivElement>;
   state: TaskDrawerState;
   onOpenTask: (id: string) => void;
@@ -46,7 +45,6 @@ export function DrawerTabContent({
   logs,
   logsError,
   logContainerRef,
-  handleLogScroll,
   bodyRef,
   state,
   onOpenTask,
@@ -60,7 +58,6 @@ export function DrawerTabContent({
         logsError={logsError}
         state={state}
         logContainerRef={logContainerRef}
-        handleLogScroll={handleLogScroll}
       />
     );
   }

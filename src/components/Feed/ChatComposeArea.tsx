@@ -3,7 +3,7 @@
 
 import { ArrowUp, Square } from "lucide-react";
 import type React from "react";
-import { memo, useEffect } from "react";
+import { memo, useEffect, useRef } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
 
 interface ChatComposeAreaProps {
@@ -20,6 +20,8 @@ interface ChatComposeAreaProps {
   error?: string | null;
   /** Applied to the outer wrapper — use for padding and background. */
   className?: string;
+  /** Called after the textarea height has been set (auto-resize settled). */
+  onResize?: () => void;
 }
 
 export const ChatComposeArea = memo(function ChatComposeArea({
@@ -33,20 +35,29 @@ export const ChatComposeArea = memo(function ChatComposeArea({
   placeholder = "Send a message…",
   error,
   className = "",
+  onResize,
 }: ChatComposeAreaProps) {
   const isMobile = useIsMobile();
+  const prevHeightRef = useRef(0);
 
   // Auto-resize textarea to fit content, capped at 120px.
+  // Only calls onResize when the height actually changes — not on every keystroke —
+  // so callers can scroll to accommodate the new size without spurious snaps.
   // biome-ignore lint/correctness/useExhaustiveDependencies: value is the resize trigger
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [value]);
+    const newHeight = Math.min(el.scrollHeight, 120);
+    el.style.height = `${newHeight}px`;
+    if (newHeight !== prevHeightRef.current) {
+      prevHeightRef.current = newHeight;
+      onResize?.();
+    }
+  }, [value, onResize]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && e.metaKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (!agentActive && value.trim() && !sending) onSend();
     }
@@ -68,8 +79,8 @@ export const ChatComposeArea = memo(function ChatComposeArea({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={agentActive || sending}
-          placeholder={agentActive ? "Agent is responding…" : placeholder}
+          disabled={sending}
+          placeholder={placeholder}
           rows={1}
           className="flex-1 font-sans text-forge-body bg-surface border border-border rounded-xl px-3.5 py-2.5 outline-none resize-none overflow-hidden text-text-primary placeholder:text-text-quaternary focus:border-text-quaternary transition-colors leading-relaxed disabled:opacity-40 min-h-[42px] max-h-[120px]"
         />
@@ -98,7 +109,7 @@ export const ChatComposeArea = memo(function ChatComposeArea({
             <ArrowUp size={15} />
             {!isMobile && (
               <span className="font-mono text-forge-mono-sm font-semibold">
-                Send<span className="opacity-60 ml-1.5">⌘↵</span>
+                Send<span className="opacity-60 ml-1.5">↵</span>
               </span>
             )}
           </button>

@@ -210,7 +210,7 @@ export function InlineQuestionsCard({
           ))}
         </div>
       </NavigationScope>
-      <div className="flex items-center gap-2.5 px-6 py-3 border-t border-border">
+      <div className="flex items-center gap-2.5 py-3 border-t border-border">
         <Button
           ref={submitRef}
           hotkey="s"

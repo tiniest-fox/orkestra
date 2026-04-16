@@ -403,7 +403,7 @@ fn read_chat_output(
     // Try to detect structured output and complete the stage
     let mut detection_succeeded = false;
     if !accumulated_text.is_empty() {
-        let full_text = accumulated_text.join("");
+        let full_text = accumulated_text.join("\n");
         match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &full_text)
         {
             Ok(DetectionResult::Completed) => {

@@ -1,7 +1,7 @@
 // Collapsible card for displaying an artifact produced during agent execution.
 
 import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useRichCodeBlocks } from "../../hooks/useRichCodeBlocks";
 import type { WorkflowArtifact } from "../../types/workflow";
@@ -21,6 +21,8 @@ interface ArtifactLogCardProps {
   loading?: boolean;
   /** When true, dims the card (superseded by a later artifact). */
   superseded?: boolean;
+  /** When true, renders only the body — the header is a separate Virtua item above. */
+  bodyOnly?: boolean;
 }
 
 export function ArtifactLogCard({
@@ -31,69 +33,97 @@ export function ArtifactLogCard({
   onApprove,
   loading,
   superseded,
+  bodyOnly,
 }: ArtifactLogCardProps) {
   // Default expanded when latest artifact needs review; collapsed for feed/superseded.
-  const [expanded, setExpanded] = useState(() => !!(onApprove && needsReview));
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const [showFull, setShowFull] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(() => bodyOnly || !!(onApprove && needsReview));
   const htmlRef = useRef<HTMLDivElement>(null);
   useRichCodeBlocks(htmlRef, expanded ? (artifact.html ?? "") : "");
-
-  useEffect(() => {
-    if (expanded && contentRef.current) {
-      setIsOverflowing(contentRef.current.scrollHeight > contentRef.current.clientHeight);
-    }
-  }, [expanded]);
 
   const toggle = () => setExpanded((v) => !v);
 
   const isActionable = onApprove !== undefined;
 
-  return (
-    <div
-      className={`bg-surface rounded-lg border border-border my-1 ${superseded ? "opacity-50" : ""}`}
-    >
-      {isActionable ? (
-        // Enhanced header for latest artifact — div+role because it contains inner <Button> elements.
-        // biome-ignore lint/a11y/useSemanticElements: contains inner <Button> — nested <button> inside <button> is invalid HTML
+  const bodyContent = (
+    <>
+      {artifact.html ? (
         <div
-          role="button"
-          tabIndex={0}
-          className="flex items-center justify-between px-3 py-2 cursor-pointer select-none hover:bg-surface-2 rounded-lg"
-          onClick={toggle}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") toggle();
-          }}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <ArtifactBadge
-              artifactName={artifact.name}
-              verdict={verdict}
-              rejectionTarget={rejectionTarget}
-            />
-            <span className="text-forge-mono-label text-text-tertiary truncate">
-              Iteration {artifact.iteration} · {formatTimestamp(artifact.created_at)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0 ml-2">
-            {needsReview && (
-              <Button
-                variant="violet"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onApprove();
-                }}
-                disabled={loading}
-              >
-                Approve
-              </Button>
-            )}
-            {expanded ? (
-              <ChevronUp className="w-4 h-4 text-text-tertiary" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-text-tertiary" />
-            )}
+          ref={htmlRef}
+          className={`text-forge-body ${PROSE_CLASSES}`}
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: HTML is pre-rendered by the backend from trusted markdown
+          dangerouslySetInnerHTML={{ __html: artifact.html }}
+        />
+      ) : artifact.content ? (
+        <div className={`text-forge-body ${PROSE_CLASSES}`}>
+          <ReactMarkdown
+            remarkPlugins={richContentPlugins}
+            components={richContentComponents}
+          >
+            {artifact.content}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        <p className="text-forge-body text-text-quaternary italic">No content</p>
+      )}
+    </>
+  );
+
+  // Body-only: the sticky header is a separate Virtua item rendered above this one.
+  if (bodyOnly) {
+    return (
+      <div className="border-l border-r border-b border-border rounded-b-lg bg-surface px-3 pt-2 pb-3">
+        {bodyContent}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`my-1 ${superseded ? "opacity-50" : ""}`}>
+      {isActionable ? (
+        // Enhanced header for latest artifact — sticky wrapper with a canvas-colored cap to block
+        // content scrolling through the gap above the header.
+        <div className="sticky -top-4 z-10">
+          {/* Opaque cap that covers the gap zone — matches scroll container bg. */}
+          <div className="h-6 bg-canvas" aria-hidden="true" />
+          {/* biome-ignore lint/a11y/useSemanticElements: contains inner <Button> — nested <button> inside <button> is invalid HTML */}
+          <div
+            role="button"
+            tabIndex={0}
+            className={`-mt-2 flex items-center justify-between px-3 py-2 cursor-pointer select-none hover:bg-surface-2 bg-surface border border-border ${expanded ? "rounded-t-lg" : "rounded-lg"}`}
+            onClick={toggle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") toggle();
+            }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <ArtifactBadge
+                artifactName={artifact.name}
+                verdict={verdict}
+                rejectionTarget={rejectionTarget}
+              />
+              <span className="text-forge-mono-label text-text-tertiary truncate">
+                Iteration {artifact.iteration} · {formatTimestamp(artifact.created_at)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-2">
+              {needsReview && (
+                <Button
+                  variant="violet"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onApprove();
+                  }}
+                  disabled={loading}
+                >
+                  Approve
+                </Button>
+              )}
+              {expanded ? (
+                <ChevronUp className="w-4 h-4 text-text-tertiary" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-text-tertiary" />
+              )}
+            </div>
           </div>
         </div>
       ) : (
@@ -113,52 +143,8 @@ export function ArtifactLogCard({
         </button>
       )}
       {expanded && (
-        <div className="px-3 pb-3">
-          <div ref={contentRef} className={showFull ? "" : "max-h-96 overflow-hidden"}>
-            {artifact.html ? (
-              <div
-                ref={htmlRef}
-                className={`text-forge-body ${PROSE_CLASSES}`}
-                // biome-ignore lint/security/noDangerouslySetInnerHtml: HTML is pre-rendered by the backend from trusted markdown
-                dangerouslySetInnerHTML={{ __html: artifact.html }}
-              />
-            ) : artifact.content ? (
-              <div className={`text-forge-body ${PROSE_CLASSES}`}>
-                <ReactMarkdown
-                  remarkPlugins={richContentPlugins}
-                  components={richContentComponents}
-                >
-                  {artifact.content}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <p className="text-forge-body text-text-quaternary italic">No content</p>
-            )}
-          </div>
-          {isOverflowing && !showFull && (
-            <button
-              type="button"
-              className="text-forge-mono-sm text-accent mt-2 hover:underline"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowFull(true);
-              }}
-            >
-              Show more
-            </button>
-          )}
-          {showFull && isOverflowing && (
-            <button
-              type="button"
-              className="text-forge-mono-sm text-accent mt-2 hover:underline"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowFull(false);
-              }}
-            >
-              Show less
-            </button>
-          )}
+        <div className="relative z-0 border-l border-r border-b border-border rounded-b-lg bg-surface px-3 pt-2 pb-3">
+          {bodyContent}
         </div>
       )}
     </div>

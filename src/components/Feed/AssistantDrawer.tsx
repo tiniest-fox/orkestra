@@ -2,7 +2,6 @@
 
 import { History, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast } from "../../providers/ToastProvider";
@@ -45,8 +44,16 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
   const [sending, setSending] = useState(false);
   const [answers, setAnswers] = useState<string[]>([]);
 
-  const { containerRef: messageListRef, handleScroll } = useAutoScroll<HTMLDivElement>(true);
+  const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleComposeResize = useCallback(() => {
+    const el = messageListRef.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, []);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
   const isAgentRunning = activeSession?.agent_pid != null;
@@ -299,7 +306,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
   const lastAgentExtra = useMemo(
     () =>
       questions.length > 0 ? (
-        <div className="mt-4 pt-4 border-t border-border -mx-6 px-0">
+        <div className="mt-4 pt-4 border-t border-border -mx-6 px-6">
           {questions.map((q, qi) => (
             <QuestionCard
               // biome-ignore lint/suspicious/noArrayIndexKey: questions lack stable IDs
@@ -312,7 +319,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
               keyboardFlatIdx={-1}
             />
           ))}
-          <div className="px-6 pb-2 flex items-center gap-3">
+          <div className="pb-2 flex items-center gap-3">
             <button
               type="button"
               onClick={handleSendAnswers}
@@ -344,7 +351,6 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
             isAgentRunning={isAgentRunning}
             agentLabel="Assistant"
             containerRef={messageListRef}
-            onScroll={handleScroll}
             emptyText="Start a conversation with the assistant."
             lastAgentExtra={lastAgentExtra}
           />
@@ -359,7 +365,8 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
             onSend={handleSend}
             onStop={handleStop}
             placeholder="Ask the assistant…"
-            className="shrink-0 px-4 pt-2 pb-4 bg-canvas"
+            onResize={handleComposeResize}
+            className="shrink-0 px-6 pb-4 bg-canvas"
           />
 
           {/* Session List Overlay — slides in from right (project mode only) */}

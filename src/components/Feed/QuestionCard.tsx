@@ -64,7 +64,7 @@ export const QuestionCard = memo(function QuestionCard({
   }
 
   return (
-    <div ref={cardRef} className="px-6 py-5">
+    <div ref={cardRef} className="py-5">
       {/* Question header */}
       <div className="flex items-start gap-3 mb-3">
         <span

@@ -1,7 +1,7 @@
 // Shared conversation-style message list for AssistantDrawer, InteractiveDrawer, and Logs tab.
 
 import DOMPurify from "dompurify";
-import { memo, useCallback, useMemo, useRef } from "react";
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeStringify from "rehype-stringify";
 import remarkBreaks from "remark-breaks";
@@ -10,6 +10,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { Virtualizer } from "virtua";
+import type { CustomItemComponentProps, VirtualizerHandle } from "virtua";
 import type {
   LogEntry,
   ResumeType,
@@ -19,13 +20,17 @@ import type {
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
-import { toolSummary } from "../../utils/toolSummary";
+import { compactGroupSummary, toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { groupLogEntries } from "../Logs/useGroupedLogs";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ArtifactLogCard } from "./ArtifactLogCard";
 import { ResourceItem } from "./Drawer/Sections/ResourceItem";
 import { ErrorLine, ToolLine } from "./FeedEntryComponents";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { ArtifactBadge } from "./OutcomeBadge";
+import { Button } from "../ui/Button";
+import { formatTimestamp } from "../../utils";
 
 // ============================================================================
 // Markdown HTML cache
@@ -150,7 +155,6 @@ export interface ArtifactContext {
 
 type VirtualItem =
   | { kind: "user-block"; msg: UserMessage; label: string; isHuman: boolean; isBlockEnd: boolean }
-  | { kind: "agent-header"; label: string }
   | {
       kind: "agent-entry";
       entry: GroupedLogEntry;
@@ -161,6 +165,11 @@ type VirtualItem =
       taskResources?: Record<string, WorkflowResource>;
       isBlockEnd: boolean;
     }
+  // The latest actionable artifact is split into two items so the sticky header lives in its
+  // own Virtua entry, separate from the body. This lets sticky top-0 on the header apply
+  // within Virtua's container rather than being constrained by a shared parent div.
+  | { kind: "artifact-header"; artifact: WorkflowArtifact; artifactContext: ArtifactContext }
+  | { kind: "artifact-body"; artifact: WorkflowArtifact; taskResources?: Record<string, WorkflowResource>; isBlockEnd: boolean }
   | { kind: "extra"; content: React.ReactNode }
   | { kind: "spinner" };
 
@@ -193,14 +202,34 @@ export function buildVirtualItems(
       const label = classification ? classification.label : opts.userLabel;
       items.push({ kind: "user-block", msg, label, isHuman, isBlockEnd: true });
     } else {
-      // Agent message: header + individual entries
-      items.push({ kind: "agent-header", label: opts.agentLabel });
+      // Agent message: individual entries
       const grouped = groupLogEntries(msg.entries);
       for (let j = 0; j < grouped.length; j++) {
         const isLast = j === grouped.length - 1;
+        const entry = grouped[j];
+
+        // Split the latest actionable artifact into two items so the sticky header
+        // is independent of the body in Virtua's item list.
+        const artifactContext = opts.artifactContext;
+        if (
+          entry.type === "artifact_produced" &&
+          opts.latestArtifactId !== undefined &&
+          entry.artifact_id === opts.latestArtifactId &&
+          artifactContext != null &&
+          !artifactContext.questionsElement
+        ) {
+          const artifact = opts.artifacts?.[entry.name];
+          if (artifact) {
+            items.push({ kind: "artifact-header", artifact, artifactContext });
+            items.push({ kind: "artifact-body", artifact, taskResources: opts.taskResources, isBlockEnd: isLast });
+            lastAgentBlockEndIndex = items.length - 1;
+            continue;
+          }
+        }
+
         items.push({
           kind: "agent-entry",
-          entry: grouped[j],
+          entry,
           projectRoot: opts.projectRoot,
           artifacts: opts.artifacts,
           artifactContext: opts.artifactContext,
@@ -210,15 +239,6 @@ export function buildVirtualItems(
         });
       }
       lastAgentBlockEndIndex = items.length - 1;
-    }
-  }
-
-  // Suppress border on the final block (matches old last:border-b-0 behavior)
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i];
-    if ((item.kind === "user-block" || item.kind === "agent-entry") && item.isBlockEnd) {
-      items[i] = { ...item, isBlockEnd: false };
-      break;
     }
   }
 
@@ -326,6 +346,38 @@ export const AgentEntry = memo(function AgentEntry({
         />
       );
 
+    case "tool_group": {
+      const summaries = entry.inputs.map((input) => toolSummary(input, projectRoot));
+      // Bash: stacked lines, label visible only on first (invisible placeholder keeps alignment)
+      if (entry.inputs[0]?.tool === "bash") {
+        return (
+          <div className="py-1">
+            {summaries.map((s, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+              <div key={i} className="flex items-baseline gap-2">
+                <span
+                  className={`font-mono text-forge-mono-sm font-medium shrink-0 text-text-tertiary ${i > 0 ? "invisible" : ""}`}
+                >
+                  {entry.tool}
+                </span>
+                <span className="font-mono text-forge-mono-sm text-text-quaternary truncate min-w-0">
+                  {s}
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+      // Other tools: compact single line with common-prefix compression
+      return (
+        <ToolLine
+          label={entry.tool}
+          summary={compactGroupSummary(summaries)}
+          variant="tool"
+        />
+      );
+    }
+
     case "error":
       return <ErrorLine message={entry.message} />;
 
@@ -392,45 +444,51 @@ export const AgentEntry = memo(function AgentEntry({
 const VirtualItemRenderer = memo(function VirtualItemRenderer({
   item,
   contentFilter,
+  initialLabel,
+  onArtifactHeaderClick,
+  artifactBodyCollapsed,
+  onToggleArtifactBody,
 }: {
   item: VirtualItem;
   contentFilter?: (content: string) => string;
+  initialLabel?: string;
+  onArtifactHeaderClick?: () => void;
+  artifactBodyCollapsed?: boolean;
+  onToggleArtifactBody?: () => void;
 }) {
   switch (item.kind) {
     case "user-block": {
-      const borderClass = item.isHuman
-        ? "border-l-2 border-l-accent bg-surface"
-        : "border-l-2 border-l-border bg-canvas";
-      return (
-        <div
-          className={`${borderClass} px-6 py-3.5 pl-[22px] ${item.isBlockEnd ? "border-b border-border" : ""}`}
-        >
-          <div
-            className={`font-mono text-forge-mono-label font-medium uppercase tracking-wider mb-1.5 ${item.isHuman ? "text-accent" : "text-text-tertiary"}`}
-          >
-            {item.label}
+      const content = contentFilter ? contentFilter(item.msg.content) : item.msg.content;
+      if (item.isHuman) {
+        return (
+          <div className="flex justify-end px-6 py-1">
+            <div className="max-w-[90%] bg-surface-3 rounded-xl rounded-tr-none px-4 py-2.5">
+              <div className={`text-forge-body text-text-primary ${PROSE_CLASSES}`}>
+                <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
+                  {content}
+                </ReactMarkdown>
+              </div>
+            </div>
           </div>
-          <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
-            <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
-              {contentFilter ? contentFilter(item.msg.content) : item.msg.content}
-            </ReactMarkdown>
+        );
+      }
+      return (
+        <div className="flex justify-end px-6 py-2">
+          <div className="max-w-[90%] bg-accent-soft rounded-xl rounded-tr-none px-5 py-4">
+            <div className="font-mono text-forge-mono-sm text-text-secondary">
+              {item.msg.resumeType === "initial" ? (
+                initialLabel ?? "Starting…"
+              ) : (
+                content
+              )}
+            </div>
           </div>
         </div>
       );
     }
-    case "agent-header":
-      return (
-        <div className="bg-canvas px-6 pt-3.5">
-          <div className="font-mono text-forge-mono-label font-medium uppercase tracking-wider mb-1.5 text-text-tertiary">
-            {item.label}
-          </div>
-        </div>
-      );
     case "agent-entry":
       return (
-        <div
-          className={`bg-canvas px-6 text-text-secondary ${item.isBlockEnd ? "pb-3.5 border-b border-border" : ""}`}
-        >
+        <div className={`bg-canvas px-6 text-text-secondary ${item.isBlockEnd ? "pb-2" : ""}`}>
           <AgentEntry
             entry={item.entry}
             projectRoot={item.projectRoot}
@@ -441,6 +499,84 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
           />
         </div>
       );
+    case "artifact-header": {
+      const { actions } = item.artifactContext;
+      return (
+        // Sticky positioning is applied by Virtua's item wrapper (see stickyItemComponent below).
+        <div className="bg-canvas px-6">
+          {/* Opaque cap — masks content scrolling through the gap above the sticky header. */}
+          <div className="h-6 bg-canvas" aria-hidden="true" />
+          {/* biome-ignore lint/a11y/useSemanticElements: contains inner <Button> */}
+          <div
+            role="button"
+            tabIndex={0}
+            className="flex items-center justify-between px-3 py-2 bg-surface border border-border rounded-t-lg cursor-pointer hover:bg-surface-2 has-[button:hover]:bg-surface"
+            onClick={onArtifactHeaderClick}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onArtifactHeaderClick?.();
+            }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <ArtifactBadge
+                artifactName={item.artifact.name}
+                verdict={actions?.verdict}
+                rejectionTarget={actions?.rejectionTarget}
+              />
+              <span className="text-forge-mono-label text-text-tertiary truncate">
+                Iteration {item.artifact.iteration} · {formatTimestamp(item.artifact.created_at)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0 ml-2">
+              {actions?.needsReview && (
+                <Button
+                  variant="violet"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.onApprove?.();
+                  }}
+                  disabled={actions.loading}
+                >
+                  Approve
+                </Button>
+              )}
+              <button
+                type="button"
+                className="p-1 rounded text-text-tertiary hover:text-text-secondary hover:bg-surface-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleArtifactBody?.();
+                }}
+              >
+                {artifactBodyCollapsed ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronUp className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    case "artifact-body": {
+      const stageResources = item.taskResources
+        ? Object.values(item.taskResources)
+            .filter((r) => r.stage === item.artifact.stage)
+            .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        : [];
+      return (
+        <div className={`px-6 ${item.isBlockEnd ? "pb-2" : ""}`}>
+          <ArtifactLogCard artifact={item.artifact} bodyOnly />
+          {stageResources.length > 0 && (
+            <div className="border-t border-border p-4 flex flex-col gap-3">
+              {stageResources.map((r) => (
+                <ResourceItem key={r.name} resource={r} />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
     case "extra":
       return <div className="bg-canvas px-6 pb-3.5">{item.content}</div>;
     case "spinner":
@@ -482,9 +618,19 @@ export interface MessageListProps {
   lastAgentExtra?: React.ReactNode;
   /** Text shown when there are no messages and the agent is not running. */
   emptyText?: string;
-  /** When provided, MessageList is the scroll container (adds flex-1 overflow-y-auto). */
+  /** Text shown in the condensed bubble for the initial (resumeType="initial") message. Defaults to "Starting…". */
+  initialLabel?: string;
+  /**
+   * When provided, MessageList becomes the scroll container (flex-1 overflow-y-auto) and
+   * enables auto-scroll-to-bottom on new items. Pass a ref to allow external code (hotkeys)
+   * to scroll the container. HistoricalRunView omits this to opt out of auto-scroll.
+   */
   containerRef?: React.Ref<HTMLDivElement>;
-  onScroll?: React.UIEventHandler<HTMLDivElement>;
+  /**
+   * Increment to force an immediate scroll-to-bottom and re-enable auto-scroll.
+   * Use when the user submits a message so the feed jumps to the latest activity.
+   */
+  scrollToBottomTrigger?: number;
 }
 
 export function MessageList({
@@ -501,10 +647,54 @@ export function MessageList({
   taskResources,
   lastAgentExtra,
   emptyText = "No messages yet.",
+  initialLabel,
   containerRef,
-  onScroll,
+  scrollToBottomTrigger,
 }: MessageListProps) {
-  const useVirtualization = containerRef != null;
+  const isScrollContainer = containerRef != null;
+
+  const [artifactBodyCollapsed, setArtifactBodyCollapsed] = useState(false);
+  const handleToggleArtifactBody = useCallback(() => setArtifactBodyCollapsed((v) => !v), []);
+
+  // Custom Virtua item wrapper that makes the artifact-header item sticky once the user has
+  // scrolled past it. Both refs are written during render so the stable component always
+  // reads current values without needing to be recreated.
+  const artifactHeaderIndexRef = useRef(-1);
+  const stickyActiveRef = useRef(false);
+  const stickyItemComponent = useMemo(
+    () =>
+      forwardRef<HTMLDivElement, CustomItemComponentProps>(function StickyAwareItem(
+        { style, index, children },
+        ref,
+      ) {
+        const isSticky = stickyActiveRef.current && index === artifactHeaderIndexRef.current;
+        // top: -24 hides the 24px (h-6) canvas cap above the fold so the header card lands flush at y=0.
+        return (
+          <div
+            ref={ref}
+            style={isSticky ? { ...style, position: "sticky", top: -24, zIndex: 10 } : style}
+          >
+            {children}
+          </div>
+        );
+      }),
+    [],
+  );
+  // Track whether the user has scrolled past the artifact header's natural position.
+  const virtualizerRef = useRef<VirtualizerHandle>(null);
+  const [stickyActive, setStickyActive] = useState(false);
+  stickyActiveRef.current = stickyActive;
+
+  // Index of the artifact-body item — set during render so the click handler always reads current.
+  const artifactBodyIndexRef = useRef(-1);
+
+  // Scroll to the artifact body when the sticky header is clicked.
+  const handleArtifactHeaderClick = useCallback(() => {
+    const idx = artifactBodyIndexRef.current;
+    if (idx !== -1 && virtualizerRef.current) {
+      virtualizerRef.current.scrollToIndex(idx, { align: "start" });
+    }
+  }, []);
 
   // Flatten messages into virtual items (memoized)
   const virtualItems = useMemo(
@@ -536,13 +726,28 @@ export function MessageList({
     ],
   );
 
-  // Object ref for Virtualizer's scrollRef prop
-  const scrollObjectRef = useRef<HTMLDivElement | null>(null);
+  // Filter out artifact-body when collapsed.
+  const displayVirtualItems = useMemo(
+    () => artifactBodyCollapsed ? virtualItems.filter((v) => v.kind !== "artifact-body") : virtualItems,
+    [virtualItems, artifactBodyCollapsed],
+  );
 
-  // Merge callback ref (from useAutoScroll) with object ref (for Virtualizer)
-  const mergedRef = useCallback(
+  // -- Auto-scroll state (only relevant when isScrollContainer) --
+  const internalContainerRef = useRef<HTMLDivElement | null>(null);
+  // True when the user has scrolled up away from the bottom — disables auto-scroll.
+  const isUserScrolledUpRef = useRef(false);
+  // Tracks last scrollTop to detect direction (decrease = user scrolled up).
+  const lastScrollTopRef = useRef(0);
+
+  // Merge our internal ref with the external containerRef (for hotkey scroll control).
+  const mergedContainerRef = useCallback(
     (node: HTMLDivElement | null) => {
-      scrollObjectRef.current = node;
+      internalContainerRef.current = node;
+      // Re-enable auto-scroll whenever a new container mounts (tab switch, drawer open).
+      if (node) {
+        isUserScrolledUpRef.current = false;
+        lastScrollTopRef.current = 0;
+      }
       if (typeof containerRef === "function") {
         containerRef(node);
       } else if (containerRef && typeof containerRef === "object") {
@@ -552,38 +757,172 @@ export function MessageList({
     [containerRef],
   );
 
-  if (useVirtualization) {
+  // Direction-based scroll detection:
+  // - scrollTop decreased → user scrolled up → disable auto-scroll
+  // - within 5px of bottom → re-enable auto-scroll
+  const handleScrollInternal = useCallback(() => {
+    const el = internalContainerRef.current;
+    if (!el) return;
+    const currentScrollTop = el.scrollTop;
+    const distFromBottom = el.scrollHeight - currentScrollTop - el.clientHeight;
+    if (distFromBottom <= 5) {
+      isUserScrolledUpRef.current = false;
+    } else if (currentScrollTop < lastScrollTopRef.current) {
+      isUserScrolledUpRef.current = true;
+    }
+    lastScrollTopRef.current = currentScrollTop;
+  }, []);
+
+  // Activate sticky once the user has scrolled past the artifact header's natural position.
+  const handleVirtuaScroll = useCallback((offset: number) => {
+    handleScrollInternal();
+    const idx = artifactHeaderIndexRef.current;
+    if (idx === -1 || !virtualizerRef.current) return;
+    const headerOffset = virtualizerRef.current.getItemOffset(idx);
+    // Activate sticky when the header card (24px below item top due to cap) reaches y=0,
+    // so the transition is seamless with no positional jump.
+    setStickyActive(offset >= headerOffset + 24);
+  }, [handleScrollInternal]);
+
+  // When the user submits a message, jump to the bottom and re-enable auto-scroll.
+  useEffect(() => {
+    if (!scrollToBottomTrigger) return;
+    isUserScrolledUpRef.current = false;
+    const el = internalContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [scrollToBottomTrigger]);
+
+  // RAF retry loop: set scrollTop = scrollHeight on each frame until scrollHeight stabilizes.
+  //
+  // Why retries are needed: Virtua measures item heights asynchronously via ResizeObserver.
+  // On first render, all item heights are estimated (often 0). scrollHeight starts small, so
+  // a single scroll lands at the wrong offset. As ResizeObserver fires between frames,
+  // scrollHeight grows. We keep scrolling to the new bottom on each frame until scrollHeight
+  // stops growing — that's when Virtua has finished measuring and we're truly at the bottom.
+  //
+  // Note: `el.scrollTop = el.scrollHeight` is always clamped to `scrollHeight - clientHeight`
+  // by the browser, so distFromBottom is always 0 after the assignment. We cannot use
+  // distFromBottom as the retry condition — we use scrollHeight growth instead.
+  useEffect(() => {
+    if (!isScrollContainer || virtualItems.length === 0 || isUserScrolledUpRef.current) return;
+    let rafId: number;
+
+    const artifactHeaderIdx = artifactHeaderIndexRef.current;
+    // Only scroll to the artifact header when it's the last meaningful content — if there
+    // are agent entries or user messages after it, scroll to the bottom instead.
+    const artifactIsTerminal =
+      artifactHeaderIdx !== -1 &&
+      displayVirtualItems
+        .slice(artifactHeaderIdx + 1)
+        .every((v) => v.kind === "artifact-body" || v.kind === "spinner" || v.kind === "extra");
+    if (artifactIsTerminal) {
+      // Latest item is an artifact — scroll to its header so the user sees the top,
+      // not the bottom of a potentially long artifact body.
+      //
+      // Use getItemOffset + scrollTop (same as the sticky activation logic) rather than
+      // scrollToIndex — scrollToIndex is unreliable before Virtua has measured items and
+      // may be a no-op on early frames.
+      let retries = 0;
+      let prevOffset = -1;
+      let gracesRemaining = 8;
+      const step = () => {
+        const el = internalContainerRef.current;
+        if (!el || retries >= 60 || isUserScrolledUpRef.current) return;
+        retries++;
+        const offset = virtualizerRef.current?.getItemOffset(artifactHeaderIdx) ?? -1;
+        if (offset !== -1) el.scrollTop = offset;
+        if (offset !== prevOffset) {
+          prevOffset = offset;
+          gracesRemaining = 8;
+          rafId = requestAnimationFrame(step);
+        } else if (gracesRemaining-- > 0) {
+          rafId = requestAnimationFrame(step);
+        }
+      };
+      rafId = requestAnimationFrame(step);
+      return () => cancelAnimationFrame(rafId);
+    }
+
+    // No artifact — scroll to bottom and chase Virtua's async measurements.
+    let retries = 0;
+    let prevScrollHeight = 0;
+    // Frames to keep retrying after scrollHeight appears stable. Virtua measures item
+    // heights in batches via ResizeObserver — there can be multiple frames between batches
+    // (e.g. the superseded artifact card is measured, then items below it a few frames
+    // later). Without this grace period the loop exits between batches and the final
+    // scroll lands partway through the list instead of at the true bottom.
+    let gracesRemaining = 8;
+    const step = () => {
+      const el = internalContainerRef.current;
+      if (!el || retries >= 60 || isUserScrolledUpRef.current) return;
+      retries++;
+      el.scrollTop = el.scrollHeight;
+      if (el.scrollHeight > prevScrollHeight) {
+        prevScrollHeight = el.scrollHeight;
+        gracesRemaining = 8;
+        rafId = requestAnimationFrame(step);
+      } else if (gracesRemaining > 0) {
+        gracesRemaining--;
+        rafId = requestAnimationFrame(step);
+      }
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [virtualItems.length, isScrollContainer]);
+
+  const emptyState = (
+    <div className="flex items-center justify-center h-full">
+      <p className="font-mono text-forge-mono-sm text-text-quaternary">{emptyText}</p>
+    </div>
+  );
+
+  if (isScrollContainer) {
     return (
-      <div ref={mergedRef} onScroll={onScroll} className="flex-1 overflow-y-auto bg-canvas">
+      <div
+        ref={mergedContainerRef}
+        onScroll={handleScrollInternal}
+        className="flex-1 overflow-y-auto bg-canvas pt-4 pb-4"
+      >
         {virtualItems.length === 0 && !isAgentRunning ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="font-mono text-forge-mono-sm text-text-quaternary">{emptyText}</p>
-          </div>
+          emptyState
         ) : (
-          <Virtualizer scrollRef={scrollObjectRef} bufferSize={800}>
-            {virtualItems.map((item, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: append-only list, no reordering
-              <VirtualItemRenderer key={i} item={item} contentFilter={contentFilter} />
-            ))}
-          </Virtualizer>
+          (() => {
+            const artifactHeaderIndex = displayVirtualItems.findIndex(
+              (v) => v.kind === "artifact-header",
+            );
+            artifactHeaderIndexRef.current = artifactHeaderIndex;
+            artifactBodyIndexRef.current =
+              artifactHeaderIndex !== -1 ? artifactHeaderIndex + 1 : -1;
+            return (
+              <Virtualizer
+                ref={virtualizerRef}
+                scrollRef={internalContainerRef}
+                bufferSize={800}
+                item={artifactHeaderIndex !== -1 ? stickyItemComponent : undefined}
+                keepMounted={stickyActive && artifactHeaderIndex !== -1 ? [artifactHeaderIndex] : undefined}
+                onScroll={artifactHeaderIndex !== -1 ? handleVirtuaScroll : undefined}
+              >
+                {displayVirtualItems.map((item, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: append-only list, no reordering
+                  <VirtualItemRenderer key={i} item={item} contentFilter={contentFilter} initialLabel={initialLabel} onArtifactHeaderClick={handleArtifactHeaderClick} artifactBodyCollapsed={artifactBodyCollapsed} onToggleArtifactBody={handleToggleArtifactBody} />
+                ))}
+              </Virtualizer>
+            );
+          })()
         )}
       </div>
     );
   }
 
-  // Non-virtualized fallback (HistoricalRunView — no containerRef)
+  // Non-scroll-container path (HistoricalRunView) — no auto-scroll, no Virtua.
   return (
     <div className="bg-canvas">
-      {virtualItems.length === 0 && !isAgentRunning ? (
-        <div className="flex items-center justify-center h-full">
-          <p className="font-mono text-forge-mono-sm text-text-quaternary">{emptyText}</p>
-        </div>
-      ) : (
-        virtualItems.map((item, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
-          <VirtualItemRenderer key={i} item={item} contentFilter={contentFilter} />
-        ))
-      )}
+      {virtualItems.length === 0 && !isAgentRunning
+        ? emptyState
+        : virtualItems.map((item, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
+            <VirtualItemRenderer key={i} item={item} contentFilter={contentFilter} initialLabel={initialLabel} />
+          ))}
     </div>
   );
 }

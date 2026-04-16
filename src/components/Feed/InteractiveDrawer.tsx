@@ -5,7 +5,6 @@
 
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast, useWorkflowConfig } from "../../providers";
@@ -141,9 +140,17 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { containerRef: messageListRef, handleScroll } = useAutoScroll<HTMLDivElement>(true);
+  const messageListRef = useRef<HTMLDivElement>(null);
 
   const isAgentRunning = session?.agent_pid != null;
+
+  const handleComposeResize = useCallback(() => {
+    const el = messageListRef.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, []);
 
   // -- Fetch interactive session on mount --
   useEffect(() => {
@@ -280,7 +287,6 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
             isAgentRunning={isAgentRunning}
             agentLabel="Agent"
             containerRef={messageListRef}
-            onScroll={handleScroll}
             emptyText="Send a message to start the interactive session."
             contentFilter={stripParameterBlocks}
           />
@@ -295,7 +301,8 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
             onStop={handleStop}
             placeholder="Direct the agent…"
             error={error}
-            className="shrink-0 px-4 pt-2 pb-4 bg-canvas"
+            onResize={handleComposeResize}
+            className="shrink-0 px-6 pb-4 bg-canvas"
           />
         </>
       )}

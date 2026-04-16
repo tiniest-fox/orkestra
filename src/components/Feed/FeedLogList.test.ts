@@ -6,7 +6,6 @@ import type { UserMessage } from "./MessageList";
 
 describe("classifyUser", () => {
   const humanTypes = [
-    "initial",
     "feedback",
     "answers",
     "manual_resume",
@@ -14,6 +13,7 @@ describe("classifyUser", () => {
     "return_to_work",
   ] as const;
   const systemTypes = [
+    "initial",
     "continue",
     "recheck",
     "retry_failed",

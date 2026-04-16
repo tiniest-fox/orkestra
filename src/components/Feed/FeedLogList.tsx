@@ -16,13 +16,13 @@ export function classifyUser(msg: UserMessage): UserClassification {
   if (!resumeType) return { label: "System", isHuman: false };
 
   switch (resumeType) {
-    case "initial":
     case "feedback":
     case "answers":
     case "manual_resume":
     case "chat":
     case "return_to_work":
       return { label: "You", isHuman: true };
+    case "initial":
     case "continue":
     case "recheck":
     case "retry_failed":
@@ -48,7 +48,10 @@ interface FeedLogListProps {
   taskResources?: Record<string, WorkflowResource>;
   lastAgentExtra?: React.ReactNode;
   containerRef?: React.Ref<HTMLDivElement>;
-  onScroll?: React.UIEventHandler<HTMLDivElement>;
+  /** Text shown in the condensed starting bubble. Defaults to "Starting…". */
+  initialLabel?: string;
+  /** Increment to force scroll-to-bottom and re-enable auto-scroll (e.g. on message send). */
+  scrollToBottomTrigger?: number;
 }
 
 export function FeedLogList({
@@ -61,7 +64,8 @@ export function FeedLogList({
   taskResources,
   lastAgentExtra,
   containerRef,
-  onScroll,
+  initialLabel,
+  scrollToBottomTrigger,
 }: FeedLogListProps) {
   const messages = useMemo(() => buildDisplayMessages(logs), [logs]);
   const projectInfo = useProjectInfo();
@@ -88,7 +92,8 @@ export function FeedLogList({
       taskResources={taskResources}
       lastAgentExtra={lastAgentExtra}
       containerRef={containerRef}
-      onScroll={onScroll}
+      initialLabel={initialLabel}
+      scrollToBottomTrigger={scrollToBottomTrigger}
     />
   );
 }

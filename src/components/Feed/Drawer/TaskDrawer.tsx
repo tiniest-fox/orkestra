@@ -2,7 +2,6 @@
 //! Replaces FocusDrawer, ReviewDrawer, AnswerDrawer, ShipDrawer, and ChildrenDrawer.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAutoScroll } from "../../../hooks/useAutoScroll";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { useLogs } from "../../../hooks/useLogs";
 import { useProjectInfo } from "../../../hooks/useProjectInfo";
@@ -93,15 +92,11 @@ function TaskDrawerBody({
   const isChatting = task.derived.is_chatting;
   const { logs, error: logsError } = useLogs(task, showLogs, undefined, isChatting);
   const logScrollRef = useRef<HTMLDivElement>(null);
-  const { containerRef: logAutoScrollRef, handleScroll: handleLogScroll } =
-    useAutoScroll<HTMLDivElement>(showLogs);
-  const logContainerRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      (logScrollRef as { current: HTMLDivElement | null }).current = node;
-      logAutoScrollRef(node);
-    },
-    [logAutoScrollRef],
-  );
+  // logContainerRef wires the scroll container to logScrollRef for hotkey scrolling.
+  // Auto-scroll is handled inside MessageList — no useAutoScroll needed here.
+  const logContainerRef = useCallback((node: HTMLDivElement | null) => {
+    (logScrollRef as { current: HTMLDivElement | null }).current = node;
+  }, []);
 
   // -- Scroll ref for non-log tabs --
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -181,7 +176,6 @@ function TaskDrawerBody({
             logs={logs}
             logsError={logsError}
             logContainerRef={logContainerRef}
-            handleLogScroll={handleLogScroll}
             bodyRef={bodyRef}
             state={state}
             onOpenTask={onOpenTask}

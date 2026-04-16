@@ -81,8 +81,20 @@ export function NavigationScope({
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
+  // When scrollSeq is provided, initialize prevScrollSeqRef to the starting value so
+  // the initial mount fire is a no-op. Only fires when scrollSeq actually increments
+  // (keyboard navigation). This prevents spurious scrolls when the component mounts
+  // or remounts (e.g. Virtua virtualization unmounting/remounting InlineQuestionsCard
+  // as the user scrolls past it — each remount would otherwise trigger a scroll to the
+  // question element even though the user is scrolling away from it).
+  const prevScrollSeqRef = useRef<number | undefined>(scrollSeq);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: scrollSeq ?? activeId is intentional composite trigger
   useEffect(() => {
+    if (scrollSeq !== undefined) {
+      if (prevScrollSeqRef.current === scrollSeq) return;
+      prevScrollSeqRef.current = scrollSeq;
+    }
     const id = activeIdRef.current;
     if (!id) return;
     const container = containerRef.current;

@@ -27,7 +27,7 @@ pub enum DetectionResult {
 ///
 /// Returns `Ok(DetectionResult::Completed)` if valid stage output was detected and the stage was completed.
 /// Returns `Ok(DetectionResult::NotDetected)` if no valid output was detected (caller continues normal flow).
-/// Returns `Ok(DetectionResult::CorrectionNeeded(msg))` if JSON was found but failed schema validation.
+/// Returns `Ok(DetectionResult::CorrectionNeeded { error, raw_json })` if JSON was found but failed schema validation.
 /// Returns `Err` only for unexpected infrastructure failures.
 pub fn execute(
     store: &Arc<dyn WorkflowStore>,

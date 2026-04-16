@@ -73,6 +73,7 @@ guard.disarm();  // Normal exit — don't kill
 - **Tree killing collects descendants first** — child PIDs are gathered before sending signals, because killed processes may reparent orphans to init
 - **ESRCH is not an error** — process already exited, which is fine
 - **Windows uses taskkill /T** — different mechanism, same tree-kill semantics
+- **Zombie processes fool liveness checks** — `kill(pid, 0)` returns `Ok(())` for zombie processes (dead but unreaped), so `process_exists()` will report `true` even after SIGTERM/SIGKILL. In tests, call `child.wait()` to reap the zombie before asserting the process is gone.
 
 ## Anti-Patterns
 

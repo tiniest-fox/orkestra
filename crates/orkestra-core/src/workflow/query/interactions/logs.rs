@@ -70,7 +70,7 @@ pub fn get_task_logs(
     if let Some(sid) = session_id {
         let log_service = LogService::new(Arc::clone(store));
         let (entries, cursor) = log_service.get_logs_after(sid, after_sequence)?;
-        return Ok((enrich_artifact_entries(store, entries), cursor));
+        return Ok((enrich_artifact_entries(store, entries)?, cursor));
     }
 
     // Otherwise, use existing stage-based lookup
@@ -92,7 +92,7 @@ pub fn get_task_logs(
 
     let log_service = LogService::new(Arc::clone(store));
     let (entries, cursor) = log_service.get_logs_after(&session.id, after_sequence)?;
-    Ok((enrich_artifact_entries(store, entries), cursor))
+    Ok((enrich_artifact_entries(store, entries)?, cursor))
 }
 
 /// Populate the `artifact` field on `ArtifactProduced` log entries.
@@ -102,7 +102,7 @@ pub fn get_task_logs(
 fn enrich_artifact_entries(
     store: &Arc<dyn WorkflowStore>,
     mut entries: Vec<LogEntry>,
-) -> Vec<LogEntry> {
+) -> WorkflowResult<Vec<LogEntry>> {
     for entry in &mut entries {
         if let LogEntry::ArtifactProduced {
             artifact_id,
@@ -111,11 +111,11 @@ fn enrich_artifact_entries(
         } = entry
         {
             if artifact.is_none() {
-                *artifact = store.get_artifact(artifact_id).ok().flatten();
+                *artifact = store.get_artifact(artifact_id)?;
             }
         }
     }
-    entries
+    Ok(entries)
 }
 
 // ============================================================================

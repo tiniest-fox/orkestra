@@ -161,6 +161,14 @@ This allows using the last word as a readable short display ID in the UI.
 
 5. **`sequence_number` integer widths** — The log entry `sequence_number` column is `i64` in SQLite. When fetching it, use `.get::<_, i64>(col)`. When exposing it in the public API (e.g., as a cursor), convert with `u64::try_from(seq).map_err(...)` — never `.cast_unsigned()` or `seq as u64`, which silently wrap negative values. The `InMemoryWorkflowStore` mock should use `i64` internally for sequence tracking to match SQLite's type; tests that need the cursor value should apply the same `try_from` conversion as the real store.
 
+## Known Gaps in `connection.rs`
+
+These are intentional or constrained limitations — don't try to "fix" them without understanding the constraint:
+
+1. **`open_validated` outer `Err` arm calls `recover_corrupted` unconditionally** — When `Self::open()` fails (e.g., migration BUSY timeout from a non-orchestrator process holding the lock for >5s), the outer error path calls `recover_corrupted` without inspecting the error code. The PID guard (added in trak disruptively-helped-cuckoo) mitigates the common case. Future fix: preserve the SQLite error code through `Self::open()` to apply the same BUSY/LOCKED → skip-recovery logic. Scope creep prevented fixing this in the same PR.
+
+2. **PID check logic is duplicated between `connection.rs` and `orkestra-core::lock`** — `active_orchestrator_pid()` in `connection.rs` and `OrchestratorLock::acquire()` in orkestra-core both read the lock file, parse the PID, and check liveness. Consolidation is blocked by a circular dependency: `orkestra-store` cannot depend on `orkestra-core`. The natural home would be `orkestra-process`. Extract there when the lock module is next modified.
+
 ## Anti-Patterns
 
 - **Don't add business logic here** — This crate is pure persistence. Validation, state transitions, and orchestration belong in orkestra-core.

@@ -373,6 +373,7 @@ export const AgentEntry = memo(function AgentEntry({
 
     case "artifact_produced": {
       const artifact = entry.artifact;
+      if (!artifact) return null;
       const isLatest = latestArtifactId !== undefined && entry.artifact_id === latestArtifactId;
       const stageResources = taskResources
         ? Object.values(taskResources)

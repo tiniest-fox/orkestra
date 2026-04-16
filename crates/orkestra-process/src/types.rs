@@ -37,12 +37,18 @@ impl ProcessGuard {
 
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
-        if !self.disarmed.load(Ordering::Acquire) {
+        if self.disarmed.load(Ordering::Acquire) {
+            // Normal exit — process is dead but descendants may linger.
+            // Light cleanup: SIGTERM to process group, no wait, no SIGKILL.
+            let _ = crate::interactions::tree::kill::execute(self.pid);
+        } else {
+            // Abnormal exit — process may be stuck.
+            // Full escalation: SIGTERM → 2s grace → SIGKILL.
             eprintln!(
                 "[ProcessGuard] Killing orphaned process {} on drop",
                 self.pid
             );
-            let _ = crate::interactions::tree::kill::execute(self.pid);
+            let _ = crate::interactions::tree::kill::execute_with_escalation(self.pid, 2000);
         }
     }
 }

@@ -220,22 +220,10 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
                 <span>close</span>
               </span>
             ) : (
-              <>
-                <span className="flex items-center gap-1.5">
-                  <Kbd>A</Kbd>
-                  <span>approve</span>
-                </span>
-                <span className="text-text-quaternary">·</span>
-                <span className="flex items-center gap-1.5">
-                  <Kbd>R</Kbd>
-                  <span>reject</span>
-                </span>
-                <span className="text-text-quaternary">·</span>
-                <span className="flex items-center gap-1.5">
-                  <Kbd>L</Kbd>
-                  <span>logs</span>
-                </span>
-              </>
+              <span className="flex items-center gap-1.5">
+                <Kbd>esc</Kbd>
+                <span>close</span>
+              </span>
             )
           ) : (
             <>

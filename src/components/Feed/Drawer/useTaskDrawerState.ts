@@ -29,11 +29,6 @@ export interface TaskDrawerState {
   updateNotesRef: React.RefObject<HTMLTextAreaElement>;
   handleRequestUpdate: () => Promise<void>;
 
-  // -- Resume (interrupted) --
-  resumeMessage: string;
-  setResumeMessage: (v: string) => void;
-  resumeTextareaRef: React.RefObject<HTMLTextAreaElement>;
-
   // -- Retry (failed) --
   retryInstructions: string;
   setRetryInstructions: (v: string) => void;
@@ -44,7 +39,6 @@ export interface TaskDrawerState {
   // -- Loading state --
   loading: boolean;
   interrupting: boolean;
-  resuming: boolean;
 
   // -- PR tab state --
   prTabState: PrTabFooterState;
@@ -81,7 +75,6 @@ export interface TaskDrawerState {
   // -- Action handlers --
   handleApprove: () => Promise<void>;
   handleInterrupt: () => Promise<void>;
-  handleResume: () => Promise<void>;
   handleMerge: () => Promise<void>;
   handleOpenPr: () => Promise<void>;
   handleArchive: () => Promise<void>;
@@ -156,14 +149,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     if (updateMode) updateNotesRef.current?.focus();
   }, [updateMode]);
 
-  // -- Resume message --
-  const [resumeMessage, setResumeMessage] = useState("");
-  const resumeTextareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (task.derived.is_interrupted) resumeTextareaRef.current?.focus();
-  }, [task.derived.is_interrupted]);
-
   // -- Retry instructions --
   const [retryInstructions, setRetryInstructions] = useState("");
   const retryTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -184,7 +169,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   // -- Loading state --
   const [loading, setLoading] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
-  const [resuming, setResuming] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
   useEffect(() => {
@@ -381,23 +365,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     }
   }, [transport, task.id, interrupting, applyOptimistic]);
 
-  const handleResume = useCallback(async () => {
-    if (resuming) return;
-    applyOptimistic(task.id, { type: "resume" });
-    setResuming(true);
-    try {
-      await transport.call("resume", {
-        task_id: task.id,
-        message: resumeMessage.trim() || null,
-      });
-      setResumeMessage("");
-      onClose();
-    } catch (err) {
-      console.error("Failed to resume:", err);
-      setResuming(false);
-    }
-  }, [transport, task.id, resumeMessage, resuming, onClose, applyOptimistic]);
-
   const handleMerge = useCallback(() => callAndClose("merge_task"), [callAndClose]);
 
   const handleOpenPr = useCallback(() => callAndClose("open_pr"), [callAndClose]);
@@ -528,9 +495,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setUpdateNotes,
     updateNotesRef,
     handleRequestUpdate,
-    resumeMessage,
-    setResumeMessage,
-    resumeTextareaRef,
     retryInstructions,
     setRetryInstructions,
     retryTextareaRef,
@@ -538,7 +502,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleRetry,
     loading,
     interrupting,
-    resuming,
     prTabState,
     setPrTabState,
     draftComments,
@@ -560,7 +523,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     submitRef,
     handleApprove,
     handleInterrupt,
-    handleResume,
     handleMerge,
     handleOpenPr,
     handleArchive,

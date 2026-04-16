@@ -13,7 +13,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// This provides defense-in-depth: if code panics or takes an unexpected path,
 /// the process will still be cleaned up.
 ///
-/// Call `disarm()` when the process exits normally to prevent killing on drop.
+/// Call `disarm()` when the process exits normally. Disarmed guards still send
+/// SIGTERM to clean up lingering descendants; non-disarmed guards escalate to
+/// SIGKILL after a grace period.
 pub struct ProcessGuard {
     pid: u32,
     disarmed: AtomicBool,
@@ -28,8 +30,8 @@ impl ProcessGuard {
         }
     }
 
-    /// Disarm the guard to prevent killing the process on drop.
-    /// Call this when the process exits normally.
+    /// Mark the process as having exited normally. On drop, the guard will still
+    /// clean up descendants with SIGTERM but will not escalate to SIGKILL.
     pub fn disarm(&self) {
         self.disarmed.store(true, Ordering::Release);
     }
@@ -37,12 +39,18 @@ impl ProcessGuard {
 
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
-        if !self.disarmed.load(Ordering::Acquire) {
+        if self.disarmed.load(Ordering::Acquire) {
+            // Normal exit — process is dead but descendants may linger.
+            // Light cleanup: SIGTERM to process group, no wait, no SIGKILL.
+            let _ = crate::interactions::tree::kill::execute(self.pid);
+        } else {
+            // Abnormal exit — process may be stuck.
+            // Full escalation: SIGTERM → 2s grace → SIGKILL.
             eprintln!(
                 "[ProcessGuard] Killing orphaned process {} on drop",
                 self.pid
             );
-            let _ = crate::interactions::tree::kill::execute(self.pid);
+            let _ = crate::interactions::tree::kill::execute_with_escalation(self.pid, 2000);
         }
     }
 }

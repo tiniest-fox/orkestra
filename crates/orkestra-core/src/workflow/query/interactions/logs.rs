@@ -10,6 +10,10 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 ///
 /// Returns `None` if the task has no current stage, no session for the stage,
 /// or the session has no log entries.
+///
+/// Does NOT enrich `ArtifactProduced` entries with artifact content. This is intentional —
+/// the only consumer is `push_summary()` for push notification text, which reads `name` only.
+/// If a future consumer needs the full artifact payload, call `enrich_artifact_entries` after.
 pub fn get_latest_log_for_task(
     store: &Arc<dyn WorkflowStore>,
     task_id: &str,

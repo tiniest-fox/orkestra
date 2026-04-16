@@ -67,11 +67,14 @@ pub fn execute(pid: u32) -> std::io::Result<()> {
 #[cfg(unix)]
 #[allow(clippy::cast_possible_wrap, clippy::similar_names)]
 pub fn execute_with_escalation(pid: u32, grace_ms: u64) -> std::io::Result<()> {
+    // Collect descendants before signaling — dead processes reparent to init,
+    // so pgrep won't find them after SIGTERM.
+    let descendants = get_descendant_pids(pid);
     execute(pid)?;
     std::thread::sleep(std::time::Duration::from_millis(grace_ms));
     let pgid = pid as i32;
     unsafe { libc::kill(-pgid, libc::SIGKILL) };
-    for desc_pid in get_descendant_pids(pid) {
+    for desc_pid in descendants {
         unsafe { libc::kill(desc_pid as i32, libc::SIGKILL) };
     }
     Ok(())

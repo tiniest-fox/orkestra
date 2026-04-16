@@ -3,15 +3,9 @@
 import type { WorkflowTaskView } from "../../../../types/workflow";
 import type { DrawerTabId } from "../drawerTabs";
 import type { TaskDrawerState } from "../useTaskDrawerState";
-import { ChatFooter } from "./ChatFooter";
 import { DoneFooter } from "./DoneFooter";
 import { FailedFooter } from "./FailedFooter";
-import { InterruptedFooter } from "./InterruptedFooter";
 import { LineCommentsFooter } from "./LineCommentsFooter";
-import { RejectFooter } from "./RejectFooter";
-import { ReviewFooter } from "./ReviewFooter";
-import { WaitingFooter } from "./WaitingFooter";
-import { WorkingFooter } from "./WorkingFooter";
 
 // ============================================================================
 // Types
@@ -20,7 +14,6 @@ import { WorkingFooter } from "./WorkingFooter";
 interface DrawerFooterProps {
   task: WorkflowTaskView;
   activeTab: DrawerTabId;
-  stageReviewType: "violet" | "teal";
   state: TaskDrawerState;
 }
 
@@ -28,21 +21,8 @@ interface DrawerFooterProps {
 // Component
 // ============================================================================
 
-export function DrawerFooter({ task, activeTab, stageReviewType, state }: DrawerFooterProps) {
-  const progress = task.derived.subtask_progress;
-
-  if (task.derived.is_failed) {
-    return (
-      <FailedFooter
-        retryInstructions={state.retryInstructions}
-        onRetryInstructionsChange={state.setRetryInstructions}
-        retryTextareaRef={state.retryTextareaRef}
-        retrying={state.retrying}
-        onRetry={state.handleRetry}
-      />
-    );
-  }
-  if (task.derived.is_blocked) {
+export function DrawerFooter({ task, activeTab, state }: DrawerFooterProps) {
+  if (task.derived.is_failed || task.derived.is_blocked) {
     return (
       <FailedFooter
         retryInstructions={state.retryInstructions}
@@ -70,51 +50,6 @@ export function DrawerFooter({ task, activeTab, stageReviewType, state }: Drawer
       />
     );
   }
-  if (task.derived.is_chatting && activeTab === "agent") {
-    return (
-      <ChatFooter
-        chatAgentActive={task.derived.chat_agent_active}
-        onReturnToWork={state.handleReturnToWork}
-        onApprove={state.handleApprove}
-        loading={state.loading}
-        canApprove={task.derived.needs_review}
-        chatError={state.chatError}
-      />
-    );
-  }
-  if (activeTab !== "agent") {
-    if (task.derived.needs_review && state.rejectMode) {
-      return (
-        <RejectFooter
-          reviewVariant={stageReviewType}
-          feedback={state.feedback}
-          onFeedbackChange={state.setFeedback}
-          feedbackRef={state.feedbackRef}
-          loading={state.loading}
-          onReject={state.handleReject}
-          onExitRejectMode={state.exitRejectMode}
-        />
-      );
-    }
-    if (task.derived.needs_review) {
-      return (
-        <ReviewFooter
-          reviewVariant={stageReviewType}
-          loading={state.loading}
-          onApprove={state.handleApprove}
-          onEnterRejectMode={state.enterRejectMode}
-        />
-      );
-    }
-    if (task.derived.is_working) {
-      return (
-        <WorkingFooter interrupting={state.interrupting} onInterrupt={state.handleInterrupt} />
-      );
-    }
-  }
-  if (task.derived.is_interrupted) {
-    return <InterruptedFooter resuming={state.resuming} onResume={state.handleResume} />;
-  }
   if (task.derived.is_done) {
     return (
       <DoneFooter
@@ -136,9 +71,6 @@ export function DrawerFooter({ task, activeTab, stageReviewType, state }: Drawer
         onAddressFeedback={state.handleAddressFeedback}
       />
     );
-  }
-  if (task.derived.is_waiting_on_children && progress) {
-    return <WaitingFooter progress={progress} />;
   }
 
   return null;

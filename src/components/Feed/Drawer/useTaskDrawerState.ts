@@ -20,13 +20,6 @@ export interface TaskDrawerState {
   answeredCount: number;
   allAnswered: boolean;
 
-  // -- Reject mode --
-  rejectMode: boolean;
-  enterRejectMode: () => void;
-  exitRejectMode: () => void;
-  feedback: string;
-  setFeedback: (v: string) => void;
-
   // -- Update mode (done tasks) --
   updateMode: boolean;
   enterUpdateMode: () => void;
@@ -83,12 +76,10 @@ export interface TaskDrawerState {
   handleReturnToWork: () => Promise<void>;
 
   // -- Refs --
-  feedbackRef: React.RefObject<HTMLTextAreaElement>;
   submitRef: React.RefObject<HTMLButtonElement>;
 
   // -- Action handlers --
   handleApprove: () => Promise<void>;
-  handleReject: () => Promise<void>;
   handleInterrupt: () => Promise<void>;
   handleResume: () => Promise<void>;
   handleMerge: () => Promise<void>;
@@ -142,24 +133,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     });
   }
 
-  // -- Reject mode --
-  const [rejectMode, setRejectMode] = useState(false);
-  const [feedback, setFeedback] = useState("");
-
-  function enterRejectMode() {
-    setRejectMode(true);
-  }
-  function exitRejectMode() {
-    setRejectMode(false);
-    setFeedback("");
-  }
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
-  useEffect(() => {
-    setRejectMode(false);
-    setFeedback("");
-  }, [task.id]);
-
   // -- Update mode --
   const [updateMode, setUpdateMode] = useState(false);
   const [updateNotes, setUpdateNotes] = useState("");
@@ -204,12 +177,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   useEffect(() => {
     if (task.derived.is_failed || task.derived.is_blocked) retryTextareaRef.current?.focus();
   }, [task.derived.is_failed, task.derived.is_blocked]);
-
-  // -- Feedback input auto-focus --
-  const feedbackRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    if (rejectMode) feedbackRef.current?.focus();
-  }, [rejectMode]);
 
   // -- Submit button ref for questions --
   const submitRef = useRef<HTMLButtonElement>(null);
@@ -401,19 +368,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     return callAndClose("approve");
   }, [callAndClose, applyOptimistic, task.id]);
 
-  const handleReject = useCallback(async () => {
-    if (loading || !feedback.trim()) return;
-    applyOptimistic(task.id, { type: "reject", feedback: feedback.trim() });
-    setLoading(true);
-    try {
-      await transport.call("reject", { task_id: task.id, feedback: feedback.trim() });
-      onClose();
-    } catch (err) {
-      console.error("Failed to reject:", err);
-      setLoading(false);
-    }
-  }, [transport, task.id, feedback, loading, onClose, applyOptimistic]);
-
   const handleInterrupt = useCallback(async () => {
     if (interrupting) return;
     applyOptimistic(task.id, { type: "interrupt" });
@@ -567,11 +521,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setAnswer,
     answeredCount,
     allAnswered,
-    rejectMode,
-    enterRejectMode,
-    exitRejectMode,
-    feedback,
-    setFeedback,
     updateMode,
     enterUpdateMode,
     exitUpdateMode,
@@ -608,10 +557,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleSendChat,
     handleChatStop,
     handleReturnToWork,
-    feedbackRef,
     submitRef,
     handleApprove,
-    handleReject,
     handleInterrupt,
     handleResume,
     handleMerge,

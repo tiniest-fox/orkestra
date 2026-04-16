@@ -1,7 +1,7 @@
 // Tests for `availableTabs`, `defaultTab`, and related drawer helpers.
 
 import { describe, expect, it } from "vitest";
-import { createMockWorkflowConfig, createMockWorkflowTaskView } from "../../../test/mocks/fixtures";
+import { createMockWorkflowTaskView } from "../../../test/mocks/fixtures";
 import type { WorkflowIteration } from "../../../types/workflow";
 import { availableTabs, canUseRunScript, defaultTab } from "./drawerTabs";
 
@@ -60,40 +60,37 @@ describe("defaultTab", () => {
     });
     expect(defaultTab(task)).toBe("agent");
   });
+
+  it("returns 'agent' when task is in gate_running state", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "gate_running", stage: "work" },
+      derived: { current_stage: "work" },
+    });
+    expect(defaultTab(task)).toBe("agent");
+  });
+
+  it("returns 'agent' when task is in awaiting_gate state", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "awaiting_gate", stage: "work" },
+      derived: { current_stage: "work" },
+    });
+    expect(defaultTab(task)).toBe("agent");
+  });
 });
 
 describe("availableTabs — blocked task", () => {
   it("returns Error, Agent, Diff, History tabs for a blocked task", () => {
-    const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
-    const tabs = availableTabs(task, config);
+    const tabs = availableTabs(task);
     expect(tabs.map((t) => t.id)).toEqual(["error", "agent", "diff", "history"]);
   });
 
   it("blocked tabs match failed tabs in shape", () => {
-    const config = createMockWorkflowConfig();
     const blocked = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
     const failed = createMockWorkflowTaskView({ state: { type: "failed" } });
-    expect(availableTabs(blocked, config)).toEqual(availableTabs(failed, config));
+    expect(availableTabs(blocked)).toEqual(availableTabs(failed));
   });
 });
-
-// Config with a gate on the "work" stage.
-function configWithGate() {
-  const config = createMockWorkflowConfig();
-  return {
-    ...config,
-    flows: {
-      ...config.flows,
-      default: {
-        ...config.flows.default,
-        stages: config.flows.default.stages.map((s) =>
-          s.name === "work" ? { ...s, gate: { command: "cargo test", timeout_seconds: 60 } } : s,
-        ),
-      },
-    },
-  };
-}
 
 function workGateIteration(): WorkflowIteration {
   return {
@@ -111,128 +108,74 @@ function workGateIteration(): WorkflowIteration {
   };
 }
 
-function hasGateTab(tabs: ReturnType<typeof availableTabs>) {
-  return tabs.some((t) => t.id === "gate");
-}
-
 describe("availableTabs — agent tab", () => {
   it("includes agent tab with hotkey 'l' during review state", () => {
-    const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({
       state: { type: "awaiting_approval", stage: "review" },
       derived: { current_stage: "review", needs_review: true },
     });
-    const tab = availableTabs(task, config).find((t) => t.id === "agent");
+    const tab = availableTabs(task).find((t) => t.id === "agent");
     expect(tab).toBeDefined();
     expect(tab?.hotkey).toBe("l");
   });
 
   it("includes agent tab in working state", () => {
-    const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({
       state: { type: "agent_working", stage: "work" },
       derived: { current_stage: "work", needs_review: false },
     });
-    const tab = availableTabs(task, config).find((t) => t.id === "agent");
+    const tab = availableTabs(task).find((t) => t.id === "agent");
     expect(tab).toBeDefined();
     expect(tab?.hotkey).toBe("l");
   });
 
   it("does not include artifact or logs or questions tabs", () => {
-    const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({
       state: { type: "agent_working", stage: "work" },
       derived: { current_stage: "work" },
     });
-    const tabIds = availableTabs(task, config).map((t) => t.id);
+    const tabIds = availableTabs(task).map((t) => t.id);
     expect(tabIds).not.toContain("artifact");
     expect(tabIds).not.toContain("logs");
     expect(tabIds).not.toContain("questions");
   });
 });
 
-describe("availableTabs — gate tab visibility", () => {
-  it("shows gate tab when task is on gate stage and has a gate result", () => {
-    const config = configWithGate();
+describe("availableTabs — no gate tab", () => {
+  it("never includes gate tab even with gate results on the iteration", () => {
     const task = {
       ...createMockWorkflowTaskView({
-        state: { type: "awaiting_approval", stage: "work" },
-        derived: { current_stage: "work", needs_review: true },
+        state: { type: "gate_running", stage: "work" },
+        derived: { current_stage: "work" },
       }),
       iterations: [workGateIteration()],
     };
-    expect(hasGateTab(availableTabs(task, config))).toBe(true);
+    const tabs = availableTabs(task);
+    expect(tabs.some((t) => t.id === "gate")).toBe(false);
   });
 
-  it("hides gate tab when task has advanced past the gate stage", () => {
-    // This is the regression case: gate ran on "work", task is now on "review".
-    const config = configWithGate();
-    const task = {
-      ...createMockWorkflowTaskView({
-        state: { type: "awaiting_approval", stage: "review" },
-        derived: { current_stage: "review", needs_review: true },
-      }),
-      iterations: [workGateIteration()],
-    };
-    expect(hasGateTab(availableTabs(task, config))).toBe(false);
-  });
-
-  it("shows gate tab when task is in awaiting_gate state", () => {
-    const config = configWithGate();
+  it("never includes gate tab in awaiting_gate state", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "awaiting_gate", stage: "work" },
       derived: { current_stage: "work" },
     });
-    expect(hasGateTab(availableTabs(task, config))).toBe(true);
-  });
-
-  it("shows gate tab when task is in gate_running state", () => {
-    const config = configWithGate();
-    const task = createMockWorkflowTaskView({
-      state: { type: "gate_running", stage: "work" },
-      derived: { current_stage: "work" },
-    });
-    expect(hasGateTab(availableTabs(task, config))).toBe(true);
-  });
-
-  it("hides gate tab when task is on gate stage but has no gate result", () => {
-    const config = configWithGate();
-    const task = createMockWorkflowTaskView({
-      state: { type: "awaiting_approval", stage: "work" },
-      derived: { current_stage: "work", needs_review: true },
-    });
-    // iterations defaults to [] — no gate_result
-    expect(hasGateTab(availableTabs(task, config))).toBe(false);
-  });
-
-  it("hides gate tab when config has no gate stage", () => {
-    const config = createMockWorkflowConfig(); // no gate configured
-    const task = {
-      ...createMockWorkflowTaskView({
-        state: { type: "awaiting_approval", stage: "work" },
-        derived: { current_stage: "work", needs_review: true },
-      }),
-      iterations: [workGateIteration()],
-    };
-    expect(hasGateTab(availableTabs(task, config))).toBe(false);
+    expect(availableTabs(task).some((t) => t.id === "gate")).toBe(false);
   });
 });
 
 describe("availableTabs — done task tabs", () => {
   it("includes Agent tab when task is done and has no PR", () => {
-    const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({ state: { type: "done" } });
-    const tabs = availableTabs(task, config);
+    const tabs = availableTabs(task);
     expect(tabs.some((t) => t.id === "agent")).toBe(true);
   });
 
   it("includes Agent tab when task is done and has a PR", () => {
-    const config = createMockWorkflowConfig();
     const task = {
       ...createMockWorkflowTaskView({ state: { type: "done" } }),
       pr_url: "https://github.com/org/repo/pull/1",
     };
-    const tabs = availableTabs(task, config);
+    const tabs = availableTabs(task);
     expect(tabs.some((t) => t.id === "agent")).toBe(true);
   });
 });
@@ -288,7 +231,6 @@ describe("canUseRunScript", () => {
 
 describe("availableTabs — resources tab visibility", () => {
   it("includes Resources tab when task has resources", () => {
-    const config = createMockWorkflowConfig();
     const task = {
       ...createMockWorkflowTaskView({ state: { type: "agent_working", stage: "work" } }),
       resources: {
@@ -300,19 +242,17 @@ describe("availableTabs — resources tab visibility", () => {
         },
       },
     };
-    const tabs = availableTabs(task, config);
+    const tabs = availableTabs(task);
     expect(tabs.some((t) => t.id === "resources")).toBe(true);
   });
 
   it("omits Resources tab when task has no resources", () => {
-    const config = createMockWorkflowConfig();
     const task = createMockWorkflowTaskView({ state: { type: "agent_working", stage: "work" } });
-    const tabs = availableTabs(task, config);
+    const tabs = availableTabs(task);
     expect(tabs.some((t) => t.id === "resources")).toBe(false);
   });
 
   it("includes Resources tab for done task with resources", () => {
-    const config = createMockWorkflowConfig();
     const task = {
       ...createMockWorkflowTaskView({ state: { type: "done" } }),
       resources: {
@@ -324,12 +264,11 @@ describe("availableTabs — resources tab visibility", () => {
         },
       },
     };
-    const tabs = availableTabs(task, config);
+    const tabs = availableTabs(task);
     expect(tabs.some((t) => t.id === "resources")).toBe(true);
   });
 
   it("Resources tab has no hotkey", () => {
-    const config = createMockWorkflowConfig();
     const task = {
       ...createMockWorkflowTaskView({ state: { type: "agent_working", stage: "work" } }),
       resources: {
@@ -341,7 +280,7 @@ describe("availableTabs — resources tab visibility", () => {
         },
       },
     };
-    const resourcesTab = availableTabs(task, config).find((t) => t.id === "resources");
+    const resourcesTab = availableTabs(task).find((t) => t.id === "resources");
     expect(resourcesTab).toBeDefined();
     expect(resourcesTab?.hotkey).toBeUndefined();
   });

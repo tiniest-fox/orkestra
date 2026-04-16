@@ -19,6 +19,7 @@ import type {
   WorkflowResource,
 } from "../../types/workflow";
 import { formatTimestamp } from "../../utils";
+import { AnsiText } from "../../utils/ansi";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -425,6 +426,35 @@ export const AgentEntry = memo(function AgentEntry({
         </>
       );
     }
+
+    case "gate_started":
+      return (
+        <div className="flex items-center gap-2 py-2">
+          <div className="h-px flex-1 bg-border" />
+          <span className="font-mono text-forge-mono-sm text-text-tertiary shrink-0">
+            Gate: {entry.command}
+          </span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+      );
+
+    case "gate_output":
+      return (
+        <pre className="font-mono text-forge-mono-sm whitespace-pre-wrap text-text-secondary py-0.5">
+          <AnsiText text={entry.content} />
+        </pre>
+      );
+
+    case "gate_completed":
+      return (
+        <div
+          className={`font-mono text-forge-mono-sm py-1 ${
+            entry.passed ? "text-status-success" : "text-status-error"
+          }`}
+        >
+          {entry.passed ? "Gate passed" : `Gate failed (exit ${entry.exit_code})`}
+        </div>
+      );
 
     case "user_message":
     case "tool_result":

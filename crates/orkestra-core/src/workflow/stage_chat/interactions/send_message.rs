@@ -406,22 +406,44 @@ fn read_chat_output(
         let full_text = accumulated_text.join("\n");
         match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &full_text)
         {
-            Ok(DetectionResult::Completed) => {
+            Ok(DetectionResult::Completed { raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",
                     "Detected structured output in chat, stage completed for task {}",
                     task_id
                 );
+                if let Err(e) = store.append_log_entry(
+                    session_id,
+                    &LogEntry::ExtractedJson {
+                        raw_json,
+                        valid: true,
+                    },
+                    None,
+                ) {
+                    orkestra_debug!("stage_chat", "Failed to append ExtractedJson entry: {}", e);
+                }
                 detection_succeeded = true;
             }
             Ok(DetectionResult::NotDetected) => {} // No structured output detected, continue normal flow
-            Ok(DetectionResult::CorrectionNeeded(error)) => {
+            Ok(DetectionResult::CorrectionNeeded { error, raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",
                     "Structured output correction needed for task {}: {}",
                     task_id,
                     error
                 );
+
+                // Append ExtractedJson log entry for frontend classification
+                if let Err(e) = store.append_log_entry(
+                    session_id,
+                    &LogEntry::ExtractedJson {
+                        raw_json,
+                        valid: false,
+                    },
+                    None,
+                ) {
+                    orkestra_debug!("stage_chat", "Failed to append ExtractedJson entry: {}", e);
+                }
 
                 // Log the error as a visible system message
                 let system_msg = format!("[System] {error}");
@@ -446,7 +468,7 @@ fn read_chat_output(
                     if let Err(e) = store.append_log_entry(
                         session_id,
                         &LogEntry::UserMessage {
-                            resume_type: CHAT_RESUME_TYPE.to_string(),
+                            resume_type: "correction".to_string(),
                             content: corrective_msg.clone(),
                         },
                         None,
@@ -619,7 +641,7 @@ fn read_chat_output(
 #[cfg(test)]
 fn should_attempt_correction(result: &DetectionResult, remaining: u32) -> Option<&str> {
     match result {
-        DetectionResult::CorrectionNeeded(msg) if remaining > 0 => Some(msg.as_str()),
+        DetectionResult::CorrectionNeeded { error, .. } if remaining > 0 => Some(error.as_str()),
         _ => None,
     }
 }
@@ -634,20 +656,28 @@ mod tests {
 
     #[test]
     fn should_attempt_correction_when_remaining() {
-        let result = DetectionResult::CorrectionNeeded("bad schema".to_string());
+        let result = DetectionResult::CorrectionNeeded {
+            error: "bad schema".to_string(),
+            raw_json: "{}".to_string(),
+        };
         assert_eq!(should_attempt_correction(&result, 1), Some("bad schema"));
         assert_eq!(should_attempt_correction(&result, 2), Some("bad schema"));
     }
 
     #[test]
     fn should_not_attempt_correction_when_exhausted() {
-        let result = DetectionResult::CorrectionNeeded("bad schema".to_string());
+        let result = DetectionResult::CorrectionNeeded {
+            error: "bad schema".to_string(),
+            raw_json: "{}".to_string(),
+        };
         assert_eq!(should_attempt_correction(&result, 0), None);
     }
 
     #[test]
     fn should_not_attempt_correction_when_completed() {
-        let result = DetectionResult::Completed;
+        let result = DetectionResult::Completed {
+            raw_json: "{}".to_string(),
+        };
         assert_eq!(should_attempt_correction(&result, 1), None);
     }
 

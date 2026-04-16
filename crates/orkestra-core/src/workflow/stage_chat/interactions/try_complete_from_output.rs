@@ -15,12 +15,12 @@ use orkestra_parser::interactions::output::{
 /// Result of structured output detection in chat text.
 pub enum DetectionResult {
     /// Valid structured output detected and stage completed.
-    Completed,
+    Completed { raw_json: String },
     /// No structured output detected in the text.
     NotDetected,
     /// JSON detected but schema validation failed. Contains the error message
-    /// for corrective feedback to the agent.
-    CorrectionNeeded(String),
+    /// and the raw JSON that failed validation.
+    CorrectionNeeded { error: String, raw_json: String },
 }
 
 /// Try to detect structured stage output in accumulated chat text and complete the stage.
@@ -55,7 +55,10 @@ pub fn execute(
                 "stage_chat",
                 "JSON found but failed schema validation for task {task_id}: {e}"
             );
-            return Ok(DetectionResult::CorrectionNeeded(error_msg));
+            return Ok(DetectionResult::CorrectionNeeded {
+                error: error_msg,
+                raw_json: json_str,
+            });
         }
     };
 
@@ -116,7 +119,7 @@ pub fn execute(
         store.save_stage_session(&session)?;
     }
 
-    Ok(DetectionResult::Completed)
+    Ok(DetectionResult::Completed { raw_json: json_str })
 }
 
 // -- Helpers --
@@ -222,9 +225,15 @@ mod tests {
 
         let result = execute(&store, &workflow, &schema, task_id, "work", text).unwrap();
         assert!(
-            matches!(result, DetectionResult::Completed),
+            matches!(result, DetectionResult::Completed { .. }),
             "ork fence should be detected and stage completed"
         );
+        if let DetectionResult::Completed { raw_json } = result {
+            assert!(
+                raw_json.contains("from-ork-fence"),
+                "raw_json should contain the ork fence content, got: {raw_json}"
+            );
+        }
     }
 
     #[test]
@@ -238,9 +247,15 @@ mod tests {
 
         let result = execute(&store, &workflow, &schema, task_id, "work", text).unwrap();
         assert!(
-            matches!(result, DetectionResult::Completed),
+            matches!(result, DetectionResult::Completed { .. }),
             "raw JSON with type field should be detected and completed"
         );
+        if let DetectionResult::Completed { raw_json } = result {
+            assert!(
+                raw_json.contains("summary"),
+                "raw_json should contain the extracted JSON, got: {raw_json}"
+            );
+        }
     }
 
     #[test]
@@ -270,13 +285,17 @@ mod tests {
 
         let result = execute(&store, &workflow, &schema, "any-task", "work", text).unwrap();
         assert!(
-            matches!(result, DetectionResult::CorrectionNeeded(_)),
+            matches!(result, DetectionResult::CorrectionNeeded { .. }),
             "ork fence with invalid type should return CorrectionNeeded"
         );
-        if let DetectionResult::CorrectionNeeded(msg) = result {
+        if let DetectionResult::CorrectionNeeded { error, raw_json } = result {
             assert!(
-                msg.contains("schema validation"),
-                "error message should mention schema validation, got: {msg}"
+                error.contains("schema validation"),
+                "error message should mention schema validation, got: {error}"
+            );
+            assert!(
+                raw_json.contains("bogus_type"),
+                "raw_json should contain the invalid JSON, got: {raw_json}"
             );
         }
     }

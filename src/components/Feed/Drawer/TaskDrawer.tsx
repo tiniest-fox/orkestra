@@ -54,7 +54,7 @@ function TaskDrawerBody({
   // -- Tab state --
   // Run script is Tauri-only — never show the tab or button in PWA context.
   const hasRunScript = transport.supportsLocalOperations ? projectInfo?.has_run_script : false;
-  const tabs = availableTabs(task, config, { hasRunScript });
+  const tabs = availableTabs(task, { hasRunScript });
   const [activeTab, setActiveTab] = useState<DrawerTabId>(() => defaultTab(task));
 
   // -- Run script (single instance, shared with header and tab) --
@@ -172,7 +172,6 @@ function TaskDrawerBody({
             task={task}
             allTasks={allTasks}
             activeTab={activeTab}
-            config={config}
             logs={logs}
             logsError={logsError}
             logContainerRef={logContainerRef}

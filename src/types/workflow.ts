@@ -639,7 +639,10 @@ export type LogEntry =
     }
   | { type: "process_exit"; code?: number }
   | { type: "error"; message: string }
-  | { type: "artifact_produced"; name: string; artifact_id: string; artifact?: WorkflowArtifact };
+  | { type: "artifact_produced"; name: string; artifact_id: string; artifact?: WorkflowArtifact }
+  | { type: "gate_started"; command: string }
+  | { type: "gate_output"; content: string }
+  | { type: "gate_completed"; exit_code: number; passed: boolean };
 
 // =============================================================================
 // PR Status

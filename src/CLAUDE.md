@@ -947,6 +947,14 @@ The diff viewer's find feature separates search from highlighting across two spa
 
 `SearchRange[]` per line are computed in `FileSection.tsx` (`HunkLines`) and `CollapsedSection.tsx` from `fileMatches + currentMatch`. `DiffLine.tsx` renders them via `highlightSearchInHtml`. `searchQuery` is never passed below `DiffContent.tsx` — ranges are the single source of truth at the render layer.
 
+## Component Deletion Checklist
+
+When removing a UI component, two cleanup steps are routinely missed and caught at review:
+
+1. **Orphaned hook state** — After deletion, grep for each prop/callback the component received from its parent hook (e.g., `useTaskDrawerState`). If no remaining component consumes it, delete it from the hook's return value. State that is set but never read is silent dead weight and a reviewer finding.
+
+2. **Dead hints in `FeedStatusLine`** — `FeedStatusLine.tsx` renders hotkey labels and mode hints that are keyed to specific drawer states. When you remove a component that corresponds to a drawer state, remove its matching branch in `FeedStatusLine` too. Stale hints display incorrect keyboard shortcuts.
+
 ## Interactive Mode Entry Point
 
 **"Enter interactive mode" belongs in `DrawerHeader` overflow menu only, never in `FeedRowActions`.** `FeedRowActions.tsx` renders quick inline actions for the feed list row. The interactive mode entry point is intentionally placed only in the `DrawerHeader` overflow menu (visible when the drawer is open) — it is not a row-level action. When enabling "Enter interactive mode" for a new Trak state, update `DrawerHeader.tsx`'s condition, not `FeedRowActions.tsx`.

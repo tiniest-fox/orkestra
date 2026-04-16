@@ -27,8 +27,6 @@ export type DrawerTabId =
   | "run"
   | "resources";
 
-export type StageReviewType = "violet" | "teal";
-
 export type PrTabFooterState =
   | { type: "loading" }
   | { type: "no_pr" }
@@ -55,11 +53,6 @@ export function canUseRunScript(
   hasRunScript: boolean | undefined,
 ): boolean {
   return !!hasRunScript && !!task.worktree_path && !task.derived.is_archived;
-}
-
-export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig): StageReviewType {
-  const stage = config.flows[task.flow]?.stages.find((s) => s.name === task.derived.current_stage);
-  return stage?.capabilities.subtasks ? "teal" : "violet";
 }
 
 export function defaultTab(task: WorkflowTaskView): DrawerTabId {

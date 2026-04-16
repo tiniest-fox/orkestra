@@ -135,8 +135,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
 
   // Input bar visibility:
   // Show when working, review, or chatting.
-  // Hide when interrupted (InterruptedFooter in DrawerFooter handles that state),
-  // questions (answered inline), failed, blocked, done.
+  // Hide when interrupted, questions (answered inline), failed, blocked, done.
   const showInputBar = derived.is_working || derived.needs_review || derived.is_chatting;
 
   // Input bar agent active state:

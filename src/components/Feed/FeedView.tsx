@@ -42,7 +42,6 @@ type DrawerMode =
   | "git-history"
   | "assistant"
   | "interactive"
-  | "review-reject"
   | "review"
   | "answer"
   | "focus"
@@ -58,7 +57,6 @@ function deriveDrawerMode(
   interactiveTaskOpen: boolean,
   fileViewerOpen: boolean,
   activeTask: WorkflowTaskView | null,
-  rejectMode: boolean,
 ): DrawerMode {
   if (isNewTaskOpen) return "new-task";
   if (assistantOpen || taskAssistantOpen) return "assistant";
@@ -66,7 +64,7 @@ function deriveDrawerMode(
   if (interactiveTaskOpen) return "interactive";
   if (fileViewerOpen) return "file-viewer";
   if (!activeTask) return null;
-  if (activeTask.derived.needs_review) return rejectMode ? "review-reject" : "review";
+  if (activeTask.derived.needs_review) return "review";
   if (activeTask.derived.has_questions) return "answer";
   if (activeTask.derived.is_done) return "ship";
   return "focus";
@@ -87,7 +85,6 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
   const isMobile = useIsMobile();
   const feedBodyRef = useRef<HTMLDivElement>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [rejectMode, setRejectMode] = useState(false);
   const [gitHistoryOpen, setGitHistoryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [taskAssistantId, setTaskAssistantId] = useState<string | null>(null);
@@ -133,7 +130,6 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     interactiveTaskId !== null,
     fileViewerPath !== null,
     activeTask,
-    rejectMode,
   );
 
   const { sections, subtaskRows } = useMemo(() => {
@@ -584,7 +580,6 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           allTasks={tasks}
           onClose={() => setActiveTaskId(null)}
           onOpenTask={setActiveTaskId}
-          onRejectModeChange={setRejectMode}
           onOpenChat={() => openTaskAssistant(activeTask.id)}
           onInteractive={() => openInteractive(activeTask.id)}
         />

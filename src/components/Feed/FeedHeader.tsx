@@ -81,7 +81,7 @@ export function FeedHeader({
               </span>
             </>
           ) : (
-            <>{transport.requiresAuthentication && currentProject && <ProjectSwitcher />}</>
+            transport.requiresAuthentication && currentProject && <ProjectSwitcher />
           )}
           {!isMobile && metrics.length > 0 && (
             <>

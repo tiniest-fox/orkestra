@@ -81,7 +81,7 @@ fn format_diff_summary(diff: &TaskDiff) -> String {
 
     // Sort by most changes first (prioritize including diffs for the most-changed files)
     let mut files_by_change: Vec<_> = diff.files.iter().collect();
-    files_by_change.sort_by(|a, b| (b.additions + b.deletions).cmp(&(a.additions + a.deletions)));
+    files_by_change.sort_by_key(|b| std::cmp::Reverse(b.additions + b.deletions));
 
     let mut used = 0usize;
     let mut include_diff: Vec<(&FileDiff, bool)> = Vec::new();

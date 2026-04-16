@@ -60,7 +60,7 @@ describe("buildVirtualItems", () => {
     }
   });
 
-  it("produces agent-header and agent-entry items for agent message with entries", () => {
+  it("produces agent-entry items for agent message with entries", () => {
     const messages: DisplayMessage[] = [
       {
         kind: "agent",
@@ -71,23 +71,20 @@ describe("buildVirtualItems", () => {
       },
     ];
     const items = buildVirtualItems(messages, defaultOpts);
-    expect(items[0].kind).toBe("agent-header");
+    expect(items[0].kind).toBe("agent-entry");
     const entryItems = items.filter((i) => i.kind === "agent-entry");
     expect(entryItems.length).toBeGreaterThan(0);
-    // Last entry should have isBlockEnd originally true (before border suppression)
-    // After border suppression the last block-end is set to false
     const lastEntry = entryItems[entryItems.length - 1];
     if (lastEntry.kind === "agent-entry") {
-      expect(lastEntry.isBlockEnd).toBe(false);
+      expect(lastEntry.isBlockEnd).toBe(true);
     }
   });
 
-  it("produces only agent-header for empty agent block with no crash", () => {
+  it("produces no items for empty agent block without crashing", () => {
     const messages: DisplayMessage[] = [{ kind: "agent", entries: [] }];
-    // Should not throw, and should produce just the agent-header
+    // Should not throw, and should produce no items (no header since agent-header was removed)
     const items = buildVirtualItems(messages, defaultOpts);
-    expect(items).toHaveLength(1);
-    expect(items[0].kind).toBe("agent-header");
+    expect(items).toHaveLength(0);
   });
 
   it("places extra item after last agent block entries", () => {
@@ -117,27 +114,19 @@ describe("buildVirtualItems", () => {
     expect(items[items.length - 1].kind).toBe("spinner");
   });
 
-  it("suppresses bottom border on the final block (last:border-b-0 behavior)", () => {
+  it("sets isBlockEnd: true on all user blocks", () => {
     const messages: DisplayMessage[] = [
       { kind: "user", content: "first" },
       { kind: "user", content: "last" },
     ];
     const items = buildVirtualItems(messages, defaultOpts);
-    // Find block-end items
-    const blockEndItems = items.filter(
-      (i) => (i.kind === "user-block" || i.kind === "agent-entry") && i.isBlockEnd,
-    );
-    // The very last block should have isBlockEnd: false
-    const lastBlock = items
-      .slice()
-      .reverse()
-      .find((i) => i.kind === "user-block" || i.kind === "agent-entry");
-    expect(lastBlock).toBeDefined();
-    if (lastBlock?.kind === "user-block" || lastBlock?.kind === "agent-entry") {
-      expect(lastBlock.isBlockEnd).toBe(false);
+    const userBlocks = items.filter((i) => i.kind === "user-block");
+    expect(userBlocks.length).toBe(2);
+    for (const block of userBlocks) {
+      if (block.kind === "user-block") {
+        expect(block.isBlockEnd).toBe(true);
+      }
     }
-    // Earlier blocks still have isBlockEnd: true
-    expect(blockEndItems.length).toBeGreaterThan(0);
   });
 
   it("uses classifyUser callback for label and isHuman", () => {
@@ -158,6 +147,13 @@ describe("buildVirtualItems", () => {
       type: "artifact_produced",
       name: "plan",
       artifact_id: "artifact-1",
+      artifact: {
+        name: "plan",
+        content: "# Plan",
+        stage: "planning",
+        created_at: "2026-01-01T00:00:00Z",
+        iteration: 1,
+      },
     };
     const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
     const items = buildVirtualItems(messages, defaultOpts);
@@ -166,12 +162,6 @@ describe("buildVirtualItems", () => {
   });
 
   it("threads artifactContext into agent-entry items with artifact_produced entries", () => {
-    const artifactEntry: LogEntry = {
-      type: "artifact_produced",
-      name: "plan",
-      artifact_id: "artifact-42",
-    };
-    const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
     const artifact: WorkflowArtifact = {
       name: "plan",
       content: "# Plan",
@@ -179,6 +169,13 @@ describe("buildVirtualItems", () => {
       created_at: "2026-01-01T00:00:00Z",
       iteration: 1,
     };
+    const artifactEntry: LogEntry = {
+      type: "artifact_produced",
+      name: "plan",
+      artifact_id: "artifact-42",
+      artifact,
+    };
+    const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
     const artifactContext: ArtifactContext = {
       actions: {
         needsReview: true,
@@ -190,28 +187,36 @@ describe("buildVirtualItems", () => {
     };
     const items = buildVirtualItems(messages, {
       ...defaultOpts,
-      artifacts: { plan: artifact },
       artifactContext,
       latestArtifactId: "artifact-42",
     });
-    const entryItem = items.find((i) => i.kind === "agent-entry");
-    expect(entryItem).toBeDefined();
-    if (entryItem?.kind === "agent-entry") {
-      expect(entryItem.artifactContext).toBe(artifactContext);
-      expect(entryItem.latestArtifactId).toBe("artifact-42");
+    // The latest artifact with a matching latestArtifactId is split into artifact-header + artifact-body
+    const headerItem = items.find((i) => i.kind === "artifact-header");
+    expect(headerItem).toBeDefined();
+    if (headerItem?.kind === "artifact-header") {
+      expect(headerItem.artifactContext).toBe(artifactContext);
     }
   });
 
   it("passes latestArtifactId so superseded entries can be identified", () => {
+    const baseArtifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "planning",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
     const olderEntry: LogEntry = {
       type: "artifact_produced",
       name: "plan",
       artifact_id: "artifact-1",
+      artifact: baseArtifact,
     };
     const newerEntry: LogEntry = {
       type: "artifact_produced",
       name: "plan",
       artifact_id: "artifact-2",
+      artifact: { ...baseArtifact, iteration: 2 },
     };
     const messages: DisplayMessage[] = [{ kind: "agent", entries: [olderEntry, newerEntry] }];
     const items = buildVirtualItems(messages, {

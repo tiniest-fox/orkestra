@@ -47,7 +47,7 @@ enum AgentPoll {
 /// How long an agent can run without producing any output before being killed.
 /// Only applies if the agent has never produced a single event — once it shows
 /// any sign of life, the timeout is disabled.
-const AGENT_STARTUP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const AGENT_STARTUP_TIMEOUT: Duration = Duration::from_mins(5);
 
 /// Internal wrapper for tracking an active agent execution.
 struct ActiveAgent {

@@ -10,6 +10,10 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 ///
 /// Returns `None` if the task has no current stage, no session for the stage,
 /// or the session has no log entries.
+///
+/// Does NOT enrich `ArtifactProduced` entries with artifact content. This is intentional —
+/// the only consumer is `push_summary()` for push notification text, which reads `name` only.
+/// If a future consumer needs the full artifact payload, call `enrich_artifact_entries` after.
 pub fn get_latest_log_for_task(
     store: &Arc<dyn WorkflowStore>,
     task_id: &str,
@@ -69,7 +73,8 @@ pub fn get_task_logs(
     // If session_id provided, fetch directly
     if let Some(sid) = session_id {
         let log_service = LogService::new(Arc::clone(store));
-        return log_service.get_logs_after(sid, after_sequence);
+        let (entries, cursor) = log_service.get_logs_after(sid, after_sequence)?;
+        return Ok((enrich_artifact_entries(store, entries)?, cursor));
     }
 
     // Otherwise, use existing stage-based lookup
@@ -90,7 +95,31 @@ pub fn get_task_logs(
     };
 
     let log_service = LogService::new(Arc::clone(store));
-    log_service.get_logs_after(&session.id, after_sequence)
+    let (entries, cursor) = log_service.get_logs_after(&session.id, after_sequence)?;
+    Ok((enrich_artifact_entries(store, entries)?, cursor))
+}
+
+/// Populate the `artifact` field on `ArtifactProduced` log entries.
+///
+/// Fetches each referenced artifact from the store so the frontend
+/// receives the full content without a separate lookup.
+fn enrich_artifact_entries(
+    store: &Arc<dyn WorkflowStore>,
+    mut entries: Vec<LogEntry>,
+) -> WorkflowResult<Vec<LogEntry>> {
+    for entry in &mut entries {
+        if let LogEntry::ArtifactProduced {
+            artifact_id,
+            artifact,
+            ..
+        } = entry
+        {
+            if artifact.is_none() {
+                *artifact = store.get_artifact(artifact_id)?;
+            }
+        }
+    }
+    Ok(entries)
 }
 
 // ============================================================================
@@ -102,7 +131,7 @@ mod tests {
     use super::*;
     use crate::workflow::api::WorkflowApi;
     use crate::workflow::config::{StageConfig, WorkflowConfig};
-    use crate::workflow::domain::StageSession;
+    use crate::workflow::domain::{StageSession, WorkflowArtifact};
     use crate::workflow::runtime::TaskState;
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
@@ -295,5 +324,106 @@ mod tests {
             get_task_logs(&api.store, &task.id, Some("planning"), None, Some(999)).unwrap();
         assert!(entries.is_empty());
         assert!(cursor.is_none());
+    }
+
+    #[test]
+    fn get_task_logs_enriches_artifact_produced_entries() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(test_workflow(), Arc::clone(&store));
+
+        let task = api.create_task("Test", "Desc", None).unwrap();
+
+        let session = StageSession::new(
+            format!("{}-planning", task.id),
+            &task.id,
+            "planning",
+            chrono::Utc::now().to_rfc3339(),
+        );
+        api.store.save_stage_session(&session).unwrap();
+
+        // Save an artifact in the store.
+        let artifact = WorkflowArtifact::new(
+            "art-1",
+            &task.id,
+            "planning",
+            "plan",
+            "# Plan\n\nDo the thing.",
+            "2025-01-24T10:00:00Z",
+        );
+        api.store.save_artifact(&artifact).unwrap();
+
+        // Append an ArtifactProduced log entry referencing that artifact.
+        api.store
+            .append_log_entry(
+                &session.id,
+                &LogEntry::ArtifactProduced {
+                    name: "plan".to_string(),
+                    artifact_id: "art-1".to_string(),
+                    artifact: None,
+                },
+                None,
+            )
+            .unwrap();
+
+        let (entries, _) =
+            get_task_logs(&api.store, &task.id, Some("planning"), None, None).unwrap();
+        assert_eq!(entries.len(), 1);
+
+        match &entries[0] {
+            LogEntry::ArtifactProduced {
+                name,
+                artifact_id,
+                artifact: Some(enriched),
+            } => {
+                assert_eq!(name, "plan");
+                assert_eq!(artifact_id, "art-1");
+                assert_eq!(enriched.content, "# Plan\n\nDo the thing.");
+            }
+            other => panic!("Expected enriched ArtifactProduced entry, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn get_task_logs_artifact_produced_missing_artifact_returns_none() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(test_workflow(), Arc::clone(&store));
+
+        let task = api.create_task("Test", "Desc", None).unwrap();
+
+        let session = StageSession::new(
+            format!("{}-planning", task.id),
+            &task.id,
+            "planning",
+            chrono::Utc::now().to_rfc3339(),
+        );
+        api.store.save_stage_session(&session).unwrap();
+
+        // Append an ArtifactProduced log entry with a non-existent artifact_id.
+        api.store
+            .append_log_entry(
+                &session.id,
+                &LogEntry::ArtifactProduced {
+                    name: "plan".to_string(),
+                    artifact_id: "missing-art-id".to_string(),
+                    artifact: None,
+                },
+                None,
+            )
+            .unwrap();
+
+        let (entries, _) =
+            get_task_logs(&api.store, &task.id, Some("planning"), None, None).unwrap();
+        assert_eq!(entries.len(), 1);
+
+        match &entries[0] {
+            LogEntry::ArtifactProduced {
+                artifact_id,
+                artifact: None,
+                ..
+            } => {
+                assert_eq!(artifact_id, "missing-art-id");
+            }
+            other => panic!("Expected ArtifactProduced with artifact: None, got: {other:?}"),
+        }
     }
 }

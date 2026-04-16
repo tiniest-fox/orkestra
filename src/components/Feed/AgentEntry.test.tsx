@@ -105,10 +105,7 @@ const artifactEntry: GroupedLogEntry = {
   type: "artifact_produced",
   name: "plan",
   artifact_id: "artifact-1",
-};
-
-const artifacts: Record<string, WorkflowArtifact> = {
-  plan: baseArtifact,
+  artifact: baseArtifact,
 };
 
 describe("AgentEntry — artifact_produced with stage-filtered resources", () => {
@@ -121,14 +118,12 @@ describe("AgentEntry — artifact_produced with stage-filtered resources", () =>
         created_at: "2026-01-01T00:01:00Z",
       },
     };
-    render(
-      <AgentEntry entry={artifactEntry} artifacts={artifacts} taskResources={taskResources} />,
-    );
+    render(<AgentEntry entry={artifactEntry} taskResources={taskResources} />);
     expect(screen.getByText("screenshot:plan")).toBeDefined();
   });
 
   it("renders no resource section when no resources match the artifact's stage", () => {
-    render(<AgentEntry entry={artifactEntry} artifacts={artifacts} taskResources={undefined} />);
+    render(<AgentEntry entry={artifactEntry} taskResources={undefined} />);
     // No resource names should appear — only the ArtifactLogCard header text
     expect(screen.queryByText("screenshot:plan")).toBeNull();
   });
@@ -142,9 +137,7 @@ describe("AgentEntry — artifact_produced with stage-filtered resources", () =>
         created_at: "2026-01-01T00:01:00Z",
       },
     };
-    render(
-      <AgentEntry entry={artifactEntry} artifacts={artifacts} taskResources={taskResources} />,
-    );
+    render(<AgentEntry entry={artifactEntry} taskResources={taskResources} />);
     // Resource belongs to "work" stage, artifact is "planning" — should not appear
     expect(screen.queryByText("screenshot:work")).toBeNull();
   });

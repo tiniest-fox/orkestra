@@ -55,10 +55,7 @@ export function ArtifactLogCard({
         />
       ) : artifact.content ? (
         <div className={`text-forge-body ${PROSE_CLASSES}`}>
-          <ReactMarkdown
-            remarkPlugins={richContentPlugins}
-            components={richContentComponents}
-          >
+          <ReactMarkdown remarkPlugins={richContentPlugins} components={richContentComponents}>
             {artifact.content}
           </ReactMarkdown>
         </div>

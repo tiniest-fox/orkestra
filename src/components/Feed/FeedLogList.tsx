@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useProjectInfo } from "../../hooks/useProjectInfo";
-import type { LogEntry, WorkflowArtifact, WorkflowResource } from "../../types/workflow";
+import type { LogEntry, WorkflowResource } from "../../types/workflow";
 import { ErrorState } from "../ui";
 import type { ArtifactContext, UserClassification, UserMessage } from "./MessageList";
 import { buildDisplayMessages, MessageList } from "./MessageList";
@@ -42,7 +42,6 @@ interface FeedLogListProps {
   logs: LogEntry[];
   error?: unknown;
   isAgentRunning?: boolean;
-  artifacts?: Record<string, WorkflowArtifact>;
   artifactContext?: ArtifactContext;
   latestArtifactId?: string;
   taskResources?: Record<string, WorkflowResource>;
@@ -58,7 +57,6 @@ export function FeedLogList({
   logs,
   error,
   isAgentRunning = false,
-  artifacts,
   artifactContext,
   latestArtifactId,
   taskResources,
@@ -86,7 +84,6 @@ export function FeedLogList({
       emptyText="No activity yet."
       agentLabel="Agent"
       classifyUser={classifyUser}
-      artifacts={artifacts}
       artifactContext={artifactContext}
       latestArtifactId={latestArtifactId}
       taskResources={taskResources}

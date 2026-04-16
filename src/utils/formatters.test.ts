@@ -46,7 +46,7 @@ describe("formatPath", () => {
 
   // Max-length truncation on relativized paths
   it("truncates long relative paths after relativization", () => {
-    const longPath = "/w/.orkestra/.worktrees/t/" + "a/".repeat(30) + "file.ts";
+    const longPath = `/w/.orkestra/.worktrees/t/${"a/".repeat(30)}file.ts`;
     const result = formatPath(longPath);
     expect(result.length).toBeLessThanOrEqual(53); // ".../" + 3 segments ≤ 53 chars
   });

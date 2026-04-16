@@ -237,6 +237,7 @@ fn persist_and_emit_artifact(
         &LogEntry::ArtifactProduced {
             name: artifact_name.to_string(),
             artifact_id,
+            artifact: None,
         },
         Some(iteration_id),
     )

@@ -3,11 +3,11 @@
 import type React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
+import { titleCase } from "../../../../utils/titleCase";
 import { ChatComposeArea } from "../../ChatComposeArea";
 import { FeedLogList } from "../../FeedLogList";
 import type { ArtifactContext } from "../../MessageList";
 import type { TaskDrawerState } from "../useTaskDrawerState";
-import { titleCase } from "../../../../utils/titleCase";
 import { InlineQuestionsCard } from "./InlineQuestionsCard";
 
 // ============================================================================
@@ -162,7 +162,6 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
         logs={logs}
         error={logsError}
         isAgentRunning={derived.is_working || derived.chat_agent_active}
-        artifacts={task.artifacts}
         artifactContext={artifactContext}
         latestArtifactId={latestArtifactId}
         taskResources={task.resources}

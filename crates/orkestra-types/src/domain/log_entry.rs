@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::artifact::WorkflowArtifact;
+
 /// A single todo item from `TodoWrite` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TodoItem {
@@ -163,11 +165,18 @@ pub enum LogEntry {
     ///
     /// Emitted when an agent output is accepted and stored in `workflow_artifacts`.
     /// The `artifact_id` references the corresponding row for content lookup.
+    /// The `artifact` field is populated at query time (never stored) so the
+    /// frontend receives the full content without a separate lookup.
     ArtifactProduced {
         /// Artifact slot name (e.g., "plan", "breakdown", "summary").
         name: String,
         /// ID of the artifact record in the `workflow_artifacts` table.
         artifact_id: String,
+        /// Full artifact content, populated at query time from the store.
+        /// `None` when stored (always omitted from serialization to keep DB compact)
+        /// or when the artifact has been deleted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        artifact: Option<WorkflowArtifact>,
     },
 }
 
@@ -420,6 +429,7 @@ mod tests {
         let entry = LogEntry::ArtifactProduced {
             name: "plan".to_string(),
             artifact_id: "art-1".to_string(),
+            artifact: None,
         };
         assert_eq!(entry.type_name(), "artifact_produced");
     }
@@ -429,14 +439,36 @@ mod tests {
         let entry = LogEntry::ArtifactProduced {
             name: "plan".to_string(),
             artifact_id: "art-abc123".to_string(),
+            artifact: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("\"type\":\"artifact_produced\""));
         assert!(json.contains("\"name\":\"plan\""));
         assert!(json.contains("\"artifact_id\":\"art-abc123\""));
+        // artifact: None should be omitted from serialization
+        assert!(!json.contains("\"artifact\""));
 
         let parsed: LogEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn test_artifact_produced_backward_compat_deserialize() {
+        // Old stored entries without the `artifact` field should deserialize to artifact: None.
+        let json = r#"{"type":"artifact_produced","name":"plan","artifact_id":"art-1"}"#;
+        let parsed: LogEntry = serde_json::from_str(json).unwrap();
+        match parsed {
+            LogEntry::ArtifactProduced {
+                name,
+                artifact_id,
+                artifact,
+            } => {
+                assert_eq!(name, "plan");
+                assert_eq!(artifact_id, "art-1");
+                assert!(artifact.is_none());
+            }
+            _ => panic!("Expected ArtifactProduced variant"),
+        }
     }
 
     #[test]
@@ -444,6 +476,7 @@ mod tests {
         let entry = LogEntry::ArtifactProduced {
             name: "breakdown".to_string(),
             artifact_id: "art-1".to_string(),
+            artifact: None,
         };
         assert_eq!(entry.push_summary(), Some("produced breakdown".to_string()));
     }

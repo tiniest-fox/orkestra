@@ -126,11 +126,26 @@ fn test_artifact_produced_log_entry_emitted() {
         "Should have exactly one ArtifactProduced log entry"
     );
 
-    let LogEntry::ArtifactProduced { name, artifact_id } = &produced_entries[0] else {
+    let LogEntry::ArtifactProduced {
+        name,
+        artifact_id,
+        artifact,
+    } = &produced_entries[0]
+    else {
         panic!("Expected ArtifactProduced variant")
     };
     assert_eq!(name, "plan");
     assert!(!artifact_id.is_empty(), "artifact_id should be non-empty");
+
+    // get_task_logs enriches ArtifactProduced entries with the artifact content at query time.
+    let artifact = artifact
+        .as_ref()
+        .expect("artifact field should be Some after get_task_logs enrichment");
+    assert_eq!(
+        artifact.content, "Design plan",
+        "enriched artifact content should match what was stored"
+    );
+    assert_eq!(artifact.name, "plan");
 
     // The artifact_id should correspond to the stored artifact row.
     let artifacts = ctx.api().list_workflow_artifacts(&task_id).unwrap();

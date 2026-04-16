@@ -110,8 +110,7 @@ impl ScriptExecutionService {
     pub fn has_active_script(&self, task_id: &str) -> bool {
         self.active_scripts
             .lock()
-            .map(|scripts| scripts.contains_key(task_id))
-            .unwrap_or(false)
+            .is_ok_and(|scripts| scripts.contains_key(task_id))
     }
 
     /// Get the number of active scripts.

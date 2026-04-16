@@ -79,9 +79,9 @@ pub async fn start(config: RelayConfig) -> Result<RelayHandle, std::io::Error> {
     let rate_limiter_for_eviction = Arc::clone(&rate_limiter);
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            tokio::time::sleep(Duration::from_mins(1)).await;
             rate_limiter_for_eviction
-                .retain(|_, (_, last_used)| last_used.elapsed() < Duration::from_secs(300));
+                .retain(|_, (_, last_used)| last_used.elapsed() < Duration::from_mins(5));
         }
     });
 

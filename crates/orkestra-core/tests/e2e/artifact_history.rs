@@ -126,7 +126,10 @@ fn test_artifact_produced_log_entry_emitted() {
         "Should have exactly one ArtifactProduced log entry"
     );
 
-    let LogEntry::ArtifactProduced { name, artifact_id } = &produced_entries[0] else {
+    let LogEntry::ArtifactProduced {
+        name, artifact_id, ..
+    } = &produced_entries[0]
+    else {
         panic!("Expected ArtifactProduced variant")
     };
     assert_eq!(name, "plan");

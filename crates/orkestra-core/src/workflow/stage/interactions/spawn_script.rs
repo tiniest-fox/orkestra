@@ -24,6 +24,7 @@ pub(crate) fn execute(
     stage: &str,
     gate_config: &GateConfig,
     iteration_id: Option<&str>,
+    stage_session_id: Option<&str>,
 ) -> Result<ActiveScript, ScriptError> {
     let GateConfig::Automated {
         command,
@@ -57,6 +58,7 @@ pub(crate) fn execute(
         stage: stage.to_string(),
         handle,
         iteration_id: iteration_id.map(str::to_string),
+        stage_session_id: stage_session_id.map(str::to_string),
         lines: Vec::new(),
         started_at: chrono::Utc::now().to_rfc3339(),
     })

@@ -25,10 +25,25 @@ pub struct ActiveScript {
     pub handle: ScriptHandle,
     /// Iteration ID for gate result storage.
     pub iteration_id: Option<String>,
+    /// Stage session ID for appending log entries.
+    pub stage_session_id: Option<String>,
     /// Accumulated output lines (built up per poll tick).
     pub lines: Vec<String>,
     /// When the gate script was spawned (RFC3339).
     pub started_at: String,
+}
+
+/// Notification that gate script log entries were written.
+///
+/// Used to send `LogNotification` to consumers after gate output is persisted,
+/// enabling push-based frontend updates (same pipeline as agent log notifications).
+pub struct ScriptLogNotification {
+    /// Task ID whose gate script emitted output.
+    pub task_id: String,
+    /// Stage session ID that received the new log entries.
+    pub stage_session_id: String,
+    /// Human-readable summary of the last summarizable entry.
+    pub summary: Option<String>,
 }
 
 /// Result of polling an active script.
@@ -138,6 +153,7 @@ impl ScriptExecutionService {
         stage: &str,
         gate_config: &GateConfig,
         iteration_id: Option<&str>,
+        stage_session_id: Option<&str>,
     ) -> Result<u32, ScriptError> {
         let active_script = super::interactions::spawn_script::execute(
             &self.project_root,
@@ -145,6 +161,7 @@ impl ScriptExecutionService {
             stage,
             gate_config,
             iteration_id,
+            stage_session_id,
         )?;
 
         let pid = active_script.handle.pid();
@@ -184,21 +201,48 @@ impl ScriptExecutionService {
 
     /// Poll all active scripts for completion.
     ///
-    /// Returns a list of poll results. Incremental output is written to the
-    /// database as it arrives, allowing real-time log viewing.
-    pub fn poll_active_scripts(&self) -> Vec<ScriptPollResult> {
+    /// Returns poll results and any notifications for newly-written gate log entries.
+    /// Incremental output is written to the database as it arrives, allowing real-time log viewing.
+    pub fn poll_active_scripts(&self) -> (Vec<ScriptPollResult>, Vec<ScriptLogNotification>) {
         let mut results = Vec::new();
+        let mut notifications = Vec::new();
         let mut completed_task_ids = Vec::new();
 
         if let Ok(mut scripts) = self.active_scripts.lock() {
             for (task_id, script) in scripts.iter_mut() {
+                let lines_before = script.lines.len();
                 let result = super::interactions::poll_script::execute(self.store.as_ref(), script);
+                let had_new_output = script.lines.len() > lines_before;
+
                 match &result {
                     ScriptPollResult::Completed(_) | ScriptPollResult::Error { .. } => {
                         completed_task_ids.push(task_id.clone());
                     }
                     ScriptPollResult::Running => {}
                 }
+
+                // Build notification if new log entries were written
+                if let Some(session_id) = &script.stage_session_id {
+                    let should_notify =
+                        had_new_output || matches!(result, ScriptPollResult::Completed(_));
+                    if should_notify {
+                        let summary = if let ScriptPollResult::Completed(ref c) = result {
+                            if c.result.exit_code == 0 {
+                                Some("gate passed".to_string())
+                            } else {
+                                Some("gate failed".to_string())
+                            }
+                        } else {
+                            None
+                        };
+                        notifications.push(ScriptLogNotification {
+                            task_id: task_id.clone(),
+                            stage_session_id: session_id.clone(),
+                            summary,
+                        });
+                    }
+                }
+
                 results.push(result);
             }
 
@@ -208,6 +252,6 @@ impl ScriptExecutionService {
             }
         }
 
-        results
+        (results, notifications)
     }
 }

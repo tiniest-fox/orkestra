@@ -31,7 +31,7 @@ use crate::orkestra_debug;
 use crate::workflow::agent::interactions as agent_interactions;
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{TaskHeader, TickSnapshot};
+use crate::workflow::domain::{LogEntry, TaskHeader, TickSnapshot};
 use crate::workflow::integration::interactions as integration_interactions;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
@@ -539,115 +539,154 @@ impl OrchestratorLoop {
         events: &mut Vec<OrchestratorEvent>,
     ) -> WorkflowResult<()> {
         let active_task_ids = self.stage_executor.active_task_ids();
-
         for header in &snapshot.awaiting_gate {
-            // Skip if already has an active gate (avoid double-spawn)
-            if active_task_ids.contains(&header.id) {
-                continue;
+            if !active_task_ids.contains(&header.id) {
+                self.spawn_one_gate(&header.id, events)?;
             }
+        }
+        Ok(())
+    }
 
-            // Load full task
-            let task = {
-                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                match api.store.get_task(&header.id)? {
-                    Some(t) => t,
-                    None => continue,
-                }
-            };
+    /// Spawn a single gate script for the given task ID.
+    ///
+    /// Loads the task, resolves gate config, transitions state, then delegates to
+    /// `do_spawn_gate` for the actual spawn + event emission.
+    fn spawn_one_gate(
+        &self,
+        task_id: &str,
+        events: &mut Vec<OrchestratorEvent>,
+    ) -> WorkflowResult<()> {
+        // Load full task
+        let task = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            match api.store.get_task(task_id)? {
+                Some(t) => t,
+                None => return Ok(()),
+            }
+        };
+        let stage = match task.current_stage() {
+            Some(s) => s.to_string(),
+            None => return Ok(()),
+        };
 
-            let stage = match task.current_stage() {
-                Some(s) => s.to_string(),
-                None => continue,
-            };
+        // Resolve gate config (flow-aware)
+        let gate_config = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            api.workflow
+                .stage(&task.flow, &stage)
+                .and_then(|s| s.gate.clone())
+        };
+        let Some(gate_config) = gate_config else {
+            orkestra_debug!(
+                "orchestrator",
+                "No gate config found for {}/{}, skipping",
+                task.id,
+                stage
+            );
+            return Ok(());
+        };
 
-            // Resolve gate config (flow-aware)
-            let gate_config = {
-                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                api.workflow
-                    .stage(&task.flow, &stage)
-                    .and_then(|s| s.gate.clone())
-            };
-            let Some(gate_config) = gate_config else {
-                // Stage no longer has a gate (config changed?) — skip
+        // Transition to GateRunning
+        {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            if let Err(e) = api.gate_started(&task.id) {
                 orkestra_debug!(
                     "orchestrator",
-                    "No gate config found for {}/{}, skipping",
+                    "Failed to transition gate for {}: {}",
                     task.id,
-                    stage
+                    e
                 );
-                continue;
-            };
-
-            // Transition to GateRunning
-            {
-                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                if let Err(e) = api.gate_started(&task.id) {
-                    orkestra_debug!(
-                        "orchestrator",
-                        "Failed to transition gate to GateRunning for {}: {}",
-                        task.id,
-                        e
-                    );
-                    events.push(OrchestratorEvent::Error {
-                        task_id: Some(task.id.clone()),
-                        error: format!("Gate transition failed: {e}"),
-                    });
-                    continue;
-                }
-            }
-
-            // Look up the active iteration to track gate output on it
-            let iteration_id = {
-                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                api.store
-                    .get_latest_iteration(&task.id, &stage)
-                    .ok()
-                    .flatten()
-                    .map(|i| i.id)
-            };
-
-            // Spawn gate
-            match self.stage_executor.spawn_gate(
-                &task,
-                &stage,
-                &gate_config,
-                iteration_id.as_deref(),
-            ) {
-                Ok(result) => {
-                    events.push(OrchestratorEvent::GateSpawned {
-                        task_id: result.task_id,
-                        stage: result.stage,
-                        command: result.command.unwrap_or_default(),
-                        pid: result.pid,
-                    });
-                }
-                Err(e) => {
-                    // Reset back to AwaitingGate so the next tick retries
-                    let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                    if let Ok(mut t) = api
-                        .store
-                        .get_task(&task.id)
-                        .map(|r| r.unwrap_or(task.clone()))
-                    {
-                        t.state = crate::workflow::runtime::TaskState::awaiting_gate(&stage);
-                        t.updated_at = chrono::Utc::now().to_rfc3339();
-                        if let Err(save_err) = api.store.save_task(&t) {
-                            orkestra_debug!(
-                                "orchestrator",
-                                "Failed to save task {} after gate spawn failure: {}",
-                                task.id,
-                                save_err
-                            );
-                        }
-                    }
-                    events.push(OrchestratorEvent::Error {
-                        task_id: Some(task.id.clone()),
-                        error: format!("Gate spawn failed: {e}"),
-                    });
-                }
+                events.push(OrchestratorEvent::Error {
+                    task_id: Some(task.id.clone()),
+                    error: format!("Gate transition failed: {e}"),
+                });
+                return Ok(());
             }
         }
 
+        self.do_spawn_gate(&task, &stage, &gate_config, events)
+    }
+
+    /// Look up log-entry context, spawn the gate process, and emit result events.
+    ///
+    /// Called by `spawn_one_gate` after the task has been loaded and transitioned.
+    fn do_spawn_gate(
+        &self,
+        task: &crate::workflow::domain::Task,
+        stage: &str,
+        gate_config: &crate::workflow::config::GateConfig,
+        events: &mut Vec<OrchestratorEvent>,
+    ) -> WorkflowResult<()> {
+        // Look up the active iteration and stage session for gate log entries
+        let (iteration_id, stage_session_id) = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            let iter = api
+                .store
+                .get_latest_iteration(&task.id, stage)
+                .ok()
+                .flatten()
+                .map(|i| i.id);
+            let session = api
+                .store
+                .get_stage_session(&task.id, stage)
+                .ok()
+                .flatten()
+                .map(|s| s.id);
+            (iter, session)
+        };
+
+        match self.stage_executor.spawn_gate(
+            task,
+            stage,
+            gate_config,
+            iteration_id.as_deref(),
+            stage_session_id.as_deref(),
+        ) {
+            Ok(result) => {
+                let command = result.command.clone().unwrap_or_default();
+                events.push(OrchestratorEvent::GateSpawned {
+                    task_id: result.task_id,
+                    stage: result.stage,
+                    command: command.clone(),
+                    pid: result.pid,
+                });
+                if let (Some(session_id), Some(iter_id)) =
+                    (stage_session_id.as_deref(), iteration_id.as_deref())
+                {
+                    self.stage_executor.emit_log_entries(
+                        session_id,
+                        &task.id,
+                        stage,
+                        &[LogEntry::GateStarted { command }],
+                        iter_id,
+                    );
+                }
+            }
+            Err(e) => {
+                // Reset back to AwaitingGate so the next tick retries
+                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+                if let Ok(mut t) = api
+                    .store
+                    .get_task(&task.id)
+                    .map(|r| r.unwrap_or(task.clone()))
+                {
+                    t.state = crate::workflow::runtime::TaskState::awaiting_gate(stage);
+                    t.updated_at = chrono::Utc::now().to_rfc3339();
+                    if let Err(save_err) = api.store.save_task(&t) {
+                        orkestra_debug!(
+                            "orchestrator",
+                            "Failed to save task {} after gate spawn failure: {}",
+                            task.id,
+                            save_err
+                        );
+                    }
+                }
+                events.push(OrchestratorEvent::Error {
+                    task_id: Some(task.id.clone()),
+                    error: format!("Gate spawn failed: {e}"),
+                });
+            }
+        }
         Ok(())
     }
 

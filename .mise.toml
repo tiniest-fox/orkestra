@@ -1,4 +1,5 @@
 [tools]
+# Rust version is pinned in rust-toolchain.toml (shared with CI)
 rust = "stable"
 node = "22"
 pnpm = "9"

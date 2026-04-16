@@ -491,6 +491,18 @@ const reviewSessionLogs: LogEntry[] = [
     content:
       "One concern: the README update only mentions the port number but not the `pool_mode = transaction` setting that's critical for correctness. That said, this is covered in the docker-compose comments. Approving.",
   },
+  {
+    type: "artifact_produced",
+    name: "review",
+    artifact_id: "demo-review-artifact",
+    artifact: {
+      name: "review",
+      content: "Approved. The connection pooling implementation is correct.",
+      stage: "review",
+      created_at: "2026-01-15T11:00:00Z",
+      iteration: 1,
+    },
+  },
 ];
 
 export const demoLogsBySession: Record<string, LogEntry[]> = {

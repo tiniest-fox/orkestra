@@ -162,7 +162,6 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
         logs={logs}
         error={logsError}
         isAgentRunning={derived.is_working || derived.chat_agent_active}
-        artifacts={task.artifacts}
         artifactContext={artifactContext}
         latestArtifactId={latestArtifactId}
         taskResources={task.resources}

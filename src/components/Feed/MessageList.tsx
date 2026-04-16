@@ -11,12 +11,7 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { Virtualizer } from "virtua";
 import type { CustomItemComponentProps, VirtualizerHandle } from "virtua";
-import type {
-  LogEntry,
-  ResumeType,
-  WorkflowArtifact,
-  WorkflowResource,
-} from "../../types/workflow";
+import type { LogEntry, ResumeType, WorkflowResource } from "../../types/workflow";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -159,7 +154,6 @@ type VirtualItem =
       kind: "agent-entry";
       entry: GroupedLogEntry;
       projectRoot?: string;
-      artifacts?: Record<string, WorkflowArtifact>;
       artifactContext?: ArtifactContext;
       latestArtifactId?: string;
       taskResources?: Record<string, WorkflowResource>;
@@ -184,7 +178,6 @@ export function buildVirtualItems(
     userLabel: string;
     classifyUser?: (msg: UserMessage) => UserClassification;
     projectRoot?: string;
-    artifacts?: Record<string, WorkflowArtifact>;
     artifactContext?: ArtifactContext;
     latestArtifactId?: string;
     taskResources?: Record<string, WorkflowResource>;
@@ -231,7 +224,6 @@ export function buildVirtualItems(
           kind: "agent-entry",
           entry,
           projectRoot: opts.projectRoot,
-          artifacts: opts.artifacts,
           artifactContext: opts.artifactContext,
           latestArtifactId: opts.latestArtifactId,
           taskResources: opts.taskResources,
@@ -287,14 +279,12 @@ const AssistantTextLine = memo(function AssistantTextLine({ content }: { content
 export const AgentEntry = memo(function AgentEntry({
   entry,
   projectRoot,
-  artifacts,
   artifactContext,
   latestArtifactId,
   taskResources,
 }: {
   entry: GroupedLogEntry;
   projectRoot?: string;
-  artifacts?: Record<string, WorkflowArtifact>;
   artifactContext?: ArtifactContext;
   latestArtifactId?: string;
   taskResources?: Record<string, WorkflowResource>;
@@ -382,8 +372,7 @@ export const AgentEntry = memo(function AgentEntry({
       return <ErrorLine message={entry.message} />;
 
     case "artifact_produced": {
-      const artifact = artifacts?.[entry.name];
-      if (!artifact) return null;
+      const artifact = entry.artifact;
       const isLatest = latestArtifactId !== undefined && entry.artifact_id === latestArtifactId;
       const stageResources = taskResources
         ? Object.values(taskResources)
@@ -492,7 +481,6 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
           <AgentEntry
             entry={item.entry}
             projectRoot={item.projectRoot}
-            artifacts={item.artifacts}
             artifactContext={item.artifactContext}
             latestArtifactId={item.latestArtifactId}
             taskResources={item.taskResources}
@@ -606,8 +594,6 @@ export interface MessageListProps {
   classifyUser?: (msg: UserMessage) => UserClassification;
   /** Transforms user message content before rendering. Defaults to identity. */
   contentFilter?: (content: string) => string;
-  /** Artifacts produced by agents, keyed by artifact name. Used to render artifact_produced log entries. */
-  artifacts?: Record<string, WorkflowArtifact>;
   /** Context for rendering the latest artifact with actions or questions. */
   artifactContext?: ArtifactContext;
   /** The artifact_id of the latest artifact_produced log entry — only this entry gets actions. */
@@ -641,7 +627,6 @@ export function MessageList({
   userLabel = "You",
   classifyUser,
   contentFilter,
-  artifacts,
   artifactContext,
   latestArtifactId,
   taskResources,
@@ -704,7 +689,6 @@ export function MessageList({
         userLabel,
         classifyUser,
         projectRoot,
-        artifacts,
         artifactContext,
         latestArtifactId,
         taskResources,
@@ -717,7 +701,6 @@ export function MessageList({
       userLabel,
       classifyUser,
       projectRoot,
-      artifacts,
       artifactContext,
       latestArtifactId,
       taskResources,

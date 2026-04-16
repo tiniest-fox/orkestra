@@ -158,6 +158,13 @@ describe("buildVirtualItems", () => {
       type: "artifact_produced",
       name: "plan",
       artifact_id: "artifact-1",
+      artifact: {
+        name: "plan",
+        content: "# Plan",
+        stage: "planning",
+        created_at: "2026-01-01T00:00:00Z",
+        iteration: 1,
+      },
     };
     const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
     const items = buildVirtualItems(messages, defaultOpts);
@@ -166,12 +173,6 @@ describe("buildVirtualItems", () => {
   });
 
   it("threads artifactContext into agent-entry items with artifact_produced entries", () => {
-    const artifactEntry: LogEntry = {
-      type: "artifact_produced",
-      name: "plan",
-      artifact_id: "artifact-42",
-    };
-    const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
     const artifact: WorkflowArtifact = {
       name: "plan",
       content: "# Plan",
@@ -179,6 +180,13 @@ describe("buildVirtualItems", () => {
       created_at: "2026-01-01T00:00:00Z",
       iteration: 1,
     };
+    const artifactEntry: LogEntry = {
+      type: "artifact_produced",
+      name: "plan",
+      artifact_id: "artifact-42",
+      artifact,
+    };
+    const messages: DisplayMessage[] = [{ kind: "agent", entries: [artifactEntry] }];
     const artifactContext: ArtifactContext = {
       actions: {
         needsReview: true,
@@ -190,7 +198,6 @@ describe("buildVirtualItems", () => {
     };
     const items = buildVirtualItems(messages, {
       ...defaultOpts,
-      artifacts: { plan: artifact },
       artifactContext,
       latestArtifactId: "artifact-42",
     });
@@ -203,15 +210,24 @@ describe("buildVirtualItems", () => {
   });
 
   it("passes latestArtifactId so superseded entries can be identified", () => {
+    const baseArtifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "planning",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
     const olderEntry: LogEntry = {
       type: "artifact_produced",
       name: "plan",
       artifact_id: "artifact-1",
+      artifact: baseArtifact,
     };
     const newerEntry: LogEntry = {
       type: "artifact_produced",
       name: "plan",
       artifact_id: "artifact-2",
+      artifact: { ...baseArtifact, iteration: 2 },
     };
     const messages: DisplayMessage[] = [{ kind: "agent", entries: [olderEntry, newerEntry] }];
     const items = buildVirtualItems(messages, {

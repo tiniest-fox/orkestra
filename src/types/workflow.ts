@@ -607,7 +607,8 @@ export type ResumeType =
   | "manual_resume"
   | "initial"
   | "chat"
-  | "return_to_work";
+  | "return_to_work"
+  | "correction";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).
@@ -639,7 +640,8 @@ export type LogEntry =
     }
   | { type: "process_exit"; code?: number }
   | { type: "error"; message: string }
-  | { type: "artifact_produced"; name: string; artifact_id: string; artifact?: WorkflowArtifact };
+  | { type: "artifact_produced"; name: string; artifact_id: string; artifact?: WorkflowArtifact }
+  | { type: "extracted_json"; raw_json: string; valid: boolean };
 
 // =============================================================================
 // PR Status

@@ -20,6 +20,9 @@ use orkestra_process::{is_process_running, kill_process_tree, ProcessConfig, Pro
 /// Resume type identifier for chat messages in log entries.
 pub const CHAT_RESUME_TYPE: &str = "chat";
 
+/// Resume type identifier for auto-correction messages in log entries.
+pub const CORRECTION_RESUME_TYPE: &str = "correction";
+
 /// Send a chat message to the stage agent.
 ///
 /// Validates state, enters chat mode on first message, logs the user message,
@@ -151,6 +154,30 @@ fn schema_type_hint(schema: &serde_json::Value) -> String {
                     .join(", ")
             },
         )
+}
+
+/// Emit an `ExtractedJson` log entry classifying detected output for the frontend.
+fn emit_extracted_json_entry(
+    store: &Arc<dyn WorkflowStore>,
+    session_id: &str,
+    raw_json: String,
+    valid: bool,
+) {
+    if let Err(e) = store.append_log_entry(
+        session_id,
+        &LogEntry::ExtractedJson { raw_json, valid },
+        None,
+    ) {
+        orkestra_debug!("stage_chat", "Failed to append ExtractedJson entry: {}", e);
+    }
+}
+
+/// Build a corrective `UserMessage` log entry using the correction resume type.
+fn correction_user_message(error: &str) -> LogEntry {
+    LogEntry::UserMessage {
+        resume_type: CORRECTION_RESUME_TYPE.to_string(),
+        content: error.to_string(),
+    }
 }
 
 /// Kill any running chat agent, spawn a new one, and start reading its output in background.
@@ -406,22 +433,26 @@ fn read_chat_output(
         let full_text = accumulated_text.join("\n");
         match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &full_text)
         {
-            Ok(DetectionResult::Completed) => {
+            Ok(DetectionResult::Completed { raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",
                     "Detected structured output in chat, stage completed for task {}",
                     task_id
                 );
+                emit_extracted_json_entry(store, session_id, raw_json, true);
                 detection_succeeded = true;
             }
             Ok(DetectionResult::NotDetected) => {} // No structured output detected, continue normal flow
-            Ok(DetectionResult::CorrectionNeeded(error)) => {
+            Ok(DetectionResult::CorrectionNeeded { error, raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",
                     "Structured output correction needed for task {}: {}",
                     task_id,
                     error
                 );
+
+                // Append ExtractedJson log entry for frontend classification
+                emit_extracted_json_entry(store, session_id, raw_json, false);
 
                 // Log the error as a visible system message
                 let system_msg = format!("[System] {error}");
@@ -445,10 +476,7 @@ fn read_chat_output(
                     // Log as UserMessage so the agent sees it in context on resume
                     if let Err(e) = store.append_log_entry(
                         session_id,
-                        &LogEntry::UserMessage {
-                            resume_type: CHAT_RESUME_TYPE.to_string(),
-                            content: corrective_msg.clone(),
-                        },
+                        &correction_user_message(&corrective_msg),
                         None,
                     ) {
                         orkestra_debug!(
@@ -619,7 +647,7 @@ fn read_chat_output(
 #[cfg(test)]
 fn should_attempt_correction(result: &DetectionResult, remaining: u32) -> Option<&str> {
     match result {
-        DetectionResult::CorrectionNeeded(msg) if remaining > 0 => Some(msg.as_str()),
+        DetectionResult::CorrectionNeeded { error, .. } if remaining > 0 => Some(error.as_str()),
         _ => None,
     }
 }
@@ -631,23 +659,97 @@ fn should_attempt_correction(result: &DetectionResult, remaining: u32) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::StageSession;
+    use crate::workflow::ports::WorkflowStore;
+
+    #[test]
+    fn completed_detection_appends_valid_extracted_json() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-completed", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        emit_extracted_json_entry(
+            &store,
+            "ss-completed",
+            r#"{"type":"summary"}"#.to_string(),
+            true,
+        );
+
+        let entries = store.get_log_entries("ss-completed").unwrap();
+        assert_eq!(entries.len(), 1);
+        match &entries[0] {
+            LogEntry::ExtractedJson { raw_json, valid } => {
+                assert!(*valid, "Completed path emits valid: true");
+                assert!(raw_json.contains("summary"));
+            }
+            _ => panic!("expected ExtractedJson"),
+        }
+    }
+
+    #[test]
+    fn correction_detection_appends_invalid_extracted_json() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-correction", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        emit_extracted_json_entry(
+            &store,
+            "ss-correction",
+            r#"{"type":"bogus"}"#.to_string(),
+            false,
+        );
+
+        let entries = store.get_log_entries("ss-correction").unwrap();
+        assert_eq!(entries.len(), 1);
+        match &entries[0] {
+            LogEntry::ExtractedJson { raw_json, valid } => {
+                assert!(!*valid, "CorrectionNeeded path emits valid: false");
+                assert!(raw_json.contains("bogus"));
+            }
+            _ => panic!("expected ExtractedJson"),
+        }
+    }
+
+    #[test]
+    fn correction_user_message_uses_correction_resume_type() {
+        match correction_user_message("please fix your output") {
+            LogEntry::UserMessage {
+                resume_type,
+                content,
+            } => {
+                assert_eq!(resume_type, CORRECTION_RESUME_TYPE);
+                assert_eq!(resume_type, "correction");
+                assert_eq!(content, "please fix your output");
+            }
+            _ => panic!("expected UserMessage"),
+        }
+    }
 
     #[test]
     fn should_attempt_correction_when_remaining() {
-        let result = DetectionResult::CorrectionNeeded("bad schema".to_string());
+        let result = DetectionResult::CorrectionNeeded {
+            error: "bad schema".to_string(),
+            raw_json: "{}".to_string(),
+        };
         assert_eq!(should_attempt_correction(&result, 1), Some("bad schema"));
         assert_eq!(should_attempt_correction(&result, 2), Some("bad schema"));
     }
 
     #[test]
     fn should_not_attempt_correction_when_exhausted() {
-        let result = DetectionResult::CorrectionNeeded("bad schema".to_string());
+        let result = DetectionResult::CorrectionNeeded {
+            error: "bad schema".to_string(),
+            raw_json: "{}".to_string(),
+        };
         assert_eq!(should_attempt_correction(&result, 0), None);
     }
 
     #[test]
     fn should_not_attempt_correction_when_completed() {
-        let result = DetectionResult::Completed;
+        let result = DetectionResult::Completed {
+            raw_json: "{}".to_string(),
+        };
         assert_eq!(should_attempt_correction(&result, 1), None);
     }
 

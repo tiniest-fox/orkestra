@@ -6,7 +6,7 @@
 //! from `orkestra_core::process` without taking direct dependencies.
 
 pub use orkestra_process::{
-    is_process_running, kill_process_tree, parse_stream_event, spawn_stderr_reader,
+    is_process_running, is_zombie, kill_process_tree, parse_stream_event, spawn_stderr_reader,
     ParsedStreamEvent, ProcessGuard,
 };
 

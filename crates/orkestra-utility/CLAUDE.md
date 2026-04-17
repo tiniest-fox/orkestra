@@ -4,7 +4,7 @@ AI agent guidance for working in this crate.
 
 ## Purpose
 
-Lightweight AI utility tasks: title generation, commit message generation, and PR description generation. Most tasks run single-turn (`--print` mode); PR description runs interactively with tool access so the agent can read files and git history directly.
+Lightweight AI utility tasks: title generation, commit message generation, and PR description generation. Task title generation runs interactively (so the agent can fetch context from external links like Asana URLs); commit message generation uses single-turn mode; PR description runs interactively so the agent can read files and git history directly.
 
 ## Module Structure
 
@@ -75,7 +75,7 @@ let output = runner.run("generate_pr_description", &context)?;
 
 | Function | Purpose |
 |----------|---------|
-| `generate_title_sync(description, timeout)` | Blocking title generation via UtilityRunner |
+| `generate_title_sync(description, timeout_secs, mode)` | Blocking title generation via UtilityRunner; pass `Interactive` for external links, `SingleTurn` for plain text |
 | `generate_fallback_title(description)` | Truncate description at ~50 chars |
 
 ### pr_description.rs

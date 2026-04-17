@@ -479,14 +479,15 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
             }
         });
 
-        orchestrator.run(move |event| {
+        let reason = orchestrator.run(move |event| {
             handle_orchestrator_event(&app_handle, &window_label_owned, &event);
         });
 
         orkestra_debug!(
             "orchestrator",
-            "Stopped orchestrator for {}",
-            window_label_for_log
+            "Orchestrator exited for {}: {}",
+            window_label_for_log,
+            reason
         );
     });
 }

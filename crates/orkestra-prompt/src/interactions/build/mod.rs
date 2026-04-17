@@ -4,6 +4,7 @@
 
 pub mod agent_config;
 pub mod context;
+pub mod dynamic_sections;
 pub mod system_prompt;
 pub mod user_message;
 pub mod workflow_overview;

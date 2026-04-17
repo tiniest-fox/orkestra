@@ -140,6 +140,9 @@ pub struct ResolvedAgentConfig {
     pub json_schema: String,
     /// Session type identifier (e.g., "planning", "work").
     pub session_type: String,
+    /// Dynamic prompt sections extracted from the prompt context.
+    /// Non-empty only for fresh spawns with dynamic context (feedback, conflicts, etc.).
+    pub dynamic_sections: Vec<orkestra_types::domain::PromptSection>,
 }
 
 /// Error type for agent configuration resolution.

@@ -110,6 +110,13 @@ pub enum ToolInput {
     },
 }
 
+/// A named section of dynamic prompt context surfaced to the user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptSection {
+    pub label: String,
+    pub content: String,
+}
+
 /// Default resume type for backwards compatibility.
 fn default_resume_type() -> String {
     "continue".to_string()
@@ -129,6 +136,9 @@ pub enum LogEntry {
         resume_type: String,
         /// Content of the resumption message.
         content: String,
+        /// Dynamic prompt sections. Non-empty only for fresh spawns (`resume_type` == `"initial"`).
+        #[serde(default)]
+        sections: Vec<PromptSection>,
     },
     /// Tool use by the main agent.
     ToolUse {

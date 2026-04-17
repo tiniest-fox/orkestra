@@ -81,6 +81,7 @@ pub fn execute(
         &LogEntry::UserMessage {
             resume_type: CHAT_RESUME_TYPE.to_string(),
             content: message.to_string(),
+            sections: Vec::new(),
         },
         None,
     )?;
@@ -177,6 +178,7 @@ fn correction_user_message(error: &str) -> LogEntry {
     LogEntry::UserMessage {
         resume_type: CORRECTION_RESUME_TYPE.to_string(),
         content: error.to_string(),
+        sections: Vec::new(),
     }
 }
 
@@ -717,6 +719,7 @@ mod tests {
             LogEntry::UserMessage {
                 resume_type,
                 content,
+                ..
             } => {
                 assert_eq!(resume_type, CORRECTION_RESUME_TYPE);
                 assert_eq!(resume_type, "correction");

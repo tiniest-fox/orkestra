@@ -109,6 +109,7 @@ impl AssistantService {
             &LogEntry::UserMessage {
                 resume_type: "message".to_string(),
                 content: message.to_string(),
+                sections: Vec::new(),
             },
         )?;
 
@@ -265,6 +266,7 @@ impl AssistantService {
                 &LogEntry::UserMessage {
                     resume_type: "message".to_string(),
                     content: message.to_string(),
+                    sections: Vec::new(),
                 },
             )?;
             self.store.append_assistant_log_entry(
@@ -292,6 +294,7 @@ impl AssistantService {
             &LogEntry::UserMessage {
                 resume_type: "message".to_string(),
                 content: message.to_string(),
+                sections: Vec::new(),
             },
         )?;
 
@@ -1005,6 +1008,7 @@ mod tests {
         let user_msg = LogEntry::UserMessage {
             resume_type: "message".to_string(),
             content: "first message".to_string(),
+            sections: Vec::new(),
         };
         let text_msg = LogEntry::Text {
             content: "response".to_string(),
@@ -1302,6 +1306,7 @@ mod tests {
         assert!(!is_visible_log_entry(&LogEntry::UserMessage {
             resume_type: "message".into(),
             content: "user said".into(),
+            sections: Vec::new(),
         }));
         assert!(!is_visible_log_entry(&LogEntry::ToolResult {
             tool: "Bash".into(),

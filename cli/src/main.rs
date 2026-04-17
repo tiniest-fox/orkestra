@@ -471,6 +471,7 @@ fn print_log_entry_pretty(entry: &LogEntry) {
         LogEntry::UserMessage {
             resume_type,
             content,
+            ..
         } => {
             println!("[user_message] ({resume_type}) {content}");
         }

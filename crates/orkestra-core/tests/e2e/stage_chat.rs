@@ -163,7 +163,7 @@ fn test_send_message_enters_chat_mode_during_awaiting_approval() {
     let has_user_message = logs.iter().any(|e| {
         matches!(
             e,
-            LogEntry::UserMessage { resume_type, content }
+            LogEntry::UserMessage { resume_type, content, .. }
                 if resume_type == "chat" && content == "How is the review going?"
         )
     });
@@ -390,7 +390,7 @@ fn test_send_message_during_interrupted() {
     let has_user_message = logs.iter().any(|e| {
         matches!(
             e,
-            LogEntry::UserMessage { resume_type, content }
+            LogEntry::UserMessage { resume_type, content, .. }
                 if resume_type == "chat" && content == "Why did you stop?"
         )
     });

@@ -17,7 +17,6 @@ use std::thread;
 
 use crate::orkestra_debug;
 use crate::title::{generate_fallback_title, generate_title_sync};
-use orkestra_utility::ExecutionMode;
 use crate::workflow::domain::{AssistantSession, LogEntry, Task};
 use crate::workflow::execution::{AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -25,6 +24,7 @@ use orkestra_agent::interactions::spawner::cli_path::prepare_path_env;
 use orkestra_agent::resolve_agent_env;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessGuard};
 use orkestra_types::domain::SessionType;
+use orkestra_utility::ExecutionMode;
 
 // ============================================================================
 // Constants

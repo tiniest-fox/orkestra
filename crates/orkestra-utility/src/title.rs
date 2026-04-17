@@ -35,8 +35,7 @@ pub struct ClaudeTitleGenerator;
 
 impl TitleGenerator for ClaudeTitleGenerator {
     fn generate_title(&self, _task_id: &str, description: &str) -> Result<String, String> {
-        generate_title_sync(description, 120, ExecutionMode::Interactive)
-            .map_err(|e| e.to_string())
+        generate_title_sync(description, 120, ExecutionMode::Interactive).map_err(|e| e.to_string())
     }
 }
 

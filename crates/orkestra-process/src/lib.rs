@@ -22,7 +22,7 @@ pub use types::{ParsedStreamEvent, ProcessConfig, ProcessError, ProcessGuard, Pr
 pub use interactions::io::spawn_stderr_reader::execute as spawn_stderr_reader;
 pub use interactions::stream::parse_event::execute as parse_stream_event;
 pub use interactions::tree::is_running::execute as is_process_running;
-pub use interactions::tree::is_running::is_zombie;
+pub use interactions::tree::is_zombie::execute as is_zombie;
 pub use interactions::tree::kill::execute as kill_process_tree;
 
 // Mock (feature-gated)

@@ -13,7 +13,8 @@ src/
 └── interactions/
     ├── tree/
     │   ├── kill.rs        # kill_process_tree() — recursive tree killing
-    │   └── is_running.rs  # is_process_running() — liveness check
+    │   ├── is_running.rs  # is_process_running() — liveness check
+    │   └── is_zombie.rs   # is_zombie() — zombie detection via ps
     ├── io/
     │   └── spawn_stderr_reader.rs  # Background stderr collection
     └── stream/

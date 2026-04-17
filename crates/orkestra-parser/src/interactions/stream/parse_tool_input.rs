@@ -149,9 +149,8 @@ fn summarize_input(input: &serde_json::Value) -> String {
         |_| "{}".to_string(),
         |s| {
             if s.len() > 100 {
-                // Safe because serde_json serializes to ASCII-only JSON (all non-ASCII chars
-                // are escaped as \uXXXX), so byte 100 is always on a character boundary.
-                format!("{}...", &s[..100])
+                let end = s.floor_char_boundary(100);
+                format!("{}...", &s[..end])
             } else {
                 s
             }
@@ -180,7 +179,6 @@ fn extract_grep_pattern(command: &str) -> Option<String> {
         "-B",
         "-C",
         "-m",
-        "-e",
         "-f",
         "-t",
         "--after-context",
@@ -227,6 +225,9 @@ fn extract_grep_pattern(command: &str) -> Option<String> {
     while idx < words.len() && words[idx].starts_with('-') {
         let flag = words[idx];
         idx += 1;
+        if let Some(pat) = flag.strip_prefix("--regexp=") {
+            return Some(pat.to_string());
+        }
         if flag == "-e" || flag == "--regexp" {
             // -e PATTERN is canonical — return it directly.
             return if idx < words.len() {
@@ -661,5 +662,30 @@ mod tests {
             matches!(result.input, ToolInput::Other { .. }),
             "Unknown tools should fall through to Other"
         );
+    }
+
+    #[test]
+    fn test_bash_grep_regexp_equals_form() {
+        // --regexp=pattern (equals form) must extract the pattern correctly.
+        let input = serde_json::json!({"command": "grep --regexp=search_term src/"});
+        let parsed = execute("Bash", &input);
+        assert_eq!(
+            parsed.input,
+            ToolInput::Grep {
+                pattern: "search_term".to_string()
+            }
+        );
+        assert_eq!(parsed.display_name, Some("Grep".to_string()));
+    }
+
+    #[test]
+    fn test_summarize_input_multibyte_utf8() {
+        // summarize_input must not panic when the serialized JSON contains multi-byte UTF-8
+        // at byte position 100. The string is padded so the UTF-8 boundary falls at exactly 100.
+        let padding = "a".repeat(98);
+        let value = serde_json::json!({"k": format!("{padding}é_more_text")});
+        // Should not panic; just verify it returns a string ending in "..."
+        let summary = summarize_input(&value);
+        assert!(summary.ends_with("..."), "expected truncation marker");
     }
 }

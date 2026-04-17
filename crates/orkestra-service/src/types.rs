@@ -93,6 +93,15 @@ pub struct Project {
     pub pid: Option<u32>,
     pub created_at: String,
     pub container_id: Option<String>,
+    pub cpu_limit: Option<f64>,
+    pub memory_limit_mb: Option<i64>,
+}
+
+/// Per-project CPU and memory resource limits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceLimits {
+    pub cpu_limit: Option<f64>,
+    pub memory_limit_mb: Option<i64>,
 }
 
 /// Parameters for starting a Docker container for a project.
@@ -106,6 +115,8 @@ pub struct ContainerStartParams {
     pub port: u16,
     pub override_dir: std::path::PathBuf,
     pub force_build: bool,
+    pub cpu_limit: Option<f64>,
+    pub memory_limit_mb: Option<i64>,
 }
 
 /// Configuration for the service.

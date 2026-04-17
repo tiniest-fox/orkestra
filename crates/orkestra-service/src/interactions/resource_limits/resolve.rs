@@ -76,6 +76,9 @@ mod tests {
     use super::execute;
     use crate::interactions::resource_limits::set;
 
+    // Env vars are process-global; serialize tests that mutate them.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
     fn conn() -> Arc<Mutex<Connection>> {
         let c = Connection::open_in_memory().unwrap();
         crate::database::apply_migrations_for_test(&c);
@@ -95,6 +98,7 @@ mod tests {
 
     #[test]
     fn db_override_wins() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let conn = conn();
         insert_project(&conn, "proj1");
         set::execute(&conn, "proj1", Some(8.0), Some(16384)).unwrap();
@@ -115,6 +119,7 @@ mod tests {
 
     #[test]
     fn env_var_wins_when_no_db_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let conn = conn();
         insert_project(&conn, "proj1");
 
@@ -139,6 +144,7 @@ mod tests {
 
     #[test]
     fn minimum_floor_applied() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let conn = conn();
         insert_project(&conn, "proj1");
 
@@ -161,6 +167,7 @@ mod tests {
 
     #[test]
     fn host_detection_fallback_returns_positive_values() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let conn = conn();
         insert_project(&conn, "proj1");
 

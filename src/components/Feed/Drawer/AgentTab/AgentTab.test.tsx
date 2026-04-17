@@ -16,9 +16,14 @@ vi.mock("../../FeedLogList", () => ({
 }));
 
 vi.mock("../../ChatComposeArea", () => ({
-  ChatComposeArea: (props: { placeholder?: string; onSend?: () => void }) => (
+  ChatComposeArea: (props: {
+    placeholder?: string;
+    onSend?: () => void;
+    agentActive?: boolean;
+  }) => (
     <div data-testid="chat-compose-area">
       <span data-testid="placeholder">{props.placeholder}</span>
+      <span data-testid="agent-active">{String(props.agentActive)}</span>
       <button type="button" data-testid="send-btn" onClick={props.onSend}>
         Send
       </button>
@@ -135,5 +140,15 @@ describe("AgentTab — is_interrupted branches", () => {
   it("placeholder is 'Add instructions and resume\u2026' when interrupted", () => {
     renderAgentTab({ is_interrupted: true });
     expect(screen.getByTestId("placeholder").textContent).toBe("Add instructions and resume\u2026");
+  });
+
+  it("placeholder is 'Message the agent\u2026' when not interrupted", () => {
+    renderAgentTab({ is_chatting: true });
+    expect(screen.getByTestId("placeholder").textContent).toBe("Message the agent\u2026");
+  });
+
+  it("inputAgentActive is false when interrupted", () => {
+    renderAgentTab({ is_interrupted: true, is_working: false });
+    expect(screen.getByTestId("agent-active").textContent).toBe("false");
   });
 });

@@ -121,7 +121,7 @@ For each finding, use the most local, discoverable location:
 - **Remove stale entries.** If a compound entry references code that no longer exists or a pattern that changed, delete it.
 - **No HTML comment markers.** Don't add `<!-- compound: ... -->` tags. Learnings should be indistinguishable from hand-written guidance.
 - **Size discipline:** Keep individual entries concise (1-3 paragraphs + optional code block). If you need more, the pattern probably belongs in a skill or docs/ file instead.
-- **Skill edits require `bin/update-skill`.** Direct file editing is not available for `.claude/skills/` files — Claude Code protects that directory. Use `bin/update-skill <name> write` (full replace via stdin) or `bin/update-skill <name> patch <start> <end>` (line range replace via stdin).
+- **Skill edits require `bin/update-skill`.** Direct file editing is not available for `.claude/skills/` files — Claude Code protects that directory. Use `bin/update-skill <name> write` (full replace via stdin), `bin/update-skill <name> patch <start> <end>` (line range replace via stdin), or `bin/update-skill <name> delete <start> <end>` (remove lines without replacement).
 
 ### What NOT to Add
 

@@ -227,7 +227,7 @@ impl ScriptExecutionService {
                         had_new_output || matches!(result, ScriptPollResult::Completed(_));
                     if should_notify {
                         let summary = if let ScriptPollResult::Completed(ref c) = result {
-                            if c.result.exit_code == 0 {
+                            if c.result.is_success() {
                                 Some("gate passed".to_string())
                             } else {
                                 Some("gate failed".to_string())

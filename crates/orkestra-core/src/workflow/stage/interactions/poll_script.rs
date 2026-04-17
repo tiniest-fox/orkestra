@@ -21,8 +21,9 @@ use orkestra_types::domain::{GateResult, LogEntry};
 pub(crate) fn execute(store: &dyn WorkflowStore, script: &mut ActiveScript) -> ScriptPollResult {
     match script.handle.try_wait() {
         Ok(ScriptPollState::Completed(result)) => {
-            if let Some(iteration_id) = script.iteration_id.clone() {
-                on_gate_completed(store, script, &result, &iteration_id);
+            let iteration_id = script.iteration_id.clone();
+            if let Some(ref iteration_id) = iteration_id {
+                on_gate_completed(store, script, &result, iteration_id);
             }
             ScriptPollResult::Completed(ScriptCompletion {
                 task_id: script.task_id.clone(),
@@ -34,8 +35,8 @@ pub(crate) fn execute(store: &dyn WorkflowStore, script: &mut ActiveScript) -> S
             if let Some(output) = new_output {
                 if !output.is_empty() {
                     script.lines.push(output.clone());
-                    if let Some(iteration_id) = script.iteration_id.clone() {
-                        on_gate_output(store, script, output, &iteration_id);
+                    if let Some(iteration_id) = script.iteration_id.as_deref() {
+                        on_gate_output(store, script, output, iteration_id);
                     }
                 }
             }
@@ -144,7 +145,7 @@ fn append_gate_log_entries(
     }
     let entry = LogEntry::GateCompleted {
         exit_code: result.exit_code,
-        passed: result.exit_code == 0,
+        passed: result.is_success(),
     };
     if let Err(e) = store.append_log_entry(session_id, &entry, Some(iteration_id)) {
         crate::orkestra_debug!(

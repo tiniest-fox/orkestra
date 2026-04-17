@@ -81,3 +81,4 @@ guard.disarm();  // Normal exit — don't kill
 - Don't use inherited stdin/stdout/stderr on background processes
 - Don't skip SIGCONT before SIGTERM — stopped processes won't die
 - Don't assume SIGTERM delivery — always have SIGKILL fallback
+- **Don't add new check semantics to `is_running.rs`** — `is_process_running()` is used as a kill guard throughout the codebase (17+ call sites). It must remain a pure liveness check. New process state checks (zombie detection, suspend detection, etc.) belong in their own interaction files under `interactions/tree/`, following the same `pub fn execute(pid: u32) -> bool` pattern as `is_zombie.rs`.

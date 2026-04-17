@@ -22,6 +22,12 @@ fi
 
 NAME="$1"
 OP="$2"
+
+if [[ "$NAME" == */* ]] || [[ "$NAME" == *..* ]]; then
+    echo "Error: skill name must not contain '/' or '..'" >&2
+    exit 1
+fi
+
 SKILL_FILE="$SKILLS_DIR/$NAME.md"
 
 case "$OP" in
@@ -50,7 +56,11 @@ case "$OP" in
             exit 1
         fi
         REPLACEMENT=$(cat)
-        TOTAL=$(wc -l < "$SKILL_FILE")
+        TOTAL=$(awk 'END {print NR}' "$SKILL_FILE")
+        if [ "$END" -gt "$TOTAL" ]; then
+            echo "Error: end line $END exceeds file length ($TOTAL lines)" >&2
+            exit 1
+        fi
         # Build: lines before start, replacement, lines after end
         {
             if [ "$START" -gt 1 ]; then
@@ -83,7 +93,11 @@ case "$OP" in
             echo "Error: start must be >= 1 and end must be >= start" >&2
             exit 1
         fi
-        TOTAL=$(wc -l < "$SKILL_FILE")
+        TOTAL=$(awk 'END {print NR}' "$SKILL_FILE")
+        if [ "$END" -gt "$TOTAL" ]; then
+            echo "Error: end line $END exceeds file length ($TOTAL lines)" >&2
+            exit 1
+        fi
         {
             if [ "$START" -gt 1 ]; then
                 head -n "$((START - 1))" "$SKILL_FILE"

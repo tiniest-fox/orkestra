@@ -7457,6 +7457,7 @@ fn test_gate_fail_requeues_with_feedback() {
         GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
     };
     use orkestra_core::workflow::domain::IterationTrigger;
+    use orkestra_types::domain::LogEntry;
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
@@ -7523,6 +7524,34 @@ fn test_gate_fail_requeues_with_feedback() {
             "Error should describe gate failure, got: {error}"
         );
     }
+
+    // Verify gate log entries are emitted for the failure path
+    let (entries, _) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("work"), None, None)
+        .expect("get_task_logs should succeed");
+
+    let gate_started = entries
+        .iter()
+        .any(|e| matches!(e, LogEntry::GateStarted { .. }));
+    assert!(gate_started, "Expected at least one GateStarted log entry");
+
+    let gate_completed_failed_count = entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                LogEntry::GateCompleted {
+                    exit_code: 1,
+                    passed: false
+                }
+            )
+        })
+        .count();
+    assert_eq!(
+        gate_completed_failed_count, 1,
+        "Expected exactly one GateCompleted entry with exit_code=1 and passed=false"
+    );
 }
 
 /// Gate crash recovery: `GateRunning` on startup resets to `AwaitingGate`.

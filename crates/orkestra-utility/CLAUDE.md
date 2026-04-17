@@ -56,7 +56,7 @@ let output = runner.run("generate_pr_description", &context)?;
 7. Returns parsed JSON or `UtilityError`
 
 **Built-in tasks:**
-- `generate_title` — Title from description (SingleTurn, haiku)
+- `generate_title` — Title from description (Interactive, haiku, 120s timeout for task titles; SingleTurn, 30s for assistant session titles)
 - `generate_commit_message` — Commit message from title/description/diff (SingleTurn, haiku)
 - `generate_pr_description` — PR title and body from task context (Interactive, sonnet, 5-min timeout — runs in task worktree so agent can read git history directly)
 

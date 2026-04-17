@@ -17,6 +17,7 @@ use std::thread;
 
 use crate::orkestra_debug;
 use crate::title::{generate_fallback_title, generate_title_sync};
+use orkestra_utility::ExecutionMode;
 use crate::workflow::domain::{AssistantSession, LogEntry, Task};
 use crate::workflow::execution::{AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -720,7 +721,7 @@ fn generate_and_set_title(
     mut session: AssistantSession,
     first_message: &str,
 ) {
-    let title = match generate_title_sync(first_message, 30) {
+    let title = match generate_title_sync(first_message, 30, ExecutionMode::SingleTurn) {
         Ok(t) => t,
         Err(e) => {
             orkestra_debug!(

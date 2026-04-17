@@ -201,9 +201,42 @@ fn extract_grep_pattern(command: &str) -> Option<String> {
     }
     idx += 1;
 
-    // Skip flags (args starting with '-').
+    // Flags that consume the next argument as their value.
+    const ARG_FLAGS: &[&str] = &[
+        "-A",
+        "-B",
+        "-C",
+        "-m",
+        "-e",
+        "-f",
+        "-t",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--max-count",
+        "--include",
+        "--exclude",
+        "--type",
+        "--glob",
+    ];
+
+    // Skip flags, consuming argument values for flags that take them.
+    // If -e is encountered, its argument IS the pattern.
     while idx < words.len() && words[idx].starts_with('-') {
+        let flag = words[idx];
         idx += 1;
+        if flag == "-e" || flag == "--regexp" {
+            // -e PATTERN is canonical — return it directly.
+            return if idx < words.len() {
+                Some(words[idx].to_string())
+            } else {
+                Some(String::new())
+            };
+        }
+        // Flags without '=' that take an argument — skip the value too.
+        if !flag.contains('=') && ARG_FLAGS.contains(&flag) && idx < words.len() {
+            idx += 1;
+        }
     }
 
     // First non-flag argument is the pattern.
@@ -500,6 +533,48 @@ mod tests {
             parsed.input,
             ToolInput::Grep {
                 pattern: "pattern".to_string()
+            }
+        );
+        assert_eq!(parsed.display_name, Some("Grep".to_string()));
+    }
+
+    #[test]
+    fn test_bash_grep_context_flag_skips_numeric_arg() {
+        // -A takes a numeric argument; pattern must not be extracted as "5".
+        let input = serde_json::json!({"command": "grep -A 5 'pattern' file"});
+        let parsed = execute("Bash", &input);
+        assert_eq!(
+            parsed.input,
+            ToolInput::Grep {
+                pattern: "pattern".to_string()
+            }
+        );
+        assert_eq!(parsed.display_name, Some("Grep".to_string()));
+    }
+
+    #[test]
+    fn test_bash_rg_type_flag_skips_type_arg() {
+        // -t takes a type argument; pattern must not be extracted as "rust".
+        let input = serde_json::json!({"command": "rg -t rust 'pattern'"});
+        let parsed = execute("Bash", &input);
+        assert_eq!(
+            parsed.input,
+            ToolInput::Grep {
+                pattern: "pattern".to_string()
+            }
+        );
+        assert_eq!(parsed.display_name, Some("Grep".to_string()));
+    }
+
+    #[test]
+    fn test_bash_grep_e_flag_extracts_pattern() {
+        // -e PATTERN is the canonical pattern flag.
+        let input = serde_json::json!({"command": "grep -r -e 'search_term' src/"});
+        let parsed = execute("Bash", &input);
+        assert_eq!(
+            parsed.input,
+            ToolInput::Grep {
+                pattern: "search_term".to_string()
             }
         );
         assert_eq!(parsed.display_name, Some("Grep".to_string()));

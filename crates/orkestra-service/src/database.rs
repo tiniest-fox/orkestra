@@ -105,6 +105,11 @@ CREATE TABLE IF NOT EXISTS project_secrets (
 );
 ";
 
+const MIGRATION_V4: &str = "
+ALTER TABLE service_projects ADD COLUMN cpu_limit REAL;
+ALTER TABLE service_projects ADD COLUMN memory_limit_mb INTEGER;
+";
+
 fn run_migrations(conn: &Connection) -> Result<(), ServiceError> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 1 {
@@ -118,6 +123,10 @@ fn run_migrations(conn: &Connection) -> Result<(), ServiceError> {
     if version < 3 {
         conn.execute_batch(MIGRATION_V3)?;
         conn.pragma_update(None, "user_version", 3)?;
+    }
+    if version < 4 {
+        conn.execute_batch(MIGRATION_V4)?;
+        conn.pragma_update(None, "user_version", 4)?;
     }
     Ok(())
 }
@@ -136,7 +145,7 @@ pub(crate) fn apply_migrations_for_test(conn: &Connection) {
 mod tests {
     use rusqlite::Connection;
 
-    use super::{run_migrations, MIGRATION_V1, MIGRATION_V2, MIGRATION_V3};
+    use super::{run_migrations, MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4};
 
     fn migrated_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -204,5 +213,37 @@ mod tests {
             [],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn migration_v4_adds_resource_limit_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATION_V1).unwrap();
+        conn.execute_batch(MIGRATION_V2).unwrap();
+        conn.execute_batch(MIGRATION_V3).unwrap();
+        conn.execute_batch(MIGRATION_V4).unwrap();
+        // Columns exist — insert NULL values succeeds.
+        conn.execute(
+            "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret, cpu_limit, memory_limit_mb)
+             VALUES ('x', 'x', '/x', 3850, 's', NULL, NULL)",
+            [],
+        )
+        .unwrap();
+        // Non-NULL values also succeed.
+        conn.execute(
+            "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret, cpu_limit, memory_limit_mb)
+             VALUES ('y', 'y', '/y', 3851, 's', 2.0, 4096)",
+            [],
+        )
+        .unwrap();
+        let (cpu, mem): (Option<f64>, Option<i64>) = conn
+            .query_row(
+                "SELECT cpu_limit, memory_limit_mb FROM service_projects WHERE id = 'y'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cpu, Some(2.0));
+        assert_eq!(mem, Some(4096));
     }
 }

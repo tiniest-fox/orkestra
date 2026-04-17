@@ -13,7 +13,8 @@ pub use interactions::devcontainer::ensure_toolbox_volume::TOOLBOX_MOUNT_PATH;
 pub use interactions::project::provision::start_containers_and_spawn;
 pub use server::start;
 pub use types::{
-    ContainerStartParams, DevcontainerConfig, Project, ProjectStatus, ServiceConfig, ServiceError,
+    ContainerStartParams, DevcontainerConfig, Project, ProjectStatus, ResourceLimits,
+    ServiceConfig, ServiceError,
 };
 
 // ============================================================================
@@ -102,7 +103,27 @@ pub fn devcontainer_start_container(params: &ContainerStartParams) -> Result<Str
         None,
         params.force_build,
         &[],
+        params.cpu_limit,
+        params.memory_limit_mb,
     )
+}
+
+/// Get the stored per-project resource limits.
+pub fn get_resource_limits(
+    conn: &std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
+    project_id: &str,
+) -> Result<ResourceLimits, ServiceError> {
+    interactions::resource_limits::get::execute(conn, project_id)
+}
+
+/// Set per-project resource limits (validates minimum floors).
+pub fn set_resource_limits(
+    conn: &std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
+    project_id: &str,
+    cpu_limit: Option<f64>,
+    memory_limit_mb: Option<i64>,
+) -> Result<(), ServiceError> {
+    interactions::resource_limits::set::execute(conn, project_id, cpu_limit, memory_limit_mb)
 }
 
 /// Stop and remove a project's Docker container.

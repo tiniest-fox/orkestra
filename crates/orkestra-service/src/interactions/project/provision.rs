@@ -243,6 +243,21 @@ async fn container_and_spawn(
         .map_err(|e| ServiceError::Other(e.to_string()))??
     };
 
+    // Step 5d: Resolve resource limits.
+    let (cpu_limit, memory_limit_mb) = {
+        let c = Arc::clone(conn);
+        let pid = project_id.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::interactions::resource_limits::resolve::execute(&c, &pid)
+        })
+        .await
+        .map_err(|e| ServiceError::Other(e.to_string()))?
+    };
+    append_log(
+        log_path,
+        &format!("Resource limits: {cpu_limit:.1} CPUs, {memory_limit_mb}MB memory"),
+    );
+
     // Step 6: Start container.
     append_log(log_path, "\n=== Starting container ===");
     let container_id = tokio::task::spawn_blocking({
@@ -262,6 +277,8 @@ async fn container_and_spawn(
                 Some(&lp),
                 force_build,
                 &secrets,
+                Some(cpu_limit),
+                Some(memory_limit_mb),
             )
         }
     })

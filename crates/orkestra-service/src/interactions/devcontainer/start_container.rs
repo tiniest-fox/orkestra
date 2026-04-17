@@ -46,13 +46,22 @@ pub fn execute(
     log_path: Option<&Path>,
     force_build: bool,
     secrets: &[(String, String)],
+    cpu_limit: Option<f64>,
+    memory_limit_mb: Option<i64>,
 ) -> Result<String, ServiceError> {
     match config {
         DevcontainerConfig::Default
         | DevcontainerConfig::Image { .. }
-        | DevcontainerConfig::Build { .. } => {
-            docker_run(project_id, image, repo_path, port, override_dir, secrets)
-        }
+        | DevcontainerConfig::Build { .. } => docker_run(
+            project_id,
+            image,
+            repo_path,
+            port,
+            override_dir,
+            secrets,
+            cpu_limit,
+            memory_limit_mb,
+        ),
         DevcontainerConfig::Compose {
             compose_file,
             service,
@@ -68,6 +77,8 @@ pub fn execute(
                 log_path,
                 force_build,
                 secrets,
+                cpu_limit,
+                memory_limit_mb,
             )
         }
     }
@@ -111,6 +122,8 @@ struct DockerRunConfig {
     gh_token: Option<String>,
     secret_envs: Vec<String>,
     image: String,
+    cpu_limit: Option<String>,
+    memory_limit: Option<String>,
 }
 
 /// Build the `docker run` argument list from resolved config values.
@@ -172,6 +185,15 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
         args.push(env.clone());
     }
 
+    if let Some(ref cpus) = config.cpu_limit {
+        args.push("--cpus".to_string());
+        args.push(cpus.clone());
+    }
+    if let Some(ref mem) = config.memory_limit {
+        args.push("--memory".to_string());
+        args.push(mem.clone());
+    }
+
     args.push(config.image.clone());
     args.push("sleep".to_string());
     args.push("infinity".to_string());
@@ -179,6 +201,7 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
     args
 }
 
+#[allow(clippy::too_many_arguments)]
 fn docker_run(
     project_id: &str,
     image: &str,
@@ -186,6 +209,8 @@ fn docker_run(
     port: u16,
     override_dir: &Path,
     secrets: &[(String, String)],
+    cpu_limit: Option<f64>,
+    memory_limit_mb: Option<i64>,
 ) -> Result<String, ServiceError> {
     let container_name = format!("orkestra-{project_id}");
 
@@ -239,6 +264,8 @@ fn docker_run(
         gh_token,
         secret_envs,
         image: image.to_string(),
+        cpu_limit: cpu_limit.map(|v| format!("{v:.1}")),
+        memory_limit: memory_limit_mb.map(|v| format!("{v}m")),
     };
     let args = build_docker_run_args(&config);
 
@@ -271,6 +298,8 @@ fn compose_up(
     log_path: Option<&Path>,
     force_build: bool,
     secrets: &[(String, String)],
+    cpu_limit: Option<f64>,
+    memory_limit_mb: Option<i64>,
 ) -> Result<String, ServiceError> {
     // 10 minutes is generous for even the heaviest healthcheck chains.
     const TIMEOUT: Duration = Duration::from_secs(600);
@@ -283,7 +312,14 @@ fn compose_up(
     let claude_config_dir = project_claude_dir
         .exists()
         .then_some(project_claude_dir.as_path());
-    let override_content = build_compose_override(service, port, secrets, claude_config_dir);
+    let override_content = build_compose_override(
+        service,
+        port,
+        secrets,
+        claude_config_dir,
+        cpu_limit,
+        memory_limit_mb,
+    );
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 
@@ -428,6 +464,8 @@ fn build_compose_override(
     port: u16,
     secrets: &[(String, String)],
     claude_config_dir: Option<&std::path::Path>,
+    cpu_limit: Option<f64>,
+    memory_limit_mb: Option<i64>,
 ) -> String {
     const I: &str = "      "; // 6-space indent for items under a 4-space key
 
@@ -470,8 +508,16 @@ fn build_compose_override(
         let _ = writeln!(environment, "{I}{key}: \"{escaped}\"");
     }
 
+    let mut resource_limits = String::new();
+    if let Some(cpus) = cpu_limit {
+        let _ = writeln!(resource_limits, "    cpus: {cpus:.1}");
+    }
+    if let Some(mem) = memory_limit_mb {
+        let _ = writeln!(resource_limits, "    mem_limit: {mem}m");
+    }
+
     format!(
-        "services:\n  {service}:\n    ports:\n      - \"127.0.0.1:{port}:{port}\"\n    volumes:\n{volumes}    environment:\n{environment}volumes:\n  {TOOLBOX_VOLUME_NAME}:\n    external: true\n"
+        "services:\n  {service}:\n{resource_limits}    ports:\n      - \"127.0.0.1:{port}:{port}\"\n    volumes:\n{volumes}    environment:\n{environment}volumes:\n  {TOOLBOX_VOLUME_NAME}:\n    external: true\n"
     )
 }
 
@@ -519,7 +565,7 @@ mod tests {
             ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, None);
 
         // Plain value is quoted but not escaped.
         assert!(yaml.contains("PLAIN: \"simple_value\""));
@@ -539,7 +585,7 @@ mod tests {
             "PEM_KEY".to_string(),
             "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
         )];
-        let yaml = build_compose_override("app", 3000, &secrets, None);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, None);
         // Literal newlines must be escaped as \n in the YAML double-quoted string.
         assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
         // The value must NOT contain unescaped literal newlines.
@@ -548,7 +594,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_no_secrets_produces_valid_structure() {
-        let yaml = build_compose_override("myservice", 8080, &[], None);
+        let yaml = build_compose_override("myservice", 8080, &[], None, None, None);
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("myservice:"));
@@ -623,7 +669,7 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, None);
 
         // Git identity env vars use the secret values.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -646,7 +692,7 @@ mod tests {
             "project@example.com".to_string(),
         )];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, None);
 
         // Email uses the secret value.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -673,6 +719,8 @@ mod tests {
             gh_token: None,
             secret_envs: vec![],
             image: "myimage:latest".to_string(),
+            cpu_limit: None,
+            memory_limit: None,
         }
     }
 
@@ -752,5 +800,52 @@ mod tests {
         // GIT_AUTHOR_*/GIT_COMMITTER_* variants.
         assert!(!args.iter().any(|a| a.starts_with("GIT_USER_EMAIL=")));
         assert!(!args.iter().any(|a| a.starts_with("GIT_USER_NAME=")));
+    }
+
+    #[test]
+    fn build_docker_run_args_includes_cpu_and_memory_when_set() {
+        let config = DockerRunConfig {
+            cpu_limit: Some("2.0".to_string()),
+            memory_limit: Some("4096m".to_string()),
+            ..default_run_config()
+        };
+        let args = build_docker_run_args(&config);
+        let cpus_pos = args.iter().position(|a| a == "--cpus");
+        let mem_pos = args.iter().position(|a| a == "--memory");
+        assert!(cpus_pos.is_some(), "--cpus flag should be present");
+        assert_eq!(args[cpus_pos.unwrap() + 1], "2.0");
+        assert!(mem_pos.is_some(), "--memory flag should be present");
+        assert_eq!(args[mem_pos.unwrap() + 1], "4096m");
+    }
+
+    #[test]
+    fn build_docker_run_args_omits_cpu_and_memory_when_none() {
+        let config = default_run_config();
+        let args = build_docker_run_args(&config);
+        assert!(
+            !args.iter().any(|a| a == "--cpus"),
+            "--cpus should be absent"
+        );
+        assert!(
+            !args.iter().any(|a| a == "--memory"),
+            "--memory should be absent"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_includes_resource_limits_when_set() {
+        let yaml = build_compose_override("app", 3000, &[], None, Some(2.0), Some(4096));
+        assert!(yaml.contains("cpus: 2.0"), "cpus should be in YAML");
+        assert!(
+            yaml.contains("mem_limit: 4096m"),
+            "mem_limit should be in YAML"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_omits_resource_limits_when_none() {
+        let yaml = build_compose_override("app", 3000, &[], None, None, None);
+        assert!(!yaml.contains("cpus:"), "cpus should be absent");
+        assert!(!yaml.contains("mem_limit:"), "mem_limit should be absent");
     }
 }

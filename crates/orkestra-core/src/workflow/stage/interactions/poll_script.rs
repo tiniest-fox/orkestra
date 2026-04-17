@@ -54,14 +54,20 @@ pub(crate) fn execute(store: &dyn WorkflowStore, script: &mut ActiveScript) -> S
 // Helpers
 // ============================================================================
 
-/// Persist the final gate result and emit `GateOutput` + `GateCompleted` log entries.
+/// Persist the final gate result and emit `GateOutput` (if needed) + `GateCompleted` log entries.
 fn on_gate_completed(
     store: &dyn WorkflowStore,
     script: &mut ActiveScript,
     result: &ScriptResult,
     iteration_id: &str,
 ) {
-    if !result.output.is_empty() {
+    // Track whether any output was captured incrementally during Running polls.
+    // For fast-completing scripts (exits before the first poll tick), no Running
+    // output is captured — we must emit GateOutput here to surface it. For scripts
+    // with incremental output, Running polls already emitted GateOutput entries, so
+    // we must NOT re-emit the full buffer (would duplicate every line).
+    let had_incremental_output = !script.lines.is_empty();
+    if !had_incremental_output && !result.output.is_empty() {
         script.lines.push(result.output.clone());
     }
     let gate_result = GateResult {
@@ -82,7 +88,13 @@ fn on_gate_completed(
         crate::orkestra_debug!("stage", "Failed to touch task {}: {}", script.task_id, e);
     }
     if let Some(session_id) = script.stage_session_id.as_deref() {
-        append_gate_log_entries(store, session_id, iteration_id, result);
+        append_gate_log_entries(
+            store,
+            session_id,
+            iteration_id,
+            result,
+            had_incremental_output,
+        );
     }
 }
 
@@ -123,14 +135,20 @@ fn on_gate_output(
     }
 }
 
-/// Emit `GateOutput` (if any) and `GateCompleted` log entries for a finished gate run.
+/// Emit `GateOutput` (for fast-completing scripts only) and `GateCompleted` log entries.
+///
+/// When `had_incremental_output` is true, Running polls already emitted `GateOutput`
+/// entries for every chunk — skip to avoid duplicating the full buffer. When false
+/// (script exited before any Running poll captured output), emit `GateOutput` now so
+/// the timeline shows the output.
 fn append_gate_log_entries(
     store: &dyn WorkflowStore,
     session_id: &str,
     iteration_id: &str,
     result: &ScriptResult,
+    had_incremental_output: bool,
 ) {
-    if !result.output.is_empty() {
+    if !had_incremental_output && !result.output.is_empty() {
         let entry = LogEntry::GateOutput {
             content: result.output.clone(),
         };

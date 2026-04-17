@@ -93,20 +93,21 @@ fn parse_tool_use(
         agent_tool_ids.insert(tool_id.clone());
     }
 
-    let tool_input = parse_tool_input::execute(&tool_name, &input);
+    let parsed = parse_tool_input::execute(&tool_name, &input);
+    let display_tool = parsed.display_name.unwrap_or(tool_name);
 
     if is_subagent {
         LogEntry::SubagentToolUse {
-            tool: tool_name,
+            tool: display_tool,
             id: tool_id,
-            input: tool_input,
+            input: parsed.input,
             parent_task_id: parent_id.unwrap_or_default().to_string(),
         }
     } else {
         LogEntry::ToolUse {
-            tool: tool_name,
+            tool: display_tool,
             id: tool_id,
-            input: tool_input,
+            input: parsed.input,
         }
     }
 }

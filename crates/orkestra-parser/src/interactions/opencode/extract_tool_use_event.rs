@@ -35,12 +35,13 @@ pub fn execute(v: &serde_json::Value) -> Vec<LogEntry> {
         .cloned()
         .unwrap_or(serde_json::json!({}));
 
-    let tool_input = parse_tool_input::execute(&tool_name, &input);
+    let parsed = parse_tool_input::execute(&tool_name, &input);
+    let display_tool = parsed.display_name.unwrap_or_else(|| tool_name.clone());
 
     let mut entries = vec![LogEntry::ToolUse {
-        tool: tool_name.clone(),
+        tool: display_tool.clone(),
         id: tool_id.clone(),
-        input: tool_input,
+        input: parsed.input,
     }];
 
     // v1.1+: completed tool_use events include output in .part.state.output
@@ -48,7 +49,7 @@ pub fn execute(v: &serde_json::Value) -> Vec<LogEntry> {
         let trimmed = output.trim();
         if !trimmed.is_empty() {
             entries.push(LogEntry::ToolResult {
-                tool: tool_name,
+                tool: display_tool,
                 tool_use_id: tool_id,
                 content: trimmed.to_string(),
             });

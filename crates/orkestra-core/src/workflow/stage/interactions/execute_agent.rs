@@ -17,6 +17,7 @@ use crate::workflow::prompt::PromptService;
 use crate::workflow::stage::agents::{ExecutionError, ExecutionHandle};
 use crate::workflow::stage::session::SessionSpawnContext;
 use crate::workflow::stage::types::ActivityLogEntry;
+use orkestra_types::domain::PromptSection;
 use orkestra_types::runtime::ResourceStore;
 
 // ============================================================================
@@ -103,7 +104,7 @@ pub(crate) fn execute(
         apply_tool_restrictions(system_prompt, effective_tools)?;
 
     // 6. Build user message prompt based on whether this is a resume
-    let user_prompt = build_user_prompt(
+    let (user_prompt, dynamic_sections) = build_user_prompt(
         prompt_service,
         workflow,
         task,
@@ -173,6 +174,7 @@ pub(crate) fn execute(
         system_prompt: system_prompt_for_config,
         model_spec,
         disallowed_tool_patterns: disallowed_patterns,
+        prompt_sections: dynamic_sections,
     };
     let run_config = build_run_config(
         prompt_service,
@@ -214,6 +216,7 @@ struct ResolvedStageConfig {
     system_prompt: Option<String>,
     model_spec: Option<String>,
     disallowed_tool_patterns: Vec<String>,
+    prompt_sections: Vec<PromptSection>,
 }
 
 // -- Prompt Building --
@@ -245,9 +248,8 @@ fn build_system_prompt(
 
 /// Build the user message prompt for a stage execution.
 ///
-/// If resuming, returns a short resume prompt. Otherwise returns the full
-/// user message with task context, embedding any feedback or integration
-/// error from the trigger.
+/// If resuming, returns a short resume prompt with empty sections. Otherwise returns
+/// the full user message with task context and extracted dynamic sections.
 #[allow(clippy::too_many_arguments)]
 fn build_user_prompt(
     prompt_service: &PromptService,
@@ -260,17 +262,18 @@ fn build_user_prompt(
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
     parent_resources: Option<&ResourceStore>,
-) -> Result<String, ExecutionError> {
+) -> Result<(String, Vec<PromptSection>), ExecutionError> {
     if is_resume {
         let resume_type = trigger_to_resume_type(trigger);
-        build_resume_prompt(
+        let prompt = build_resume_prompt(
             stage,
             &resume_type,
             &task.base_branch,
             artifact_names,
             task.worktree_path.as_deref(),
         )
-        .map_err(ExecutionError::from)
+        .map_err(ExecutionError::from)?;
+        Ok((prompt, Vec::new()))
     } else {
         // Fresh spawn: embed feedback and integration error context from trigger
         let feedback = extract_feedback_text(trigger);
@@ -288,7 +291,7 @@ fn build_user_prompt(
             sibling_tasks,
             parent_resources,
         )?;
-        Ok(config.prompt)
+        Ok((config.prompt, config.dynamic_sections))
     }
 }
 
@@ -625,6 +628,10 @@ fn build_run_config(
     // Thread resolved project environment to the spawner
     if let Some(env) = resolved_env {
         run_config = run_config.with_env(env);
+    }
+
+    if !resolved.prompt_sections.is_empty() {
+        run_config = run_config.with_prompt_sections(resolved.prompt_sections);
     }
 
     run_config

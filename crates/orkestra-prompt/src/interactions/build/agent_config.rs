@@ -70,10 +70,14 @@ pub fn execute(
     // Build user message (task context only)
     let user_message = super::user_message::execute(templates, &ctx);
 
+    // Extract dynamic sections for log entry metadata
+    let dynamic_sections = super::dynamic_sections::execute(&ctx);
+
     Ok(ResolvedAgentConfig {
         system_prompt,
         prompt: user_message,
         json_schema: json_schema.to_string(),
         session_type: stage_name.to_string(),
+        dynamic_sections,
     })
 }

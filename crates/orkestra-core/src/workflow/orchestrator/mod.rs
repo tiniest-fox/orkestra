@@ -17,7 +17,7 @@ mod commit_pipeline;
 mod lock;
 mod recovery;
 
-pub use lock::LockError;
+pub use lock::{check_orchestrator_status, LockError, OrchestratorStatus};
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -249,13 +249,22 @@ impl OrchestratorLoop {
         F: FnMut(OrchestratorEvent) + Send,
     {
         // Acquire orchestrator lock (only when project_root is set)
-        let _lock = if let Some(ref root) = self.project_root {
+        let lock = if let Some(ref root) = self.project_root {
             match lock::OrchestratorLock::acquire(root) {
                 Ok(guard) => Some(guard),
                 Err(lock::LockError::AlreadyRunning(pid)) => {
                     on_event(OrchestratorEvent::Error {
                         task_id: None,
                         error: format!("Another orchestrator is already running (PID {pid})"),
+                    });
+                    return;
+                }
+                Err(lock::LockError::TimedOut { pid }) => {
+                    on_event(OrchestratorEvent::Error {
+                        task_id: None,
+                        error: format!(
+                            "Timed out waiting for orchestrator lock (held by PID {pid})"
+                        ),
                     });
                     return;
                 }
@@ -276,6 +285,9 @@ impl OrchestratorLoop {
         }
 
         while !self.stop_flag.load(Ordering::Relaxed) {
+            if let Some(ref lock) = lock {
+                lock.heartbeat();
+            }
             match self.tick() {
                 Ok(events) => {
                     let had_events = !events.is_empty();

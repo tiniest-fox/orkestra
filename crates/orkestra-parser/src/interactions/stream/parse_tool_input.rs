@@ -174,6 +174,25 @@ fn first_arg_as_string(args: &[&str]) -> String {
 fn extract_grep_pattern(command: &str) -> Option<String> {
     const GREP_COMMANDS: &[&str] = &["grep", "rg", "egrep", "fgrep"];
 
+    // Flags that consume the next argument as their value.
+    const ARG_FLAGS: &[&str] = &[
+        "-A",
+        "-B",
+        "-C",
+        "-m",
+        "-e",
+        "-f",
+        "-t",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--max-count",
+        "--include",
+        "--exclude",
+        "--type",
+        "--glob",
+    ];
+
     // For piped commands, look in the last pipe segment that starts with a grep command.
     let segments: Vec<&str> = command.split('|').collect();
     let grep_segment = segments
@@ -202,25 +221,6 @@ fn extract_grep_pattern(command: &str) -> Option<String> {
         return None;
     }
     idx += 1;
-
-    // Flags that consume the next argument as their value.
-    const ARG_FLAGS: &[&str] = &[
-        "-A",
-        "-B",
-        "-C",
-        "-m",
-        "-e",
-        "-f",
-        "-t",
-        "--after-context",
-        "--before-context",
-        "--context",
-        "--max-count",
-        "--include",
-        "--exclude",
-        "--type",
-        "--glob",
-    ];
 
     // Skip flags, consuming argument values for flags that take them.
     // If -e is encountered, its argument IS the pattern.

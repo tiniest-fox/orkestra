@@ -88,25 +88,28 @@ fn parse_tool_use(
         .to_string();
     let input = item.get("input").cloned().unwrap_or(serde_json::json!({}));
 
+    // Stores the original tool name, not the display name (e.g. "Bash" not "Grep").
+    // If SubagentToolResult rendering is ever added to the frontend, store display_tool here.
     tool_use_map.insert(tool_id.clone(), tool_name.clone());
     if tool_name == "Agent" {
         agent_tool_ids.insert(tool_id.clone());
     }
 
-    let tool_input = parse_tool_input::execute(&tool_name, &input);
+    let parsed = parse_tool_input::execute(&tool_name, &input);
+    let display_tool = parsed.display_name.unwrap_or(tool_name);
 
     if is_subagent {
         LogEntry::SubagentToolUse {
-            tool: tool_name,
+            tool: display_tool,
             id: tool_id,
-            input: tool_input,
+            input: parsed.input,
             parent_task_id: parent_id.unwrap_or_default().to_string(),
         }
     } else {
         LogEntry::ToolUse {
-            tool: tool_name,
+            tool: display_tool,
             id: tool_id,
-            input: tool_input,
+            input: parsed.input,
         }
     }
 }

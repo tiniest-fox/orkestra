@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+SKILLS_DIR="$REPO_ROOT/.claude/skills"
+
+usage() {
+    echo "Usage:"
+    echo "  bin/update-skill <name> write               # Replace entire file with stdin"
+    echo "  bin/update-skill <name> patch <start> <end> # Replace lines start-end with stdin"
+    echo "  bin/update-skill <name> delete <start> <end> # Delete lines start-end"
+    echo ""
+    echo "  <name> is the skill name without .md extension (e.g., e2e-testing)"
+    exit 1
+}
+
+if [ "$#" -lt 2 ]; then
+    usage
+fi
+
+NAME="$1"
+OP="$2"
+
+if [[ "$NAME" == */* ]] || [[ "$NAME" == *..* ]]; then
+    echo "Error: skill name must not contain '/' or '..'" >&2
+    exit 1
+fi
+
+SKILL_FILE="$SKILLS_DIR/$NAME.md"
+
+case "$OP" in
+    write)
+        mkdir -p "$SKILLS_DIR"
+        cat > "$SKILL_FILE"
+        echo "Updated: $SKILL_FILE"
+        ;;
+    patch)
+        if [ "$#" -lt 4 ]; then
+            echo "Error: patch requires <start_line> and <end_line>" >&2
+            usage
+        fi
+        START="$3"
+        END="$4"
+        if [ ! -f "$SKILL_FILE" ]; then
+            echo "Error: skill '$NAME' not found at $SKILL_FILE" >&2
+            exit 1
+        fi
+        if ! [[ "$START" =~ ^[0-9]+$ ]] || ! [[ "$END" =~ ^[0-9]+$ ]]; then
+            echo "Error: start and end must be positive integers" >&2
+            exit 1
+        fi
+        if [ "$START" -lt 1 ] || [ "$END" -lt "$START" ]; then
+            echo "Error: start must be >= 1 and end must be >= start" >&2
+            exit 1
+        fi
+        REPLACEMENT=$(cat)
+        TOTAL=$(awk 'END {print NR}' "$SKILL_FILE")
+        if [ "$END" -gt "$TOTAL" ]; then
+            echo "Error: end line $END exceeds file length ($TOTAL lines)" >&2
+            exit 1
+        fi
+        # Build: lines before start, replacement, lines after end
+        {
+            if [ "$START" -gt 1 ]; then
+                head -n "$((START - 1))" "$SKILL_FILE"
+            fi
+            printf '%s\n' "$REPLACEMENT"
+            if [ "$END" -lt "$TOTAL" ]; then
+                tail -n "+$((END + 1))" "$SKILL_FILE"
+            fi
+        } > "${SKILL_FILE}.tmp"
+        mv "${SKILL_FILE}.tmp" "$SKILL_FILE"
+        echo "Updated: $SKILL_FILE"
+        ;;
+    delete)
+        if [ "$#" -lt 4 ]; then
+            echo "Error: delete requires <start_line> and <end_line>" >&2
+            usage
+        fi
+        START="$3"
+        END="$4"
+        if [ ! -f "$SKILL_FILE" ]; then
+            echo "Error: skill '$NAME' not found at $SKILL_FILE" >&2
+            exit 1
+        fi
+        if ! [[ "$START" =~ ^[0-9]+$ ]] || ! [[ "$END" =~ ^[0-9]+$ ]]; then
+            echo "Error: start and end must be positive integers" >&2
+            exit 1
+        fi
+        if [ "$START" -lt 1 ] || [ "$END" -lt "$START" ]; then
+            echo "Error: start must be >= 1 and end must be >= start" >&2
+            exit 1
+        fi
+        TOTAL=$(awk 'END {print NR}' "$SKILL_FILE")
+        if [ "$END" -gt "$TOTAL" ]; then
+            echo "Error: end line $END exceeds file length ($TOTAL lines)" >&2
+            exit 1
+        fi
+        {
+            if [ "$START" -gt 1 ]; then
+                head -n "$((START - 1))" "$SKILL_FILE"
+            fi
+            if [ "$END" -lt "$TOTAL" ]; then
+                tail -n "+$((END + 1))" "$SKILL_FILE"
+            fi
+        } > "${SKILL_FILE}.tmp"
+        mv "${SKILL_FILE}.tmp" "$SKILL_FILE"
+        echo "Updated: $SKILL_FILE"
+        ;;
+    *)
+        echo "Error: unknown operation '$OP'" >&2
+        usage
+        ;;
+esac

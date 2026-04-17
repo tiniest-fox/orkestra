@@ -35,7 +35,7 @@ pub struct ClaudeTitleGenerator;
 
 impl TitleGenerator for ClaudeTitleGenerator {
     fn generate_title(&self, _task_id: &str, description: &str) -> Result<String, String> {
-        generate_title_sync(description, 30).map_err(|e| e.to_string())
+        generate_title_sync(description, 120).map_err(|e| e.to_string())
     }
 }
 
@@ -83,12 +83,16 @@ pub mod mock {
 
 /// Generates a title synchronously using a lightweight Claude instance.
 ///
-/// This spawns Claude with `--model haiku --max-turns 1` to minimize latency and cost.
-/// Uses structured JSON output with schema validation for reliable results.
+/// Spawns Claude with `--model haiku` in interactive mode so the agent can use
+/// its skills and MCP tools (e.g. the Asana skill) to fetch context when the
+/// description references an external resource like an Asana URL.
 ///
 /// Returns the generated title string, or an error if generation fails.
 pub fn generate_title_sync(description: &str, timeout_secs: u64) -> std::io::Result<String> {
-    let runner = UtilityRunner::new().with_timeout(timeout_secs);
+    use crate::runner::ExecutionMode;
+    let runner = UtilityRunner::new()
+        .with_timeout(timeout_secs)
+        .with_mode(ExecutionMode::Interactive);
     let context = json!({ "description": description });
 
     let output = runner

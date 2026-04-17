@@ -251,7 +251,7 @@ async fn container_and_spawn(
             crate::interactions::resource_limits::resolve::execute(&c, &pid)
         })
         .await
-        .map_err(|e| ServiceError::Other(e.to_string()))?
+        .map_err(|e| ServiceError::Other(e.to_string()))??
     };
     append_log(
         log_path,

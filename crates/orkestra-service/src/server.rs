@@ -1060,7 +1060,7 @@ async fn get_resource_limits_handler(
         move || {
             let limits = resource_limits::get::execute(&conn, &id)?;
             let (effective_cpu, effective_memory_mb) =
-                resource_limits::resolve::execute(&conn, &id);
+                resource_limits::resolve::execute(&conn, &id)?;
             Ok(ResourceLimitsResponse {
                 cpu_limit: limits.cpu_limit,
                 memory_limit_mb: limits.memory_limit_mb,
@@ -1335,7 +1335,9 @@ where
         Ok(Ok(v)) => Ok(v),
         Ok(Err(e)) => {
             let status = match &e {
-                ServiceError::SecretNotFound(_) => StatusCode::NOT_FOUND,
+                ServiceError::SecretNotFound(_) | ServiceError::ProjectNotFound(_) => {
+                    StatusCode::NOT_FOUND
+                }
                 ServiceError::SecretKeyInvalid(_) => StatusCode::BAD_REQUEST,
                 ServiceError::SecretsKeyNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,

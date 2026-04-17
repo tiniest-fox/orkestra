@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 
 use super::{detect_host, get};
+use crate::types::ServiceError;
 
 /// Resolve the effective `(cpu_limit, memory_limit_mb)` for `project_id`.
 ///
@@ -13,11 +14,18 @@ use super::{detect_host, get};
 /// 2. `ORKESTRA_DEFAULT_CPUS` / `ORKESTRA_DEFAULT_MEMORY_MB` env vars
 /// 3. 50% of host CPU cores / 50% of host memory
 /// 4. Minimum floor: cpu >= 1.0, memory >= 512 MB
-pub fn execute(conn: &Arc<Mutex<Connection>>, project_id: &str) -> (f64, i64) {
-    let db_limits = get::execute(conn, project_id).ok();
+///
+/// Returns `Err(ServiceError::ProjectNotFound)` if `project_id` does not exist.
+pub fn execute(
+    conn: &Arc<Mutex<Connection>>,
+    project_id: &str,
+) -> Result<(f64, i64), ServiceError> {
+    let db_limits = get::execute(conn, project_id)?;
 
-    let cpu = resolve_cpu(db_limits.as_ref().and_then(|l| l.cpu_limit));
-    let memory = resolve_memory(db_limits.as_ref().and_then(|l| l.memory_limit_mb));
+    let (host_cpu_count, host_memory_mb) = detect_host::execute();
+
+    let cpu = resolve_cpu(db_limits.cpu_limit, host_cpu_count);
+    let memory = resolve_memory(db_limits.memory_limit_mb, host_memory_mb);
 
     tracing::info!(
         project_id = %project_id,
@@ -26,12 +34,12 @@ pub fn execute(conn: &Arc<Mutex<Connection>>, project_id: &str) -> (f64, i64) {
         "Resolved resource limits"
     );
 
-    (cpu, memory)
+    Ok((cpu, memory))
 }
 
 // -- Helpers --
 
-fn resolve_cpu(db_override: Option<f64>) -> f64 {
+fn resolve_cpu(db_override: Option<f64>, host_cpu_count: usize) -> f64 {
     let raw = db_override
         .or_else(|| {
             std::env::var("ORKESTRA_DEFAULT_CPUS")
@@ -39,15 +47,14 @@ fn resolve_cpu(db_override: Option<f64>) -> f64 {
                 .and_then(|s| s.parse::<f64>().ok())
         })
         .unwrap_or_else(|| {
-            let (cpu_count, _) = detect_host::execute();
             #[allow(clippy::cast_precision_loss)]
-            let half = (cpu_count as f64) * 0.5;
+            let half = (host_cpu_count as f64) * 0.5;
             half.max(1.0)
         });
     raw.max(1.0)
 }
 
-fn resolve_memory(db_override: Option<i64>) -> i64 {
+fn resolve_memory(db_override: Option<i64>, host_memory_mb: u64) -> i64 {
     let raw = db_override
         .or_else(|| {
             std::env::var("ORKESTRA_DEFAULT_MEMORY_MB")
@@ -55,9 +62,8 @@ fn resolve_memory(db_override: Option<i64>) -> i64 {
                 .and_then(|s| s.parse::<i64>().ok())
         })
         .unwrap_or_else(|| {
-            let (_, memory_mb) = detect_host::execute();
             #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-            let half = (memory_mb / 2) as i64;
+            let half = (host_memory_mb / 2) as i64;
             half.max(512)
         });
     raw.max(512)
@@ -75,6 +81,7 @@ mod tests {
 
     use super::execute;
     use crate::interactions::resource_limits::set;
+    use crate::types::ServiceError;
 
     // Env vars are process-global; serialize tests that mutate them.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -109,7 +116,7 @@ mod tests {
             std::env::remove_var("ORKESTRA_DEFAULT_MEMORY_MB");
         }
 
-        let (cpu, mem) = execute(&conn, "proj1");
+        let (cpu, mem) = execute(&conn, "proj1").unwrap();
         assert!(
             (cpu - 8.0).abs() < f64::EPSILON,
             "cpu should be 8.0, got {cpu}"
@@ -128,7 +135,7 @@ mod tests {
             std::env::set_var("ORKESTRA_DEFAULT_MEMORY_MB", "2048");
         }
 
-        let (cpu, mem) = execute(&conn, "proj1");
+        let (cpu, mem) = execute(&conn, "proj1").unwrap();
 
         unsafe {
             std::env::remove_var("ORKESTRA_DEFAULT_CPUS");
@@ -154,7 +161,7 @@ mod tests {
             std::env::set_var("ORKESTRA_DEFAULT_MEMORY_MB", "100");
         }
 
-        let (cpu, mem) = execute(&conn, "proj1");
+        let (cpu, mem) = execute(&conn, "proj1").unwrap();
 
         unsafe {
             std::env::remove_var("ORKESTRA_DEFAULT_CPUS");
@@ -163,6 +170,17 @@ mod tests {
 
         assert!(cpu >= 1.0, "cpu floor should be 1.0, got {cpu}");
         assert!(mem >= 512, "memory floor should be 512, got {mem}");
+    }
+
+    #[test]
+    fn returns_err_for_nonexistent_project() {
+        let conn = conn();
+        // No project inserted — should propagate ProjectNotFound.
+        let result = execute(&conn, "ghost-project");
+        assert!(
+            matches!(result, Err(ServiceError::ProjectNotFound(_))),
+            "expected ProjectNotFound, got {result:?}"
+        );
     }
 
     #[test]
@@ -177,7 +195,7 @@ mod tests {
             std::env::remove_var("ORKESTRA_DEFAULT_MEMORY_MB");
         }
 
-        let (cpu, mem) = execute(&conn, "proj1");
+        let (cpu, mem) = execute(&conn, "proj1").unwrap();
         assert!(cpu >= 1.0, "cpu should be >= 1.0, got {cpu}");
         assert!(mem >= 512, "memory should be >= 512, got {mem}");
     }

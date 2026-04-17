@@ -264,7 +264,6 @@ export async function updateResourceLimits(
 ): Promise<{ restart_required: boolean }> {
   const res = await apiFetch(`/api/projects/${projectId}/resource-limits`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cpu_limit: cpuLimit, memory_limit_mb: memoryLimitMb }),
   });
   await requireOk(res);

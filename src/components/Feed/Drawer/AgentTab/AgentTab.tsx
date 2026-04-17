@@ -134,9 +134,10 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
   ]);
 
   // Input bar visibility:
-  // Show when working, review, or chatting.
-  // Hide when interrupted, questions (answered inline), failed, blocked, done.
-  const showInputBar = derived.is_working || derived.needs_review || derived.is_chatting;
+  // Show when working, review, chatting, or interrupted (user needs to type feedback to resume).
+  // Hide when questions (answered inline), failed, blocked, done.
+  const showInputBar =
+    derived.is_working || derived.needs_review || derived.is_chatting || derived.is_interrupted;
 
   // Input bar agent active state:
   // Working → treat as agentActive (shows stop, disables textarea)
@@ -151,8 +152,12 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
   const [sendTrigger, setSendTrigger] = useState(0);
   const handleSend = useCallback(() => {
     setSendTrigger((n) => n + 1);
-    state.handleSendChat();
-  }, [state.handleSendChat]);
+    if (derived.is_interrupted) {
+      state.handleReturnToWork();
+    } else {
+      state.handleSendChat();
+    }
+  }, [derived.is_interrupted, state.handleReturnToWork, state.handleSendChat]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -179,7 +184,9 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
           agentActive={inputAgentActive}
           onSend={handleSend}
           onStop={onInterruptOrStop}
-          placeholder="Message the agent…"
+          placeholder={
+            derived.is_interrupted ? "Add instructions and resume\u2026" : "Message the agent\u2026"
+          }
           error={state.chatError}
           onResize={handleComposeResize}
           className="shrink-0 px-6 pb-4 bg-canvas"

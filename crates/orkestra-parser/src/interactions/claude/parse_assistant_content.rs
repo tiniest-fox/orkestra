@@ -88,6 +88,8 @@ fn parse_tool_use(
         .to_string();
     let input = item.get("input").cloned().unwrap_or(serde_json::json!({}));
 
+    // Stores the original tool name, not the display name (e.g. "Bash" not "Grep").
+    // If SubagentToolResult rendering is ever added to the frontend, store display_tool here.
     tool_use_map.insert(tool_id.clone(), tool_name.clone());
     if tool_name == "Agent" {
         agent_tool_ids.insert(tool_id.clone());

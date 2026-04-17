@@ -149,6 +149,8 @@ fn summarize_input(input: &serde_json::Value) -> String {
         |_| "{}".to_string(),
         |s| {
             if s.len() > 100 {
+                // Safe because serde_json serializes to ASCII-only JSON (all non-ASCII chars
+                // are escaped as \uXXXX), so byte 100 is always on a character boundary.
                 format!("{}...", &s[..100])
             } else {
                 s

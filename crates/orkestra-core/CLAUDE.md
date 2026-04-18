@@ -264,3 +264,7 @@ Two gaps exist in `test_checks_script_is_executable` (the `ensure_orkestra_proje
 1. **No assertion that agent prompt files land on disk.** The test calls `ensure_orkestra_project` and checks scripts and README exist, but never asserts files under `agents/` are created. Adding `assert!(orkestra_dir.join("agents/compound.md").exists())` (and similar for all five prompt files) would close this.
 
 2. **No workflow-to-prompt coherence check.** No test validates that every `prompt:` reference in the default `workflow.yaml` has a corresponding entry in `DEFAULT_PROMPTS`. A coherence test would catch init-time breakage when prompt files are added or renamed.
+
+### Known Test Gap in `stage_chat/interactions/send_message.rs`
+
+`read_chat_output` has no integration test for the `CorrectionNeeded` exit path. This path runs the same buffering logic as the `Completed` arm (which is integration-tested), so risk is low — but a future test should cover `send_message` returning `AgentExitKind::CorrectionNeeded` with buffered JSON to confirm the buffer is flushed correctly on that path.

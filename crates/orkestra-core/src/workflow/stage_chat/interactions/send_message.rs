@@ -15,6 +15,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{LogEntry, LogNotification};
 use crate::workflow::execution::{get_agent_schema, AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
+use orkestra_parser::interactions::output::strip_markdown_fences;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessConfig, ProcessHandle};
 
 /// Resume type identifier for chat messages in log entries.
@@ -170,6 +171,93 @@ fn emit_extracted_json_entry(
         None,
     ) {
         orkestra_debug!("stage_chat", "Failed to append ExtractedJson entry: {}", e);
+    }
+}
+
+/// Persist all buffered Text entries to the store.
+fn flush_text_buffer(buffer: &[LogEntry], store: &Arc<dyn WorkflowStore>, session_id: &str) {
+    for entry in buffer {
+        if let Err(e) = store.append_log_entry(session_id, entry, None) {
+            orkestra_debug!("stage_chat", "Failed to flush buffered log entry: {}", e);
+        }
+    }
+}
+
+/// State machine for buffering Text log entries that may contain JSON.
+///
+/// Buffers entries starting with `{` or ` ``` ` until we can determine whether
+/// they contain JSON (discard after extraction) or regular text (flush to store).
+#[derive(Default)]
+struct TextBufferState {
+    buffer: Vec<LogEntry>,
+    buffering: bool,
+    /// Set once the accumulated buffer parses as valid JSON.
+    json_complete: bool,
+}
+
+/// Process a single log entry through the text buffer state machine.
+///
+/// Returns entries to persist immediately. Empty means the entry was buffered.
+/// Non-Text entries are always returned immediately.
+///
+/// Decision tree for Text entries:
+/// - If `json_complete` and new text arrives: the JSON hypothesis is wrong — flush buffered
+///   entries (they are prose, not structured output), reset state, append this trailing entry.
+/// - If not buffering and entry starts with `{` or ` ``` `: start buffering.
+/// - If buffering: add to buffer and try eager parse. If parse succeeds, set `json_complete`.
+///   If a closing fence arrives and parse still fails: flush immediately (non-JSON fence).
+/// - If not buffering: persist immediately.
+fn buffer_or_persist(entry: LogEntry, state: &mut TextBufferState) -> Vec<LogEntry> {
+    let LogEntry::Text { ref content } = entry else {
+        return vec![entry];
+    };
+    // Compute booleans before moving `entry` into the buffer.
+    let starts_with_json = content.trim().starts_with('{') || content.trim().starts_with("```");
+    let is_closing_fence = content.trim() == "```";
+
+    // Trailing text invalidates the JSON hypothesis — flush buffer so entries reach the store
+    if state.buffering && state.json_complete {
+        let mut flushed = std::mem::take(&mut state.buffer);
+        state.buffering = false;
+        state.json_complete = false;
+        flushed.push(entry);
+        return flushed;
+    }
+
+    // Trigger buffering on JSON object or markdown fence
+    if !state.buffering && starts_with_json {
+        state.buffering = true;
+    }
+
+    if state.buffering {
+        state.buffer.push(entry);
+
+        // Eager parse: check if accumulated buffer is already valid JSON
+        let buffer_text = state
+            .buffer
+            .iter()
+            .filter_map(|e| {
+                if let LogEntry::Text { content } = e {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let stripped = strip_markdown_fences::execute(buffer_text.trim());
+        if serde_json::from_str::<serde_json::Value>(&stripped).is_ok() {
+            state.json_complete = true;
+        } else if is_closing_fence {
+            // Fence closed and not valid JSON — flush immediately so UI sees it
+            state.buffering = false;
+            state.json_complete = false;
+            return std::mem::take(&mut state.buffer);
+        }
+
+        vec![] // buffered
+    } else {
+        vec![entry] // persist directly
     }
 }
 
@@ -358,6 +446,7 @@ fn read_chat_output(
     }
 
     let mut accumulated_text: Vec<String> = Vec::new();
+    let mut buf_state = TextBufferState::default();
 
     for line in handle.lines() {
         match line {
@@ -374,10 +463,12 @@ fn read_chat_output(
                     if let LogEntry::Text { ref content } = entry {
                         accumulated_text.push(content.clone());
                     }
-                    if let Err(e) = store.append_log_entry(session_id, &entry, None) {
-                        orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
-                    } else {
-                        batch_count += 1;
+                    for e in buffer_or_persist(entry, &mut buf_state) {
+                        if let Err(e) = store.append_log_entry(session_id, &e, None) {
+                            orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
+                        } else {
+                            batch_count += 1;
+                        }
                     }
                 }
 
@@ -409,10 +500,12 @@ fn read_chat_output(
         if let LogEntry::Text { ref content } = entry {
             accumulated_text.push(content.clone());
         }
-        if let Err(e) = store.append_log_entry(session_id, &entry, None) {
-            orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
-        } else {
-            finalized_count += 1;
+        for e in buffer_or_persist(entry, &mut buf_state) {
+            if let Err(e) = store.append_log_entry(session_id, &e, None) {
+                orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
+            } else {
+                finalized_count += 1;
+            }
         }
     }
 
@@ -442,6 +535,7 @@ fn read_chat_output(
                     task_id
                 );
                 emit_extracted_json_entry(store, session_id, raw_json, true);
+                buf_state.buffer.clear();
                 if let Some(tx) = log_notify_tx {
                     if let Err(e) = tx.send(LogNotification {
                         task_id: task_id.to_string(),
@@ -453,7 +547,21 @@ fn read_chat_output(
                 }
                 detection_succeeded = true;
             }
-            Ok(DetectionResult::NotDetected) => {} // No structured output detected, continue normal flow
+            Ok(DetectionResult::NotDetected) => {
+                // No structured output detected — flush any remaining buffered text
+                if !buf_state.buffer.is_empty() {
+                    let flushed_summary = LogEntry::last_summary(&buf_state.buffer);
+                    flush_text_buffer(&buf_state.buffer, store, session_id);
+                    buf_state.buffer.clear();
+                    if let Some(tx) = &log_notify_tx {
+                        let _ = tx.send(LogNotification {
+                            task_id: task_id.to_string(),
+                            session_id: session_id.to_string(),
+                            last_entry_summary: flushed_summary,
+                        });
+                    }
+                }
+            }
             Ok(DetectionResult::CorrectionNeeded { error, raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",
@@ -461,6 +569,9 @@ fn read_chat_output(
                     task_id,
                     error
                 );
+
+                // Discard the text buffer — the JSON is captured in ExtractedJson
+                buf_state.buffer.clear();
 
                 // Append ExtractedJson log entry for frontend classification
                 emit_extracted_json_entry(store, session_id, raw_json, false);
@@ -591,6 +702,11 @@ fn read_chat_output(
         }
     }
 
+    // Safety drain: flush any remaining buffered text that wasn't consumed by detection
+    if !buf_state.buffer.is_empty() {
+        flush_text_buffer(&buf_state.buffer, store, session_id);
+    }
+
     // Append ProcessExit so the frontend knows the agent is done
     if let Err(e) = store.append_log_entry(session_id, &LogEntry::ProcessExit { code: None }, None)
     {
@@ -671,8 +787,14 @@ fn should_attempt_correction(result: &DetectionResult, remaining: u32) -> Option
 mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::StageSession;
+    use crate::workflow::config::{StageConfig, WorkflowConfig};
+    use crate::workflow::domain::{StageSession, Task};
+    use crate::workflow::execution::{default_test_registry, AgentParser};
     use crate::workflow::ports::WorkflowStore;
+    use crate::workflow::runtime::TaskState;
+    use orkestra_parser::ParsedUpdate;
+    use std::path::Path;
+    use std::process::{Command, Stdio};
 
     #[test]
     fn completed_detection_appends_valid_extracted_json() {
@@ -769,5 +891,618 @@ mod tests {
     fn should_not_attempt_correction_when_not_detected() {
         let result = DetectionResult::NotDetected;
         assert_eq!(should_attempt_correction(&result, 1), None);
+    }
+
+    // -- Buffering tests --
+
+    fn make_text_entry(content: &str) -> LogEntry {
+        LogEntry::Text {
+            content: content.to_string(),
+        }
+    }
+
+    #[test]
+    fn flush_text_buffer_persists_entries_to_store() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-flush", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        let buffer = vec![make_text_entry("line one"), make_text_entry("line two")];
+        flush_text_buffer(&buffer, &store, "ss-flush");
+
+        let entries = store.get_log_entries("ss-flush").unwrap();
+        assert_eq!(entries.len(), 2);
+        match (&entries[0], &entries[1]) {
+            (LogEntry::Text { content: c1 }, LogEntry::Text { content: c2 }) => {
+                assert_eq!(c1, "line one");
+                assert_eq!(c2, "line two");
+            }
+            _ => panic!("expected two Text entries"),
+        }
+    }
+
+    #[test]
+    fn json_buffer_discarded_on_completed() {
+        // When detection succeeds (Completed), Text entries that were buffered are discarded;
+        // only the ExtractedJson entry reaches the store.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-discard", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        // Feed JSON entries through the buffer — nothing should reach the store yet
+        let mut buf_state = TextBufferState::default();
+        let r1 = buffer_or_persist(make_text_entry("{"), &mut buf_state);
+        assert!(r1.is_empty(), "opening brace buffered");
+        let r2 = buffer_or_persist(make_text_entry("  \"type\": \"summary\""), &mut buf_state);
+        assert!(r2.is_empty(), "json content buffered");
+        let r3 = buffer_or_persist(make_text_entry("}"), &mut buf_state);
+        assert!(r3.is_empty(), "closing brace buffered");
+        assert!(
+            buf_state.json_complete,
+            "json_complete set after valid JSON"
+        );
+        assert_eq!(buf_state.buffer.len(), 3, "all three entries buffered");
+
+        // Simulate Completed detection: discard buffer, emit ExtractedJson
+        buf_state.buffer.clear();
+        emit_extracted_json_entry(
+            &store,
+            "ss-discard",
+            r#"{"type":"summary"}"#.to_string(),
+            true,
+        );
+
+        // Only ExtractedJson in store — Text entries were discarded
+        let entries = store.get_log_entries("ss-discard").unwrap();
+        assert_eq!(entries.len(), 1, "only ExtractedJson entry in store");
+        assert!(matches!(
+            entries[0],
+            LogEntry::ExtractedJson { valid: true, .. }
+        ));
+    }
+
+    #[test]
+    fn json_buffer_discarded_on_correction_needed() {
+        // When detection returns CorrectionNeeded, Text entries that were buffered are discarded;
+        // only the ExtractedJson (invalid) entry reaches the store.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-corr", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        // Feed JSON entries through the buffer — nothing should reach the store yet
+        let mut buf_state = TextBufferState::default();
+        let r1 = buffer_or_persist(make_text_entry("{"), &mut buf_state);
+        assert!(r1.is_empty(), "opening brace buffered");
+        let r2 = buffer_or_persist(make_text_entry("  \"type\": \"bad\""), &mut buf_state);
+        assert!(r2.is_empty(), "json content buffered");
+        let r3 = buffer_or_persist(make_text_entry("}"), &mut buf_state);
+        assert!(r3.is_empty(), "closing brace buffered");
+        assert!(
+            buf_state.json_complete,
+            "json_complete set after valid JSON"
+        );
+
+        // Simulate CorrectionNeeded: discard buffer, emit ExtractedJson (invalid)
+        buf_state.buffer.clear();
+        emit_extracted_json_entry(&store, "ss-corr", r#"{"type":"bad"}"#.to_string(), false);
+
+        // Only ExtractedJson (invalid) in store — Text entries were discarded
+        let entries = store.get_log_entries("ss-corr").unwrap();
+        assert_eq!(entries.len(), 1, "only ExtractedJson entry in store");
+        assert!(matches!(
+            entries[0],
+            LogEntry::ExtractedJson { valid: false, .. }
+        ));
+    }
+
+    #[test]
+    fn safety_drain_not_detected_flushes_buffer_to_store() {
+        // When NotDetected: the safety drain flushes buffered Text entries to the store.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-drain", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        // Feed JSON entries through buffer_or_persist until json_complete
+        let mut buf_state = TextBufferState::default();
+        let r1 = buffer_or_persist(make_text_entry("{"), &mut buf_state);
+        assert!(r1.is_empty());
+        let r2 = buffer_or_persist(make_text_entry("  \"type\": \"summary\""), &mut buf_state);
+        assert!(r2.is_empty());
+        let r3 = buffer_or_persist(make_text_entry("}"), &mut buf_state);
+        assert!(r3.is_empty());
+        assert!(buf_state.json_complete, "json_complete set");
+        assert_eq!(buf_state.buffer.len(), 3, "three entries buffered");
+
+        // Simulate NotDetected: flush buffer to store (safety drain path)
+        flush_text_buffer(&buf_state.buffer, &store, "ss-drain");
+        buf_state.buffer.clear();
+
+        // All three Text entries should be in the store
+        let entries = store.get_log_entries("ss-drain").unwrap();
+        assert_eq!(
+            entries.len(),
+            3,
+            "all buffered Text entries flushed to store"
+        );
+        assert!(
+            entries.iter().all(|e| matches!(e, LogEntry::Text { .. })),
+            "all entries are Text"
+        );
+    }
+
+    // -- buffer_or_persist decision logic tests --
+
+    #[test]
+    fn plain_text_persisted_immediately() {
+        let mut state = TextBufferState::default();
+        let entry = make_text_entry("This is just prose");
+        let result = buffer_or_persist(entry, &mut state);
+        assert_eq!(
+            result.len(),
+            1,
+            "plain text should be returned for immediate persist"
+        );
+        assert!(!state.buffering);
+    }
+
+    #[test]
+    fn bare_json_object_buffered_until_complete() {
+        let mut state = TextBufferState::default();
+
+        // Incomplete JSON — stays buffered
+        let r1 = buffer_or_persist(make_text_entry("{"), &mut state);
+        assert!(r1.is_empty(), "opening brace should be buffered");
+        assert!(state.buffering);
+        assert!(!state.json_complete);
+
+        let r2 = buffer_or_persist(make_text_entry("  \"type\": \"summary\""), &mut state);
+        assert!(r2.is_empty(), "partial JSON should still be buffered");
+        assert!(!state.json_complete);
+
+        // Closing brace completes the JSON
+        let r3 = buffer_or_persist(make_text_entry("}"), &mut state);
+        assert!(r3.is_empty(), "closing brace still buffered (json_complete set, waiting for trailing text or session end)");
+        assert!(
+            state.json_complete,
+            "closing brace should set json_complete"
+        );
+        assert_eq!(state.buffer.len(), 3);
+    }
+
+    #[test]
+    fn trailing_text_after_json_flushes_buffer() {
+        // When trailing text arrives after json_complete, the JSON hypothesis is wrong.
+        // The buffered entries must be flushed (not discarded) so they reach the store.
+        let mut state = TextBufferState::default();
+
+        // Single-line JSON completes immediately
+        let r1 = buffer_or_persist(make_text_entry(r#"{"type":"summary"}"#), &mut state);
+        assert!(r1.is_empty());
+        assert!(state.json_complete);
+
+        // Trailing text invalidates the JSON hypothesis — buffer flushed + trailing text returned
+        let r2 = buffer_or_persist(make_text_entry("Some trailing prose"), &mut state);
+        assert_eq!(
+            r2.len(),
+            2,
+            "buffered JSON line + trailing text should both be returned"
+        );
+        assert!(
+            !state.buffering,
+            "state should be reset after trailing text"
+        );
+        assert!(!state.json_complete);
+        assert!(state.buffer.is_empty(), "buffer taken by mem::take");
+        // First entry is the buffered JSON line, second is trailing prose
+        assert!(
+            matches!(&r2[0], LogEntry::Text { content } if content == r#"{"type":"summary"}"#),
+            "first returned entry is the buffered JSON line"
+        );
+        assert!(
+            matches!(&r2[1], LogEntry::Text { content } if content == "Some trailing prose"),
+            "second returned entry is the trailing prose"
+        );
+    }
+
+    #[test]
+    fn fenced_json_buffered_until_close_then_json_complete() {
+        let mut state = TextBufferState::default();
+
+        let r1 = buffer_or_persist(make_text_entry("```json"), &mut state);
+        assert!(r1.is_empty());
+        assert!(state.buffering);
+
+        let r2 = buffer_or_persist(make_text_entry(r#"{"type":"summary"}"#), &mut state);
+        assert!(r2.is_empty());
+        assert!(!state.json_complete, "fence not closed yet");
+
+        // Closing fence makes the whole block parse as JSON
+        let r3 = buffer_or_persist(make_text_entry("```"), &mut state);
+        assert!(
+            r3.is_empty(),
+            "closing fence should still be buffered (json_complete)"
+        );
+        assert!(
+            state.json_complete,
+            "closing fence of JSON fence sets json_complete"
+        );
+    }
+
+    #[test]
+    fn non_json_fence_flushed_on_close() {
+        let mut state = TextBufferState::default();
+
+        let r1 = buffer_or_persist(make_text_entry("```python"), &mut state);
+        assert!(r1.is_empty());
+
+        let r2 = buffer_or_persist(make_text_entry("def hello(): pass"), &mut state);
+        assert!(r2.is_empty());
+
+        // Closing fence on non-JSON content → flushed immediately
+        let r3 = buffer_or_persist(make_text_entry("```"), &mut state);
+        assert_eq!(
+            r3.len(),
+            3,
+            "all buffered entries flushed on non-JSON fence close"
+        );
+        assert!(!state.buffering);
+        assert!(!state.json_complete);
+        assert!(state.buffer.is_empty());
+    }
+
+    #[test]
+    fn prose_before_json_persisted_json_buffered() {
+        // Mixed prose + JSON: prose is persisted immediately; JSON fence is buffered.
+        // After Completed detection, only the prose entry is in the store.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-prose", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        let mut state = TextBufferState::default();
+
+        // Prose before JSON is persisted immediately
+        let r1 = buffer_or_persist(make_text_entry("Here is my result:"), &mut state);
+        assert_eq!(r1.len(), 1, "prose before JSON persisted immediately");
+        assert!(!state.buffering);
+        for e in r1 {
+            store.append_log_entry("ss-prose", &e, None).unwrap();
+        }
+
+        // JSON fence starts buffering — nothing reaches the store
+        let r2 = buffer_or_persist(make_text_entry("```json"), &mut state);
+        assert!(r2.is_empty());
+        assert!(state.buffering);
+
+        let r3 = buffer_or_persist(make_text_entry(r#"{"type":"summary"}"#), &mut state);
+        assert!(r3.is_empty());
+
+        let r4 = buffer_or_persist(make_text_entry("```"), &mut state);
+        assert!(r4.is_empty());
+        assert!(state.json_complete, "json_complete set after fence closes");
+
+        // Simulate Completed detection: discard buffer (JSON text entries are dropped)
+        state.buffer.clear();
+
+        // Only the prose Text entry should be in the store
+        let entries = store.get_log_entries("ss-prose").unwrap();
+        assert_eq!(entries.len(), 1, "only prose text entry in store");
+        match &entries[0] {
+            LogEntry::Text { content } => assert_eq!(content, "Here is my result:"),
+            _ => panic!("expected prose Text entry"),
+        }
+    }
+
+    #[test]
+    fn non_text_entry_persisted_immediately() {
+        let mut state = TextBufferState::default();
+        let entry = LogEntry::ProcessExit { code: Some(0) };
+        let result = buffer_or_persist(entry, &mut state);
+        assert_eq!(
+            result.len(),
+            1,
+            "non-Text entries always persist immediately"
+        );
+        assert!(!state.buffering);
+    }
+
+    // -- Integration tests for read_chat_output --
+
+    /// A minimal `AgentParser` that converts each raw stdout line to a `LogEntry::Text`.
+    ///
+    /// Used in integration tests to exercise the `read_chat_output` pipeline without
+    /// a real agent provider.
+    struct TextLineParser;
+
+    impl AgentParser for TextLineParser {
+        fn parse_line(&mut self, line: &str) -> ParsedUpdate {
+            ParsedUpdate {
+                log_entries: vec![LogEntry::Text {
+                    content: line.to_string(),
+                }],
+                session_id: None,
+            }
+        }
+
+        fn finalize(&mut self) -> Vec<LogEntry> {
+            vec![]
+        }
+
+        fn extract_output(&self, _full_output: &str) -> Result<String, String> {
+            Err("not used in chat mode".to_string())
+        }
+    }
+
+    /// Spawn `cat` with the given content pre-written to stdin, returning a handle
+    /// whose stdout will yield those lines.  `cat` exits when stdin closes (which
+    /// `write_prompt` arranges), so `handle.lines()` will see EOF after draining.
+    fn make_scripted_handle(content: &str) -> (u32, ProcessHandle) {
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("cat must be available");
+
+        let pid = child.id();
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let mut handle = ProcessHandle::new(pid, stdin, stdout, None);
+        handle.write_prompt(content).unwrap();
+        (pid, handle)
+    }
+
+    /// Minimal JSON schema accepting "summary", "failed", "blocked" types.
+    fn integration_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["summary", "failed", "blocked"]},
+                "content": {"type": "string"},
+                "error": {"type": "string"}
+            },
+            "required": ["type"]
+        })
+    }
+
+    /// Workflow with a single "work" stage with artifact type "summary".
+    fn integration_workflow() -> WorkflowConfig {
+        WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
+    }
+
+    #[test]
+    fn integration_non_json_prose_persisted_immediately() {
+        // Non-JSON lines bypass the buffer and are written to the store during the main
+        // streaming loop.  After `read_chat_output` finishes, the store has Text entries
+        // and a ProcessExit, but no ExtractedJson.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-int-prose",
+            "task-int-prose",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let (pid, mut handle) = make_scripted_handle("Just some prose\nMore regular text\n");
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-prose",
+            "task-int-prose",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-prose").unwrap();
+        let text_count = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { .. }))
+            .count();
+        assert_eq!(
+            text_count, 2,
+            "both Text entries reach the store immediately"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ProcessExit { .. })),
+            "ProcessExit appended at end"
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
+            "no ExtractedJson when no JSON detected"
+        );
+    }
+
+    #[test]
+    fn integration_pure_json_only_extracted_json_in_store() {
+        // A single-line JSON object matching the schema is buffered during streaming
+        // and discarded once detection succeeds (Completed).  Only ExtractedJson and
+        // ProcessExit reach the store — no Text entries.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        // Task must be in a chat-capable state so try_complete_from_output proceeds.
+        let mut task = Task::new(
+            "task-int-json",
+            "Test",
+            "Test",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-int-json",
+            "task-int-json",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let json_line = r#"{"type":"summary","content":"done"}"#;
+        let (pid, mut handle) = make_scripted_handle(&format!("{json_line}\n"));
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-json",
+            "task-int-json",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-json").unwrap();
+        assert!(
+            !entries.iter().any(|e| matches!(e, LogEntry::Text { .. })),
+            "no Text entries — JSON was buffered and discarded on Completed"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) must be present"
+        );
+    }
+
+    #[test]
+    fn integration_trailing_prose_after_json_all_reach_store() {
+        // When trailing prose follows a JSON line, `buffer_or_persist` flushes the
+        // buffer on the trailing-text entry.  `try_complete_from_output` sees the
+        // concatenated text (json + prose) and returns NotDetected (not valid JSON).
+        // Both Text entries reach the store; no ExtractedJson is written.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-int-trailing",
+            "task-int-trailing",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let content = "{\"type\":\"summary\",\"content\":\"done\"}\nSome trailing prose here\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-trailing",
+            "task-int-trailing",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-trailing").unwrap();
+        let text_count = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { .. }))
+            .count();
+        assert_eq!(
+            text_count, 2,
+            "both Text entries (JSON line + prose) reach store"
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
+            "no ExtractedJson — trailing prose invalidated the JSON hypothesis"
+        );
+    }
+
+    #[test]
+    fn integration_false_positive_brace_flushed_via_safety_drain() {
+        // A lone `{` triggers buffering.  Non-JSON prose lines accumulate in the
+        // buffer (no closing brace, no fence).  After the agent exits,
+        // `try_complete_from_output` returns NotDetected and the NotDetected arm
+        // flushes the buffer so all entries eventually reach the store.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-int-brace",
+            "task-int-brace",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let content = "{\nThis is not JSON at all\nMore prose without a closing brace\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-brace",
+            "task-int-brace",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-brace").unwrap();
+        let text_count = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { .. }))
+            .count();
+        assert_eq!(
+            text_count, 3,
+            "all 3 buffered Text entries flushed (false-positive brace safety drain)"
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
+            "no ExtractedJson for a false-positive brace trigger"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ProcessExit { .. })),
+            "ProcessExit appended at end"
+        );
     }
 }

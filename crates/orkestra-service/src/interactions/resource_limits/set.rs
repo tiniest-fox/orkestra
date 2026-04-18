@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection};
 
+use super::{MIN_CPU_LIMIT, MIN_MEMORY_LIMIT_MB};
 use crate::types::ServiceError;
 
 /// Update `cpu_limit` and `memory_limit_mb` for `project_id`.
@@ -18,16 +19,16 @@ pub fn execute(
     memory_limit_mb: Option<i64>,
 ) -> Result<(), ServiceError> {
     if let Some(cpu) = cpu_limit {
-        if cpu < 1.0 {
-            return Err(ServiceError::Other(format!(
-                "cpu_limit must be >= 1.0, got {cpu}"
+        if cpu < MIN_CPU_LIMIT {
+            return Err(ServiceError::ValidationError(format!(
+                "cpu_limit must be >= {MIN_CPU_LIMIT}, got {cpu}"
             )));
         }
     }
     if let Some(mem) = memory_limit_mb {
-        if mem < 512 {
-            return Err(ServiceError::Other(format!(
-                "memory_limit_mb must be >= 512, got {mem}"
+        if mem < MIN_MEMORY_LIMIT_MB {
+            return Err(ServiceError::ValidationError(format!(
+                "memory_limit_mb must be >= {MIN_MEMORY_LIMIT_MB}, got {mem}"
             )));
         }
     }
@@ -102,7 +103,7 @@ mod tests {
         let conn = conn();
         insert_project(&conn, "proj1");
         let err = execute(&conn, "proj1", Some(0.5), None).unwrap_err();
-        assert!(matches!(err, ServiceError::Other(_)));
+        assert!(matches!(err, ServiceError::ValidationError(_)));
     }
 
     #[test]
@@ -110,7 +111,7 @@ mod tests {
         let conn = conn();
         insert_project(&conn, "proj1");
         let err = execute(&conn, "proj1", None, Some(256)).unwrap_err();
-        assert!(matches!(err, ServiceError::Other(_)));
+        assert!(matches!(err, ServiceError::ValidationError(_)));
     }
 
     #[test]

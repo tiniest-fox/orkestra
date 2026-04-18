@@ -1338,7 +1338,9 @@ where
                 ServiceError::SecretNotFound(_) | ServiceError::ProjectNotFound(_) => {
                     StatusCode::NOT_FOUND
                 }
-                ServiceError::SecretKeyInvalid(_) => StatusCode::BAD_REQUEST,
+                ServiceError::SecretKeyInvalid(_) | ServiceError::ValidationError(_) => {
+                    StatusCode::BAD_REQUEST
+                }
                 ServiceError::SecretsKeyNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };

@@ -174,5 +174,7 @@ pub enum ServiceError {
     #[error("Secret management is not configured")]
     SecretsKeyNotConfigured,
     #[error("{0}")]
+    ValidationError(String),
+    #[error("{0}")]
     Other(String),
 }

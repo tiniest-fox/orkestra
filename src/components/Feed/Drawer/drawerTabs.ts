@@ -1,10 +1,6 @@
 //! Tab management helpers and shared types for the TaskDrawer.
 
-import type {
-  PrCheckData,
-  PrCommentData,
-  WorkflowTaskView,
-} from "../../../types/workflow";
+import type { PrCheckData, PrCommentData, WorkflowTaskView } from "../../../types/workflow";
 import type { DrawerTab } from "../DrawerTabBar";
 
 // ============================================================================

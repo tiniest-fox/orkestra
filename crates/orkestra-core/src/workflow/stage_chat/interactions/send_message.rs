@@ -15,6 +15,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{LogEntry, LogNotification};
 use crate::workflow::execution::{get_agent_schema, AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
+use orkestra_parser::interactions::output::strip_markdown_fences;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessConfig, ProcessHandle};
 
 /// Resume type identifier for chat messages in log entries.
@@ -170,6 +171,15 @@ fn emit_extracted_json_entry(
         None,
     ) {
         orkestra_debug!("stage_chat", "Failed to append ExtractedJson entry: {}", e);
+    }
+}
+
+/// Persist all buffered Text entries to the store.
+fn flush_text_buffer(buffer: &[LogEntry], store: &Arc<dyn WorkflowStore>, session_id: &str) {
+    for entry in buffer {
+        if let Err(e) = store.append_log_entry(session_id, entry, None) {
+            orkestra_debug!("stage_chat", "Failed to flush buffered log entry: {}", e);
+        }
     }
 }
 
@@ -358,6 +368,8 @@ fn read_chat_output(
     }
 
     let mut accumulated_text: Vec<String> = Vec::new();
+    let mut text_buffer: Vec<LogEntry> = Vec::new();
+    let mut buffering = false;
 
     for line in handle.lines() {
         match line {
@@ -372,12 +384,63 @@ fn read_chat_output(
                 let batch_summary = LogEntry::last_summary(&update.log_entries);
                 for entry in update.log_entries {
                     if let LogEntry::Text { ref content } = entry {
+                        let trimmed = content.trim();
                         accumulated_text.push(content.clone());
-                    }
-                    if let Err(e) = store.append_log_entry(session_id, &entry, None) {
-                        orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
+
+                        if !buffering && (trimmed.starts_with('{') || trimmed.starts_with("```")) {
+                            buffering = true;
+                        }
+
+                        if buffering {
+                            // Early exit: fence just closed — check if buffer content is valid JSON
+                            if trimmed == "```" {
+                                let buffer_text = text_buffer
+                                    .iter()
+                                    .filter_map(|e| {
+                                        if let LogEntry::Text { content } = e {
+                                            Some(content.as_str())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                                // Include current entry in the check
+                                let full_buffer = format!("{buffer_text}\n{trimmed}");
+                                let stripped = strip_markdown_fences::execute(full_buffer.trim());
+                                text_buffer.push(entry);
+                                if serde_json::from_str::<serde_json::Value>(&stripped).is_err() {
+                                    // Definitely not JSON — flush now so UI sees it promptly
+                                    flush_text_buffer(&text_buffer, store, session_id);
+                                    batch_count += text_buffer.len();
+                                    text_buffer.clear();
+                                    buffering = false;
+                                    if let Some(tx) = &log_notify_tx {
+                                        let _ = tx.send(LogNotification {
+                                            task_id: task_id.to_string(),
+                                            session_id: session_id.to_string(),
+                                            last_entry_summary: LogEntry::last_summary(&[]),
+                                        });
+                                    }
+                                }
+                                // else: keep buffering — might be JSON
+                            } else {
+                                text_buffer.push(entry);
+                            }
+                        } else {
+                            if let Err(e) = store.append_log_entry(session_id, &entry, None) {
+                                orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
+                            } else {
+                                batch_count += 1;
+                            }
+                        }
                     } else {
-                        batch_count += 1;
+                        // Non-Text entries always persist immediately
+                        if let Err(e) = store.append_log_entry(session_id, &entry, None) {
+                            orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
+                        } else {
+                            batch_count += 1;
+                        }
                     }
                 }
 
@@ -407,9 +470,53 @@ fn read_chat_output(
     let finalized_summary = LogEntry::last_summary(&finalized);
     for entry in finalized {
         if let LogEntry::Text { ref content } = entry {
+            let trimmed = content.trim();
             accumulated_text.push(content.clone());
-        }
-        if let Err(e) = store.append_log_entry(session_id, &entry, None) {
+
+            if !buffering && (trimmed.starts_with('{') || trimmed.starts_with("```")) {
+                buffering = true;
+            }
+
+            if buffering {
+                if trimmed == "```" {
+                    let buffer_text = text_buffer
+                        .iter()
+                        .filter_map(|e| {
+                            if let LogEntry::Text { content } = e {
+                                Some(content.as_str())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let full_buffer = format!("{buffer_text}\n{trimmed}");
+                    let stripped = strip_markdown_fences::execute(full_buffer.trim());
+                    text_buffer.push(entry);
+                    if serde_json::from_str::<serde_json::Value>(&stripped).is_err() {
+                        flush_text_buffer(&text_buffer, store, session_id);
+                        finalized_count += text_buffer.len();
+                        text_buffer.clear();
+                        buffering = false;
+                        if let Some(tx) = &log_notify_tx {
+                            let _ = tx.send(LogNotification {
+                                task_id: task_id.to_string(),
+                                session_id: session_id.to_string(),
+                                last_entry_summary: LogEntry::last_summary(&[]),
+                            });
+                        }
+                    }
+                } else {
+                    text_buffer.push(entry);
+                }
+            } else {
+                if let Err(e) = store.append_log_entry(session_id, &entry, None) {
+                    orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
+                } else {
+                    finalized_count += 1;
+                }
+            }
+        } else if let Err(e) = store.append_log_entry(session_id, &entry, None) {
             orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
         } else {
             finalized_count += 1;
@@ -442,9 +549,23 @@ fn read_chat_output(
                     task_id
                 );
                 emit_extracted_json_entry(store, session_id, raw_json, true);
+                text_buffer.clear();
                 detection_succeeded = true;
             }
-            Ok(DetectionResult::NotDetected) => {} // No structured output detected, continue normal flow
+            Ok(DetectionResult::NotDetected) => {
+                // No structured output detected — flush any remaining buffered text
+                if !text_buffer.is_empty() {
+                    flush_text_buffer(&text_buffer, store, session_id);
+                    text_buffer.clear();
+                    if let Some(tx) = &log_notify_tx {
+                        let _ = tx.send(LogNotification {
+                            task_id: task_id.to_string(),
+                            session_id: session_id.to_string(),
+                            last_entry_summary: LogEntry::last_summary(&[]),
+                        });
+                    }
+                }
+            }
             Ok(DetectionResult::CorrectionNeeded { error, raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",
@@ -452,6 +573,9 @@ fn read_chat_output(
                     task_id,
                     error
                 );
+
+                // Discard the text buffer — the JSON is captured in ExtractedJson
+                text_buffer.clear();
 
                 // Append ExtractedJson log entry for frontend classification
                 emit_extracted_json_entry(store, session_id, raw_json, false);
@@ -580,6 +704,11 @@ fn read_chat_output(
                 }
             }
         }
+    }
+
+    // Safety drain: flush any remaining buffered text that wasn't consumed by detection
+    if !text_buffer.is_empty() {
+        flush_text_buffer(&text_buffer, store, session_id);
     }
 
     // Append ProcessExit so the frontend knows the agent is done
@@ -760,5 +889,120 @@ mod tests {
     fn should_not_attempt_correction_when_not_detected() {
         let result = DetectionResult::NotDetected;
         assert_eq!(should_attempt_correction(&result, 1), None);
+    }
+
+    // -- Buffering tests --
+
+    fn make_text_entry(content: &str) -> LogEntry {
+        LogEntry::Text {
+            content: content.to_string(),
+        }
+    }
+
+    #[test]
+    fn flush_text_buffer_persists_entries_to_store() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-flush", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        let buffer = vec![make_text_entry("line one"), make_text_entry("line two")];
+        flush_text_buffer(&buffer, &store, "ss-flush");
+
+        let entries = store.get_log_entries("ss-flush").unwrap();
+        assert_eq!(entries.len(), 2);
+        match (&entries[0], &entries[1]) {
+            (LogEntry::Text { content: c1 }, LogEntry::Text { content: c2 }) => {
+                assert_eq!(c1, "line one");
+                assert_eq!(c2, "line two");
+            }
+            _ => panic!("expected two Text entries"),
+        }
+    }
+
+    #[test]
+    fn plain_text_never_buffered() {
+        // Plain text that does not start with '{' or '```' should be persisted immediately
+        // (i.e., not end up in text_buffer). We test flush_text_buffer with an empty buffer,
+        // meaning the non-JSON entry was never added to it.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-plain", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        // Simulate: plain text entries were written directly, not buffered
+        let entry = make_text_entry("This is just a plain text response");
+        store.append_log_entry("ss-plain", &entry, None).unwrap();
+
+        let entries = store.get_log_entries("ss-plain").unwrap();
+        assert_eq!(
+            entries.len(),
+            1,
+            "plain text should be persisted immediately"
+        );
+    }
+
+    #[test]
+    fn non_json_fence_flushes_to_store() {
+        // A ``` fence that does not contain valid JSON should be flushed to the store
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-nonfence", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        // Simulate buffered entries for a python fence
+        let buffer = vec![
+            make_text_entry("```python"),
+            make_text_entry("def hello(): pass"),
+            make_text_entry("```"),
+        ];
+        flush_text_buffer(&buffer, &store, "ss-nonfence");
+
+        let entries = store.get_log_entries("ss-nonfence").unwrap();
+        assert_eq!(
+            entries.len(),
+            3,
+            "non-JSON fence should be flushed to store"
+        );
+    }
+
+    #[test]
+    fn json_buffer_discarded_on_completed() {
+        // When detection succeeds (Completed), the buffer is discarded (not flushed to store)
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-discard", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        // Simulate: JSON content was buffered but we emit only ExtractedJson
+        emit_extracted_json_entry(
+            &store,
+            "ss-discard",
+            r#"{"type":"summary"}"#.to_string(),
+            true,
+        );
+        // Buffer was cleared (not flushed) — only the ExtractedJson entry should be present
+
+        let entries = store.get_log_entries("ss-discard").unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(
+            entries[0],
+            LogEntry::ExtractedJson { valid: true, .. }
+        ));
+    }
+
+    #[test]
+    fn json_buffer_discarded_on_correction_needed() {
+        // When detection returns CorrectionNeeded, the buffer is discarded (not flushed)
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new("ss-corr", "task-1", "work", "2025-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        // Simulate: JSON content was buffered but we emit only ExtractedJson (invalid)
+        emit_extracted_json_entry(&store, "ss-corr", r#"{"type":"bad"}"#.to_string(), false);
+        // Buffer was cleared — only ExtractedJson should be in store
+
+        let entries = store.get_log_entries("ss-corr").unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(
+            entries[0],
+            LogEntry::ExtractedJson { valid: false, .. }
+        ));
     }
 }

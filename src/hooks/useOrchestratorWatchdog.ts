@@ -38,8 +38,8 @@ export function useOrchestratorWatchdog(): void {
         const info = await transport.call<{ project_root: string }>("get_project_info");
         await transport.call("retry_startup", { path: info.project_root });
       }
-    } catch {
-      // Swallow — if the command fails we can't do much
+    } catch (err) {
+      console.warn("Watchdog check failed:", err);
     }
   }, [transport]);
 

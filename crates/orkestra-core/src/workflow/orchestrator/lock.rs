@@ -5,6 +5,7 @@
 //! `{pid}:{unix_timestamp_secs}`; legacy PID-only files are accepted for backward
 //! compatibility.
 
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -63,11 +64,12 @@ impl std::error::Error for LockError {
 // ============================================================================
 
 /// Status of the orchestrator as observed from the lock file.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OrchestratorStatus {
-    /// Lock file is fresh (≤30s old) — orchestrator is considered alive.
+    /// Lock file is fresh (≤30s old) and the process is alive.
     Running { pid: u32 },
-    /// Lock file exists but its timestamp is stale (>30s old).
+    /// Lock file exists but its timestamp is stale (>30s old) or the process is dead.
     Stale { pid: u32 },
     /// No lock file present, or the file is unreadable/unparseable.
     Absent,
@@ -158,7 +160,17 @@ impl OrchestratorLock {
     // -- Helpers --
 
     fn release(&self) {
-        let _ = std::fs::remove_file(&self.lock_path);
+        // Only remove the lock file if it still contains our PID — a new orchestrator
+        // may have already written its own lock after we set our stop flag.
+        match read_lock_state(&self.lock_path) {
+            LockState::Timestamped { pid, .. } if pid == self.pid => {
+                let _ = std::fs::remove_file(&self.lock_path);
+            }
+            LockState::Legacy { pid } if pid == self.pid => {
+                let _ = std::fs::remove_file(&self.lock_path);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -193,7 +205,11 @@ pub fn check_orchestrator_status(project_root: &Path) -> OrchestratorStatus {
         } => {
             let age_secs = now_secs().saturating_sub(timestamp_secs);
             if age_secs <= STALE_THRESHOLD_SECS {
-                OrchestratorStatus::Running { pid }
+                if crate::process::is_process_running(pid) {
+                    OrchestratorStatus::Running { pid }
+                } else {
+                    OrchestratorStatus::Stale { pid }
+                }
             } else {
                 OrchestratorStatus::Stale { pid }
             }
@@ -214,11 +230,10 @@ enum LockState {
 }
 
 fn read_lock_state(lock_path: &Path) -> LockState {
-    if !lock_path.exists() {
-        return LockState::Absent;
-    }
-    let Ok(contents) = std::fs::read_to_string(lock_path) else {
-        return LockState::Corrupt;
+    let contents = match std::fs::read_to_string(lock_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return LockState::Absent,
+        Err(_) => return LockState::Corrupt,
     };
     let trimmed = contents.trim();
     if let Some((pid_str, ts_str)) = trimmed.split_once(':') {
@@ -268,10 +283,9 @@ fn steal_lock(lock_path: &Path, our_pid: u32) -> Result<OrchestratorLock, LockEr
             // Another process overwrote us — we lost the race
             Err(LockError::AlreadyRunning(pid))
         }
-        _ => {
-            // File vanished or became corrupt — treat as stolen by someone else
-            Err(LockError::AlreadyRunning(our_pid))
-        }
+        _ => Err(LockError::Io(std::io::Error::other(
+            "Lock file vanished during verify-after-write",
+        ))),
     }
 }
 
@@ -456,6 +470,18 @@ mod tests {
 
         let status = check_orchestrator_status(temp.path());
         assert_eq!(status, OrchestratorStatus::Running { pid: current_pid });
+    }
+
+    #[test]
+    fn test_check_status_fresh_but_dead_returns_stale() {
+        let temp = setup_temp_dir();
+        let lock_path = temp.path().join(".orkestra/orchestrator.lock");
+        // Fresh timestamp but dead PID — should be Stale, not Running
+        let fresh_ts = now_secs();
+        std::fs::write(&lock_path, format!("99999999:{fresh_ts}")).unwrap();
+
+        let status = check_orchestrator_status(temp.path());
+        assert_eq!(status, OrchestratorStatus::Stale { pid: 99_999_999 });
     }
 
     #[test]

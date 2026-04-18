@@ -102,13 +102,45 @@ fn test_second_orchestrator_blocked() {
     assert!(lock_path.exists(), "Lock file should still exist");
 }
 
-/// A stale lock file (dead PID) is stolen and the orchestrator starts normally.
+/// A stale timestamped lock (`pid:old_timestamp`) is stolen and the orchestrator starts normally.
+#[test]
+fn test_stale_timestamped_lock_stolen() {
+    let temp = setup_project();
+    let lock_path = temp.path().join(".orkestra/orchestrator.lock");
+
+    // Write a lock with timestamp >30s in the past and a dead PID — the new format
+    let old_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        - 60;
+    fs::write(&lock_path, format!("99999999:{old_ts}")).unwrap();
+
+    let orchestrator = build_orchestrator(temp.path().to_path_buf());
+    let events = run_with_timeout(orchestrator, Duration::from_millis(100));
+
+    let has_error = events
+        .iter()
+        .any(|e| matches!(e, OrchestratorEvent::Error { .. }));
+    assert!(
+        !has_error,
+        "Expected no error events (stale timestamped lock should be stolen), got: {events:?}"
+    );
+
+    // Lock file should be cleaned up after stop
+    assert!(
+        !lock_path.exists(),
+        "Lock file should be removed after graceful shutdown"
+    );
+}
+
+/// A stale lock file (dead PID, legacy format) is stolen and the orchestrator starts normally.
 #[test]
 fn test_stale_lock_stolen() {
     let temp = setup_project();
     let lock_path = temp.path().join(".orkestra/orchestrator.lock");
 
-    // Write a dead PID
+    // Write a dead PID (legacy format)
     fs::write(&lock_path, "99999999").unwrap();
 
     let orchestrator = build_orchestrator(temp.path().to_path_buf());

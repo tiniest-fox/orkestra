@@ -122,18 +122,11 @@ pub fn workflow_retry_startup(
 pub fn workflow_get_orchestrator_status(
     registry: State<'_, ProjectRegistry>,
     window: tauri::Window,
-) -> Result<serde_json::Value, TauriError> {
+) -> Result<OrchestratorStatus, TauriError> {
     registry.with_project(window.label(), |state| {
-        let status = orkestra_core::workflow::check_orchestrator_status(state.project_root());
-        Ok(match status {
-            OrchestratorStatus::Running { pid } => {
-                serde_json::json!({ "status": "running", "pid": pid })
-            }
-            OrchestratorStatus::Stale { pid } => {
-                serde_json::json!({ "status": "stale", "pid": pid })
-            }
-            OrchestratorStatus::Absent => serde_json::json!({ "status": "absent" }),
-        })
+        Ok(orkestra_core::workflow::check_orchestrator_status(
+            state.project_root(),
+        ))
     })
 }
 

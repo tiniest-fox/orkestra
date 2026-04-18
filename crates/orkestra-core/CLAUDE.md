@@ -156,6 +156,12 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 
 `DerivedTaskState::build()` requires `WorkflowConfig` as a parameter for this config lookup. When adding new call sites, ensure the workflow config is available — don't try to detect approval state without it.
 
+## Lock File E2E Tests
+
+Tests that verify lock contention (e.g., "second orchestrator is blocked") must use a real running process — either a live `OrchestratorLoop` or a subprocess. Writing `current_pid:fresh_ts` into the lock file does **not** work: `acquire()` sees a fresh timestamp + alive PID, enters the backoff loop, but the call returns `Ok(Stopped)` instead of blocking to `TimedOut`. Root cause is unclear, but the workaround is reliable: spin up a real orchestrator A with `build_orchestrator()`, wait for its lock file to appear, then run orchestrator B.
+
+`ACQUIRE_TIMEOUT_SECS = 2` in test mode, so any test that exercises the blocking path takes ~4s (backoff schedule: 250ms → 500ms → 1s → 2s cap before timeout).
+
 ## Anti-Patterns
 
 - **Don't embed test-only configuration in production constructors** — If a production `new()` delegates to a shared builder method (e.g., `with_runner()`), any feature added to that shared method silently applies to production. Instead, expose test-only configuration as a separate opt-in builder callable *after* construction (e.g., `StageExecutionService::with_skip_env_resolution()`). Use `Arc::get_mut()` when the builder needs mutable access — safe as long as tests call it immediately after construction before any clones exist.

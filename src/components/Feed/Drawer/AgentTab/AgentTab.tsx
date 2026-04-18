@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "../../../../hooks/useIsMobile";
 import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
 import { titleCase } from "../../../../utils/titleCase";
 import { ChatComposeArea } from "../../ChatComposeArea";
@@ -28,6 +29,7 @@ interface AgentTabProps {
 
 export function AgentTab({ task, logs, logsError, state, logContainerRef }: AgentTabProps) {
   const { derived } = task;
+  const isMobile = useIsMobile();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Combine the external logContainerRef (which sets logScrollRef for hotkey
@@ -189,7 +191,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
           }
           error={state.chatError}
           onResize={handleComposeResize}
-          className="shrink-0 px-6 pb-4 bg-canvas"
+          className={`shrink-0 ${isMobile ? "px-2" : "px-6"} pb-4 bg-canvas`}
         />
       )}
     </div>

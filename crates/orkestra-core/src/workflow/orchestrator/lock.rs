@@ -2,10 +2,8 @@
 //!
 //! `OrchestratorLock` is a RAII guard: created by `acquire()`, it holds the lock
 //! for its lifetime and removes the lock file on `Drop`. The lock file format is
-//! `{pid}:{unix_timestamp_secs}`; legacy PID-only files are accepted for backward
-//! compatibility.
+//! `{pid}:{unix_timestamp_secs}`; files without a colon are treated as corrupt.
 
-use crate::orkestra_debug;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -92,16 +90,15 @@ pub(super) struct OrchestratorLock {
 impl OrchestratorLock {
     /// Acquire the orchestrator lock for `project_root`.
     ///
-    /// Lock file format: `{pid}:{unix_timestamp_secs}`.  Legacy PID-only files are
-    /// supported for backward compatibility.
+    /// Lock file format: `{pid}:{unix_timestamp_secs}`. Files without a colon are treated
+    /// as corrupt and stolen immediately.
     ///
     /// Algorithm:
     /// 1. No file → write our lock and return guard.
     /// 2. File exists:
     ///    - Parse failure or dead PID → steal (write our lock).
-    ///    - Legacy format (no colon), alive PID → `AlreadyRunning`.
-    ///    - New format, timestamp stale (>30s) → steal regardless of PID liveness.
-    ///    - New format, timestamp fresh, alive PID → retry with exponential backoff
+    ///    - Timestamp stale (>30s) → steal regardless of PID liveness.
+    ///    - Timestamp fresh, alive PID → retry with exponential backoff
     ///      (250ms → 500ms → 1s → 2s cap) until `ACQUIRE_TIMEOUT_SECS`, then `TimedOut`.
     /// 3. After every steal: verify-after-write (10ms sleep + re-read) to prevent races.
     pub(super) fn acquire(project_root: &Path) -> Result<Self, LockError> {
@@ -115,21 +112,6 @@ impl OrchestratorLock {
                 LockState::Absent | LockState::Corrupt => {
                     return steal_lock(&lock_path, current_pid);
                 }
-                LockState::Legacy { pid } => {
-                    if crate::process::is_process_running(pid) {
-                        if crate::process::is_zombie(pid) {
-                            orkestra_debug!(
-                                "lock",
-                                "Zombie process (PID {}) holding orchestrator lock — reclaiming",
-                                pid
-                            );
-                            // Fall through to steal the lock
-                        } else {
-                            return Err(LockError::AlreadyRunning(pid));
-                        }
-                    }
-                    return steal_lock(&lock_path, current_pid);
-                }
                 LockState::Timestamped {
                     pid,
                     timestamp_secs,
@@ -141,8 +123,8 @@ impl OrchestratorLock {
                         return steal_lock(&lock_path, current_pid);
                     }
 
-                    if !crate::process::is_process_running(pid) {
-                        // Fresh timestamp but dead process (e.g., killed without cleanup)
+                    if !crate::process::is_process_running(pid) || crate::process::is_zombie(pid) {
+                        // Fresh timestamp but dead or zombie process
                         return steal_lock(&lock_path, current_pid);
                     }
 
@@ -176,9 +158,6 @@ impl OrchestratorLock {
             LockState::Timestamped { pid, .. } if pid == self.pid => {
                 let _ = std::fs::remove_file(&self.lock_path);
             }
-            LockState::Legacy { pid } if pid == self.pid => {
-                let _ = std::fs::remove_file(&self.lock_path);
-            }
             _ => {}
         }
     }
@@ -202,13 +181,6 @@ pub fn check_orchestrator_status(project_root: &Path) -> OrchestratorStatus {
     let lock_path = project_root.join(".orkestra/orchestrator.lock");
     match read_lock_state(&lock_path) {
         LockState::Absent | LockState::Corrupt => OrchestratorStatus::Absent,
-        LockState::Legacy { pid } => {
-            if crate::process::is_process_running(pid) {
-                OrchestratorStatus::Running { pid }
-            } else {
-                OrchestratorStatus::Absent
-            }
-        }
         LockState::Timestamped {
             pid,
             timestamp_secs,
@@ -235,7 +207,6 @@ pub fn check_orchestrator_status(project_root: &Path) -> OrchestratorStatus {
 enum LockState {
     Absent,
     Corrupt,
-    Legacy { pid: u32 },
     Timestamped { pid: u32, timestamp_secs: u64 },
 }
 
@@ -258,10 +229,7 @@ fn read_lock_state(lock_path: &Path) -> LockState {
             timestamp_secs,
         }
     } else {
-        match trimmed.parse::<u32>() {
-            Ok(pid) => LockState::Legacy { pid },
-            Err(_) => LockState::Corrupt,
-        }
+        LockState::Corrupt
     }
 }
 
@@ -426,33 +394,6 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_format_backward_compat() {
-        let temp = setup_temp_dir();
-        let lock_path = temp.path().join(".orkestra/orchestrator.lock");
-        // PID 99999999 is almost certainly dead — legacy format (no colon)
-        std::fs::write(&lock_path, "99999999").unwrap();
-
-        let lock = OrchestratorLock::acquire(temp.path()).unwrap();
-        assert!(lock.lock_path.exists());
-    }
-
-    #[test]
-    fn test_legacy_format_alive_pid_blocks() {
-        let temp = setup_temp_dir();
-        let lock_path = temp.path().join(".orkestra/orchestrator.lock");
-        // Write current process PID in legacy format
-        std::fs::write(&lock_path, std::process::id().to_string()).unwrap();
-
-        let result = OrchestratorLock::acquire(temp.path());
-        match result {
-            Err(LockError::AlreadyRunning(pid)) => {
-                assert_eq!(pid, std::process::id());
-            }
-            other => panic!("Expected AlreadyRunning, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn test_acquire_blocked_by_live_process() {
         let temp = setup_temp_dir();
         let lock_path = temp.path().join(".orkestra/orchestrator.lock");
@@ -589,10 +530,12 @@ mod tests {
         // Wait for it to exit and become a zombie
         std::thread::sleep(Duration::from_millis(50));
 
-        // Write the zombie's PID to the lock file
-        std::fs::write(&lock_path, zombie_pid.to_string()).unwrap();
+        // Write the zombie's PID with a fresh timestamp — tests that a zombie with a
+        // fresh timestamp is still reclaimed (dead process path in Timestamped arm).
+        let fresh_ts = now_secs();
+        std::fs::write(&lock_path, format!("{zombie_pid}:{fresh_ts}")).unwrap();
 
-        // Lock acquisition should succeed — zombie is bypassed
+        // Lock acquisition should succeed — dead process is stolen even with fresh timestamp
         let lock = OrchestratorLock::acquire(temp.path())
             .expect("should reclaim lock held by zombie process");
         assert!(lock.lock_path.exists());

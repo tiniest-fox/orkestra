@@ -117,8 +117,8 @@ pub use integration::pr_description_audit::{
 pub use iteration::IterationService;
 pub use log_service::LogService;
 pub use orchestrator::{
-    check_orchestrator_status, OrchestratorError, OrchestratorEvent, OrchestratorLoop,
-    OrchestratorStatus,
+    check_orchestrator_status, OrchestratorError, OrchestratorEvent, OrchestratorExitReason,
+    OrchestratorLoop, OrchestratorStatus,
 };
 pub use prompt::PromptService;
 pub use stage::service::{

@@ -101,7 +101,9 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
     "dev";
 
   return (
-    <div className="flex items-center justify-between px-6 min-h-7 pt-1 pb-[max(4px,env(safe-area-inset-bottom))] border-t border-border bg-surface shrink-0 font-mono text-[11px] text-text-tertiary">
+    <div
+      className={`flex items-center justify-between ${isMobile ? "px-2" : "px-6"} min-h-7 pt-1 pb-[max(4px,env(safe-area-inset-bottom))] border-t border-border bg-surface shrink-0 font-mono text-[11px] text-text-tertiary`}
+    >
       <div className="flex items-center gap-3 min-w-0">
         {hasGitInfo && <span className="font-medium shrink-0 text-accent">{currentBranch}</span>}
         {latestCommit && (

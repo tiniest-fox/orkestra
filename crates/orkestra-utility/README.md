@@ -2,7 +2,7 @@
 
 Lightweight AI utility tasks for Orkestra.
 
-Provides title generation, commit message generation, and PR description generation. Each utility runs with structured JSON output and schema validation. Title and commit message generation use Claude haiku in single-turn mode; PR generation uses Claude Sonnet in interactive mode.
+Provides title generation, commit message generation, and PR description generation. Each utility runs with structured JSON output and schema validation. Task title generation uses Claude haiku in interactive mode (so the agent can fetch context from external links like Asana URLs); commit message generation uses single-turn haiku; PR generation uses Claude Sonnet in interactive mode.
 
 ## Overview
 
@@ -43,10 +43,11 @@ This crate handles small, focused AI tasks that don't warrant a full agent sessi
 ### Title Generation
 
 ```rust
-use orkestra_utility::{generate_title_sync, generate_fallback_title};
+use orkestra_utility::{generate_title_sync, generate_fallback_title, ExecutionMode};
 
 // AI-powered title generation (blocking)
-let title = generate_title_sync("Fix the authentication bug where...", 30)?;
+// Use Interactive for external links (Asana, GitHub URLs), SingleTurn for plain text
+let title = generate_title_sync("Fix the authentication bug where...", 30, ExecutionMode::SingleTurn)?;
 
 // Fallback when AI unavailable (truncates at ~50 chars)
 let title = generate_fallback_title("Fix the authentication bug where...");

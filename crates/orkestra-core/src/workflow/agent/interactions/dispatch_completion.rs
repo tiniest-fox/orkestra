@@ -40,7 +40,7 @@ fn persist_activity_flag(
 pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<OrchestratorEvent> {
     match exec.result {
         ExecutionResult::AgentSuccess(stage_output) => {
-            let output_type = stage_output.type_label().to_string();
+            let output_type = stage_output.notification_label().to_string();
             orkestra_debug!(
                 "orchestrator",
                 "agent completed {}/{}: type={}, processing output",

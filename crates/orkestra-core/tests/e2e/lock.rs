@@ -10,8 +10,8 @@ use tempfile::TempDir;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
-    config::WorkflowConfig, orchestrator::LockError, OrchestratorEvent, OrchestratorLoop,
-    SqliteWorkflowStore, WorkflowApi,
+    config::WorkflowConfig, orchestrator::LockError, OrchestratorEvent, OrchestratorExitReason,
+    OrchestratorLoop, SqliteWorkflowStore, WorkflowApi,
 };
 
 // =============================================================================
@@ -43,26 +43,33 @@ fn build_orchestrator(project_root: std::path::PathBuf) -> OrchestratorLoop {
     OrchestratorLoop::for_project(api, workflow, project_root, store)
 }
 
-/// Collect events from `run()` with a stop-after duration.
+/// Collect events and exit reason from `run()` with a stop-after duration.
 ///
 /// Spawns `run()` on a background thread. After `wait`, sets the stop flag
-/// and joins the thread. Returns all emitted events.
-fn run_with_timeout(orchestrator: OrchestratorLoop, wait: Duration) -> Vec<OrchestratorEvent> {
+/// and joins the thread. Returns all emitted events and the exit reason.
+fn run_with_timeout(
+    orchestrator: OrchestratorLoop,
+    wait: Duration,
+) -> (Vec<OrchestratorEvent>, OrchestratorExitReason) {
     let events = Arc::new(Mutex::new(Vec::new()));
     let events_clone = Arc::clone(&events);
     let stop = orchestrator.stop_flag();
 
     let handle = std::thread::spawn(move || {
-        orchestrator.run(|event| {
+        let reason = orchestrator.run(|event| {
             events_clone.lock().unwrap().push(event);
         });
+        reason
     });
 
     std::thread::sleep(wait);
     stop.store(true, std::sync::atomic::Ordering::Relaxed);
-    handle.join().unwrap();
+    let reason = handle.join().unwrap();
 
-    Arc::try_unwrap(events).unwrap().into_inner().unwrap()
+    (
+        Arc::try_unwrap(events).unwrap().into_inner().unwrap(),
+        reason,
+    )
 }
 
 // =============================================================================
@@ -80,7 +87,7 @@ fn test_second_orchestrator_blocked() {
     fs::write(&lock_path, std::process::id().to_string()).unwrap();
 
     let orchestrator = build_orchestrator(temp.path().to_path_buf());
-    let events = run_with_timeout(orchestrator, Duration::from_millis(100));
+    let (events, _reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
 
     assert!(
         !events.is_empty(),
@@ -117,7 +124,7 @@ fn test_stale_timestamped_lock_stolen() {
     fs::write(&lock_path, format!("99999999:{old_ts}")).unwrap();
 
     let orchestrator = build_orchestrator(temp.path().to_path_buf());
-    let events = run_with_timeout(orchestrator, Duration::from_millis(100));
+    let (events, _reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
 
     let has_error = events
         .iter()
@@ -144,7 +151,7 @@ fn test_stale_lock_stolen() {
     fs::write(&lock_path, "99999999").unwrap();
 
     let orchestrator = build_orchestrator(temp.path().to_path_buf());
-    let events = run_with_timeout(orchestrator, Duration::from_millis(100));
+    let (events, _reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
 
     let has_error = events
         .iter()
@@ -205,4 +212,55 @@ fn test_lock_cleaned_on_shutdown() {
 fn test_lock_error_display() {
     let err = LockError::AlreadyRunning(12345);
     assert!(err.to_string().contains("12345"));
+}
+
+// =============================================================================
+// OrchestratorExitReason tests
+// =============================================================================
+
+/// `run()` returns `AlreadyRunning` when the lock is held by a live process.
+#[test]
+fn test_exit_reason_already_running() {
+    let temp = setup_project();
+    let lock_path = temp.path().join(".orkestra/orchestrator.lock");
+    let current_pid = std::process::id();
+
+    // Simulate a running orchestrator by writing the current PID
+    fs::write(&lock_path, current_pid.to_string()).unwrap();
+
+    let orchestrator = build_orchestrator(temp.path().to_path_buf());
+    let (_events, reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
+
+    assert_eq!(
+        reason,
+        OrchestratorExitReason::AlreadyRunning(current_pid),
+        "Expected AlreadyRunning exit reason, got: {reason:?}"
+    );
+}
+
+/// `run()` returns `Stopped` on normal shutdown via stop flag.
+#[test]
+fn test_exit_reason_stopped() {
+    let temp = setup_project();
+
+    let orchestrator = build_orchestrator(temp.path().to_path_buf());
+    let (_events, reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
+
+    assert_eq!(
+        reason,
+        OrchestratorExitReason::Stopped,
+        "Expected Stopped exit reason, got: {reason:?}"
+    );
+}
+
+/// `OrchestratorExitReason` Display impl includes useful context.
+#[test]
+fn test_exit_reason_display() {
+    assert_eq!(OrchestratorExitReason::Stopped.to_string(), "Stopped");
+
+    let reason = OrchestratorExitReason::AlreadyRunning(9999);
+    assert!(reason.to_string().contains("9999"));
+
+    let reason = OrchestratorExitReason::LockFailed("permission denied".into());
+    assert!(reason.to_string().contains("permission denied"));
 }

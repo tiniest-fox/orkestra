@@ -5,6 +5,7 @@
 //! `{pid}:{unix_timestamp_secs}`; legacy PID-only files are accepted for backward
 //! compatibility.
 
+use crate::orkestra_debug;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -116,7 +117,16 @@ impl OrchestratorLock {
                 }
                 LockState::Legacy { pid } => {
                     if crate::process::is_process_running(pid) {
-                        return Err(LockError::AlreadyRunning(pid));
+                        if crate::process::is_zombie(pid) {
+                            orkestra_debug!(
+                                "lock",
+                                "Zombie process (PID {}) holding orchestrator lock — reclaiming",
+                                pid
+                            );
+                            // Fall through to steal the lock
+                        } else {
+                            return Err(LockError::AlreadyRunning(pid));
+                        }
                     }
                     return steal_lock(&lock_path, current_pid);
                 }
@@ -555,5 +565,40 @@ mod tests {
             // Rival didn't overwrite in time — normal acquire should have succeeded
             assert!(result.is_ok(), "Expected Ok when rival didn't overwrite");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_zombie_lock_reclaimed() {
+        use std::time::Duration;
+
+        let temp = setup_temp_dir();
+        let lock_path = temp.path().join(".orkestra/orchestrator.lock");
+
+        // Spawn a child and don't reap it so it becomes a zombie
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to spawn child");
+
+        let zombie_pid = child.id();
+
+        // Wait for it to exit and become a zombie
+        std::thread::sleep(Duration::from_millis(50));
+
+        // Write the zombie's PID to the lock file
+        std::fs::write(&lock_path, zombie_pid.to_string()).unwrap();
+
+        // Lock acquisition should succeed — zombie is bypassed
+        let lock = OrchestratorLock::acquire(temp.path())
+            .expect("should reclaim lock held by zombie process");
+        assert!(lock.lock_path.exists());
+
+        // Reap the child
+        child.wait().unwrap();
+        drop(lock);
     }
 }

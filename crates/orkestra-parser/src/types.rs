@@ -164,10 +164,11 @@ impl StageOutput {
 
     /// Label for notification/event purposes. More specific than `type_label()` —
     /// distinguishes gate approval from gate rejection.
-    pub fn notification_label(&self) -> &str {
+    pub fn notification_label(&self) -> &'static str {
         match self {
             StageOutput::Approval { decision, .. } if decision == "approve" => "gate_approval",
             StageOutput::Approval { decision, .. } if decision == "reject" => "gate_rejection",
+            StageOutput::Approval { .. } => "approval",
             other => other.type_label(),
         }
     }

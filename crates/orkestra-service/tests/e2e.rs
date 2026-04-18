@@ -356,6 +356,8 @@ mod docker {
             port: 19999, // use a high port to avoid conflicts
             override_dir: override_dir.path().to_path_buf(),
             force_build: false,
+            cpu_limit: None,
+            memory_limit_mb: None,
         })
         .expect("docker run should succeed");
 
@@ -408,6 +410,8 @@ mod docker {
             port: 19998,
             override_dir: override_dir.path().to_path_buf(),
             force_build: false,
+            cpu_limit: None,
+            memory_limit_mb: None,
         })
         .expect("docker run should succeed");
 

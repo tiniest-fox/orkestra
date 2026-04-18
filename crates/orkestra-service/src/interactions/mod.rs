@@ -6,4 +6,5 @@ pub mod devcontainer;
 pub mod github;
 pub mod port;
 pub mod project;
+pub mod resource_limits;
 pub mod secret;

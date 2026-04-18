@@ -31,6 +31,7 @@ export interface ProjectRowActions {
   onGitPush: () => void;
   onCancel: () => void;
   onManageSecrets: () => void;
+  onManageResourceLimits: () => void;
 }
 
 export interface ProjectRowProps extends ProjectRowActions {
@@ -91,6 +92,7 @@ export function ProjectRow({
   onGitPush,
   onCancel,
   onManageSecrets,
+  onManageResourceLimits,
   isFocused,
   onMouseEnter,
 }: ProjectRowProps) {
@@ -305,6 +307,14 @@ export function ProjectRow({
             }}
           >
             Manage Secrets
+          </Dropdown.Item>
+          <Dropdown.Item
+            onClick={() => {
+              setMenuOpen(false);
+              onManageResourceLimits();
+            }}
+          >
+            Resource Limits
           </Dropdown.Item>
           <Dropdown.Item
             onClick={() => {

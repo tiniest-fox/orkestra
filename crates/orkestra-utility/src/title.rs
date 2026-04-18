@@ -6,7 +6,7 @@
 
 use serde_json::json;
 
-use crate::runner::UtilityRunner;
+use crate::runner::{ExecutionMode, UtilityRunner};
 
 // =============================================================================
 // TitleGenerator Trait
@@ -29,13 +29,13 @@ pub trait TitleGenerator: Send + Sync {
 
 /// Production title generator — uses Claude haiku via `UtilityRunner`.
 ///
-/// Spawns Claude with `--model haiku --max-turns 1` to minimize latency and cost.
-/// Uses structured JSON output with schema validation for reliable results.
+/// Spawns Claude in Interactive mode so the agent can use its skills and MCP
+/// tools to fetch context from external links (e.g., Asana task URLs).
 pub struct ClaudeTitleGenerator;
 
 impl TitleGenerator for ClaudeTitleGenerator {
     fn generate_title(&self, _task_id: &str, description: &str) -> Result<String, String> {
-        generate_title_sync(description, 30).map_err(|e| e.to_string())
+        generate_title_sync(description, 120, ExecutionMode::Interactive).map_err(|e| e.to_string())
     }
 }
 
@@ -83,12 +83,20 @@ pub mod mock {
 
 /// Generates a title synchronously using a lightweight Claude instance.
 ///
-/// This spawns Claude with `--model haiku --max-turns 1` to minimize latency and cost.
-/// Uses structured JSON output with schema validation for reliable results.
+/// `mode` controls whether the agent can use tools (`Interactive`) or runs
+/// headless (`SingleTurn`). Pass `Interactive` for task titles so the agent can
+/// fetch context from external links; pass `SingleTurn` for plain-text titles
+/// (e.g., assistant session names) where tool access is unnecessary.
 ///
 /// Returns the generated title string, or an error if generation fails.
-pub fn generate_title_sync(description: &str, timeout_secs: u64) -> std::io::Result<String> {
-    let runner = UtilityRunner::new().with_timeout(timeout_secs);
+pub fn generate_title_sync(
+    description: &str,
+    timeout_secs: u64,
+    mode: ExecutionMode,
+) -> std::io::Result<String> {
+    let runner = UtilityRunner::new()
+        .with_timeout(timeout_secs)
+        .with_mode(mode);
     let context = json!({ "description": description });
 
     let output = runner

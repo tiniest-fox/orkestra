@@ -3,7 +3,6 @@
 import type {
   PrCheckData,
   PrCommentData,
-  WorkflowConfig,
   WorkflowTaskView,
 } from "../../../types/workflow";
 import type { DrawerTab } from "../DrawerTabBar";

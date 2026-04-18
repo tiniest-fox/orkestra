@@ -46,11 +46,7 @@ pub fn execute(
 
 // -- Helpers --
 
-pub(super) fn resolve_cpu(
-    db_override: Option<f64>,
-    env_override: Option<f64>,
-    host_cpu_count: usize,
-) -> f64 {
+fn resolve_cpu(db_override: Option<f64>, env_override: Option<f64>, host_cpu_count: usize) -> f64 {
     let raw = db_override.or(env_override).unwrap_or_else(|| {
         #[allow(clippy::cast_precision_loss)]
         let half = (host_cpu_count as f64) * 0.5;
@@ -59,11 +55,7 @@ pub(super) fn resolve_cpu(
     raw.max(MIN_CPU_LIMIT)
 }
 
-pub(super) fn resolve_memory(
-    db_override: Option<i64>,
-    env_override: Option<i64>,
-    host_memory_mb: u64,
-) -> i64 {
+fn resolve_memory(db_override: Option<i64>, env_override: Option<i64>, host_memory_mb: u64) -> i64 {
     let raw = db_override.or(env_override).unwrap_or_else(|| {
         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
         let half = (host_memory_mb / 2) as i64;

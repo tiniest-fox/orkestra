@@ -10,7 +10,7 @@ use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
 use crate::interactions::{devcontainer, github, project};
-use crate::types::{Project, ProjectStatus, ServiceError};
+use crate::types::{Project, ProjectStatus, ResourceLimits, ServiceError};
 
 /// Clone `repo_url` into `project.path`, initialise `.orkestra`, start a
 /// container, and spawn the daemon.
@@ -277,8 +277,10 @@ async fn container_and_spawn(
                 Some(&lp),
                 force_build,
                 &secrets,
-                Some(cpu_limit),
-                Some(memory_limit_mb),
+                &ResourceLimits {
+                    cpu_limit: Some(cpu_limit),
+                    memory_limit_mb: Some(memory_limit_mb),
+                },
             )
         }
     })

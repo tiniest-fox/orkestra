@@ -103,8 +103,10 @@ pub fn devcontainer_start_container(params: &ContainerStartParams) -> Result<Str
         None,
         params.force_build,
         &[],
-        params.cpu_limit,
-        params.memory_limit_mb,
+        &ResourceLimits {
+            cpu_limit: params.cpu_limit,
+            memory_limit_mb: params.memory_limit_mb,
+        },
     )
 }
 

@@ -49,6 +49,8 @@ See `src/stories/Demo/AppShell.stories.tsx` for the custom transport reference p
 
 After writing stories, generate screenshots and register them as resources so they appear in the Trak drawer throughout the workflow.
 
+> **Headless agents:** You cannot run `pnpm storybook` or take screenshots in a headless environment. At minimum, run `pnpm build-storybook` to catch import and bundling errors. Visual verification and screenshots are only possible in interactive/human runs — skip steps 1–3 below and note this limitation in your work summary.
+
 1. Run Storybook: `pnpm storybook` (serves at `http://localhost:6006`)
 2. Navigate to the component story and verify every story variant renders correctly
 3. Take screenshots --- either via `pnpm test-storybook` with a snapshot configuration, or manually from the browser
@@ -73,4 +75,4 @@ Use `screenshot:ComponentName` as the resource key so multiple screenshots coexi
 | `src/stories/storybook-helpers.tsx` | `StorybookProviders`, `storybookDecorator`, `createMockTransport` |
 | `.storybook/preview.ts` | Global decorator registration |
 | `src/stories/Demo/AppShell.stories.tsx` | Custom transport pattern reference |
-| `src/CLAUDE.md` S Storybook Stories | Authoritative source for edge cases and full detail |
+| `src/CLAUDE.md` — Storybook Stories section | Authoritative source for edge cases and full detail |

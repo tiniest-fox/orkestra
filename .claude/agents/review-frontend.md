@@ -115,7 +115,7 @@ Review the changed frontend files and identify violations of the project's UI co
 ```markdown
 ### src/components/Feed/FeedRow.tsx
 **Severity:** MEDIUM
-**Principle:** Single Source of Truth
+**Principle:** Spec Conformance
 **Issue:** New component added with no corresponding story in `src/stories/`
 **Evidence:** `src/components/Feed/FeedRow.tsx` exists, no `FeedRow.stories.tsx` found in `src/stories/`
 **Suggestion:** Add `src/stories/Feed/FeedRow.stories.tsx` covering at least default and selected states. Load the `/storybook` skill for provider setup patterns.

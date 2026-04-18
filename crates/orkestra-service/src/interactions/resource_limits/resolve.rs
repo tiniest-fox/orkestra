@@ -52,7 +52,7 @@ fn resolve_cpu(db_override: Option<f64>, env_override: Option<f64>, host_cpu_cou
         let half = (host_cpu_count as f64) * 0.5;
         half.max(MIN_CPU_LIMIT)
     });
-    raw.max(MIN_CPU_LIMIT)
+    raw.max(MIN_CPU_LIMIT) // both clamps needed: inner covers host-detection path, outer covers DB/env paths
 }
 
 fn resolve_memory(db_override: Option<i64>, env_override: Option<i64>, host_memory_mb: u64) -> i64 {
@@ -61,7 +61,7 @@ fn resolve_memory(db_override: Option<i64>, env_override: Option<i64>, host_memo
         let half = (host_memory_mb / 2) as i64;
         half.max(MIN_MEMORY_LIMIT_MB)
     });
-    raw.max(MIN_MEMORY_LIMIT_MB)
+    raw.max(MIN_MEMORY_LIMIT_MB) // both clamps needed: inner covers host-detection path, outer covers DB/env paths
 }
 
 // ============================================================================

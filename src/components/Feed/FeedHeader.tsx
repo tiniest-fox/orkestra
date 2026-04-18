@@ -59,7 +59,9 @@ export function FeedHeader({
 
   return (
     <div className="shrink-0">
-      <div className="flex items-center justify-between px-6 h-11 border-b border-border bg-surface">
+      <div
+        className={`flex items-center justify-between ${isMobile ? "px-2" : "px-6"} h-11 border-b border-border bg-surface`}
+      >
         <div className="flex items-center gap-2">
           {showHomeLink ? (
             <Link

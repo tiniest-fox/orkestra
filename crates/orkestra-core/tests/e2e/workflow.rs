@@ -9763,3 +9763,108 @@ fn test_rejection_artifact_persisted() {
         "ArtifactProduced name should match the stage's artifact name"
     );
 }
+
+// =============================================================================
+// Test: prompt sections threaded to UserMessage (dynamic_sections)
+// =============================================================================
+
+/// Fresh spawn with no dynamic context produces empty `prompt_sections` in `RunConfig`.
+/// Fresh spawn after a reviewer rejection carries a "Feedback to Address" section.
+///
+/// Flow:
+/// 1. Work stage: first fresh spawn → empty sections (no dynamic context)
+/// 2. Review stage (agentic gate): reviewer rejects back to work with feedback
+/// 3. Work stage: second fresh spawn (Rejection trigger supersedes session) → sections populated
+///
+/// Note: `api.reject()` creates a `Feedback` trigger (resume), not a `Rejection` trigger (fresh
+/// spawn). Only reviewer-stage rejections create `Rejection` triggers, which supersede the
+/// session and produce a fresh spawn where `dynamic_sections` are extracted.
+#[test]
+fn test_prompt_sections_threaded_to_run_config() {
+    // Two stages: work (produces artifact) + review (agentic gate that can reject back to work).
+    // Reviewer rejection creates a Rejection trigger → fresh spawn with feedback sections.
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary"),
+        StageConfig::new("review", "verdict").with_gate(GateConfig::Agentic),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["work", "review"]);
+
+    let task = ctx.create_task("Implement feature", "Add the feature", None);
+    let task_id = task.id.clone();
+
+    // --- Step 1: First fresh spawn (work stage) — no dynamic context ---
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial implementation".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns work agent (completion ready)
+
+    let first_config = ctx.last_run_config();
+    assert!(
+        first_config.prompt_sections.is_empty(),
+        "Fresh spawn with no dynamic context should have empty sections. Got: {:?}",
+        first_config.prompt_sections
+    );
+
+    ctx.advance(); // processes summary → AwaitingApproval
+
+    // --- Step 2: Auto-approve work, reviewer rejects back to work ---
+
+    // set_auto_mode(true) immediately enters the commit pipeline from AwaitingApproval
+    ctx.api().set_auto_mode(&task_id, true).unwrap();
+
+    // Queue reviewer rejection, then work#2 artifact (consumed in sequence by mock)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Please add more detail".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Revised implementation with more detail".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+
+    ctx.advance(); // commits work → advances to review (queued, deferred this tick)
+    ctx.advance(); // spawns reviewer + processes rejection (auto_mode=true) → task back to work with Rejection trigger
+    ctx.advance(); // spawns work#2 with sections from Rejection trigger
+
+    // --- Step 3: Second fresh spawn has sections from Rejection trigger ---
+
+    let second_config = ctx.last_run_config();
+    assert!(
+        !second_config.prompt_sections.is_empty(),
+        "Spawn after reviewer rejection should have non-empty sections. Got: {:?}",
+        second_config.prompt_sections
+    );
+
+    let feedback_section = second_config
+        .prompt_sections
+        .iter()
+        .find(|s| s.label == "Feedback to Address");
+    assert!(
+        feedback_section.is_some(),
+        "Sections should contain 'Feedback to Address'. Got: {:?}",
+        second_config.prompt_sections
+    );
+    assert_eq!(
+        feedback_section.unwrap().content,
+        "Please add more detail",
+        "Feedback section content should match reviewer rejection message"
+    );
+}

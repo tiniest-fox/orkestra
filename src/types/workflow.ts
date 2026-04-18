@@ -607,7 +607,8 @@ export type ResumeType =
   | "manual_resume"
   | "initial"
   | "chat"
-  | "return_to_work";
+  | "return_to_work"
+  | "correction";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).
@@ -620,6 +621,8 @@ export type LogEntry =
       /** Type of resume marker (e.g., "continue", "feedback", "manual_resume"). Defaults to "continue". */
       resume_type?: ResumeType;
       content: string;
+      /** Dynamic prompt sections. Non-empty only for resume_type === "initial". */
+      sections?: Array<{ label: string; content: string }>;
     }
   | { type: "tool_use"; tool: string; id: string; input: ToolInput }
   | { type: "tool_result"; tool: string; tool_use_id: string; content: string }
@@ -642,7 +645,8 @@ export type LogEntry =
   | { type: "artifact_produced"; name: string; artifact_id: string; artifact?: WorkflowArtifact }
   | { type: "gate_started"; command: string }
   | { type: "gate_output"; content: string }
-  | { type: "gate_completed"; exit_code: number; passed: boolean };
+  | { type: "gate_completed"; exit_code: number; passed: boolean }
+  | { type: "extracted_json"; raw_json: string; valid: boolean };
 
 // =============================================================================
 // PR Status

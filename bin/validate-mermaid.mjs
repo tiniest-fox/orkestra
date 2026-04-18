@@ -9,6 +9,11 @@
  *     For Edit, checks tool_input.new_string (the incoming change).
  *     Exits 2 on failure, which blocks the write entirely.
  *
+ *   PreToolUse (Bash):
+ *     Checks `gh pr create` / `gh pr edit` commands for invalid mermaid blocks.
+ *     Exits 2 on failure, which blocks the command entirely.
+ *     Non-`gh pr` Bash commands pass through immediately (exit 0).
+ *
  *   Stop:
  *     Checks the assistant's final response text for invalid mermaid blocks.
  *     Exits 2 on failure, which blocks the response and forces a retry.
@@ -86,6 +91,14 @@ if (hookEvent === 'Stop') {
 } else if (toolName === 'Edit') {
   content = toolInput.new_string ?? '';
   source = toolInput.file_path ?? '<edit>';
+} else if (toolName === 'Bash') {
+  const cmd = toolInput.command ?? '';
+  if (/gh\s+pr\s+(create|edit)\b/.test(cmd)) {
+    content = cmd;
+    source = '<gh-pr>';
+  } else {
+    process.exit(0);
+  }
 } else {
   process.exit(0);
 }

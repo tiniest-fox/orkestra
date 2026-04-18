@@ -79,6 +79,6 @@ impl WorkflowApi {
         )
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
-        Ok(matches!(result, DetectionResult::Completed))
+        Ok(matches!(result, DetectionResult::Completed { .. }))
     }
 }

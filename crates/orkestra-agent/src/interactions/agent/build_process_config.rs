@@ -26,6 +26,7 @@ pub fn execute(
         system_prompt,
         disallowed_tools,
         env,
+        prompt_sections: _,
     } = config;
 
     let mut process_config = ProcessConfig::new(json_schema);

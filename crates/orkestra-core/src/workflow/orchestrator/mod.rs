@@ -102,6 +102,33 @@ pub enum OrchestratorEvent {
 }
 
 // ============================================================================
+// Orchestrator Exit Reason
+// ============================================================================
+
+/// Why the orchestrator's `run()` method returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrchestratorExitReason {
+    /// Normal shutdown — stop flag was set.
+    Stopped,
+    /// Another live orchestrator holds the lock.
+    AlreadyRunning(u32),
+    /// Lock file I/O failure.
+    LockFailed(String),
+}
+
+impl std::fmt::Display for OrchestratorExitReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stopped => write!(f, "Stopped"),
+            Self::AlreadyRunning(pid) => {
+                write!(f, "Another orchestrator already running (PID {pid})")
+            }
+            Self::LockFailed(e) => write!(f, "Failed to acquire lock: {e}"),
+        }
+    }
+}
+
+// ============================================================================
 // Orchestrator Error
 // ============================================================================
 
@@ -244,7 +271,9 @@ impl OrchestratorLoop {
     /// When `project_root` is set (production use via `for_project()`), acquires a
     /// PID lock file before starting. Returns immediately if another orchestrator
     /// is already running for the same project.
-    pub fn run<F>(&self, mut on_event: F)
+    ///
+    /// Returns an `OrchestratorExitReason` describing why the loop exited.
+    pub fn run<F>(&self, mut on_event: F) -> OrchestratorExitReason
     where
         F: FnMut(OrchestratorEvent) + Send,
     {
@@ -257,14 +286,14 @@ impl OrchestratorLoop {
                         task_id: None,
                         error: format!("Another orchestrator is already running (PID {pid})"),
                     });
-                    return;
+                    return OrchestratorExitReason::AlreadyRunning(pid);
                 }
                 Err(lock::LockError::Io(e)) => {
                     on_event(OrchestratorEvent::Error {
                         task_id: None,
                         error: format!("Failed to acquire orchestrator lock: {e}"),
                     });
-                    return;
+                    return OrchestratorExitReason::LockFailed(e.to_string());
                 }
             }
         } else {
@@ -294,6 +323,8 @@ impl OrchestratorLoop {
                 }
             }
         }
+
+        OrchestratorExitReason::Stopped
     }
 
     /// Run a single tick of the orchestration loop.

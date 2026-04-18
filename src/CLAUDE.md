@@ -242,6 +242,7 @@ TypeScript won't catch this — transport methods return `Promise<unknown>`, so 
   - **Arbitrary opacity values are valid** (Tailwind v3.4+ JIT): `opacity-45`, `opacity-30`, etc. are all valid — JIT generates them on demand. They are NOT limited to the standard scale (0, 25, 50, 75, 100). Don't flag arbitrary opacity values in review.
 - **Dark mode uses system preference**: The project uses `prefers-color-scheme: dark` for automatic dark mode. All Forge design tokens are CSS variables that flip automatically — no extra work needed when using token classes like `bg-canvas`, `text-primary`, `bg-surface-2`, etc. For standard Tailwind palette colors that don't map to a Forge token (stone, amber, purple in `taskStateColors.ts` / `stageColors.ts`), pair with an explicit `dark:` variant class (e.g. `bg-stone-300 dark:bg-stone-600`). Tailwind's `darkMode: 'media'` is configured so `dark:` variants respond to `prefers-color-scheme`.
 - **Forge tokens used with opacity modifiers must be defined as RGB channels**: Tailwind's `/N` opacity modifier syntax (e.g. `bg-accent/40`, `text-status-error/60`) requires the CSS variable to be defined as space-separated RGB channels (`"R G B"`) rather than a hex string. Hex values silently break opacity — the class is applied but opacity has no effect. Affected tokens (accent, status-success, status-error, status-warning, status-info, violet, teal, merge) are already defined in the correct format in `tailwind.config.js`. When adding a new Forge token, check whether it will ever be used with `/N` and define it accordingly: `"--forge-my-token": "120 80 200"` not `"#7850C8"`.
+- **Mobile padding tiers are intentional**: Agent tab content areas use `${isMobile ? "px-2" : "px-6"}`. `FooterBar` uses `${isMobile ? "px-4" : "px-6"}` — the extra breathing room is intentional for interactive touch targets. Do not "normalize" FooterBar to match content-area padding.
 - **Typography scale — use `text-forge-*` tokens, not arbitrary sizes**: Never use `text-[12px]`, `text-[13px]`, etc. Use the named scale from `tailwind.config.js`:
   - `text-forge-mono-label` (10px/14px) — structural labels, dividers
   - `text-forge-mono-sm` (11px/16px) — tool calls, script output, file names
@@ -948,6 +949,14 @@ The diff viewer's find feature separates search from highlighting across two spa
 - If you modify `highlightSearchInHtml`, maintain entity-awareness in the walker — HTML entity sequences must advance `textPos` by 1, not by their raw HTML length.
 
 `SearchRange[]` per line are computed in `FileSection.tsx` (`HunkLines`) and `CollapsedSection.tsx` from `fileMatches + currentMatch`. `DiffLine.tsx` renders them via `highlightSearchInHtml`. `searchQuery` is never passed below `DiffContent.tsx` — ranges are the single source of truth at the render layer.
+
+## Component Deletion Checklist
+
+When removing a UI component, two cleanup steps are routinely missed and caught at review:
+
+1. **Orphaned hook state** — After deletion, grep for each prop/callback the component received from its parent hook (e.g., `useTaskDrawerState`). If no remaining component consumes it, delete it from the hook's return value. State that is set but never read is silent dead weight and a reviewer finding.
+
+2. **Dead hints in `FeedStatusLine`** — `FeedStatusLine.tsx` renders hotkey labels and mode hints that are keyed to specific drawer states. When you remove a component that corresponds to a drawer state, remove its matching branch in `FeedStatusLine` too. Stale hints display incorrect keyboard shortcuts.
 
 ## Interactive Mode Entry Point
 

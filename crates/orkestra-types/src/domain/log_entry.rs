@@ -110,6 +110,13 @@ pub enum ToolInput {
     },
 }
 
+/// A named section of dynamic prompt context surfaced to the user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PromptSection {
+    pub label: String,
+    pub content: String,
+}
+
 /// Default resume type for backwards compatibility.
 fn default_resume_type() -> String {
     "continue".to_string()
@@ -129,6 +136,9 @@ pub enum LogEntry {
         resume_type: String,
         /// Content of the resumption message.
         content: String,
+        /// Dynamic prompt sections. Non-empty only for fresh spawns (`resume_type` == `"initial"`).
+        #[serde(default)]
+        sections: Vec<PromptSection>,
     },
     /// Tool use by the main agent.
     ToolUse {
@@ -184,6 +194,16 @@ pub enum LogEntry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         artifact: Option<WorkflowArtifact>,
     },
+    /// JSON extracted from agent output during structured output detection.
+    ///
+    /// Emitted when the system detects JSON in agent output and attempts schema
+    /// validation. The `valid` flag indicates whether the JSON passed validation.
+    ExtractedJson {
+        /// The raw JSON string that was extracted.
+        raw_json: String,
+        /// Whether the JSON passed schema validation.
+        valid: bool,
+    },
 }
 
 /// A log entry with associated database metadata.
@@ -218,6 +238,7 @@ impl LogEntry {
             LogEntry::GateStarted { .. } => "gate_started",
             LogEntry::GateOutput { .. } => "gate_output",
             LogEntry::GateCompleted { .. } => "gate_completed",
+            LogEntry::ExtractedJson { .. } => "extracted_json",
         }
     }
 
@@ -262,6 +283,13 @@ impl LogEntry {
             LogEntry::GateStarted { command } => Some(format!("gate: {command}")),
             LogEntry::GateCompleted { passed: true, .. } => Some("gate passed".to_string()),
             LogEntry::GateCompleted { passed: false, .. } => Some("gate failed".to_string()),
+            LogEntry::ExtractedJson { valid, .. } => {
+                if *valid {
+                    Some("extracted json (valid)".to_string())
+                } else {
+                    Some("extracted json (invalid)".to_string())
+                }
+            }
             _ => None,
         }
     }
@@ -506,6 +534,19 @@ mod tests {
     }
 
     #[test]
+    fn test_extracted_json_serialization_valid() {
+        let entry = LogEntry::ExtractedJson {
+            raw_json: "{\"key\":\"value\"}".to_string(),
+            valid: true,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"type\":\"extracted_json\""));
+        assert!(json.contains("\"valid\":true"));
+        let parsed: LogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
+    }
+
+    #[test]
     fn test_gate_output_serialization() {
         let entry = LogEntry::GateOutput {
             content: "gate check".to_string(),
@@ -513,6 +554,19 @@ mod tests {
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("\"type\":\"gate_output\""));
         assert!(json.contains("\"content\":\"gate check\""));
+        let parsed: LogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn test_extracted_json_serialization_invalid() {
+        let entry = LogEntry::ExtractedJson {
+            raw_json: "not valid json".to_string(),
+            valid: false,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"type\":\"extracted_json\""));
+        assert!(json.contains("\"valid\":false"));
         let parsed: LogEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, entry);
     }
@@ -566,6 +620,27 @@ mod tests {
     }
 
     #[test]
+    fn test_extracted_json_type_name() {
+        let entry = LogEntry::ExtractedJson {
+            raw_json: "{}".to_string(),
+            valid: true,
+        };
+        assert_eq!(entry.type_name(), "extracted_json");
+    }
+
+    #[test]
+    fn test_extracted_json_push_summary_valid() {
+        let entry = LogEntry::ExtractedJson {
+            raw_json: "{}".to_string(),
+            valid: true,
+        };
+        assert_eq!(
+            entry.push_summary(),
+            Some("extracted json (valid)".to_string())
+        );
+    }
+
+    #[test]
     fn test_gate_type_names() {
         assert_eq!(
             LogEntry::GateStarted {
@@ -588,6 +663,18 @@ mod tests {
             }
             .type_name(),
             "gate_completed"
+        );
+    }
+
+    #[test]
+    fn test_extracted_json_push_summary_invalid() {
+        let entry = LogEntry::ExtractedJson {
+            raw_json: "bad".to_string(),
+            valid: false,
+        };
+        assert_eq!(
+            entry.push_summary(),
+            Some("extracted json (invalid)".to_string())
         );
     }
 }

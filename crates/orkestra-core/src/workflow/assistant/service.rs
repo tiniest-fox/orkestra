@@ -24,6 +24,7 @@ use orkestra_agent::interactions::spawner::cli_path::prepare_path_env;
 use orkestra_agent::resolve_agent_env;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessGuard};
 use orkestra_types::domain::SessionType;
+use orkestra_utility::ExecutionMode;
 
 // ============================================================================
 // Constants
@@ -109,6 +110,7 @@ impl AssistantService {
             &LogEntry::UserMessage {
                 resume_type: "message".to_string(),
                 content: message.to_string(),
+                sections: Vec::new(),
             },
         )?;
 
@@ -265,6 +267,7 @@ impl AssistantService {
                 &LogEntry::UserMessage {
                     resume_type: "message".to_string(),
                     content: message.to_string(),
+                    sections: Vec::new(),
                 },
             )?;
             self.store.append_assistant_log_entry(
@@ -292,6 +295,7 @@ impl AssistantService {
             &LogEntry::UserMessage {
                 resume_type: "message".to_string(),
                 content: message.to_string(),
+                sections: Vec::new(),
             },
         )?;
 
@@ -717,7 +721,7 @@ fn generate_and_set_title(
     mut session: AssistantSession,
     first_message: &str,
 ) {
-    let title = match generate_title_sync(first_message, 30) {
+    let title = match generate_title_sync(first_message, 30, ExecutionMode::SingleTurn) {
         Ok(t) => t,
         Err(e) => {
             orkestra_debug!(
@@ -1005,6 +1009,7 @@ mod tests {
         let user_msg = LogEntry::UserMessage {
             resume_type: "message".to_string(),
             content: "first message".to_string(),
+            sections: Vec::new(),
         };
         let text_msg = LogEntry::Text {
             content: "response".to_string(),
@@ -1302,6 +1307,7 @@ mod tests {
         assert!(!is_visible_log_entry(&LogEntry::UserMessage {
             resume_type: "message".into(),
             content: "user said".into(),
+            sections: Vec::new(),
         }));
         assert!(!is_visible_log_entry(&LogEntry::ToolResult {
             tool: "Bash".into(),

@@ -42,6 +42,9 @@ pub fn execute(
     // Parse the schema for validation (before build_process_config consumes config)
     let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
+    // Clone sections before build_process_config consumes config
+    let prompt_sections = config.prompt_sections.clone();
+
     // Build process config with resolved model ID (extracts prompt and working_dir)
     let (process_config, prompt, working_dir) =
         super::build_process_config::execute(config, resolved.model_id);
@@ -70,6 +73,7 @@ pub fn execute(
         let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
             resume_type: marker.marker_type.as_str().to_string(),
             content: marker.content,
+            sections: prompt_sections,
         }));
     }
 

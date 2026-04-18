@@ -25,6 +25,28 @@ describe("buildDisplayMessages", () => {
     }
   });
 
+  it("propagates sections from initial LogEntry to UserMessage", () => {
+    const sections = [{ label: "Feedback to Address", content: "Please add error handling." }];
+    const logs: LogEntry[] = [
+      { type: "user_message", content: "hello", resume_type: "initial", sections },
+    ];
+    const messages = buildDisplayMessages(logs);
+    expect(messages).toHaveLength(1);
+    if (messages[0].kind === "user") {
+      expect(messages[0].sections).toEqual(sections);
+    }
+  });
+
+  it("omits sections when sections array is empty", () => {
+    const logs: LogEntry[] = [
+      { type: "user_message", content: "hello", resume_type: "feedback", sections: [] },
+    ];
+    const messages = buildDisplayMessages(logs);
+    if (messages[0].kind === "user") {
+      expect(messages[0].sections).toBeUndefined();
+    }
+  });
+
   it("groups consecutive non-user entries into agent messages", () => {
     const logs: LogEntry[] = [
       { type: "user_message", content: "start", resume_type: "initial" },

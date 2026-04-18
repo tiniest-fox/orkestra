@@ -20,13 +20,6 @@ export interface TaskDrawerState {
   answeredCount: number;
   allAnswered: boolean;
 
-  // -- Reject mode --
-  rejectMode: boolean;
-  enterRejectMode: () => void;
-  exitRejectMode: () => void;
-  feedback: string;
-  setFeedback: (v: string) => void;
-
   // -- Update mode (done tasks) --
   updateMode: boolean;
   enterUpdateMode: () => void;
@@ -35,11 +28,6 @@ export interface TaskDrawerState {
   setUpdateNotes: (v: string) => void;
   updateNotesRef: React.RefObject<HTMLTextAreaElement>;
   handleRequestUpdate: () => Promise<void>;
-
-  // -- Resume (interrupted) --
-  resumeMessage: string;
-  setResumeMessage: (v: string) => void;
-  resumeTextareaRef: React.RefObject<HTMLTextAreaElement>;
 
   // -- Retry (failed) --
   retryInstructions: string;
@@ -51,7 +39,6 @@ export interface TaskDrawerState {
   // -- Loading state --
   loading: boolean;
   interrupting: boolean;
-  resuming: boolean;
 
   // -- PR tab state --
   prTabState: PrTabFooterState;
@@ -83,14 +70,11 @@ export interface TaskDrawerState {
   handleReturnToWork: () => Promise<void>;
 
   // -- Refs --
-  feedbackRef: React.RefObject<HTMLTextAreaElement>;
   submitRef: React.RefObject<HTMLButtonElement>;
 
   // -- Action handlers --
   handleApprove: () => Promise<void>;
-  handleReject: () => Promise<void>;
   handleInterrupt: () => Promise<void>;
-  handleResume: () => Promise<void>;
   handleMerge: () => Promise<void>;
   handleOpenPr: () => Promise<void>;
   handleArchive: () => Promise<void>;
@@ -142,24 +126,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     });
   }
 
-  // -- Reject mode --
-  const [rejectMode, setRejectMode] = useState(false);
-  const [feedback, setFeedback] = useState("");
-
-  function enterRejectMode() {
-    setRejectMode(true);
-  }
-  function exitRejectMode() {
-    setRejectMode(false);
-    setFeedback("");
-  }
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
-  useEffect(() => {
-    setRejectMode(false);
-    setFeedback("");
-  }, [task.id]);
-
   // -- Update mode --
   const [updateMode, setUpdateMode] = useState(false);
   const [updateNotes, setUpdateNotes] = useState("");
@@ -183,14 +149,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     if (updateMode) updateNotesRef.current?.focus();
   }, [updateMode]);
 
-  // -- Resume message --
-  const [resumeMessage, setResumeMessage] = useState("");
-  const resumeTextareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (task.derived.is_interrupted) resumeTextareaRef.current?.focus();
-  }, [task.derived.is_interrupted]);
-
   // -- Retry instructions --
   const [retryInstructions, setRetryInstructions] = useState("");
   const retryTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -205,19 +163,12 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     if (task.derived.is_failed || task.derived.is_blocked) retryTextareaRef.current?.focus();
   }, [task.derived.is_failed, task.derived.is_blocked]);
 
-  // -- Feedback input auto-focus --
-  const feedbackRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    if (rejectMode) feedbackRef.current?.focus();
-  }, [rejectMode]);
-
   // -- Submit button ref for questions --
   const submitRef = useRef<HTMLButtonElement>(null);
 
   // -- Loading state --
   const [loading, setLoading] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
-  const [resuming, setResuming] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
   useEffect(() => {
@@ -365,7 +316,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   }, [transport, task.id]);
 
   const handleReturnToWork = useCallback(async () => {
-    setLoading(true);
+    if (chatSending) return;
+    setChatSending(true);
     setChatError(null);
     const pendingMessage = chatMessage.trim() || null;
     try {
@@ -375,9 +327,9 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       const message = extractErrorMessage(err);
       setChatError(message);
     } finally {
-      setLoading(false);
+      setChatSending(false);
     }
-  }, [transport, task.id, chatMessage]);
+  }, [transport, task.id, chatMessage, chatSending]);
 
   // -- Action handlers --
 
@@ -401,19 +353,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     return callAndClose("approve");
   }, [callAndClose, applyOptimistic, task.id]);
 
-  const handleReject = useCallback(async () => {
-    if (loading || !feedback.trim()) return;
-    applyOptimistic(task.id, { type: "reject", feedback: feedback.trim() });
-    setLoading(true);
-    try {
-      await transport.call("reject", { task_id: task.id, feedback: feedback.trim() });
-      onClose();
-    } catch (err) {
-      console.error("Failed to reject:", err);
-      setLoading(false);
-    }
-  }, [transport, task.id, feedback, loading, onClose, applyOptimistic]);
-
   const handleInterrupt = useCallback(async () => {
     if (interrupting) return;
     applyOptimistic(task.id, { type: "interrupt" });
@@ -426,23 +365,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       setInterrupting(false);
     }
   }, [transport, task.id, interrupting, applyOptimistic]);
-
-  const handleResume = useCallback(async () => {
-    if (resuming) return;
-    applyOptimistic(task.id, { type: "resume" });
-    setResuming(true);
-    try {
-      await transport.call("resume", {
-        task_id: task.id,
-        message: resumeMessage.trim() || null,
-      });
-      setResumeMessage("");
-      onClose();
-    } catch (err) {
-      console.error("Failed to resume:", err);
-      setResuming(false);
-    }
-  }, [transport, task.id, resumeMessage, resuming, onClose, applyOptimistic]);
 
   const handleMerge = useCallback(() => callAndClose("merge_task"), [callAndClose]);
 
@@ -567,11 +489,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setAnswer,
     answeredCount,
     allAnswered,
-    rejectMode,
-    enterRejectMode,
-    exitRejectMode,
-    feedback,
-    setFeedback,
     updateMode,
     enterUpdateMode,
     exitUpdateMode,
@@ -579,9 +496,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setUpdateNotes,
     updateNotesRef,
     handleRequestUpdate,
-    resumeMessage,
-    setResumeMessage,
-    resumeTextareaRef,
     retryInstructions,
     setRetryInstructions,
     retryTextareaRef,
@@ -589,7 +503,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleRetry,
     loading,
     interrupting,
-    resuming,
     prTabState,
     setPrTabState,
     draftComments,
@@ -608,12 +521,9 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleSendChat,
     handleChatStop,
     handleReturnToWork,
-    feedbackRef,
     submitRef,
     handleApprove,
-    handleReject,
     handleInterrupt,
-    handleResume,
     handleMerge,
     handleOpenPr,
     handleArchive,

@@ -12,6 +12,7 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import type { CustomItemComponentProps, VirtualizerHandle } from "virtua";
 import { Virtualizer } from "virtua";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   LogEntry,
   ResumeType,
@@ -93,6 +94,7 @@ export interface UserMessage {
   kind: "user";
   content: string;
   resumeType?: ResumeType;
+  sections?: Array<{ label: string; content: string }>;
 }
 
 /** Label and visual style for a user message block. */
@@ -118,6 +120,9 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
       const userMsg: UserMessage = { kind: "user", content: entry.content };
       if (entry.resume_type !== undefined) {
         userMsg.resumeType = entry.resume_type;
+      }
+      if (entry.sections !== undefined && entry.sections.length > 0) {
+        userMsg.sections = entry.sections;
       }
       messages.push(userMsg);
     } else {
@@ -515,12 +520,13 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
   gateView?: boolean;
   onToggleGateView?: () => void;
 }) {
+  const isMobile = useIsMobile();
   switch (item.kind) {
     case "user-block": {
       const content = contentFilter ? contentFilter(item.msg.content) : item.msg.content;
       if (item.isHuman) {
         return (
-          <div className="flex justify-end px-6 py-1">
+          <div className={`flex justify-end ${isMobile ? "px-2" : "px-6"} py-1`}>
             <div className="max-w-[90%] bg-surface-3 rounded-xl rounded-tr-none px-4 py-2.5">
               <div className={`text-forge-body text-text-primary ${PROSE_CLASSES}`}>
                 <ReactMarkdown
@@ -535,18 +541,40 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
         );
       }
       return (
-        <div className="flex justify-end px-6 py-2">
+        <div className={`flex justify-end ${isMobile ? "px-2" : "px-6"} py-2`}>
           <div className="max-w-[90%] bg-accent-soft rounded-xl rounded-tr-none px-5 py-4">
             <div className="font-mono text-forge-mono-sm text-text-secondary">
               {item.msg.resumeType === "initial" ? (initialLabel ?? "Starting…") : content}
             </div>
           </div>
+          {(item.msg.sections ?? []).length > 0 && (
+            <div className="mt-3 flex flex-col gap-3">
+              {(item.msg.sections ?? []).map((section, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                <div key={i} className="border-l-2 border-l-border pl-3">
+                  <div className="font-mono text-forge-mono-sm font-medium text-text-tertiary mb-1">
+                    {section.label}
+                  </div>
+                  <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
+                    <ReactMarkdown
+                      remarkPlugins={richContentPlugins}
+                      components={richContentComponents}
+                    >
+                      {section.content}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     }
     case "agent-entry":
       return (
-        <div className={`bg-canvas px-6 text-text-secondary ${item.isBlockEnd ? "pb-2" : ""}`}>
+        <div
+          className={`bg-canvas ${isMobile ? "px-2" : "px-6"} text-text-secondary ${item.isBlockEnd ? "pb-2" : ""}`}
+        >
           <AgentEntry
             entry={item.entry}
             projectRoot={item.projectRoot}
@@ -560,7 +588,7 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
       const { actions } = item.artifactContext;
       return (
         // Sticky positioning is applied by Virtua's item wrapper (see stickyItemComponent below).
-        <div className="bg-canvas px-6">
+        <div className={`bg-canvas ${isMobile ? "px-2" : "px-6"}`}>
           {/* Opaque cap — masks content scrolling through the gap above the sticky header. */}
           <div className="h-6 bg-canvas" aria-hidden="true" />
           {/* biome-ignore lint/a11y/useSemanticElements: contains inner <Button> */}
@@ -648,7 +676,7 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
         : [];
       const showGate = gateView && item.gateEntries && item.gateEntries.length > 0;
       return (
-        <div className={`px-6 ${item.isBlockEnd ? "pb-2" : ""}`}>
+        <div className={`${isMobile ? "px-2" : "px-6"} ${item.isBlockEnd ? "pb-2" : ""}`}>
           {showGate ? (
             <div className="border-l border-r border-b border-border rounded-b-lg bg-surface px-3 pt-2 pb-3">
               {item.gateEntries?.map((ge, idx) => {
@@ -696,10 +724,12 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
       );
     }
     case "extra":
-      return <div className="bg-canvas px-6 pb-3.5">{item.content}</div>;
+      return <div className={`bg-canvas ${isMobile ? "px-2" : "px-6"} pb-3.5`}>{item.content}</div>;
     case "spinner":
       return (
-        <div className="flex items-center gap-2 px-6 py-3.5 text-text-quaternary">
+        <div
+          className={`flex items-center gap-2 ${isMobile ? "px-2" : "px-6"} py-3.5 text-text-quaternary`}
+        >
           <span className="w-3.5 h-3.5 border-2 border-border border-t-transparent rounded-full animate-spin shrink-0" />
           <span className="font-mono text-forge-mono-sm">Working…</span>
         </div>

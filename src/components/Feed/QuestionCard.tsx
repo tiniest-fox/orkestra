@@ -2,6 +2,7 @@
 //! visual states and keyboard navigation focus ring.
 
 import { memo, useRef } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { isOptionKey, optionKey } from "../../lib/optionKey";
 import type { WorkflowQuestion } from "../../types/workflow";
 import { useNavItem } from "../ui/NavigationScope";
@@ -46,13 +47,14 @@ export const QuestionCard = memo(function QuestionCard({
   onTextareaEnter,
   onTextareaEscape,
 }: QuestionCardProps) {
+  const isMobile = useIsMobile();
   const answered = value.trim().length > 0;
   const num = String(index + 1).padStart(2, "0");
   const cardRef = useRef<HTMLDivElement>(null);
   useNavItem(String(index), cardRef);
 
   function textareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
       onTextareaEnter?.();
       e.currentTarget.blur();

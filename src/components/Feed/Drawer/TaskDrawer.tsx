@@ -18,7 +18,7 @@ import { DrawerTaskProvider } from "../DrawerTaskProvider";
 import { HistoricalRunView } from "../HistoricalRunView";
 import { DrawerTabContent } from "./DrawerTabContent";
 import type { DrawerTabId } from "./drawerTabs";
-import { availableTabs, canUseRunScript, defaultTab, stageReviewType } from "./drawerTabs";
+import { availableTabs, canUseRunScript, defaultTab } from "./drawerTabs";
 import { DrawerFooter } from "./Footer/DrawerFooter";
 import { useDrawerHotkeys } from "./useDrawerHotkeys";
 import { useTaskDrawerState } from "./useTaskDrawerState";
@@ -32,7 +32,6 @@ interface TaskDrawerBodyProps {
   allTasks: WorkflowTaskView[];
   onClose: () => void;
   onOpenTask: (id: string) => void;
-  onRejectModeChange?: (active: boolean) => void;
   onOpenChat?: () => void;
   onInteractive?: () => void;
 }
@@ -42,7 +41,6 @@ function TaskDrawerBody({
   allTasks,
   onClose,
   onOpenTask,
-  onRejectModeChange,
   onOpenChat,
   onInteractive,
 }: TaskDrawerBodyProps) {
@@ -81,11 +79,6 @@ function TaskDrawerBody({
 
   // -- Action state from hook --
   const state = useTaskDrawerState(task, onClose);
-  const { rejectMode } = state;
-
-  useEffect(() => {
-    onRejectModeChange?.(rejectMode);
-  }, [rejectMode, onRejectModeChange]);
 
   // -- Logs (logs tab) --
   const showLogs = activeTab === "agent" && selectedRunIdx === null;
@@ -116,7 +109,6 @@ function TaskDrawerBody({
 
   // -- Derived --
   const selectedRun = selectedRunIdx !== null ? runs[selectedRunIdx] : null;
-  const reviewType = stageReviewType(task, config);
 
   const onProgressClick =
     selectedRunIdx !== null
@@ -137,7 +129,6 @@ function TaskDrawerBody({
         config={config}
         onClose={onClose}
         accent={accent}
-        escHidden={rejectMode}
         selectedRunIdx={selectedRunIdx}
         onSelectRun={setSelectedRunIdx}
         onProgressClick={onProgressClick}
@@ -182,12 +173,7 @@ function TaskDrawerBody({
           />
 
           {/* Footer */}
-          <DrawerFooter
-            task={task}
-            activeTab={activeTab}
-            stageReviewType={reviewType}
-            state={state}
-          />
+          <DrawerFooter task={task} activeTab={activeTab} state={state} />
         </>
       )}
     </div>
@@ -203,7 +189,6 @@ export interface TaskDrawerProps {
   allTasks: WorkflowTaskView[];
   onClose: () => void;
   onOpenTask: (id: string) => void;
-  onRejectModeChange?: (active: boolean) => void;
   onOpenChat?: () => void;
   onInteractive?: () => void;
 }
@@ -213,20 +198,13 @@ export function TaskDrawer({
   allTasks,
   onClose,
   onOpenTask,
-  onRejectModeChange,
   onOpenChat,
   onInteractive,
 }: TaskDrawerProps) {
-  const [rejectModeActive, setRejectModeActive] = useState(false);
   const isMobile = useIsMobile();
 
-  function handleRejectModeChange(active: boolean) {
-    setRejectModeActive(active);
-    onRejectModeChange?.(active);
-  }
-
   return (
-    <Drawer onClose={onClose} disableEscape={rejectModeActive}>
+    <Drawer onClose={onClose}>
       {task && (
         <ProjectInfoProvider>
           <DrawerTaskProvider taskId={task.id}>
@@ -236,7 +214,6 @@ export function TaskDrawer({
                 allTasks={allTasks}
                 onClose={onClose}
                 onOpenTask={onOpenTask}
-                onRejectModeChange={handleRejectModeChange}
                 onOpenChat={onOpenChat}
                 onInteractive={onInteractive}
               />

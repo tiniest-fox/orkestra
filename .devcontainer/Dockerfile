@@ -22,16 +22,14 @@ RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path \
 ENV PATH="/usr/local/cargo/bin:$PATH"
 # Install sccache — required by .cargo/config.toml as rustc-wrapper.
 # Install cargo-sweep — used by worktree_cleanup.sh to prune stale build artifacts.
-RUN cargo install sccache cargo-sweep --locked && \
+# Cache mount keeps downloaded crates between image rebuilds so this only
+# recompiles sccache/cargo-sweep when the Rust toolchain version changes.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo install sccache cargo-sweep --locked && \
     chmod a+rx /usr/local/cargo/bin/sccache /usr/local/cargo/bin/cargo-sweep
-# Pre-fetch all cargo dependencies (including git deps like fix-path-env from
-# src-tauri) at build time, then open up permissions so any non-root user
-# (Codespaces, Orkestra, local devcontainer) can write to the cargo cache
-# without permission errors at runtime.
-COPY . /tmp/cargo-prefetch/
-RUN cd /tmp/cargo-prefetch && cargo fetch --locked && rm -rf /tmp/cargo-prefetch && \
-    chmod -R a+rwX /usr/local/cargo /usr/local/rustup
 # Install Node.js 22 LTS via NodeSource, then Claude Code CLI and pnpm globally.
+# Placed before COPY so this layer is not busted by source or Cargo.lock changes.
 ARG NODE_MAJOR=22
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
@@ -41,5 +39,12 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @anthropic-ai/claude-code pnpm && \
     rm -rf /var/lib/apt/lists/*
+# Pre-fetch all cargo dependencies (including git deps like fix-path-env from
+# src-tauri) at build time, then open up permissions so any non-root user
+# (Codespaces, Orkestra, local devcontainer) can write to the cargo cache
+# without permission errors at runtime.
+COPY . /tmp/cargo-prefetch/
+RUN cd /tmp/cargo-prefetch && cargo fetch --locked && rm -rf /tmp/cargo-prefetch && \
+    chmod -R a+rwX /usr/local/cargo /usr/local/rustup
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

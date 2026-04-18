@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use orkestra_parser::StageOutput;
 use orkestra_process::ProcessError;
 use orkestra_types::domain::LogEntry;
+use orkestra_types::domain::PromptSection;
 
 // ============================================================================
 // Run Configuration
@@ -41,6 +42,9 @@ pub struct RunConfig {
     /// Resolved project environment. When `Some`, the spawner clears inherited
     /// env and uses this map as the base. When `None`, inherits the process env.
     pub env: Option<HashMap<String, String>>,
+    /// Dynamic prompt sections to attach to the `UserMessage` log entry.
+    /// Non-empty only for fresh spawns with dynamic context (feedback, conflicts, etc.).
+    pub prompt_sections: Vec<PromptSection>,
 }
 
 impl RunConfig {
@@ -63,6 +67,7 @@ impl RunConfig {
             system_prompt: None,
             disallowed_tools: Vec::new(),
             env: None,
+            prompt_sections: Vec::new(),
         }
     }
 
@@ -106,6 +111,13 @@ impl RunConfig {
     #[must_use]
     pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
         self.env = Some(env);
+        self
+    }
+
+    /// Set dynamic prompt sections to attach to the `UserMessage` log entry.
+    #[must_use]
+    pub fn with_prompt_sections(mut self, sections: Vec<PromptSection>) -> Self {
+        self.prompt_sections = sections;
         self
     }
 }

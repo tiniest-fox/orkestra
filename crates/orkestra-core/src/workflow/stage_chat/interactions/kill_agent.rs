@@ -38,6 +38,7 @@ pub fn execute(store: &dyn WorkflowStore, task_id: &str) -> WorkflowResult<()> {
             let now = chrono::Utc::now().to_rfc3339();
             session.agent_finished(&now);
             store.save_stage_session(&session)?;
+            store.touch_task(task_id)?;
         }
     }
 

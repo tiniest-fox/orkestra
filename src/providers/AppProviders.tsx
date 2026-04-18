@@ -19,6 +19,13 @@
 //   "Does every entry point need this, inside TransportProvider?"
 //   → Yes: add it here, in dependency order (dependencies closer to root).
 //   → No: add it at the specific entry point that needs it.
+//
+// Exception — Tauri-only hooks:
+//   useOrchestratorWatchdog() is called here despite being Tauri-only. It early-returns
+//   immediately in non-Tauri environments (one no-op call per render), which is acceptable
+//   to avoid duplicating the call at every Tauri entry point. Apply this exception only for
+//   hooks that are truly no-ops outside Tauri — entry-point-specific providers still belong
+//   at their specific call site.
 
 import type { ReactNode } from "react";
 import { useOrchestratorWatchdog } from "../hooks/useOrchestratorWatchdog";

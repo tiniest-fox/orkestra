@@ -50,6 +50,7 @@ const METHOD_MAP: Record<string, string> = {
 
   // -- Startup --
   retry_startup: "workflow_retry_startup",
+  get_orchestrator_status: "workflow_get_orchestrator_status",
 
   // -- Queries --
   get_config: "workflow_get_config",

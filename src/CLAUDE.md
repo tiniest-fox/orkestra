@@ -183,6 +183,8 @@ When a provider holds `useState` initialized from a prop (e.g., a connection key
 
 The split exists because each entry point manages its own `TransportProvider` (Tauri injects a `TauriTransport`; service mode injects a `WebSocketTransport` keyed to the project) and its own connection-gating UX, while the data providers inside are identical across all paths.
 
+**Exception — Tauri-only no-op hooks in `AppProviders`:** `useOrchestratorWatchdog` is called inside `AppProviders` even though it only does work in Tauri. It detects a stale or absent orchestrator lock and triggers a restart. It early-returns immediately in non-Tauri environments, keeping the non-Tauri cost to a single no-op call per render. This placement was chosen to avoid duplicating the hook call at every Tauri entry point. Apply this exception only for hooks that are truly no-ops outside Tauri — entry-point-specific providers with real state still belong at their call site.
+
 <!-- compound: fairly-prolific-jabiru -->
 ### Optimistic Updates Pattern
 

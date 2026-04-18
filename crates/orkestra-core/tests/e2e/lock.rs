@@ -76,47 +76,65 @@ fn run_with_timeout(
 // Lock E2E Tests
 // =============================================================================
 
-/// A second `run()` call on the same project (simulated via lock file with
-/// current PID) emits an error event and returns immediately.
+/// A second `run()` call on the same project blocks and emits a lock-contention error.
 #[test]
 fn test_second_orchestrator_blocked() {
     let temp = setup_project();
     let lock_path = temp.path().join(".orkestra/orchestrator.lock");
 
-    // Simulate a running orchestrator by writing the current PID
-    fs::write(&lock_path, std::process::id().to_string()).unwrap();
+    // Start orchestrator A to acquire the real lock
+    let orch_a = build_orchestrator(temp.path().to_path_buf());
+    let stop_a = orch_a.stop_flag();
+    let handle_a = std::thread::spawn(move || orch_a.run(|_| {}));
 
-    let orchestrator = build_orchestrator(temp.path().to_path_buf());
-    let (events, _reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
+    // Wait for A to write its lock file
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !lock_path.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Orchestrator A never wrote the lock file"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // Start orchestrator B — should be blocked by A's lock and eventually time out
+    let orch_b = build_orchestrator(temp.path().to_path_buf());
+    let (events, _reason) = run_with_timeout(orch_b, Duration::from_millis(100));
+
+    // Stop A
+    stop_a.store(true, std::sync::atomic::Ordering::Relaxed);
+    handle_a.join().unwrap();
 
     assert!(
         !events.is_empty(),
         "Expected at least one error event, got none"
     );
-    let has_already_running = events.iter().any(|e| {
+    let has_lock_error = events.iter().any(|e| {
         if let OrchestratorEvent::Error { error, .. } = e {
-            error.contains("already running") || error.contains("Already running")
+            error.contains("Timed out")
         } else {
             false
         }
     });
     assert!(
-        has_already_running,
-        "Expected 'already running' error, got: {events:?}"
+        has_lock_error,
+        "Expected 'Timed out' lock error, got: {events:?}"
     );
-
-    // Lock file should still exist (we wrote it, we didn't hold the guard)
-    assert!(lock_path.exists(), "Lock file should still exist");
 }
 
-/// A stale lock file (dead PID) is stolen and the orchestrator starts normally.
+/// A stale timestamped lock (`pid:old_timestamp`) is stolen and the orchestrator starts normally.
 #[test]
-fn test_stale_lock_stolen() {
+fn test_stale_timestamped_lock_stolen() {
     let temp = setup_project();
     let lock_path = temp.path().join(".orkestra/orchestrator.lock");
 
-    // Write a dead PID
-    fs::write(&lock_path, "99999999").unwrap();
+    // Write a lock with timestamp >30s in the past and a dead PID — the new format
+    let old_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        - 60;
+    fs::write(&lock_path, format!("99999999:{old_ts}")).unwrap();
 
     let orchestrator = build_orchestrator(temp.path().to_path_buf());
     let (events, _reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
@@ -126,7 +144,7 @@ fn test_stale_lock_stolen() {
         .any(|e| matches!(e, OrchestratorEvent::Error { .. }));
     assert!(
         !has_error,
-        "Expected no error events (stale lock should be stolen), got: {events:?}"
+        "Expected no error events (stale timestamped lock should be stolen), got: {events:?}"
     );
 
     // Lock file should be cleaned up after stop
@@ -186,24 +204,44 @@ fn test_lock_error_display() {
 // OrchestratorExitReason tests
 // =============================================================================
 
-/// `run()` returns `AlreadyRunning` when the lock is held by a live process.
+/// `run()` returns `LockFailed` (timed out) when the lock is held by a live orchestrator.
 #[test]
 fn test_exit_reason_already_running() {
     let temp = setup_project();
     let lock_path = temp.path().join(".orkestra/orchestrator.lock");
-    let current_pid = std::process::id();
 
-    // Simulate a running orchestrator by writing the current PID
-    fs::write(&lock_path, current_pid.to_string()).unwrap();
+    // Start orchestrator A to hold the real lock
+    let orch_a = build_orchestrator(temp.path().to_path_buf());
+    let stop_a = orch_a.stop_flag();
+    let handle_a = std::thread::spawn(move || orch_a.run(|_| {}));
 
-    let orchestrator = build_orchestrator(temp.path().to_path_buf());
-    let (_events, reason) = run_with_timeout(orchestrator, Duration::from_millis(100));
+    // Wait for A to write its lock file
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !lock_path.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Orchestrator A never wrote the lock file"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 
-    assert_eq!(
-        reason,
-        OrchestratorExitReason::AlreadyRunning(current_pid),
-        "Expected AlreadyRunning exit reason, got: {reason:?}"
-    );
+    // Start orchestrator B — should time out waiting for A's lock
+    let orch_b = build_orchestrator(temp.path().to_path_buf());
+    let (_events, reason) = run_with_timeout(orch_b, Duration::from_millis(100));
+
+    // Stop A
+    stop_a.store(true, std::sync::atomic::Ordering::Relaxed);
+    handle_a.join().unwrap();
+
+    match &reason {
+        OrchestratorExitReason::LockFailed(msg) => {
+            assert!(
+                msg.contains("Timed out"),
+                "Expected 'Timed out' in LockFailed message, got: {msg}"
+            );
+        }
+        other => panic!("Expected LockFailed exit reason, got: {other:?}"),
+    }
 }
 
 /// `run()` returns `Stopped` on normal shutdown via stop flag.

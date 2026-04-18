@@ -557,6 +557,7 @@ pub fn run() {
             commands::remove_recent_project,
             commands::pick_folder,
             commands::workflow_retry_startup,
+            commands::workflow_get_orchestrator_status,
             // Workflow commands
             commands::workflow_get_tasks,
             commands::workflow_create_task,

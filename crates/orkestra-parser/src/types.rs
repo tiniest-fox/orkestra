@@ -162,6 +162,16 @@ impl StageOutput {
         }
     }
 
+    /// Label for notification/event purposes. More specific than `type_label()` —
+    /// distinguishes gate approval from gate rejection.
+    pub fn notification_label(&self) -> &str {
+        match self {
+            StageOutput::Approval { decision, .. } if decision == "approve" => "gate_approval",
+            StageOutput::Approval { decision, .. } if decision == "reject" => "gate_rejection",
+            other => other.type_label(),
+        }
+    }
+
     /// Check if this output is an artifact.
     pub fn is_artifact(&self) -> bool {
         matches!(self, StageOutput::Artifact { .. })
@@ -422,6 +432,46 @@ impl From<QuestionJson> for Question {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_notification_label_gate_approval() {
+        let output = StageOutput::Approval {
+            decision: "approve".to_string(),
+            content: "looks good".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        };
+        assert_eq!(output.notification_label(), "gate_approval");
+    }
+
+    #[test]
+    fn test_notification_label_gate_rejection() {
+        let output = StageOutput::Approval {
+            decision: "reject".to_string(),
+            content: "needs changes".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        };
+        assert_eq!(output.notification_label(), "gate_rejection");
+    }
+
+    #[test]
+    fn test_notification_label_other_variants_match_type_label() {
+        let artifact = StageOutput::Artifact {
+            content: "code".to_string(),
+            activity_log: None,
+            resources: vec![],
+        };
+        assert_eq!(artifact.notification_label(), artifact.type_label());
+
+        let questions = StageOutput::Questions {
+            questions: vec![],
+            resources: vec![],
+        };
+        assert_eq!(questions.notification_label(), questions.type_label());
+    }
 
     #[test]
     fn test_resource_output_deserialize_empty_url_normalized_to_none() {

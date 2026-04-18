@@ -322,9 +322,13 @@ pub fn format_review_notification(
             "Subtasks need approval".to_string(),
             format!("{task_title} — review proposed subtask breakdown"),
         ),
-        "approval" => (
+        "gate_rejection" => (
             "Rejection needs review".to_string(),
             format!("{task_title} — reviewer rejected, needs your decision"),
+        ),
+        "gate_approval" => (
+            "Approval ready for review".to_string(),
+            format!("{task_title} — {stage} agent approved, needs your confirmation"),
         ),
         _ => (
             "Ready for review".to_string(),
@@ -358,4 +362,40 @@ pub(crate) fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
         end -= 1;
     }
     &s[..end]
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_review_notification_gate_approval() {
+        let (title, body) = format_review_notification("My Task", "review", "gate_approval");
+        assert_eq!(title, "Approval ready for review");
+        assert!(body.contains("My Task"));
+        assert!(body.contains("review"));
+    }
+
+    #[test]
+    fn test_format_review_notification_gate_rejection() {
+        let (title, body) = format_review_notification("My Task", "review", "gate_rejection");
+        assert_eq!(title, "Rejection needs review");
+        assert!(body.contains("My Task"));
+    }
+
+    #[test]
+    fn test_format_review_notification_questions() {
+        let (title, _body) = format_review_notification("My Task", "planning", "questions");
+        assert_eq!(title, "Questions need answers");
+    }
+
+    #[test]
+    fn test_format_review_notification_default() {
+        let (title, _body) = format_review_notification("My Task", "planning", "artifact");
+        assert_eq!(title, "Ready for review");
+    }
 }

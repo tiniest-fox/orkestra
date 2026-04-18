@@ -101,6 +101,18 @@ Before submitting:
 
 The canonical failure mode: you add a feature gated on a new constructor variant, write tests using that variant, all tests pass — but production callers use a different constructor and never trigger the feature. The flow reviewer will catch this.
 
+### Storybook Stories
+
+Every new or visually-changed UI component must have a Storybook story. Load the `/storybook` skill for provider setup, file conventions, and the screenshot workflow.
+
+- Write stories for each meaningful visual state (default, loading, error, empty). Each state gets its own named story.
+- After writing stories, run `pnpm storybook` (localhost:6006) and verify every variant renders — `pnpm build-storybook` does NOT catch runtime errors.
+- Take screenshots, save to `.orkestra/screenshots/ComponentName.png`, and register as resources:
+  ```json
+  {"name": "screenshot:ComponentName", "url": "/absolute/path/to/.orkestra/screenshots/ComponentName.png", "description": "ComponentName — default and empty states"}
+  ```
+- Missing stories on a UI change are a MEDIUM rejection in code review.
+
 ### Start Quickly, Stay Focused
 Don't over-analyze. Once you understand the Trak:
 1. Find similar code to reference

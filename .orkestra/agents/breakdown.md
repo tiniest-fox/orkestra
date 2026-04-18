@@ -155,6 +155,13 @@ Each implementation Subtrak's `detailed_instructions` should include an "Accepta
 Good examples: "new function handles empty input by returning None", "migration adds index on `task_id` column", "error messages include the failing file path"
 Bad examples: "all tests pass", "cargo clippy has no warnings", "cargo fmt produces no changes"
 
+## UI Subtraks: Storybook Stories
+
+When a Subtrak adds or modifies UI components in `src/components/`, include these in its `detailed_instructions`:
+- Write Storybook stories covering each visual state (default, loading, error, empty). Reference: load the `/storybook` skill for provider setup and file conventions.
+- Register screenshots of the stories as resources (format: `screenshot:ComponentName`).
+- Add story coverage to the Subtrak's acceptance criteria — one story per meaningful visual state.
+
 ## Visual Formatting
 
 Use visual elements in your breakdown when they aid clarity — not as a requirement for every breakdown:

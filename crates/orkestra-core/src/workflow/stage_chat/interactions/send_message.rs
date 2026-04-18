@@ -541,13 +541,14 @@ fn read_chat_output(
             Ok(DetectionResult::NotDetected) => {
                 // No structured output detected — flush any remaining buffered text
                 if !buf_state.buffer.is_empty() {
+                    let flushed_summary = LogEntry::last_summary(&buf_state.buffer);
                     flush_text_buffer(&buf_state.buffer, store, session_id);
                     buf_state.buffer.clear();
                     if let Some(tx) = &log_notify_tx {
                         let _ = tx.send(LogNotification {
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
-                            last_entry_summary: LogEntry::last_summary(&[]),
+                            last_entry_summary: flushed_summary,
                         });
                     }
                 }
@@ -777,8 +778,14 @@ fn should_attempt_correction(result: &DetectionResult, remaining: u32) -> Option
 mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::StageSession;
+    use crate::workflow::config::{StageConfig, WorkflowConfig};
+    use crate::workflow::domain::{StageSession, Task};
+    use crate::workflow::execution::{default_test_registry, AgentParser};
     use crate::workflow::ports::WorkflowStore;
+    use crate::workflow::runtime::TaskState;
+    use orkestra_parser::ParsedUpdate;
+    use std::path::Path;
+    use std::process::{Command, Stdio};
 
     #[test]
     fn completed_detection_appends_valid_extracted_json() {
@@ -1187,5 +1194,306 @@ mod tests {
             "non-Text entries always persist immediately"
         );
         assert!(!state.buffering);
+    }
+
+    // -- Integration tests for read_chat_output --
+
+    /// A minimal `AgentParser` that converts each raw stdout line to a `LogEntry::Text`.
+    ///
+    /// Used in integration tests to exercise the `read_chat_output` pipeline without
+    /// a real agent provider.
+    struct TextLineParser;
+
+    impl AgentParser for TextLineParser {
+        fn parse_line(&mut self, line: &str) -> ParsedUpdate {
+            ParsedUpdate {
+                log_entries: vec![LogEntry::Text {
+                    content: line.to_string(),
+                }],
+                session_id: None,
+            }
+        }
+
+        fn finalize(&mut self) -> Vec<LogEntry> {
+            vec![]
+        }
+
+        fn extract_output(&self, _full_output: &str) -> Result<String, String> {
+            Err("not used in chat mode".to_string())
+        }
+    }
+
+    /// Spawn `cat` with the given content pre-written to stdin, returning a handle
+    /// whose stdout will yield those lines.  `cat` exits when stdin closes (which
+    /// `write_prompt` arranges), so `handle.lines()` will see EOF after draining.
+    fn make_scripted_handle(content: &str) -> (u32, ProcessHandle) {
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("cat must be available");
+
+        let pid = child.id();
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let mut handle = ProcessHandle::new(pid, stdin, stdout, None);
+        handle.write_prompt(content).unwrap();
+        (pid, handle)
+    }
+
+    /// Minimal JSON schema accepting "summary", "failed", "blocked" types.
+    fn integration_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["summary", "failed", "blocked"]},
+                "content": {"type": "string"},
+                "error": {"type": "string"}
+            },
+            "required": ["type"]
+        })
+    }
+
+    /// Workflow with a single "work" stage with artifact type "summary".
+    fn integration_workflow() -> WorkflowConfig {
+        WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
+    }
+
+    #[test]
+    fn integration_non_json_prose_persisted_immediately() {
+        // Non-JSON lines bypass the buffer and are written to the store during the main
+        // streaming loop.  After `read_chat_output` finishes, the store has Text entries
+        // and a ProcessExit, but no ExtractedJson.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-int-prose",
+            "task-int-prose",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let (pid, mut handle) = make_scripted_handle("Just some prose\nMore regular text\n");
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-prose",
+            "task-int-prose",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-prose").unwrap();
+        let text_count = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { .. }))
+            .count();
+        assert_eq!(
+            text_count, 2,
+            "both Text entries reach the store immediately"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ProcessExit { .. })),
+            "ProcessExit appended at end"
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
+            "no ExtractedJson when no JSON detected"
+        );
+    }
+
+    #[test]
+    fn integration_pure_json_only_extracted_json_in_store() {
+        // A single-line JSON object matching the schema is buffered during streaming
+        // and discarded once detection succeeds (Completed).  Only ExtractedJson and
+        // ProcessExit reach the store — no Text entries.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        // Task must be in a chat-capable state so try_complete_from_output proceeds.
+        let mut task = Task::new(
+            "task-int-json",
+            "Test",
+            "Test",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-int-json",
+            "task-int-json",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let json_line = r#"{"type":"summary","content":"done"}"#;
+        let (pid, mut handle) = make_scripted_handle(&format!("{json_line}\n"));
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-json",
+            "task-int-json",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-json").unwrap();
+        assert!(
+            !entries.iter().any(|e| matches!(e, LogEntry::Text { .. })),
+            "no Text entries — JSON was buffered and discarded on Completed"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) must be present"
+        );
+    }
+
+    #[test]
+    fn integration_trailing_prose_after_json_all_reach_store() {
+        // When trailing prose follows a JSON line, `buffer_or_persist` flushes the
+        // buffer on the trailing-text entry.  `try_complete_from_output` sees the
+        // concatenated text (json + prose) and returns NotDetected (not valid JSON).
+        // Both Text entries reach the store; no ExtractedJson is written.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-int-trailing",
+            "task-int-trailing",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let content = "{\"type\":\"summary\",\"content\":\"done\"}\nSome trailing prose here\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-trailing",
+            "task-int-trailing",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-trailing").unwrap();
+        let text_count = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { .. }))
+            .count();
+        assert_eq!(
+            text_count, 2,
+            "both Text entries (JSON line + prose) reach store"
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
+            "no ExtractedJson — trailing prose invalidated the JSON hypothesis"
+        );
+    }
+
+    #[test]
+    fn integration_false_positive_brace_flushed_via_safety_drain() {
+        // A lone `{` triggers buffering.  Non-JSON prose lines accumulate in the
+        // buffer (no closing brace, no fence).  After the agent exits,
+        // `try_complete_from_output` returns NotDetected and the NotDetected arm
+        // flushes the buffer so all entries eventually reach the store.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-int-brace",
+            "task-int-brace",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let content = "{\nThis is not JSON at all\nMore prose without a closing brace\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-brace",
+            "task-int-brace",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-brace").unwrap();
+        let text_count = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { .. }))
+            .count();
+        assert_eq!(
+            text_count, 3,
+            "all 3 buffered Text entries flushed (false-positive brace safety drain)"
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
+            "no ExtractedJson for a false-positive brace trigger"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ProcessExit { .. })),
+            "ProcessExit appended at end"
+        );
     }
 }

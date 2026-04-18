@@ -546,27 +546,27 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
             <div className="font-mono text-forge-mono-sm text-text-secondary">
               {item.msg.resumeType === "initial" ? (initialLabel ?? "Starting…") : content}
             </div>
+            {(item.msg.sections ?? []).length > 0 && (
+              <div className="mt-3 flex flex-col gap-3">
+                {(item.msg.sections ?? []).map((section, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                  <div key={i} className="border-l-2 border-l-border pl-3">
+                    <div className="font-mono text-forge-mono-sm font-medium text-text-tertiary mb-1">
+                      {section.label}
+                    </div>
+                    <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
+                      <ReactMarkdown
+                        remarkPlugins={richContentPlugins}
+                        components={richContentComponents}
+                      >
+                        {section.content}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          {(item.msg.sections ?? []).length > 0 && (
-            <div className="mt-3 flex flex-col gap-3">
-              {(item.msg.sections ?? []).map((section, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
-                <div key={i} className="border-l-2 border-l-border pl-3">
-                  <div className="font-mono text-forge-mono-sm font-medium text-text-tertiary mb-1">
-                    {section.label}
-                  </div>
-                  <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
-                    <ReactMarkdown
-                      remarkPlugins={richContentPlugins}
-                      components={richContentComponents}
-                    >
-                      {section.content}
-                    </ReactMarkdown>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       );
     }

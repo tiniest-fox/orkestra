@@ -2,10 +2,9 @@
 
 import type { RefCallback } from "react";
 import type { UseRunScriptResult } from "../../../hooks/useRunScript";
-import type { LogEntry, WorkflowConfig, WorkflowTaskView } from "../../../types/workflow";
+import type { LogEntry, WorkflowTaskView } from "../../../types/workflow";
 import { ActivityLog } from "../ActivityLog";
 import { DrawerDiffTab } from "../DrawerDiffTab";
-import { DrawerGateTab } from "../DrawerGateTab";
 import { DrawerPrTab } from "../DrawerPrTab";
 import { AgentTab } from "./AgentTab/AgentTab";
 import type { DrawerTabId } from "./drawerTabs";
@@ -23,7 +22,6 @@ interface DrawerTabContentProps {
   task: WorkflowTaskView;
   allTasks: WorkflowTaskView[];
   activeTab: DrawerTabId;
-  config: WorkflowConfig;
   logs: LogEntry[];
   logsError: unknown;
   logContainerRef: RefCallback<HTMLDivElement>;
@@ -41,7 +39,6 @@ export function DrawerTabContent({
   task,
   allTasks,
   activeTab,
-  config,
   logs,
   logsError,
   logContainerRef,
@@ -101,10 +98,6 @@ export function DrawerTabContent({
         onPrStateChange={state.setPrTabState}
       />
     );
-  }
-
-  if (activeTab === "gate") {
-    return <DrawerGateTab task={task} config={config} />;
   }
 
   if (activeTab === "resources") {

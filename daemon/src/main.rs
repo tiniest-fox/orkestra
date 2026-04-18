@@ -335,13 +335,13 @@ async fn run(
     });
 
     let orch_handle = std::thread::spawn(move || {
-        orchestrator.run(|event| {
+        let reason = orchestrator.run(|event| {
             let events = convert_orchestrator_event(&event, &api_for_broadcast);
             for e in events {
                 let _ = event_tx_for_orch.send(e);
             }
         });
-        orkestra_debug!("orchestrator", "Orchestrator thread exited");
+        orkestra_debug!("orchestrator", "Orchestrator exited: {}", reason);
     });
 
     // -- Signal handling --

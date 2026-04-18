@@ -28,6 +28,7 @@ import { PairingForm } from "./components/PairingForm";
 import { ProjectList } from "./components/ProjectList";
 import type { ProjectRowActions } from "./components/ProjectRow";
 import { RepoSearch } from "./components/RepoSearch";
+import { ResourceLimitsDrawer } from "./components/ResourceLimitsDrawer";
 import { SecretsDrawer } from "./components/SecretsDrawer";
 import { ServiceFilterBar } from "./components/ServiceFilterBar";
 import { ServiceHeader } from "./components/ServiceHeader";
@@ -66,6 +67,7 @@ export function PortalPage() {
   const [pairingExpiresAt, setPairingExpiresAt] = useState<number | null>(null);
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [secretsProjectId, setSecretsProjectId] = useState<string | null>(null);
+  const [resourceLimitsProjectId, setResourceLimitsProjectId] = useState<string | null>(null);
 
   // -- New state --
   const [filterText, setFilterText] = useState("");
@@ -129,7 +131,11 @@ export function PortalPage() {
     [sections],
   );
 
-  const modalOpen = showAddModal || pairingCode !== null || secretsProjectId !== null;
+  const modalOpen =
+    showAddModal ||
+    pairingCode !== null ||
+    secretsProjectId !== null ||
+    resourceLimitsProjectId !== null;
 
   // -- Navigation --
 
@@ -197,6 +203,7 @@ export function PortalPage() {
         onGitPush: () => runAction(id, project.status, () => gitPush(id)),
         onCancel: () => runAction(id, "stopping", () => stopProject(id)),
         onManageSecrets: () => setSecretsProjectId(id),
+        onManageResourceLimits: () => setResourceLimitsProjectId(id),
       });
     }
     return map;
@@ -351,6 +358,19 @@ export function PortalPage() {
           return (
             <SecretsDrawer
               onClose={() => setSecretsProjectId(null)}
+              projectId={project.id}
+              projectName={project.name}
+              projectStatus={optimisticStatuses.get(project.id) ?? project.status}
+            />
+          );
+        })()}
+      {resourceLimitsProjectId &&
+        (() => {
+          const project = projects.find((p) => p.id === resourceLimitsProjectId);
+          if (!project) return null;
+          return (
+            <ResourceLimitsDrawer
+              onClose={() => setResourceLimitsProjectId(null)}
               projectId={project.id}
               projectName={project.name}
               projectStatus={optimisticStatuses.get(project.id) ?? project.status}

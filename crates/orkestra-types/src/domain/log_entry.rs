@@ -171,6 +171,12 @@ pub enum LogEntry {
     ProcessExit { code: Option<i32> },
     /// Error message.
     Error { message: String },
+    /// Gate script started running.
+    GateStarted { command: String },
+    /// Output line(s) from a running gate script (may contain ANSI escape codes).
+    GateOutput { content: String },
+    /// Gate script completed with an exit code.
+    GateCompleted { exit_code: i32, passed: bool },
     /// Agent produced a named artifact (plan, breakdown, summary, etc.).
     ///
     /// Emitted when an agent output is accepted and stored in `workflow_artifacts`.
@@ -229,6 +235,9 @@ impl LogEntry {
             LogEntry::ProcessExit { .. } => "process_exit",
             LogEntry::Error { .. } => "error",
             LogEntry::ArtifactProduced { .. } => "artifact_produced",
+            LogEntry::GateStarted { .. } => "gate_started",
+            LogEntry::GateOutput { .. } => "gate_output",
+            LogEntry::GateCompleted { .. } => "gate_completed",
             LogEntry::ExtractedJson { .. } => "extracted_json",
         }
     }
@@ -271,6 +280,9 @@ impl LogEntry {
                     .to_string(),
             ),
             LogEntry::ArtifactProduced { name, .. } => Some(format!("produced {name}")),
+            LogEntry::GateStarted { command } => Some(format!("gate: {command}")),
+            LogEntry::GateCompleted { passed: true, .. } => Some("gate passed".to_string()),
+            LogEntry::GateCompleted { passed: false, .. } => Some("gate failed".to_string()),
             LogEntry::ExtractedJson { valid, .. } => {
                 if *valid {
                     Some("extracted json (valid)".to_string())
@@ -510,6 +522,18 @@ mod tests {
     }
 
     #[test]
+    fn test_gate_started_serialization() {
+        let entry = LogEntry::GateStarted {
+            command: "cargo test".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"type\":\"gate_started\""));
+        assert!(json.contains("\"command\":\"cargo test\""));
+        let parsed: LogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
+    }
+
+    #[test]
     fn test_extracted_json_serialization_valid() {
         let entry = LogEntry::ExtractedJson {
             raw_json: "{\"key\":\"value\"}".to_string(),
@@ -518,6 +542,18 @@ mod tests {
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("\"type\":\"extracted_json\""));
         assert!(json.contains("\"valid\":true"));
+        let parsed: LogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn test_gate_output_serialization() {
+        let entry = LogEntry::GateOutput {
+            content: "gate check".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"type\":\"gate_output\""));
+        assert!(json.contains("\"content\":\"gate check\""));
         let parsed: LogEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, entry);
     }
@@ -533,6 +569,54 @@ mod tests {
         assert!(json.contains("\"valid\":false"));
         let parsed: LogEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn test_gate_completed_serialization() {
+        let entry = LogEntry::GateCompleted {
+            exit_code: 0,
+            passed: true,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"type\":\"gate_completed\""));
+        assert!(json.contains("\"exit_code\":0"));
+        assert!(json.contains("\"passed\":true"));
+        let parsed: LogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
+    }
+
+    #[test]
+    fn test_gate_push_summary() {
+        assert_eq!(
+            LogEntry::GateStarted {
+                command: "echo hi".to_string()
+            }
+            .push_summary(),
+            Some("gate: echo hi".to_string())
+        );
+        assert_eq!(
+            LogEntry::GateOutput {
+                content: "some output".to_string()
+            }
+            .push_summary(),
+            None
+        );
+        assert_eq!(
+            LogEntry::GateCompleted {
+                exit_code: 0,
+                passed: true
+            }
+            .push_summary(),
+            Some("gate passed".to_string())
+        );
+        assert_eq!(
+            LogEntry::GateCompleted {
+                exit_code: 1,
+                passed: false
+            }
+            .push_summary(),
+            Some("gate failed".to_string())
+        );
     }
 
     #[test]
@@ -553,6 +637,32 @@ mod tests {
         assert_eq!(
             entry.push_summary(),
             Some("extracted json (valid)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_gate_type_names() {
+        assert_eq!(
+            LogEntry::GateStarted {
+                command: "x".to_string()
+            }
+            .type_name(),
+            "gate_started"
+        );
+        assert_eq!(
+            LogEntry::GateOutput {
+                content: "x".to_string()
+            }
+            .type_name(),
+            "gate_output"
+        );
+        assert_eq!(
+            LogEntry::GateCompleted {
+                exit_code: 0,
+                passed: true
+            }
+            .type_name(),
+            "gate_completed"
         );
     }
 

@@ -536,6 +536,15 @@ fn read_chat_output(
                 );
                 emit_extracted_json_entry(store, session_id, raw_json, true);
                 buf_state.buffer.clear();
+                if let Some(tx) = log_notify_tx {
+                    if let Err(e) = tx.send(LogNotification {
+                        task_id: task_id.to_string(),
+                        session_id: session_id.to_string(),
+                        last_entry_summary: None,
+                    }) {
+                        orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
+                    }
+                }
                 detection_succeeded = true;
             }
             Ok(DetectionResult::NotDetected) => {

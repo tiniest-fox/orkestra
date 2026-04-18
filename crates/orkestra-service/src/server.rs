@@ -25,7 +25,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
-use crate::interactions::{daemon_token, github, port, project, secret};
+use crate::interactions::{daemon_token, github, port, project, resource_limits, secret};
 use crate::types::{ProjectStatus, ServiceConfig, ServiceError};
 
 // ============================================================================
@@ -137,6 +137,10 @@ pub(crate) fn build_router(state: OrkServiceState, extra_routes: Option<Router>)
             get(get_secret_handler)
                 .put(set_secret_handler)
                 .delete(delete_secret_handler),
+        )
+        .route(
+            "/api/projects/{id}/resource-limits",
+            get(get_resource_limits_handler).put(set_resource_limits_handler),
         )
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
@@ -1036,6 +1040,75 @@ async fn delete_secret_handler(
     }
 }
 
+// -- Resource Limits --
+
+#[derive(Debug, Serialize)]
+struct ResourceLimitsResponse {
+    cpu_limit: Option<f64>,
+    memory_limit_mb: Option<i64>,
+    effective_cpu: f64,
+    effective_memory_mb: i64,
+}
+
+/// `GET /api/projects/{id}/resource-limits` — return stored overrides and resolved effective values.
+async fn get_resource_limits_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || {
+            let limits = resource_limits::get::execute(&conn, &id)?;
+            let (effective_cpu, effective_memory_mb) =
+                resource_limits::resolve::execute(&conn, &id)?;
+            Ok(ResourceLimitsResponse {
+                cpu_limit: limits.cpu_limit,
+                memory_limit_mb: limits.memory_limit_mb,
+                effective_cpu,
+                effective_memory_mb,
+            })
+        }
+    })
+    .await
+    {
+        Ok(resp) => Json(resp).into_response(),
+        Err(r) => r,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SetResourceLimitsRequest {
+    cpu_limit: Option<f64>,
+    memory_limit_mb: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ResourceLimitsMutationResponse {
+    restart_required: bool,
+}
+
+/// `PUT /api/projects/{id}/resource-limits` — update stored overrides; returns whether a restart is needed.
+async fn set_resource_limits_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+    Json(body): Json<SetResourceLimitsRequest>,
+) -> Response<Body> {
+    match run_blocking({
+        let conn = Arc::clone(&state.conn);
+        move || {
+            resource_limits::set::execute(&conn, &id, body.cpu_limit, body.memory_limit_mb)?;
+            let project = project::get::execute(&conn, &id)?;
+            let restart_required = project.status == crate::types::ProjectStatus::Running;
+            Ok(ResourceLimitsMutationResponse { restart_required })
+        }
+    })
+    .await
+    {
+        Ok(resp) => Json(resp).into_response(),
+        Err(r) => r,
+    }
+}
+
 // -- GitHub --
 
 /// `GET /api/github/repos` — list repos via the `gh` CLI.
@@ -1262,8 +1335,12 @@ where
         Ok(Ok(v)) => Ok(v),
         Ok(Err(e)) => {
             let status = match &e {
-                ServiceError::SecretNotFound(_) => StatusCode::NOT_FOUND,
-                ServiceError::SecretKeyInvalid(_) => StatusCode::BAD_REQUEST,
+                ServiceError::SecretNotFound(_) | ServiceError::ProjectNotFound(_) => {
+                    StatusCode::NOT_FOUND
+                }
+                ServiceError::SecretKeyInvalid(_) | ServiceError::ValidationError(_) => {
+                    StatusCode::BAD_REQUEST
+                }
                 ServiceError::SecretsKeyNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };

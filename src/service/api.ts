@@ -48,6 +48,8 @@ export interface Project {
   token?: string;
   token_error?: string;
   git_status?: GitStatusInfo;
+  cpu_limit?: number;
+  memory_limit_mb?: number;
 }
 
 export interface GithubStatus {
@@ -237,6 +239,32 @@ export async function setSecret(
 export async function deleteSecret(projectId: string, key: string): Promise<SecretMutationResult> {
   const res = await apiFetch(`/api/projects/${projectId}/secrets/${encodeURIComponent(key)}`, {
     method: "DELETE",
+  });
+  await requireOk(res);
+  return res.json();
+}
+
+export interface ResourceLimits {
+  cpu_limit: number | null;
+  memory_limit_mb: number | null;
+  effective_cpu: number;
+  effective_memory_mb: number;
+}
+
+export async function fetchResourceLimits(projectId: string): Promise<ResourceLimits> {
+  const res = await apiFetch(`/api/projects/${projectId}/resource-limits`);
+  await requireOk(res);
+  return res.json();
+}
+
+export async function updateResourceLimits(
+  projectId: string,
+  cpuLimit: number | null,
+  memoryLimitMb: number | null,
+): Promise<{ restart_required: boolean }> {
+  const res = await apiFetch(`/api/projects/${projectId}/resource-limits`, {
+    method: "PUT",
+    body: JSON.stringify({ cpu_limit: cpuLimit, memory_limit_mb: memoryLimitMb }),
   });
   await requireOk(res);
   return res.json();

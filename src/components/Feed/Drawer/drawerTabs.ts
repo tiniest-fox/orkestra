@@ -1,11 +1,6 @@
 //! Tab management helpers and shared types for the TaskDrawer.
 
-import type {
-  PrCheckData,
-  PrCommentData,
-  WorkflowConfig,
-  WorkflowTaskView,
-} from "../../../types/workflow";
+import type { PrCheckData, PrCommentData, WorkflowTaskView } from "../../../types/workflow";
 import type { DrawerTab } from "../DrawerTabBar";
 
 // ============================================================================
@@ -23,7 +18,6 @@ export type DrawerTabId =
   | "history"
   | "pr"
   | "error"
-  | "gate"
   | "run"
   | "resources";
 
@@ -61,30 +55,17 @@ export function defaultTab(task: WorkflowTaskView): DrawerTabId {
   if (task.derived.is_chatting) return "agent";
   if (task.derived.has_questions) return "agent";
   if (task.derived.needs_review) return "agent";
-  if (task.state.type === "gate_running" || task.state.type === "awaiting_gate") return "gate";
+  if (task.state.type === "gate_running" || task.state.type === "awaiting_gate") return "agent";
   if (task.derived.is_working || task.derived.is_interrupted) return "agent";
   if (task.derived.is_done) return task.pr_url ? "pr" : "diff";
   if (task.derived.is_waiting_on_children) return "subtasks";
   return "agent";
 }
 
-export function findGateStage(config: WorkflowConfig, flow: string) {
-  return (config.flows[flow]?.stages ?? []).find((s) => s.gate) ?? null;
-}
-
 export function availableTabs(
   task: WorkflowTaskView,
-  config: WorkflowConfig,
   options?: { hasRunScript?: boolean },
 ): DrawerTab[] {
-  // Show gate tab when the current stage has a gate AND gate output is available or running.
-  const gateStage = findGateStage(config, task.flow);
-  const isGateState = task.state.type === "awaiting_gate" || task.state.type === "gate_running";
-  const hasGateResult = task.iterations.some((i) => i.stage === gateStage?.name && i.gate_result);
-  const showGateTab =
-    !!gateStage &&
-    (isGateState || (hasGateResult && task.derived.current_stage === gateStage.name));
-  const gateTab: DrawerTab = { id: "gate" as const, label: "Gate", hotkey: "g" };
   const runTab: DrawerTab = { id: "run" as const, label: "Run", hotkey: "r" };
   const showRunTab = canUseRunScript(task, options?.hasRunScript);
   const hasResources = Object.keys(task.resources).length > 0;
@@ -98,7 +79,6 @@ export function availableTabs(
       agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
-      ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
       ...(hasResources ? [resourcesTab] : []),
     ];
@@ -109,7 +89,6 @@ export function availableTabs(
       agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
-      ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
       ...(hasResources ? [resourcesTab] : []),
     ];
@@ -119,7 +98,6 @@ export function availableTabs(
       agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
-      ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
       ...(hasResources ? [resourcesTab] : []),
     ];
@@ -130,7 +108,6 @@ export function availableTabs(
       agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
-      ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
       ...(hasResources ? [resourcesTab] : []),
     ];
@@ -142,7 +119,6 @@ export function availableTabs(
         { id: "diff", label: "Diff", hotkey: "d" },
         agentTab,
         { id: "history", label: "History", hotkey: "h" },
-        ...(showGateTab ? [gateTab] : []),
         ...(showRunTab ? [runTab] : []),
         ...(hasResources ? [resourcesTab] : []),
       ];
@@ -151,7 +127,6 @@ export function availableTabs(
       { id: "diff", label: "Diff", hotkey: "d" },
       agentTab,
       { id: "history", label: "History", hotkey: "h" },
-      ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
       ...(hasResources ? [resourcesTab] : []),
     ];
@@ -161,7 +136,6 @@ export function availableTabs(
       agentTab,
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
-      ...(showGateTab ? [gateTab] : []),
       ...(showRunTab ? [runTab] : []),
       ...(hasResources ? [resourcesTab] : []),
     ];
@@ -170,7 +144,6 @@ export function availableTabs(
     agentTab,
     { id: "diff", label: "Diff", hotkey: "d" },
     { id: "history", label: "History", hotkey: "h" },
-    ...(showGateTab ? [gateTab] : []),
     ...(showRunTab ? [runTab] : []),
     ...(hasResources ? [resourcesTab] : []),
   ];

@@ -36,6 +36,45 @@ function makeSubagentGroup(toolCount: number): SubagentGroup {
 }
 
 // ============================================================================
+// Gate entry rendering
+// ============================================================================
+
+describe("AgentEntry — gate_started", () => {
+  it("renders the gate command in the divider label", () => {
+    const entry: GroupedLogEntry = { type: "gate_started", command: "cargo test" };
+    render(<AgentEntry entry={entry} />);
+    expect(screen.getByText(/Gate: cargo test/)).toBeDefined();
+  });
+});
+
+describe("AgentEntry — gate_output", () => {
+  it("renders output content via AnsiText inside a pre element", () => {
+    const entry: GroupedLogEntry = { type: "gate_output", content: "all tests passed" };
+    const { container } = render(<AgentEntry entry={entry} />);
+    expect(screen.getByText("all tests passed")).toBeDefined();
+    expect(container.querySelector("pre")).not.toBeNull();
+  });
+});
+
+describe("AgentEntry — gate_completed", () => {
+  it("renders 'Gate passed' with success styling when passed is true", () => {
+    const entry: GroupedLogEntry = { type: "gate_completed", exit_code: 0, passed: true };
+    const { container } = render(<AgentEntry entry={entry} />);
+    expect(screen.getByText("Gate passed")).toBeDefined();
+    const el = container.firstChild as HTMLElement;
+    expect(el.className).toContain("text-status-success");
+  });
+
+  it("renders failure message with exit code and error styling when passed is false", () => {
+    const entry: GroupedLogEntry = { type: "gate_completed", exit_code: 1, passed: false };
+    const { container } = render(<AgentEntry entry={entry} />);
+    expect(screen.getByText("Gate failed (exit 1)")).toBeDefined();
+    const el = container.firstChild as HTMLElement;
+    expect(el.className).toContain("text-status-error");
+  });
+});
+
+// ============================================================================
 // subagent_group — "+N more" counter
 // ============================================================================
 

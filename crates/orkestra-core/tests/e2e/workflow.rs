@@ -7372,6 +7372,77 @@ fn test_gate_result_persisted() {
     );
 }
 
+/// Gate log entries emitted: gate lifecycle appears as log entries in the agent tab timeline.
+///
+/// Flow: work stage with gate configured.
+/// - Agent produces artifact → task transitions to `AwaitingGate`.
+/// - Gate runs and passes.
+/// - Log entries for `GateStarted`, `GateOutput`, and `GateCompleted` are queryable.
+#[test]
+fn test_gate_output_emitted_as_log_entries() {
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
+    use orkestra_types::domain::LogEntry;
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new_automated("echo 'gate check'").with_timeout(10))]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate log entry test", "Test gate log entries", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
+    ctx.advance(); // spawns gate → drain_active → gate passes → AwaitingApproval
+
+    let (entries, _) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("work"), None, None)
+        .expect("get_task_logs should succeed");
+
+    let gate_started = entries
+        .iter()
+        .any(|e| matches!(e, LogEntry::GateStarted { .. }));
+    assert!(gate_started, "Expected at least one GateStarted log entry");
+
+    let gate_output_with_content = entries.iter().any(|e| {
+        if let LogEntry::GateOutput { content } = e {
+            content.contains("gate check")
+        } else {
+            false
+        }
+    });
+    assert!(
+        gate_output_with_content,
+        "Expected at least one GateOutput entry containing 'gate check'"
+    );
+
+    let gate_completed_count = entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                LogEntry::GateCompleted {
+                    exit_code: 0,
+                    passed: true
+                }
+            )
+        })
+        .count();
+    assert_eq!(
+        gate_completed_count, 1,
+        "Expected exactly one GateCompleted entry with exit_code=0 and passed=true"
+    );
+}
+
 /// Gate fail: agent produces artifact → gate (exit 1) → task re-queued with feedback.
 ///
 /// Flow: work stage with gate configured.
@@ -7386,6 +7457,7 @@ fn test_gate_fail_requeues_with_feedback() {
         GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
     };
     use orkestra_core::workflow::domain::IterationTrigger;
+    use orkestra_types::domain::LogEntry;
 
     let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
         .with_prompt("worker.md")
@@ -7452,6 +7524,34 @@ fn test_gate_fail_requeues_with_feedback() {
             "Error should describe gate failure, got: {error}"
         );
     }
+
+    // Verify gate log entries are emitted for the failure path
+    let (entries, _) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("work"), None, None)
+        .expect("get_task_logs should succeed");
+
+    let gate_started = entries
+        .iter()
+        .any(|e| matches!(e, LogEntry::GateStarted { .. }));
+    assert!(gate_started, "Expected at least one GateStarted log entry");
+
+    let gate_completed_failed_count = entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                LogEntry::GateCompleted {
+                    exit_code: 1,
+                    passed: false
+                }
+            )
+        })
+        .count();
+    assert_eq!(
+        gate_completed_failed_count, 1,
+        "Expected exactly one GateCompleted entry with exit_code=1 and passed=false"
+    );
 }
 
 /// Gate crash recovery: `GateRunning` on startup resets to `AwaitingGate`.

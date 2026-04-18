@@ -1,7 +1,7 @@
 // Shared conversation-style message list for AssistantDrawer, InteractiveDrawer, and Logs tab.
 
 import DOMPurify from "dompurify";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldX } from "lucide-react";
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeStringify from "rehype-stringify";
@@ -20,6 +20,7 @@ import type {
   WorkflowResource,
 } from "../../types/workflow";
 import { formatTimestamp } from "../../utils";
+import { AnsiText } from "../../utils/ansi";
 import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
@@ -152,6 +153,12 @@ export interface ArtifactContext {
   };
   /** When the latest artifact has pending questions, render this element instead of ArtifactLogCard. */
   questionsElement?: React.ReactNode;
+  /** Gate log entries (gate_started + gate_output + gate_completed) that follow the latest artifact. */
+  gateEntries?: LogEntry[];
+  /** True when gate_started exists but no gate_completed yet. */
+  isGateRunning?: boolean;
+  /** True when gate_completed with passed=true. */
+  gatePassed?: boolean;
 }
 
 // ============================================================================
@@ -177,6 +184,9 @@ type VirtualItem =
       kind: "artifact-body";
       artifact: WorkflowArtifact;
       taskResources?: Record<string, WorkflowResource>;
+      gateEntries?: LogEntry[];
+      isGateRunning?: boolean;
+      gatePassed?: boolean;
       isBlockEnd: boolean;
     }
   | { kind: "extra"; content: React.ReactNode }
@@ -202,6 +212,7 @@ export function buildVirtualItems(
 ): VirtualItem[] {
   const items: VirtualItem[] = [];
   let lastAgentBlockEndIndex = -1;
+  let latestArtifactProcessed = false;
 
   for (const msg of messages) {
     if (msg.kind === "user") {
@@ -215,6 +226,16 @@ export function buildVirtualItems(
       for (let j = 0; j < grouped.length; j++) {
         const isLast = j === grouped.length - 1;
         const entry = grouped[j];
+
+        // Skip gate entries that follow the latest artifact — they're absorbed into the artifact card.
+        if (
+          latestArtifactProcessed &&
+          (entry.type === "gate_started" ||
+            entry.type === "gate_output" ||
+            entry.type === "gate_completed")
+        ) {
+          continue;
+        }
 
         // Split the latest actionable artifact into two items so the sticky header
         // is independent of the body in Virtua's item list.
@@ -233,8 +254,12 @@ export function buildVirtualItems(
               kind: "artifact-body",
               artifact,
               taskResources: opts.taskResources,
+              gateEntries: opts.artifactContext?.gateEntries,
+              isGateRunning: opts.artifactContext?.isGateRunning,
+              gatePassed: opts.artifactContext?.gatePassed,
               isBlockEnd: isLast,
             });
+            latestArtifactProcessed = true;
             lastAgentBlockEndIndex = items.length - 1;
             continue;
           }
@@ -431,6 +456,35 @@ export const AgentEntry = memo(function AgentEntry({
       );
     }
 
+    case "gate_started":
+      return (
+        <div className="flex items-center gap-2 py-2">
+          <div className="h-px flex-1 bg-border" />
+          <span className="font-mono text-forge-mono-sm text-text-tertiary shrink-0">
+            Gate: {entry.command}
+          </span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+      );
+
+    case "gate_output":
+      return (
+        <pre className="font-mono text-forge-mono-sm whitespace-pre-wrap text-text-secondary py-0.5">
+          <AnsiText text={entry.content} />
+        </pre>
+      );
+
+    case "gate_completed":
+      return (
+        <div
+          className={`font-mono text-forge-mono-sm py-1 ${
+            entry.passed ? "text-status-success" : "text-status-error"
+          }`}
+        >
+          {entry.passed ? "Gate passed" : `Gate failed (exit ${entry.exit_code})`}
+        </div>
+      );
+
     case "user_message":
     case "tool_result":
     case "subagent_tool_use":
@@ -454,6 +508,8 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
   onArtifactHeaderClick,
   artifactBodyCollapsed,
   onToggleArtifactBody,
+  gateView,
+  onToggleGateView,
 }: {
   item: VirtualItem;
   contentFilter?: (content: string) => string;
@@ -461,6 +517,8 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
   onArtifactHeaderClick?: () => void;
   artifactBodyCollapsed?: boolean;
   onToggleArtifactBody?: () => void;
+  gateView?: boolean;
+  onToggleGateView?: () => void;
 }) {
   const isMobile = useIsMobile();
   switch (item.kind) {
@@ -566,6 +624,31 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
                   Approve
                 </Button>
               )}
+              {item.artifactContext.gateEntries && item.artifactContext.gateEntries.length > 0 && (
+                <button
+                  type="button"
+                  className={`p-1 rounded hover:bg-surface-2 ${
+                    gateView
+                      ? "text-text-secondary"
+                      : "text-text-tertiary hover:text-text-secondary"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleGateView?.();
+                  }}
+                  title={gateView ? "Show artifact" : "Show gate output"}
+                >
+                  {item.artifactContext.gatePassed ? (
+                    <ShieldCheck className="w-4 h-4 text-status-success" />
+                  ) : item.artifactContext.gateEntries.some(
+                      (e) => e.type === "gate_completed" && !e.passed,
+                    ) ? (
+                    <ShieldX className="w-4 h-4 text-status-error" />
+                  ) : (
+                    <Shield className="w-4 h-4" />
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 className="p-1 rounded text-text-tertiary hover:text-text-secondary hover:bg-surface-2"
@@ -591,9 +674,45 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
             .filter((r) => r.stage === item.artifact.stage)
             .sort((a, b) => a.created_at.localeCompare(b.created_at))
         : [];
+      const showGate = gateView && item.gateEntries && item.gateEntries.length > 0;
       return (
         <div className={`${isMobile ? "px-2" : "px-6"} ${item.isBlockEnd ? "pb-2" : ""}`}>
-          <ArtifactLogCard artifact={item.artifact} bodyOnly />
+          {showGate ? (
+            <div className="border-l border-r border-b border-border rounded-b-lg bg-surface px-3 pt-2 pb-3">
+              {item.gateEntries?.map((ge, idx) => {
+                if (ge.type === "gate_started") {
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <div key={idx} className="font-mono text-forge-mono-sm text-text-tertiary py-1">
+                      Running: {ge.command}
+                    </div>
+                  );
+                }
+                if (ge.type === "gate_output") {
+                  const outputCls =
+                    "font-mono text-forge-mono-sm whitespace-pre-wrap text-text-secondary py-0.5";
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <pre key={idx} className={outputCls}>
+                      <AnsiText text={ge.content} />
+                    </pre>
+                  );
+                }
+                if (ge.type === "gate_completed") {
+                  const completedCls = `font-mono text-forge-mono-sm py-1 ${ge.passed ? "text-status-success" : "text-status-error"}`;
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <div key={idx} className={completedCls}>
+                      {ge.passed ? "Gate passed" : `Gate failed (exit ${ge.exit_code})`}
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          ) : (
+            <ArtifactLogCard artifact={item.artifact} bodyOnly />
+          )}
           {stageResources.length > 0 && (
             <div className="border-t border-border p-4 flex flex-col gap-3">
               {stageResources.map((r) => (
@@ -682,6 +801,10 @@ export function MessageList({
   const [artifactBodyCollapsed, setArtifactBodyCollapsed] = useState(false);
   const handleToggleArtifactBody = useCallback(() => setArtifactBodyCollapsed((v) => !v), []);
 
+  // Gate view: when true, artifact-body shows gate output instead of artifact content.
+  const [gateView, setGateView] = useState(false);
+  const handleToggleGateView = useCallback(() => setGateView((v) => !v), []);
+
   // Custom Virtua item wrapper that makes the artifact-header item sticky once the user has
   // scrolled past it. Both refs are written during render so the stable component always
   // reads current values without needing to be recreated.
@@ -756,6 +879,21 @@ export function MessageList({
       artifactBodyCollapsed ? virtualItems.filter((v) => v.kind !== "artifact-body") : virtualItems,
     [virtualItems, artifactBodyCollapsed],
   );
+
+  // Auto-switch gate view based on gate state transitions.
+  const gateState = useMemo(() => {
+    const body = virtualItems.find((v) => v.kind === "artifact-body");
+    if (body?.kind !== "artifact-body" || !body.gateEntries?.length) return null;
+    return { isRunning: body.isGateRunning, passed: body.gatePassed };
+  }, [virtualItems]);
+
+  useEffect(() => {
+    if (!gateState) return;
+    if (gateState.isRunning)
+      setGateView(true); // Gate started → show output
+    else if (gateState.passed) setGateView(false); // Gate passed → show artifact
+    // Gate failed → keep showing gate output (no auto-switch)
+  }, [gateState?.isRunning, gateState?.passed, gateState]);
 
   // -- Auto-scroll state (only relevant when isScrollContainer) --
   const internalContainerRef = useRef<HTMLDivElement | null>(null);
@@ -939,6 +1077,8 @@ export function MessageList({
                       onArtifactHeaderClick: handleArtifactHeaderClick,
                       artifactBodyCollapsed,
                       onToggleArtifactBody: handleToggleArtifactBody,
+                      gateView,
+                      onToggleGateView: handleToggleGateView,
                     };
                     // biome-ignore lint/suspicious/noArrayIndexKey: append-only list, no reordering
                     return <VirtualItemRenderer key={i} {...p} />;
@@ -956,7 +1096,13 @@ export function MessageList({
       {virtualItems.length === 0 && !isAgentRunning
         ? emptyState
         : virtualItems.map((item, i) => {
-            const p = { item, contentFilter, initialLabel };
+            const p = {
+              item,
+              contentFilter,
+              initialLabel,
+              gateView,
+              onToggleGateView: handleToggleGateView,
+            };
             // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
             return <VirtualItemRenderer key={i} {...p} />;
           })}

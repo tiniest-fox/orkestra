@@ -99,6 +99,12 @@ function entrySummary(entry: LogEntry): string | null {
       const trimmed = entry.content.trim();
       return trimmed ? trimmed.slice(0, 100) : null;
     }
+    case "gate_started":
+      return `gate: ${entry.command}`;
+    case "gate_completed":
+      return entry.passed ? "gate passed" : "gate failed";
+    case "gate_output":
+      return null;
     default:
       return null;
   }

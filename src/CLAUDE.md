@@ -560,11 +560,13 @@ Show the skeleton (or empty state guard) with `{!hasLoaded ? <Skeleton /> : <Con
 
 <!-- compound: veritably-soaring-kinkajou -->
 
-Gate output is **not** stored as log entries. Gates store their output in `iteration.gate_result` (a `{ lines: string[], exit_code: number }` object on the iteration) — not via the agent session log system. Consequently, `workflow_get_latest_log` returns nothing while a gate is running; you must read `task.iterations` directly.
+Gate output is stored as `LogEntry` variants in the agent log timeline — not as a separate `gate_result` on iterations. The three gate log entry types are:
 
-- **Find latest gate output**: reverse-search `task.iterations` for the most recent entry where `gate_result != null`
-- **Detect gate running**: check `task.state.type === "gate_running"` (already present on `WorkflowTaskView`)
-- **Reference pattern**: `DrawerGateTab.tsx` shows how to find the relevant gate iteration and render its output lines
+- `{ type: "gate_started"; command: string }` — emitted when the gate script begins
+- `{ type: "gate_output"; content: string }` — emitted for each line of gate script output (may contain ANSI escape codes)
+- `{ type: "gate_completed"; exit_code: number; passed: boolean }` — emitted when the gate script finishes
+
+These entries flow through `workflow_get_latest_log` like any other log entries. Use `AnsiText` from `src/utils/ansi.tsx` to render `gate_output` content. The gate tab has been removed — gate output renders inline in the agent tab.
 
 ## Terminal Task State: current_stage is Null
 

@@ -559,10 +559,11 @@ impl StageExecutionService {
         stage: &str,
         gate_config: &crate::workflow::config::GateConfig,
         iteration_id: Option<&str>,
+        stage_session_id: Option<&str>,
     ) -> Result<SpawnResult, SpawnError> {
         let pid = self
             .script_service
-            .spawn_gate(task, stage, gate_config, iteration_id)
+            .spawn_gate(task, stage, gate_config, iteration_id, stage_session_id)
             .map_err(|e| SpawnError::ScriptError(e.to_string()))?;
 
         // Record gate PID in the session so cleanup functions (kill_running_agents,
@@ -653,6 +654,21 @@ impl StageExecutionService {
                 }
             }
         }
+    }
+
+    /// Persist gate log entries and send a notification.
+    ///
+    /// Public wrapper around `persist_log_entries` for callers (e.g., the orchestrator)
+    /// that emit gate lifecycle entries (`GateStarted`) outside the poll loop.
+    pub fn emit_log_entries(
+        &self,
+        stage_session_id: &str,
+        task_id: &str,
+        stage: &str,
+        entries: &[LogEntry],
+        iteration_id: &str,
+    ) {
+        self.persist_log_entries(stage_session_id, task_id, stage, entries, iteration_id);
     }
 
     /// Poll active agent executions.
@@ -784,8 +800,22 @@ impl StageExecutionService {
 
     /// Poll active gate script executions (via `ScriptExecutionService`).
     fn poll_scripts(&self) -> Vec<ExecutionComplete> {
-        self.script_service
-            .poll_active_scripts()
+        let (script_results, notifications) = self.script_service.poll_active_scripts();
+
+        // Send log notifications for gate output (same channel as agent log notifications)
+        for notification in notifications {
+            if let Some(tx) = &self.log_notify_tx {
+                if let Err(e) = tx.send(LogNotification {
+                    task_id: notification.task_id,
+                    session_id: notification.stage_session_id,
+                    last_entry_summary: notification.summary,
+                }) {
+                    crate::orkestra_debug!("stage", "Gate log notification send failed: {}", e);
+                }
+            }
+        }
+
+        script_results
             .into_iter()
             .filter_map(|poll_result| match poll_result {
                 ScriptPollResult::Running => None,

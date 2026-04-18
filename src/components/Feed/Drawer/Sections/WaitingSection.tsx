@@ -1,5 +1,6 @@
 //! Section showing waiting-on-children tasks with their blocking dependency labels.
 
+import { useIsMobile } from "../../../../hooks/useIsMobile";
 import type { WorkflowConfig, WorkflowTaskView } from "../../../../types/workflow";
 import { FeedTaskRow } from "../../FeedTaskRow";
 
@@ -28,11 +29,12 @@ export function WaitingSection({
   onFocusRow,
   onAction,
 }: WaitingSectionProps) {
+  const isMobile = useIsMobile();
   if (tasks.length === 0) return null;
 
   return (
     <div>
-      <div className="sticky top-0 z-10 px-6 pt-4 bg-canvas">
+      <div className={`sticky top-0 z-10 ${isMobile ? "px-2" : "px-6"} pt-4 bg-canvas`}>
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-accent">
             WAITING

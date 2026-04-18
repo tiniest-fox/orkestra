@@ -6,6 +6,7 @@ use crate::notifications::TaskNotifier;
 use crate::project_init::{initialize_project, validate_project_path};
 use crate::project_registry::{ProjectRegistry, RecentProject};
 use orkestra_core::orkestra_debug;
+use orkestra_core::workflow::OrchestratorStatus;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -112,6 +113,28 @@ pub fn workflow_retry_startup(
     }
 
     spawn_background_startup(app_handle, &window_label, &path);
+}
+
+/// Return the liveness status of the orchestrator lock file for the calling window's project.
+///
+/// Returns `{ status: "running" | "stale" | "absent", pid?: number }`. Desktop-only.
+#[tauri::command]
+pub fn workflow_get_orchestrator_status(
+    registry: State<'_, ProjectRegistry>,
+    window: tauri::Window,
+) -> Result<serde_json::Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let status = orkestra_core::workflow::check_orchestrator_status(state.project_root());
+        Ok(match status {
+            OrchestratorStatus::Running { pid } => {
+                serde_json::json!({ "status": "running", "pid": pid })
+            }
+            OrchestratorStatus::Stale { pid } => {
+                serde_json::json!({ "status": "stale", "pid": pid })
+            }
+            OrchestratorStatus::Absent => serde_json::json!({ "status": "absent" }),
+        })
+    })
 }
 
 /// Register a project under the calling window's label without creating a new window.

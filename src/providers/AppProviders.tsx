@@ -21,6 +21,7 @@
 //   → No: add it at the specific entry point that needs it.
 
 import type { ReactNode } from "react";
+import { useOrchestratorWatchdog } from "../hooks/useOrchestratorWatchdog";
 import { GitHistoryProvider } from "./GitHistoryProvider";
 import { PrStatusProvider } from "./PrStatusProvider";
 import { TasksProvider } from "./TasksProvider";
@@ -32,6 +33,7 @@ interface AppProvidersProps {
 }
 
 export function AppProviders({ children }: AppProvidersProps) {
+  useOrchestratorWatchdog();
   return (
     <ToastProvider>
       <WorkflowConfigProvider>

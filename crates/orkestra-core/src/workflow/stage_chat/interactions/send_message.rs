@@ -201,8 +201,8 @@ struct TextBufferState {
 /// Non-Text entries are always returned immediately.
 ///
 /// Decision tree for Text entries:
-/// - If `json_complete` and new text arrives: discard buffer (JSON handled by
-///   `try_complete_from_output`), reset state, persist this entry as trailing text.
+/// - If `json_complete` and new text arrives: the JSON hypothesis is wrong — flush buffered
+///   entries (they are prose, not structured output), reset state, append this trailing entry.
 /// - If not buffering and entry starts with `{` or ` ``` `: start buffering.
 /// - If buffering: add to buffer and try eager parse. If parse succeeds, set `json_complete`.
 ///   If a closing fence arrives and parse still fails: flush immediately (non-JSON fence).
@@ -215,12 +215,13 @@ fn buffer_or_persist(entry: LogEntry, state: &mut TextBufferState) -> Vec<LogEnt
     let starts_with_json = content.trim().starts_with('{') || content.trim().starts_with("```");
     let is_closing_fence = content.trim() == "```";
 
-    // Trailing text after json_complete confirms structured output — discard buffer, persist this
+    // Trailing text invalidates the JSON hypothesis — flush buffer so entries reach the store
     if state.buffering && state.json_complete {
-        state.buffer.clear();
+        let mut flushed = std::mem::take(&mut state.buffer);
         state.buffering = false;
         state.json_complete = false;
-        return vec![entry];
+        flushed.push(entry);
+        return flushed;
     }
 
     // Trigger buffering on JSON object or markdown fence
@@ -1053,7 +1054,9 @@ mod tests {
     }
 
     #[test]
-    fn trailing_text_after_json_discards_buffer() {
+    fn trailing_text_after_json_flushes_buffer() {
+        // When trailing text arrives after json_complete, the JSON hypothesis is wrong.
+        // The buffered entries must be flushed (not discarded) so they reach the store.
         let mut state = TextBufferState::default();
 
         // Single-line JSON completes immediately
@@ -1061,15 +1064,28 @@ mod tests {
         assert!(r1.is_empty());
         assert!(state.json_complete);
 
-        // Trailing text signals structured output — buffer discarded, trailing text persisted
+        // Trailing text invalidates the JSON hypothesis — buffer flushed + trailing text returned
         let r2 = buffer_or_persist(make_text_entry("Some trailing prose"), &mut state);
-        assert_eq!(r2.len(), 1, "trailing text should be persisted");
+        assert_eq!(
+            r2.len(),
+            2,
+            "buffered JSON line + trailing text should both be returned"
+        );
         assert!(
             !state.buffering,
             "state should be reset after trailing text"
         );
         assert!(!state.json_complete);
-        assert!(state.buffer.is_empty(), "buffer discarded on trailing text");
+        assert!(state.buffer.is_empty(), "buffer taken by mem::take");
+        // First entry is the buffered JSON line, second is trailing prose
+        assert!(
+            matches!(&r2[0], LogEntry::Text { content } if content == r#"{"type":"summary"}"#),
+            "first returned entry is the buffered JSON line"
+        );
+        assert!(
+            matches!(&r2[1], LogEntry::Text { content } if content == "Some trailing prose"),
+            "second returned entry is the trailing prose"
+        );
     }
 
     #[test]

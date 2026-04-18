@@ -78,6 +78,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
 /// These must NOT appear in the WebSocket dispatch table.
 pub const DESKTOP_ONLY_COMMANDS: &[&str] = &[
     "retry_startup",
+    "get_orchestrator_status",
     "open_in_terminal",
     "open_in_editor",
     "detect_external_tools",

@@ -198,6 +198,127 @@ describe("buildVirtualItems", () => {
     }
   });
 
+  // Gate entry absorption tests
+
+  it("gate entries after the latest artifact are excluded from virtual item output", () => {
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "work",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    const entries: LogEntry[] = [
+      { type: "artifact_produced", name: "plan", artifact_id: "art-1", artifact },
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "Running tests..." },
+      { type: "gate_completed", exit_code: 1, passed: false },
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const artifactContext: ArtifactContext = {
+      gateEntries: [
+        { type: "gate_started", command: "checks.sh" },
+        { type: "gate_output", content: "Running tests..." },
+        { type: "gate_completed", exit_code: 1, passed: false },
+      ],
+    };
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "art-1",
+      artifactContext,
+    });
+    // Gate entries must not appear as standalone agent-entry items
+    const agentEntries = items.filter((i) => i.kind === "agent-entry");
+    const hasGateEntry = agentEntries.some(
+      (i) =>
+        i.kind === "agent-entry" &&
+        (i.entry.type === "gate_started" ||
+          i.entry.type === "gate_output" ||
+          i.entry.type === "gate_completed"),
+    );
+    expect(hasGateEntry).toBe(false);
+  });
+
+  it("gate entries are attached to the artifact-body item", () => {
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "work",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    const gateEntries: LogEntry[] = [
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "output" },
+      { type: "gate_completed", exit_code: 0, passed: true },
+    ];
+    const entries: LogEntry[] = [
+      { type: "artifact_produced", name: "plan", artifact_id: "art-1", artifact },
+      ...gateEntries,
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const artifactContext: ArtifactContext = {
+      gateEntries,
+      isGateRunning: false,
+      gatePassed: true,
+    };
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "art-1",
+      artifactContext,
+    });
+    const bodyItem = items.find((i) => i.kind === "artifact-body");
+    expect(bodyItem).toBeDefined();
+    if (bodyItem?.kind === "artifact-body") {
+      expect(bodyItem.gateEntries).toHaveLength(3);
+      expect(bodyItem.gatePassed).toBe(true);
+      expect(bodyItem.isGateRunning).toBe(false);
+    }
+  });
+
+  it("gate entries without a preceding artifact render normally as agent-entry items", () => {
+    const entries: LogEntry[] = [
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "output" },
+      { type: "gate_completed", exit_code: 0, passed: true },
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const items = buildVirtualItems(messages, defaultOpts);
+    const agentEntries = items.filter((i) => i.kind === "agent-entry");
+    expect(agentEntries.length).toBeGreaterThan(0);
+  });
+
+  it("gate entries before the latest artifact render normally", () => {
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "work",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    // Gate entries come BEFORE the artifact_produced
+    const entries: LogEntry[] = [
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_completed", exit_code: 0, passed: true },
+      { type: "artifact_produced", name: "plan", artifact_id: "art-1", artifact },
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const artifactContext: ArtifactContext = {};
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "art-1",
+      artifactContext,
+    });
+    // Gate entries before the artifact should still appear as agent-entry items
+    const agentEntries = items.filter((i) => i.kind === "agent-entry");
+    const hasGateEntry = agentEntries.some(
+      (i) =>
+        i.kind === "agent-entry" &&
+        (i.entry.type === "gate_started" || i.entry.type === "gate_completed"),
+    );
+    expect(hasGateEntry).toBe(true);
+  });
+
   it("passes latestArtifactId so superseded entries can be identified", () => {
     const baseArtifact: WorkflowArtifact = {
       name: "plan",

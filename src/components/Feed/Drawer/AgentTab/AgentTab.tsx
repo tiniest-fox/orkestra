@@ -61,6 +61,36 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     return undefined;
   }, [logs]);
 
+  // Gate entries that follow the latest artifact — absorbed into the artifact card.
+  const gateInfo = useMemo(() => {
+    let artifactIdx = -1;
+    for (let i = logs.length - 1; i >= 0; i--) {
+      if (logs[i].type === "artifact_produced") {
+        artifactIdx = i;
+        break;
+      }
+    }
+    if (artifactIdx === -1) return undefined;
+
+    const entries: LogEntry[] = [];
+    for (let i = artifactIdx + 1; i < logs.length; i++) {
+      const e = logs[i];
+      if (e.type === "gate_started" || e.type === "gate_output" || e.type === "gate_completed") {
+        entries.push(e);
+      }
+    }
+    if (entries.length === 0) return undefined;
+
+    const completed = entries.find(
+      (e): e is Extract<LogEntry, { type: "gate_completed" }> => e.type === "gate_completed",
+    );
+    return {
+      entries,
+      isRunning: !completed,
+      passed: completed?.passed ?? false,
+    };
+  }, [logs]);
+
   // Derived verdict state
   const verdict = derived.pending_rejection
     ? ("rejected" as const)
@@ -114,7 +144,13 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
       loading,
     );
 
-    return { actions, questionsElement };
+    return {
+      actions,
+      questionsElement,
+      gateEntries: gateInfo?.entries,
+      isGateRunning: gateInfo?.isRunning,
+      gatePassed: gateInfo?.passed,
+    };
   }, [
     latestArtifactId,
     derived.has_questions,
@@ -131,6 +167,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     handleApprove,
     verdict,
     rejectionTarget,
+    gateInfo,
   ]);
 
   // Input bar visibility:

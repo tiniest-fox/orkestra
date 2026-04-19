@@ -997,6 +997,32 @@ Pattern:
 
 Reference: `src/hooks/useStalenessTimer.ts` exports both `useStalenessTimer` (hook) and `stalenessClass` (pure utility).
 
+### Stable References in `renderHook` Arguments
+
+When testing a hook that has a `useEffect` depending on one of its arguments, **always pass module-level constants** for array and object arguments — never inline literals like `[]` or `{}`.
+
+Inline `[]` inside `renderHook(() => useMyHook([]))` creates a new array reference on every render triggered by `act(...)`. If the hook's `useEffect` lists that argument as a dependency, the effect fires after every `act()` call — potentially resetting state before your assertion runs.
+
+```ts
+// Correct — module-level constant is referentially stable
+const EMPTY_LOGS: LogEntry[] = [];
+
+it("sets optimistic message", () => {
+  const { result } = renderHook(() => useOptimisticMessage(EMPTY_LOGS, null));
+  act(() => result.current.setOptimisticMessage("pending"));
+  expect(result.current.optimisticMessage).toBe("pending"); // stable — useEffect([logs]) doesn't re-fire
+});
+
+// Wrong — [] is recreated on every render, triggering useEffect([logs]) and clearing the state
+it("sets optimistic message", () => {
+  const { result } = renderHook(() => useOptimisticMessage([], null));
+  act(() => result.current.setOptimisticMessage("pending"));
+  expect(result.current.optimisticMessage).toBe("pending"); // fails
+});
+```
+
+This applies to any hook argument that appears in a `useEffect` or `useCallback` dep array inside the hook under test.
+
 ## Test Both Sides of Connection State Guards
 
 <!-- compound: perceptibly-epic-pickerel -->

@@ -2,6 +2,7 @@
 
 import { History, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOptimisticMessage } from "../../hooks/useOptimisticMessage";
 import { usePolling } from "../../hooks/usePolling";
 import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast } from "../../providers/ToastProvider";
@@ -46,14 +47,8 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
-  const [scrollTrigger, setScrollTrigger] = useState(0);
-
-  // Clear the optimistic message when real logs arrive (logs reference only changes on new entries).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: logs is the trigger, not a value consumed inside
-  useEffect(() => {
-    setOptimisticMessage(null);
-  }, [logs]);
+  const { optimisticMessage, setOptimisticMessage, scrollTrigger, triggerScroll } =
+    useOptimisticMessage(logs);
 
   const handleComposeResize = useCallback(() => {
     const el = messageListRef.current;
@@ -162,12 +157,15 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
   }, [showSessionList]);
 
   // -- Session switch --
-  const handleSwitchSession = useCallback((sessionId: string) => {
-    setActiveSessionId(sessionId);
-    setShowSessionList(false);
-    setInputValue("");
-    setOptimisticMessage(null);
-  }, []);
+  const handleSwitchSession = useCallback(
+    (sessionId: string) => {
+      setActiveSessionId(sessionId);
+      setShowSessionList(false);
+      setInputValue("");
+      setOptimisticMessage(null);
+    },
+    [setOptimisticMessage],
+  );
 
   // -- Shared send + refresh helper --
   const sendAndRefresh = useCallback(
@@ -205,7 +203,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     setSending(true);
     setInputValue("");
     setOptimisticMessage(msg);
-    setScrollTrigger((n) => n + 1);
+    triggerScroll();
     try {
       await sendAndRefresh(msg);
     } catch (err) {
@@ -214,7 +212,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     } finally {
       setSending(false);
     }
-  }, [inputValue, sending, sendAndRefresh]);
+  }, [inputValue, sending, sendAndRefresh, setOptimisticMessage, triggerScroll]);
 
   // -- Send question answers --
   const handleSendAnswers = useCallback(async () => {
@@ -256,7 +254,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     setShowSessionList(false);
     setInputValue("");
     setOptimisticMessage(null);
-  }, []);
+  }, [setOptimisticMessage]);
 
   const displayMessages = useMemo(() => {
     const msgs = buildDisplayMessages(logs);

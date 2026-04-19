@@ -88,7 +88,7 @@ export function FeedLogList({
   return (
     <MessageList
       messages={messages}
-      isAgentRunning={isAgentRunning || !!pendingMessage}
+      isAgentRunning={isAgentRunning}
       projectRoot={projectInfo?.project_root}
       emptyText="No activity yet."
       agentLabel="Agent"

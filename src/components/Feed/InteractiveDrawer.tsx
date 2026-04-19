@@ -5,6 +5,7 @@
 
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOptimisticMessage } from "../../hooks/useOptimisticMessage";
 import { usePolling } from "../../hooks/usePolling";
 import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast, useWorkflowConfig } from "../../providers";
@@ -138,17 +139,11 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   const [exiting, setExiting] = useState(false);
   const [showDoneMenu, setShowDoneMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
-  const [scrollTrigger, setScrollTrigger] = useState(0);
+  const { optimisticMessage, setOptimisticMessage, scrollTrigger, triggerScroll } =
+    useOptimisticMessage(logs);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const messageListRef = useRef<HTMLDivElement>(null);
-
-  // Clear the optimistic message when real logs arrive (logs reference only changes on new entries).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: logs is the trigger, not a value consumed inside
-  useEffect(() => {
-    setOptimisticMessage(null);
-  }, [logs]);
 
   const isAgentRunning = session?.agent_pid != null;
 
@@ -207,7 +202,7 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     setSending(true);
     setInputValue("");
     setOptimisticMessage(msg);
-    setScrollTrigger((n) => n + 1);
+    triggerScroll();
     setError(null);
     try {
       await transport.call("interactive_send_message", { task_id: task.id, message: msg });
@@ -226,7 +221,7 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     } finally {
       setSending(false);
     }
-  }, [inputValue, sending, transport, task.id]);
+  }, [inputValue, sending, transport, task.id, setOptimisticMessage, triggerScroll]);
 
   // -- Stop agent --
   const handleStop = useCallback(async () => {

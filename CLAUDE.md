@@ -175,6 +175,23 @@ The `bin/ork` wrapper handles building and running the CLI automatically.
 
 For comprehensive CLI documentation, see [`docs/cli-guide.md`](docs/cli-guide.md).
 
+## Editing Agent Skills
+
+Skills live in `.claude/skills/`. Use `bin/update-skill` to create or modify them — it supports three operations:
+
+```bash
+# Replace entire skill file with stdin
+echo "content" | bin/update-skill <name> write
+
+# Replace lines start-end with stdin
+echo "new content" | bin/update-skill <name> patch <start> <end>
+
+# Delete lines start-end
+bin/update-skill <name> delete <start> <end>
+```
+
+`<name>` is the skill filename without `.md` (e.g., `storybook`, `e2e-testing`). **Never edit skill files by hand with sed/awk** — use this script so edits are auditable and line-range operations are safe.
+
 ## Build Performance
 
 The project uses two caching mechanisms for faster builds:

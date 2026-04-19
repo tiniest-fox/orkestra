@@ -64,6 +64,13 @@ Review the changed frontend files and identify violations of the project's UI co
 - Duplicating backend types instead of using Tauri-generated bindings
 - Importing through barrel exports for non-`ui/` components
 
+### Storybook Coverage
+
+- New components in `src/components/` without corresponding stories in `src/stories/` → MEDIUM
+- Changed component props or visual states without updated stories → MEDIUM
+- Stories that exist but don't cover conditional rendering branches (loading, error, empty) → LOW
+- Missing `screenshot:ComponentName` resources on UI Subtraks → LOW
+
 ## Review Process
 
 1. Read `src/CLAUDE.md` to refresh on the full convention set
@@ -73,7 +80,8 @@ Review the changed frontend files and identify violations of the project's UI co
 5. Check design token usage
 6. Verify state management patterns
 7. Check component structure and imports
-8. Output findings in the specified format
+8. Check Storybook story coverage for new/changed components
+9. Output findings in the specified format
 
 ## Example Findings
 
@@ -101,6 +109,16 @@ Review the changed frontend files and identify violations of the project's UI co
 <div className="bg-stone-100 border border-stone-200">
 ```
 **Suggestion:** Add dark variants: `bg-stone-100 dark:bg-stone-800 border-stone-200 dark:border-stone-700`
+```
+
+### Good Finding (Storybook):
+```markdown
+### src/components/Feed/FeedRow.tsx
+**Severity:** MEDIUM
+**Principle:** Spec Conformance
+**Issue:** New component added with no corresponding story in `src/stories/`
+**Evidence:** `src/components/Feed/FeedRow.tsx` exists, no `FeedRow.stories.tsx` found in `src/stories/`
+**Suggestion:** Add `src/stories/Feed/FeedRow.stories.tsx` covering at least default and selected states. Load the `/storybook` skill for provider setup patterns.
 ```
 
 ### Correctly NOT Flagged:

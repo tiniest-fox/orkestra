@@ -101,6 +101,10 @@ Before submitting:
 
 The canonical failure mode: you add a feature gated on a new constructor variant, write tests using that variant, all tests pass — but production callers use a different constructor and never trigger the feature. The flow reviewer will catch this.
 
+### Storybook Stories
+
+Every new or visually-changed UI component must have a Storybook story. Load the `/storybook` skill for provider setup, file conventions, and the screenshot workflow. Missing stories on a UI change are a MEDIUM rejection in code review.
+
 ### Start Quickly, Stay Focused
 Don't over-analyze. Once you understand the Trak:
 1. Find similar code to reference

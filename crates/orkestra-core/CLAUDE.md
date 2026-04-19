@@ -257,6 +257,12 @@ api.iteration_service.create_iteration(&task.id, "review", None).unwrap();
 
 Forgetting this used to produce a silent fallback artifact ID. Now it surfaces as an error, exposing the gap.
 
+### Known Test Gaps in `send_message.rs`
+
+One gap in the `buffer_or_persist` state machine coverage (in `workflow/stage_chat/interactions/send_message.rs`):
+
+- **Fenced JSON + trailing prose: unit-tested but no integration test.** The raw JSON + trailing prose variant has an integration test (`integration_trailing_prose_after_json_all_reach_store`), but the fenced JSON variant only has a unit test (`fenced_json_then_trailing_prose_flushes_after_close`). Risk is low — same code path — but worth closing if this area is modified again.
+
 ### Known Test Gaps in `init.rs`
 
 Two gaps exist in `test_checks_script_is_executable` (the `ensure_orkestra_project` test):
@@ -265,6 +271,3 @@ Two gaps exist in `test_checks_script_is_executable` (the `ensure_orkestra_proje
 
 2. **No workflow-to-prompt coherence check.** No test validates that every `prompt:` reference in the default `workflow.yaml` has a corresponding entry in `DEFAULT_PROMPTS`. A coherence test would catch init-time breakage when prompt files are added or renamed.
 
-### Known Test Gap in `stage_chat/interactions/send_message.rs`
-
-`read_chat_output` has no integration test for the `CorrectionNeeded` exit path. This path runs the same buffering logic as the `Completed` arm (which is integration-tested), so risk is low — but a future test should cover `send_message` returning `AgentExitKind::CorrectionNeeded` with buffered JSON to confirm the buffer is flushed correctly on that path.

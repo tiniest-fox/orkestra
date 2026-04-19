@@ -1,8 +1,9 @@
 // Unified agent tab — streaming log timeline with inline artifact and question cards.
 
 import type React from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useIsMobile } from "../../../../hooks/useIsMobile";
+import { useOptimisticMessage } from "../../../../hooks/useOptimisticMessage";
 import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
 import { titleCase } from "../../../../utils/titleCase";
 import { ChatComposeArea } from "../../ChatComposeArea";
@@ -188,15 +189,30 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     ? state.handleChatStop
     : state.handleInterrupt;
 
-  const [sendTrigger, setSendTrigger] = useState(0);
+  const {
+    optimisticMessage,
+    setOptimisticMessage,
+    scrollTrigger: sendTrigger,
+    triggerScroll,
+  } = useOptimisticMessage(logs, state.chatError);
+
   const handleSend = useCallback(() => {
-    setSendTrigger((n) => n + 1);
+    triggerScroll();
+    const msg = state.chatMessage.trim();
+    if (msg) setOptimisticMessage(msg);
     if (derived.is_interrupted) {
       state.handleReturnToWork();
     } else {
       state.handleSendChat();
     }
-  }, [derived.is_interrupted, state.handleReturnToWork, state.handleSendChat]);
+  }, [
+    derived.is_interrupted,
+    state.handleReturnToWork,
+    state.handleSendChat,
+    state.chatMessage,
+    triggerScroll,
+    setOptimisticMessage,
+  ]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -204,13 +220,14 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
       <FeedLogList
         logs={logs}
         error={logsError}
-        isAgentRunning={derived.is_working || derived.chat_agent_active}
+        isAgentRunning={derived.is_working || derived.chat_agent_active || !!optimisticMessage}
         artifactContext={artifactContext}
         latestArtifactId={latestArtifactId}
         taskResources={task.resources}
         containerRef={combinedRef}
         initialLabel={`Starting "${titleCase(derived.current_stage ?? task.derived.stages_with_logs[task.derived.stages_with_logs.length - 1]?.stage ?? "")}"\u2026`}
         scrollToBottomTrigger={sendTrigger}
+        pendingMessage={optimisticMessage ?? undefined}
       />
 
       {/* Input bar */}

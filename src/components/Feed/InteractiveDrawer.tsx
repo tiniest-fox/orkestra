@@ -5,6 +5,7 @@
 
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOptimisticMessage } from "../../hooks/useOptimisticMessage";
 import { usePolling } from "../../hooks/usePolling";
 import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast, useWorkflowConfig } from "../../providers";
@@ -138,6 +139,8 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   const [exiting, setExiting] = useState(false);
   const [showDoneMenu, setShowDoneMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { optimisticMessage, setOptimisticMessage, scrollTrigger, triggerScroll } =
+    useOptimisticMessage(logs);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -198,6 +201,8 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     if (!msg || sending) return;
     setSending(true);
     setInputValue("");
+    setOptimisticMessage(msg);
+    triggerScroll();
     setError(null);
     try {
       await transport.call("interactive_send_message", { task_id: task.id, message: msg });
@@ -212,10 +217,11 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
       }
     } catch (err) {
       setError(String(err));
+      setOptimisticMessage(null);
     } finally {
       setSending(false);
     }
-  }, [inputValue, sending, transport, task.id]);
+  }, [inputValue, sending, transport, task.id, setOptimisticMessage, triggerScroll]);
 
   // -- Stop agent --
   const handleStop = useCallback(async () => {
@@ -252,7 +258,13 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     [transport, task.id, onClose],
   );
 
-  const displayMessages = useMemo(() => buildDisplayMessages(logs), [logs]);
+  const displayMessages = useMemo(() => {
+    const msgs = buildDisplayMessages(logs);
+    if (optimisticMessage) {
+      msgs.push({ kind: "user", content: optimisticMessage });
+    }
+    return msgs;
+  }, [logs, optimisticMessage]);
 
   const headerActions: DrawerAction[] = [
     {
@@ -284,11 +296,12 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
         <>
           <MessageList
             messages={displayMessages}
-            isAgentRunning={isAgentRunning}
+            isAgentRunning={isAgentRunning || !!optimisticMessage}
             agentLabel="Agent"
             containerRef={messageListRef}
             emptyText="Send a message to start the interactive session."
             contentFilter={stripParameterBlocks}
+            scrollToBottomTrigger={scrollTrigger}
           />
 
           <ChatComposeArea

@@ -1661,4 +1661,82 @@ mod tests {
             "ProcessExit appended at end"
         );
     }
+
+    #[test]
+    fn integration_correction_needed_no_duplicate_entries() {
+        // Schema-invalid JSON triggers CorrectionNeeded.  The fix: only a UserMessage
+        // (resume_type="correction") is written — no redundant [System] Text entry.
+        //
+        // Assertions:
+        //   (a) ExtractedJson { valid: false } present
+        //   (b) exactly one UserMessage with resume_type "correction" present
+        //   (c) no Text entries containing "[System]" exist
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-int-correction",
+            "task-int-correction",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        // Valid JSON but "type" value is not in the schema enum — triggers CorrectionNeeded
+        let content = "{\"type\":\"invalid_value\"}\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-correction",
+            "task-int-correction",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0, // remaining_corrections = 0, no re-spawn
+        );
+
+        let entries = store.get_log_entries("ss-int-correction").unwrap();
+
+        // (a) ExtractedJson(valid=false) must be present
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: false, .. })),
+            "ExtractedJson(valid=false) must be present for CorrectionNeeded"
+        );
+
+        // (b) exactly one correction UserMessage
+        let correction_msgs: Vec<_> = entries
+            .iter()
+            .filter(|e| {
+                matches!(e, LogEntry::UserMessage { resume_type, .. }
+                    if resume_type == CORRECTION_RESUME_TYPE)
+            })
+            .collect();
+        assert_eq!(
+            correction_msgs.len(),
+            1,
+            "exactly one correction UserMessage expected, got {}",
+            correction_msgs.len()
+        );
+
+        // (c) no [System] Text entries — the redundant Text entry was removed
+        let system_text_entries: Vec<_> = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { content } if content.contains("[System]")))
+            .collect();
+        assert!(
+            system_text_entries.is_empty(),
+            "no [System] Text entries should exist — UserMessage replaces them"
+        );
+    }
 }

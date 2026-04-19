@@ -193,6 +193,8 @@ struct TextBufferState {
     buffering: bool,
     /// Set once the accumulated buffer parses as valid JSON.
     json_complete: bool,
+    /// Set when currently buffering inside a markdown fence block.
+    inside_fence: bool,
 }
 
 /// Process a single log entry through the text buffer state machine.
@@ -215,22 +217,33 @@ fn buffer_or_persist(entry: LogEntry, state: &mut TextBufferState) -> Vec<LogEnt
     let starts_with_json = content.trim().starts_with('{') || content.trim().starts_with("```");
     let is_closing_fence = content.trim() == "```";
 
-    // Trailing text invalidates the JSON hypothesis — flush buffer so entries reach the store
-    if state.buffering && state.json_complete {
+    // Trailing text invalidates the JSON hypothesis — flush buffer so entries reach the store.
+    // Exception: a closing fence inside a fenced block is not trailing text — it closes the block.
+    if state.buffering && state.json_complete && !(is_closing_fence && state.inside_fence) {
         let mut flushed = std::mem::take(&mut state.buffer);
         state.buffering = false;
         state.json_complete = false;
+        state.inside_fence = false;
         flushed.push(entry);
         return flushed;
     }
 
-    // Trigger buffering on JSON object or markdown fence
-    if !state.buffering && starts_with_json {
+    // Trigger buffering on JSON object or markdown fence.
+    // Don't start buffering on a bare closing fence with no prior open.
+    if !state.buffering && starts_with_json && !is_closing_fence {
         state.buffering = true;
+        if content.trim().starts_with("```") {
+            state.inside_fence = true;
+        }
     }
 
     if state.buffering {
         state.buffer.push(entry);
+
+        // Clear inside_fence when the closing fence arrives, before the eager parse.
+        if is_closing_fence && state.inside_fence {
+            state.inside_fence = false;
+        }
 
         // Eager parse: check if accumulated buffer is already valid JSON
         let buffer_text = state
@@ -576,38 +589,24 @@ fn read_chat_output(
                 // Append ExtractedJson log entry for frontend classification
                 emit_extracted_json_entry(store, session_id, raw_json, false);
 
-                // Log the error as a visible system message
-                let system_msg = format!("[System] {error}");
+                // Always log the correction UserMessage so the error is visible in the chat.
+                // The UserMessage already renders as a system-labeled bubble — no separate
+                // Text entry is needed.
+                let corrective_msg = error;
                 if let Err(e) = store.append_log_entry(
                     session_id,
-                    &LogEntry::Text {
-                        content: system_msg,
-                    },
+                    &correction_user_message(&corrective_msg),
                     None,
                 ) {
                     orkestra_debug!(
                         "stage_chat",
-                        "Failed to append corrective system message: {}",
+                        "Failed to append corrective user message: {}",
                         e
                     );
                 }
 
                 // Auto-retry: re-spawn agent with corrective message (once)
                 if remaining_corrections > 0 {
-                    let corrective_msg = error;
-                    // Log as UserMessage so the agent sees it in context on resume
-                    if let Err(e) = store.append_log_entry(
-                        session_id,
-                        &correction_user_message(&corrective_msg),
-                        None,
-                    ) {
-                        orkestra_debug!(
-                            "stage_chat",
-                            "Failed to append corrective user message: {}",
-                            e
-                        );
-                    }
-
                     // Notify frontend
                     if let Some(tx) = log_notify_tx {
                         if let Err(e) = tx.send(LogNotification {
@@ -1205,6 +1204,101 @@ mod tests {
         assert!(!state.buffering);
     }
 
+    #[test]
+    fn inside_fence_tracks_open_close() {
+        let mut state = TextBufferState::default();
+
+        let r1 = buffer_or_persist(make_text_entry("```json"), &mut state);
+        assert!(r1.is_empty());
+        assert!(state.buffering, "buffering started on opening fence");
+        assert!(state.inside_fence, "inside_fence set on opening fence");
+
+        let r2 = buffer_or_persist(make_text_entry(r#"{"type":"summary"}"#), &mut state);
+        assert!(r2.is_empty());
+        assert!(state.inside_fence, "inside_fence still true during content");
+        assert!(!state.json_complete, "fence not closed yet");
+
+        let r3 = buffer_or_persist(make_text_entry("```"), &mut state);
+        assert!(r3.is_empty(), "closing fence buffered");
+        assert!(!state.inside_fence, "inside_fence cleared on closing fence");
+        assert!(state.json_complete, "json_complete set after fence closes");
+    }
+
+    #[test]
+    fn standalone_closing_fence_not_buffered() {
+        // A bare ``` with no prior opening fence should be persisted immediately,
+        // not start buffering.
+        let mut state = TextBufferState::default();
+
+        let result = buffer_or_persist(make_text_entry("```"), &mut state);
+        assert_eq!(
+            result.len(),
+            1,
+            "standalone closing fence should be persisted immediately"
+        );
+        assert!(
+            !state.buffering,
+            "buffering should not start on lone closing fence"
+        );
+        assert!(!state.inside_fence);
+    }
+
+    #[test]
+    fn fenced_json_then_trailing_prose_flushes_after_close() {
+        // Complete fenced JSON followed by trailing prose should flush the entire
+        // block (fence open + content + fence close + trailing prose) together.
+        let mut state = TextBufferState::default();
+
+        let r1 = buffer_or_persist(make_text_entry("```json"), &mut state);
+        assert!(r1.is_empty());
+        let r2 = buffer_or_persist(make_text_entry(r#"{"type":"summary"}"#), &mut state);
+        assert!(r2.is_empty());
+        let r3 = buffer_or_persist(make_text_entry("```"), &mut state);
+        assert!(r3.is_empty(), "closing fence buffered (json_complete set)");
+        assert!(state.json_complete, "json_complete set after fence closes");
+        assert!(
+            !state.inside_fence,
+            "inside_fence cleared after fence closes"
+        );
+
+        // Trailing prose arrives — flush buffer + trailing entry
+        let r4 = buffer_or_persist(make_text_entry("Some trailing prose"), &mut state);
+        assert_eq!(
+            r4.len(),
+            4,
+            "all three fenced entries + trailing prose returned"
+        );
+        assert!(!state.buffering, "state reset after flush");
+        assert!(!state.json_complete);
+        assert!(state.buffer.is_empty());
+    }
+
+    #[test]
+    fn ork_fence_buffered_like_json_fence() {
+        // ```ork fences should be treated the same as ```json fences.
+        let mut state = TextBufferState::default();
+
+        let r1 = buffer_or_persist(make_text_entry("```ork"), &mut state);
+        assert!(r1.is_empty());
+        assert!(state.buffering);
+        assert!(state.inside_fence, "inside_fence set for ork fence");
+
+        let r2 = buffer_or_persist(
+            make_text_entry(r#"{"type":"summary","content":"done"}"#),
+            &mut state,
+        );
+        assert!(r2.is_empty());
+        assert!(!state.json_complete, "fence not closed yet");
+
+        let r3 = buffer_or_persist(make_text_entry("```"), &mut state);
+        assert!(r3.is_empty(), "closing fence buffered");
+        assert!(!state.inside_fence, "inside_fence cleared on close");
+        assert!(
+            state.json_complete,
+            "json_complete set after ork fence closes"
+        );
+    }
+
     // -- Integration tests for read_chat_output --
 
     /// A minimal `AgentParser` that converts each raw stdout line to a `LogEntry::Text`.
@@ -1442,6 +1536,68 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
             "no ExtractedJson — trailing prose invalidated the JSON hypothesis"
+        );
+    }
+
+    #[test]
+    fn integration_fenced_json_only_extracted_json_in_store() {
+        // Fenced JSON (```json\n{...}\n```) as the sole agent output should be buffered
+        // and discarded once detection succeeds (Completed).  Only ExtractedJson and
+        // ProcessExit reach the store — no Text entries.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        // Task must be in a chat-capable state so try_complete_from_output proceeds.
+        let mut task = Task::new(
+            "task-int-fenced",
+            "Test",
+            "Test",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-int-fenced",
+            "task-int-fenced",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let content = "```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-int-fenced",
+            "task-int-fenced",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-int-fenced").unwrap();
+        assert!(
+            !entries.iter().any(|e| matches!(e, LogEntry::Text { .. })),
+            "no Text entries — fenced JSON was buffered and discarded on Completed"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) must be present"
         );
     }
 

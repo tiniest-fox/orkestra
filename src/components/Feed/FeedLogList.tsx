@@ -51,6 +51,8 @@ interface FeedLogListProps {
   initialLabel?: string;
   /** Increment to force scroll-to-bottom and re-enable auto-scroll (e.g. on message send). */
   scrollToBottomTrigger?: number;
+  /** Optimistic user message shown immediately on send, before real logs arrive. */
+  pendingMessage?: string;
 }
 
 export function FeedLogList({
@@ -64,8 +66,15 @@ export function FeedLogList({
   containerRef,
   initialLabel,
   scrollToBottomTrigger,
+  pendingMessage,
 }: FeedLogListProps) {
-  const messages = useMemo(() => buildDisplayMessages(logs), [logs]);
+  const messages = useMemo(() => {
+    const msgs = buildDisplayMessages(logs);
+    if (pendingMessage) {
+      msgs.push({ kind: "user", content: pendingMessage });
+    }
+    return msgs;
+  }, [logs, pendingMessage]);
   const projectInfo = useProjectInfo();
 
   if (error != null) {
@@ -79,7 +88,7 @@ export function FeedLogList({
   return (
     <MessageList
       messages={messages}
-      isAgentRunning={isAgentRunning}
+      isAgentRunning={isAgentRunning || !!pendingMessage}
       projectRoot={projectInfo?.project_root}
       emptyText="No activity yet."
       agentLabel="Agent"

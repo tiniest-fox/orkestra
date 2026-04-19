@@ -138,9 +138,17 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
   const [exiting, setExiting] = useState(false);
   const [showDoneMenu, setShowDoneMenu] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
+  const [scrollTrigger, setScrollTrigger] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const messageListRef = useRef<HTMLDivElement>(null);
+
+  // Clear the optimistic message when real logs arrive (logs reference only changes on new entries).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logs is the trigger, not a value consumed inside
+  useEffect(() => {
+    setOptimisticMessage(null);
+  }, [logs]);
 
   const isAgentRunning = session?.agent_pid != null;
 
@@ -198,6 +206,8 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     if (!msg || sending) return;
     setSending(true);
     setInputValue("");
+    setOptimisticMessage(msg);
+    setScrollTrigger((n) => n + 1);
     setError(null);
     try {
       await transport.call("interactive_send_message", { task_id: task.id, message: msg });
@@ -212,6 +222,7 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
       }
     } catch (err) {
       setError(String(err));
+      setOptimisticMessage(null);
     } finally {
       setSending(false);
     }
@@ -252,7 +263,13 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
     [transport, task.id, onClose],
   );
 
-  const displayMessages = useMemo(() => buildDisplayMessages(logs), [logs]);
+  const displayMessages = useMemo(() => {
+    const msgs = buildDisplayMessages(logs);
+    if (optimisticMessage) {
+      msgs.push({ kind: "user", content: optimisticMessage });
+    }
+    return msgs;
+  }, [logs, optimisticMessage]);
 
   const headerActions: DrawerAction[] = [
     {
@@ -284,11 +301,12 @@ function InteractiveDrawerBody({ task, onClose }: InteractiveDrawerBodyProps) {
         <>
           <MessageList
             messages={displayMessages}
-            isAgentRunning={isAgentRunning}
+            isAgentRunning={isAgentRunning || !!optimisticMessage}
             agentLabel="Agent"
             containerRef={messageListRef}
             emptyText="Send a message to start the interactive session."
             contentFilter={stripParameterBlocks}
+            scrollToBottomTrigger={scrollTrigger}
           />
 
           <ChatComposeArea

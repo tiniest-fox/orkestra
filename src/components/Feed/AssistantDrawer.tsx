@@ -46,6 +46,14 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
+  const [scrollTrigger, setScrollTrigger] = useState(0);
+
+  // Clear the optimistic message when real logs arrive (logs reference only changes on new entries).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logs is the trigger, not a value consumed inside
+  useEffect(() => {
+    setOptimisticMessage(null);
+  }, [logs]);
 
   const handleComposeResize = useCallback(() => {
     const el = messageListRef.current;
@@ -158,6 +166,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     setActiveSessionId(sessionId);
     setShowSessionList(false);
     setInputValue("");
+    setOptimisticMessage(null);
   }, []);
 
   // -- Shared send + refresh helper --
@@ -195,10 +204,13 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     if (!msg || sending) return;
     setSending(true);
     setInputValue("");
+    setOptimisticMessage(msg);
+    setScrollTrigger((n) => n + 1);
     try {
       await sendAndRefresh(msg);
     } catch (err) {
       console.error("Failed to send message:", err);
+      setOptimisticMessage(null);
     } finally {
       setSending(false);
     }
@@ -243,9 +255,16 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
     setActiveSessionId(null);
     setShowSessionList(false);
     setInputValue("");
+    setOptimisticMessage(null);
   }, []);
 
-  const displayMessages = useMemo(() => buildDisplayMessages(logs), [logs]);
+  const displayMessages = useMemo(() => {
+    const msgs = buildDisplayMessages(logs);
+    if (optimisticMessage) {
+      msgs.push({ kind: "user", content: optimisticMessage });
+    }
+    return msgs;
+  }, [logs, optimisticMessage]);
   const sessionTitle = activeSession?.title ?? null;
 
   const headerActions = useMemo<DrawerAction[]>(
@@ -348,11 +367,12 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
           {/* Message List */}
           <MessageList
             messages={displayMessages}
-            isAgentRunning={isAgentRunning}
+            isAgentRunning={isAgentRunning || !!optimisticMessage}
             agentLabel="Assistant"
             containerRef={messageListRef}
             emptyText="Start a conversation with the assistant."
             lastAgentExtra={lastAgentExtra}
+            scrollToBottomTrigger={scrollTrigger}
           />
 
           {/* Compose Area */}

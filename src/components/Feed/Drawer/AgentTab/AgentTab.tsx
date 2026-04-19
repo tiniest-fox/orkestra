@@ -1,7 +1,7 @@
 // Unified agent tab — streaming log timeline with inline artifact and question cards.
 
 import type React from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsMobile } from "../../../../hooks/useIsMobile";
 import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
 import { titleCase } from "../../../../utils/titleCase";
@@ -188,15 +188,25 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     ? state.handleChatStop
     : state.handleInterrupt;
 
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+
+  // Clear the optimistic message when real logs arrive (logs reference only changes when new entries exist).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logs is the trigger, not a value consumed inside
+  useEffect(() => {
+    setPendingMessage(null);
+  }, [logs]);
+
   const [sendTrigger, setSendTrigger] = useState(0);
   const handleSend = useCallback(() => {
     setSendTrigger((n) => n + 1);
+    const msg = state.chatMessage.trim();
+    if (msg) setPendingMessage(msg);
     if (derived.is_interrupted) {
       state.handleReturnToWork();
     } else {
       state.handleSendChat();
     }
-  }, [derived.is_interrupted, state.handleReturnToWork, state.handleSendChat]);
+  }, [derived.is_interrupted, state.handleReturnToWork, state.handleSendChat, state.chatMessage]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -211,6 +221,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
         containerRef={combinedRef}
         initialLabel={`Starting "${titleCase(derived.current_stage ?? task.derived.stages_with_logs[task.derived.stages_with_logs.length - 1]?.stage ?? "")}"\u2026`}
         scrollToBottomTrigger={sendTrigger}
+        pendingMessage={pendingMessage ?? undefined}
       />
 
       {/* Input bar */}

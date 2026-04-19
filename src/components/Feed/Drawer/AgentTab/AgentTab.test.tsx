@@ -1,4 +1,4 @@
-// Tests for AgentTab — is_interrupted conditional branches.
+// Tests for AgentTab — is_interrupted conditional branches and optimistic message.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
@@ -11,8 +11,21 @@ import { AgentTab } from "./AgentTab";
 // Mocks
 // ============================================================================
 
+const { getFeedLogListProps, resetFeedLogListProps } = vi.hoisted(() => {
+  let lastProps: Record<string, unknown> = {};
+  return {
+    getFeedLogListProps: () => lastProps,
+    resetFeedLogListProps: () => {
+      lastProps = {};
+    },
+  };
+});
+
 vi.mock("../../FeedLogList", () => ({
-  FeedLogList: () => <div data-testid="feed-log-list" />,
+  FeedLogList: (props: Record<string, unknown>) => {
+    Object.assign(getFeedLogListProps(), props);
+    return <div data-testid="feed-log-list" />;
+  },
 }));
 
 vi.mock("../../ChatComposeArea", () => ({
@@ -111,6 +124,7 @@ function renderAgentTab(
 describe("AgentTab — is_interrupted branches", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetFeedLogListProps();
   });
 
   it("renders ChatComposeArea when is_interrupted is true", () => {
@@ -150,5 +164,32 @@ describe("AgentTab — is_interrupted branches", () => {
   it("inputAgentActive is false when interrupted", () => {
     renderAgentTab({ is_interrupted: true, is_working: false });
     expect(screen.getByTestId("agent-active").textContent).toBe("false");
+  });
+});
+
+describe("AgentTab — optimistic message on send", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetFeedLogListProps();
+  });
+
+  it("passes pendingMessage to FeedLogList when chatMessage is non-empty and send is clicked", () => {
+    const task = createMockWorkflowTaskView({ derived: { is_chatting: true } });
+    const state = makeState({ chatMessage: "hello optimistic" });
+    render(
+      <AgentTab task={task} logs={[]} logsError={null} state={state} logContainerRef={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByTestId("send-btn"));
+    expect(getFeedLogListProps().pendingMessage).toBe("hello optimistic");
+  });
+
+  it("does not pass pendingMessage when chatMessage is empty", () => {
+    const task = createMockWorkflowTaskView({ derived: { is_chatting: true } });
+    const state = makeState({ chatMessage: "  " });
+    render(
+      <AgentTab task={task} logs={[]} logsError={null} state={state} logContainerRef={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByTestId("send-btn"));
+    expect(getFeedLogListProps().pendingMessage).toBeUndefined();
   });
 });

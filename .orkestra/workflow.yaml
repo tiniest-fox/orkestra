@@ -170,8 +170,6 @@ flows:
         artifact: analysis
         prompt: researcher.md
         model: opus
-        capabilities:
-          ask_questions: true
         disallowed_tools:
           - pattern: "Edit"
             message: "Research is read-only — explore and document findings, don't modify files"
@@ -212,7 +210,6 @@ flows:
         artifact: learnings
         prompt: compound-docs.md
         model: sonnet
-        is_automated: true
 
     integration:
       on_failure: write

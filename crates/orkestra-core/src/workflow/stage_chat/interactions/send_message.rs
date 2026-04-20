@@ -460,6 +460,10 @@ fn read_chat_output(
     }
 
     let mut buf_state = TextBufferState::default();
+    // Tracks the last text entry that was persisted directly (not buffered).
+    // Used as a fallback detection candidate when the buffer path doesn't fire —
+    // specifically when prose + ork fence arrive together in a single Text entry.
+    let mut last_persisted_text: Option<String> = None;
 
     for line in handle.lines() {
         match line {
@@ -474,6 +478,10 @@ fn read_chat_output(
                 let batch_summary = LogEntry::last_summary(&update.log_entries);
                 for entry in update.log_entries {
                     for e in buffer_or_persist(entry, &mut buf_state) {
+                        // Track the last persisted Text entry for fallback detection.
+                        if let LogEntry::Text { content } = &e {
+                            last_persisted_text = Some(content.clone());
+                        }
                         if let Err(e) = store.append_log_entry(session_id, &e, None) {
                             orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
                         } else {
@@ -509,6 +517,10 @@ fn read_chat_output(
     let finalized_summary = LogEntry::last_summary(&finalized);
     for entry in finalized {
         for e in buffer_or_persist(entry, &mut buf_state) {
+            // Track the last persisted Text entry for fallback detection.
+            if let LogEntry::Text { content } = &e {
+                last_persisted_text = Some(content.clone());
+            }
             if let Err(e) = store.append_log_entry(session_id, &e, None) {
                 orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
             } else {
@@ -558,7 +570,10 @@ fn read_chat_output(
             Some(text)
         }
     } else {
-        None
+        // Fallback: when the buffer didn't fire (entry started with prose, not JSON/fence),
+        // use the last persisted text entry as the detection candidate. This handles the
+        // case where prose + ork fence arrive in a single LogEntry::Text.
+        last_persisted_text.take()
     };
 
     // Try to detect structured output and complete the stage
@@ -1935,6 +1950,243 @@ mod tests {
                 && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))),
             "ChatCompletion iteration should be created. Got: {iterations:?}"
         );
+    }
+
+    /// Parser that accumulates all lines into a single Text entry on finalize.
+    ///
+    /// Used to test the fallback detection path where prose + ork fence arrive
+    /// in a single `LogEntry::Text` (bypassing the buffer path entirely).
+    struct SingleEntryParser {
+        lines: Vec<String>,
+    }
+
+    impl SingleEntryParser {
+        fn new() -> Self {
+            Self { lines: Vec::new() }
+        }
+    }
+
+    impl AgentParser for SingleEntryParser {
+        fn parse_line(&mut self, line: &str) -> ParsedUpdate {
+            self.lines.push(line.to_string());
+            ParsedUpdate {
+                log_entries: vec![],
+                session_id: None,
+            }
+        }
+
+        fn finalize(&mut self) -> Vec<LogEntry> {
+            let content = std::mem::take(&mut self.lines).join("\n");
+            if content.is_empty() {
+                vec![]
+            } else {
+                vec![LogEntry::Text { content }]
+            }
+        }
+
+        fn extract_output(&self, _full_output: &str) -> Result<String, String> {
+            Err("not used in chat mode".to_string())
+        }
+    }
+
+    #[test]
+    fn chat_prose_and_ork_fence_in_single_entry_completes_stage() {
+        // Case 1 (primary fix): a single Text entry containing prose followed by an ork fence.
+        // Uses SingleEntryParser so all lines arrive as one LogEntry::Text in finalize().
+        // The buffer path never fires (starts with prose), so the fallback `last_persisted_text`
+        // path must handle detection.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-single-entry",
+            "Single entry test",
+            "Prose + ork fence in one Text entry",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-single-entry",
+            "task-single-entry",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        // All lines are accumulated by SingleEntryParser and emitted as one Text entry in finalize()
+        let content = "Here is my revised plan:\n\n```ork\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-single-entry",
+            "task-single-entry",
+            "work",
+            Box::new(SingleEntryParser::new()),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-single-entry").unwrap();
+
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) must be present for prose+ork-fence in single entry. Got: {entries:?}"
+        );
+
+        let iterations = store.get_iterations("task-single-entry").unwrap();
+        assert!(
+            iterations.iter().any(|i| i.stage == "work"
+                && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))),
+            "ChatCompletion iteration should be created. Got: {iterations:?}"
+        );
+    }
+
+    #[test]
+    fn chat_json_example_mid_response_ork_fence_wins() {
+        // Case 4: prose containing a JSON example followed by an ork fence in one Text entry.
+        // The ork fence (Strategy 1 in extract_from_text_content) must win over the bare JSON
+        // example embedded in prose.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-json-example",
+            "JSON example mid-response test",
+            "Verify ork fence wins over bare JSON example",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-json-example",
+            "task-json-example",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        // Bare JSON example in prose followed by the real ork fence — all in one Text entry.
+        let content = "Old format was {\"type\":\"failed\"} but here is the real one:\n\n```ork\n{\"type\":\"summary\",\"content\":\"correct\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-json-example",
+            "task-json-example",
+            "work",
+            Box::new(SingleEntryParser::new()),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-json-example").unwrap();
+
+        // Ork fence content must win — ExtractedJson should be valid and contain "correct"
+        let extracted: Vec<_> = entries
+            .iter()
+            .filter_map(|e| {
+                if let LogEntry::ExtractedJson { raw_json, valid } = e {
+                    Some((raw_json, valid))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(
+            !extracted.is_empty(),
+            "ExtractedJson must be present. Got: {entries:?}"
+        );
+        let (raw_json, valid) = extracted[0];
+        assert!(
+            *valid,
+            "Ork fence content must win and be valid. Got: {entries:?}"
+        );
+        assert!(
+            raw_json.contains("correct"),
+            "raw_json should contain 'correct' (ork fence wins). Got raw_json: {raw_json}"
+        );
+    }
+
+    #[test]
+    fn chat_trailing_text_after_ork_fence_no_detection() {
+        // Case 5 (regression): ork fence as its own entries followed by trailing prose.
+        // Trailing prose flushes the buffer (json_complete resets), and last_persisted_text
+        // is the trailing prose which contains no JSON — so no detection fires.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let session = StageSession::new(
+            "ss-trailing-ork",
+            "task-trailing-ork",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        // TextLineParser splits on newlines, so the ork fence and trailing text are separate entries.
+        // The trailing text entry flushes the buffer on arrival.
+        let content = "```ork\n{\"type\":\"summary\",\"content\":\"done\"}\n```\nBut wait, I changed my mind\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-trailing-ork",
+            "task-trailing-ork",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-trailing-ork").unwrap();
+
+        assert!(
+            !entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { .. })),
+            "no ExtractedJson — trailing text after ork fence must invalidate detection. Got: {entries:?}"
+        );
+
+        // All text entries should have been flushed to the store
+        let text_count = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { .. }))
+            .count();
+        assert!(text_count > 0, "flushed text entries must reach the store");
     }
 
     #[test]

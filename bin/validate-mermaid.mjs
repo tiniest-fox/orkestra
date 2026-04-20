@@ -10,7 +10,8 @@
  *     Exits 2 on failure, which blocks the write entirely.
  *
  *   PreToolUse (Bash):
- *     Checks `gh pr create` / `gh pr edit` commands for invalid mermaid blocks.
+ *     Checks `gh pr create` / `gh pr edit` / `gh pr comment` / `gh pr review`
+ *     commands for invalid mermaid blocks.
  *     Exits 2 on failure, which blocks the command entirely.
  *     Non-`gh pr` Bash commands pass through immediately (exit 0).
  *
@@ -65,7 +66,7 @@ async function validateBlocks(blocks, source) {
 // Main
 // ============================================================================
 
-const raw = readFileSync('/dev/stdin', 'utf-8').trim();
+const raw = readFileSync(0, 'utf-8').trim();
 if (!raw) process.exit(0);
 
 let payload;
@@ -93,7 +94,7 @@ if (hookEvent === 'Stop') {
   source = toolInput.file_path ?? '<edit>';
 } else if (toolName === 'Bash') {
   const cmd = toolInput.command ?? '';
-  if (/gh\s+pr\s+(create|edit)\b/.test(cmd)) {
+  if (/gh\s+pr\s+(create|edit|comment|review)\b/.test(cmd)) {
     content = cmd;
     source = '<gh-pr>';
   } else {

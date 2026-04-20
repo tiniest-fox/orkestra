@@ -87,6 +87,39 @@ const INVALID_MERMAID = '```mermaid\ngraph NOTVALID\n  ??? broken syntax ###\n``
   console.log('PASS: non-gh-pr Bash command with mermaid text → exit 0 (no validation)');
 }
 
+{
+  // gh pr comment with invalid mermaid → exit 2
+  const { code, stderr } = run(bashPayload(`gh pr comment 42 --body '${INVALID_MERMAID}'`));
+  assert.strictEqual(code, 2, 'gh pr comment with invalid mermaid should exit 2');
+  assert.ok(stderr.includes('Mermaid validation failed'), 'stderr should mention validation failure');
+  console.log('PASS: gh pr comment with invalid mermaid → exit 2');
+}
+
+{
+  // gh pr review with invalid mermaid → exit 2
+  const { code, stderr } = run(bashPayload(`gh pr review 42 --body '${INVALID_MERMAID}'`));
+  assert.strictEqual(code, 2, 'gh pr review with invalid mermaid should exit 2');
+  assert.ok(stderr.includes('Mermaid validation failed'), 'stderr should mention validation failure');
+  console.log('PASS: gh pr review with invalid mermaid → exit 2');
+}
+
+{
+  // gh pr create with HEREDOC-style valid mermaid → exit 0
+  const heredocValid = `gh pr create --body "$(cat <<'EOF'\n${VALID_MERMAID}\nEOF\n)"`;
+  const { code } = run(bashPayload(heredocValid));
+  assert.strictEqual(code, 0, 'gh pr create with HEREDOC valid mermaid should exit 0');
+  console.log('PASS: gh pr create with HEREDOC valid mermaid → exit 0');
+}
+
+{
+  // gh pr create with HEREDOC-style invalid mermaid → exit 2
+  const heredocInvalid = `gh pr create --body "$(cat <<'EOF'\n${INVALID_MERMAID}\nEOF\n)"`;
+  const { code, stderr } = run(bashPayload(heredocInvalid));
+  assert.strictEqual(code, 2, 'gh pr create with HEREDOC invalid mermaid should exit 2');
+  assert.ok(stderr.includes('Mermaid validation failed'), 'stderr should mention validation failure');
+  console.log('PASS: gh pr create with HEREDOC invalid mermaid → exit 2');
+}
+
 // ============================================================================
 // Regression: Write / Edit still work
 // ============================================================================

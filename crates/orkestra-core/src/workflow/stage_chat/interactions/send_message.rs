@@ -459,7 +459,6 @@ fn read_chat_output(
         });
     }
 
-    let mut accumulated_text: Vec<String> = Vec::new();
     let mut buf_state = TextBufferState::default();
 
     for line in handle.lines() {
@@ -474,9 +473,6 @@ fn read_chat_output(
                 let mut batch_count = 0usize;
                 let batch_summary = LogEntry::last_summary(&update.log_entries);
                 for entry in update.log_entries {
-                    if let LogEntry::Text { ref content } = entry {
-                        accumulated_text.push(content.clone());
-                    }
                     for e in buffer_or_persist(entry, &mut buf_state) {
                         if let Err(e) = store.append_log_entry(session_id, &e, None) {
                             orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
@@ -507,14 +503,11 @@ fn read_chat_output(
         }
     }
 
-    // Finalize parser and accumulate text from finalized entries
+    // Finalize parser and pass finalized entries through the buffer state machine
     let finalized = parser.finalize();
     let mut finalized_count = 0usize;
     let finalized_summary = LogEntry::last_summary(&finalized);
     for entry in finalized {
-        if let LogEntry::Text { ref content } = entry {
-            accumulated_text.push(content.clone());
-        }
         for e in buffer_or_persist(entry, &mut buf_state) {
             if let Err(e) = store.append_log_entry(session_id, &e, None) {
                 orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
@@ -538,11 +531,36 @@ fn read_chat_output(
         }
     }
 
+    // Build trailing text candidate from the buffer.
+    //
+    // Only attempt structured output detection when the buffer holds content that the
+    // state machine identified as a JSON candidate (`json_complete = true`).  This
+    // scopes detection to the *trailing* portion of the response — the final block the
+    // model output as its last text — rather than scanning the entire accumulated
+    // response, which could match a JSON example written mid-response and trigger a
+    // false-positive stage completion.
+    let trailing_text: Option<String> = if buf_state.json_complete && !buf_state.buffer.is_empty() {
+        let text = buf_state
+            .buffer
+            .iter()
+            .filter_map(|e| {
+                if let LogEntry::Text { content } = e {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.is_empty() { None } else { Some(text) }
+    } else {
+        None
+    };
+
     // Try to detect structured output and complete the stage
     let mut detection_succeeded = false;
-    if !accumulated_text.is_empty() {
-        let full_text = accumulated_text.join("\n");
-        match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &full_text)
+    if let Some(trailing_text) = trailing_text {
+        match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &trailing_text)
         {
             Ok(DetectionResult::Completed { raw_json }) => {
                 orkestra_debug!(

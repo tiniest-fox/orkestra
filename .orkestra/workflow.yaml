@@ -194,9 +194,7 @@ flows:
         artifact: verdict
         prompt: editor.md
         model: opus
-        capabilities:
-          approval:
-            rejection_stage: write
+        gate: true
         disallowed_tools:
           - pattern: "Edit"
             message: "Editor is read-only — use approve or reject to provide feedback"
@@ -226,8 +224,6 @@ flows:
         artifact: spec
         prompt: planner.md
         model: opus
-        capabilities:
-          ask_questions: true
 
       - name: build
         description: Implements the Astro component and updates docs/editorial/components.md
@@ -243,9 +239,7 @@ flows:
         artifact: verdict
         prompt: reviewer.md
         model: opus
-        capabilities:
-          approval:
-            rejection_stage: build
+        gate: true
 
     integration:
       on_failure: build

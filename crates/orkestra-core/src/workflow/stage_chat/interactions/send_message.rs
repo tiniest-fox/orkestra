@@ -552,7 +552,11 @@ fn read_chat_output(
             })
             .collect::<Vec<_>>()
             .join("\n");
-        if text.is_empty() { None } else { Some(text) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     } else {
         None
     };
@@ -560,8 +564,14 @@ fn read_chat_output(
     // Try to detect structured output and complete the stage
     let mut detection_succeeded = false;
     if let Some(trailing_text) = trailing_text {
-        match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &trailing_text)
-        {
+        match try_complete_from_output::execute(
+            store,
+            workflow,
+            schema,
+            task_id,
+            stage,
+            &trailing_text,
+        ) {
             Ok(DetectionResult::Completed { raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",

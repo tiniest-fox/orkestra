@@ -71,7 +71,7 @@ export function FeedLogList({
   const messages = useMemo(() => {
     const msgs = buildDisplayMessages(logs);
     if (pendingMessage) {
-      msgs.push({ kind: "user", content: pendingMessage });
+      msgs.push({ kind: "user", content: pendingMessage, resumeType: "chat" });
     }
     return msgs;
   }, [logs, pendingMessage]);

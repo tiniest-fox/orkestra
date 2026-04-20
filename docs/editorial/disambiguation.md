@@ -71,6 +71,26 @@ When writing lifecycle diagrams or state tables, always use the right column. If
 
 ---
 
+## `route_to` — Internal Agent Output Field
+
+`route_to` is an internal field produced by a reviewing agent's structured output when it issues a rejection. It specifies which stage to route the Trak back to. It is **not** a `workflow.yaml` config field and is **not** user-configurable.
+
+When documenting agentic gate rejection behavior, describe it in terms of the outcome ("the Trak routes back to the work stage") rather than naming the internal field. Users should not need to know that `route_to` exists.
+
+**The confusion to avoid:** Describing `route_to` as a field users set or configure. It is an agent-produced value in the gate verdict JSON, invisible to users. The old `rejection_stage` config field that it replaced was user-configured; `route_to` is not.
+
+---
+
+## Questions — Always Available, Not a Capability
+
+Any agent stage can produce questions without any configuration. **Questions are not a configurable capability.** The old `capabilities.ask_questions: true` field has been removed; using it produces a parse error.
+
+When documenting stages or agent behavior, do not describe questions as something you "enable" or "configure." Describe them as a built-in behavior: an agent may ask questions at any stage, the Trak pauses for human answers, then the agent session resumes.
+
+The **Capabilities** concept in Orkestra now refers only to `capabilities.subtasks`. Do not use "capability" or "capabilities" to describe questions.
+
+---
+
 ## "Auto mode" (task-level automation)
 
 **Auto mode** is a Trak-level boolean (`task.auto_mode`) that makes all stages advance without human approval. It is not a `workflow.yaml` field — it is a runtime property of the Trak, set at creation time or toggled via CLI/API.

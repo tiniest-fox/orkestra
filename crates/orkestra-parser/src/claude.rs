@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use orkestra_types::domain::LogEntry;
 
 use crate::interactions::claude::{parse_assistant_content, parse_tool_result_event};
-use crate::interactions::output::{check_api_error, extract_from_jsonl, extract_ork_fence};
+use crate::interactions::output::{check_api_error, extract_from_jsonl, extract_from_text_content};
 use crate::interface::AgentParser;
 use crate::types::ParsedUpdate;
 
@@ -195,13 +195,13 @@ impl AgentParser for ClaudeParserService {
             return Ok(json_str);
         }
 
-        // Fallback: ork fence in accumulated text content.
+        // Fallback: text-based extraction strategies (strip fences, fenced JSON, ork fence).
         //
         // Text content is accumulated during streaming with real newlines (serde_json
-        // unescapes JSON string escapes when deserializing). Running extract_ork_fence
+        // unescapes JSON string escapes when deserializing). Running these strategies
         // on raw JSONL would not work because the fence newlines are JSON-escaped there.
         if let Some(ref text) = self.last_text {
-            if let Some(json_str) = extract_ork_fence::execute(text) {
+            if let Some(json_str) = extract_from_text_content::execute(text) {
                 return Ok(json_str);
             }
         }
@@ -588,6 +588,25 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "done via ork fence");
+    }
+
+    #[test]
+    fn extract_markdown_fenced_json_from_text_content() {
+        // Regression: markdown-fenced JSON in Claude JSONL text content must be extracted.
+        let mut parser = ClaudeParserService::new();
+
+        let fenced = "```json\n{\"type\":\"summary\",\"content\":\"via markdown fence\"}\n```";
+        let jsonl_line = assistant_text(fenced);
+        parser.parse_line(&jsonl_line);
+
+        let result = parser.extract_output(&jsonl_line);
+        assert!(
+            result.is_ok(),
+            "Expected markdown-fenced JSON extraction to succeed: {result:?}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "summary");
+        assert_eq!(json["content"], "via markdown fence");
     }
 
     #[test]

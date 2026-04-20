@@ -8,9 +8,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::IterationTrigger;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
-use orkestra_parser::interactions::output::{
-    extract_fenced_json, extract_ork_fence, parse_stage_output, strip_markdown_fences,
-};
+use orkestra_parser::interactions::output::{extract_from_text_content, parse_stage_output};
 
 /// Result of structured output detection in chat text.
 pub enum DetectionResult {
@@ -37,8 +35,10 @@ pub fn execute(
     stage: &str,
     accumulated_text: &str,
 ) -> WorkflowResult<DetectionResult> {
-    // Try to extract JSON from the accumulated text (first match wins)
-    let json_str = extract_json(accumulated_text);
+    // Try to extract JSON from the accumulated text (first match wins).
+    // Delegates to the shared parser interaction: ork fence → strip fences / plain JSON →
+    // fenced JSON from mixed prose. All strategies require a "type" field.
+    let json_str = extract_from_text_content::execute(accumulated_text);
     let Some(json_str) = json_str else {
         return Ok(DetectionResult::NotDetected);
     };
@@ -120,44 +120,6 @@ pub fn execute(
     }
 
     Ok(DetectionResult::Completed { raw_json: json_str })
-}
-
-// -- Helpers --
-
-/// Try to extract a JSON string from accumulated text using multiple strategies.
-///
-/// Returns the first valid JSON string found, or `None` if none was found.
-fn extract_json(text: &str) -> Option<String> {
-    let trimmed = text.trim();
-
-    // Strategy 1: ork fence (highest priority — explicit structured output marker)
-    if let Some(json_str) = extract_ork_fence::execute(trimmed) {
-        return Some(json_str);
-    }
-
-    // Strategy 2: raw JSON with orkestra-like structure (has "type" string field)
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        if value.get("type").and_then(|t| t.as_str()).is_some() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    // Strategy 3: strip markdown fences then parse
-    let stripped = strip_markdown_fences::execute(trimmed);
-    if stripped != trimmed {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) {
-            if value.get("type").and_then(|t| t.as_str()).is_some() {
-                return Some(stripped);
-            }
-        }
-    }
-
-    // Strategy 4: extract fenced JSON from mixed prose + fence
-    if let Some((_prose, json_str)) = extract_fenced_json::execute(trimmed) {
-        return Some(json_str);
-    }
-
-    None
 }
 
 // ============================================================================

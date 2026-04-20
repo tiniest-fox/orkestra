@@ -19,27 +19,27 @@ Gates are a stage-level configuration option, not a universal behavior. A stage 
 
 ### Verdict
 
-A **Verdict** is what a gate produces: **Pass** or **Fail**.
+A **Verdict** is what a gate produces. The terms differ by gate type:
 
-- Automated Gate verdict is determined by the script's exit code (0 = Pass, non-zero = Fail).
-- Agentic Gate verdict is determined by the agent's evaluation of the work.
+- **Automated Gate** uses **Pass / Fail** — determined by the script's exit code (0 = Pass, non-zero = Fail). A Fail triggers an automatic agent retry.
+- **Agentic Gate** uses **Approve / Reject** — determined by the agent's evaluation of the work. A Reject pauses for human Approval before routing the Trak back to a previous stage.
 
-A Fail verdict from an Automated Gate triggers an automatic agent retry. A Fail verdict from an Agentic Gate pauses for human Approval before routing the Trak back to a previous stage.
+Use the correct term for each gate type. An Automated Gate never "rejects"; an Agentic Gate never "fails."
 
 ### Approval
 
-**Approval** is always human. It is the universal mechanism by which a human decides what happens next. Every stage requires Approval before advancing, unless `is_automated: true` is set.
+**Approval** is always human. It is the universal mechanism by which a human decides what happens next. Every stage requires Approval before advancing, unless the Trak is in auto mode.
 
 There are two situations where a human gives Approval:
 
 1. **Approving a work product** — the human reviews what an agent produced at a regular stage and decides to advance or send it back.
-2. **Approving an Agentic Gate's verdict** — the human reviews the gate's Pass or Fail verdict and either accepts it (follows the recommended routing) or overrides it (sends the agent back to work regardless of the verdict).
+2. **Approving an Agentic Gate's verdict** — the human reviews the gate's Approve or Reject verdict and either accepts it (follows the recommended routing) or overrides it (sends the agent back to work regardless of the verdict).
 
 **The confusion to avoid:** Approval is not a gate, and gates do not give approval. Gates produce verdicts; humans give approval. An Agentic Gate is not "adding human approval to a stage" — every stage already has human approval. What it adds is an agent-produced verdict for the human to act on.
 
-### `capabilities.approval` in workflow.yaml
+### `gate: true` in workflow.yaml
 
-The current config key `capabilities.approval` is a **misleading name** — it predates this terminology and is likely to change. When documenting this capability, describe it as configuring a stage as an **Agentic Gate**, not as "adding approval." The config key is an implementation detail; the concept is an Agentic Gate.
+Setting `gate: true` on a stage configures it as an **Agentic Gate**. When documenting this, describe it as configuring a stage as an Agentic Gate — not as "adding approval." Every stage already has human approval; what `gate: true` adds is an agent-produced verdict for the human to act on.
 
 ---
 
@@ -64,20 +64,43 @@ Use the user-facing phase names instead:
 | `AwaitingApproval` | Awaiting Approval |
 | `WaitingOnChildren` | Waiting on Subtraks |
 | `Done` / `Archived` | Done |
-| `Failed` / `Blocked` | Failed |
+| `Failed` | Failed |
+| `Blocked` | Blocked |
 
 When writing lifecycle diagrams or state tables, always use the right column. If you encounter internal state strings in source code or log output, translate them before including them in documentation.
 
 ---
 
-## "Auto mode" vs. `is_automated` (per-stage automation)
+## `route_to` — Internal Agent Output Field
 
-These are **not the same scope**:
+`route_to` is an internal field produced by a reviewing agent's structured output when it issues a rejection. It specifies which stage to route the Trak back to. It is **not** a `workflow.yaml` config field and is **not** user-configurable.
 
-- **`is_automated: true`** — a per-stage field in `workflow.yaml` that skips human Approval after that stage. Automation is configured stage-by-stage.
-- **"Auto mode"** — a colloquial term sometimes used to describe a Trak that runs fully autonomously (all stages automated). This is not a documented Trak-level field; it emerges from all stages having `is_automated: true`.
+When documenting agentic gate rejection behavior, describe it in terms of the outcome ("the Trak routes back to the work stage") rather than naming the internal field. Users should not need to know that `route_to` exists.
 
-**Avoid:** Describing "auto mode" as a Trak-level toggle or a single configuration option. A reader who encounters the phrase and looks for it in Workflow Configuration will only find `is_automated` on individual stages. If you need to describe fully-automated Traks, say "a Trak where all stages have `is_automated: true`" rather than "a Trak in auto mode".
+**The confusion to avoid:** Describing `route_to` as a field users set or configure. It is an agent-produced value in the gate verdict JSON, invisible to users. The old `rejection_stage` config field that it replaced was user-configured; `route_to` is not.
+
+---
+
+## Questions — Always Available, Not a Capability
+
+Any agent stage can produce questions without any configuration. **Questions are not a configurable capability.** The old `capabilities.ask_questions: true` field has been removed; using it produces a parse error.
+
+When documenting stages or agent behavior, do not describe questions as something you "enable" or "configure." Describe them as a built-in behavior: an agent may ask questions at any stage, the Trak pauses for human answers, then the agent session resumes.
+
+The **Capabilities** concept in Orkestra now refers only to `capabilities.subtasks`. Do not use "capability" or "capabilities" to describe questions.
+
+---
+
+## "Auto mode" (task-level automation)
+
+**Auto mode** is a Trak-level boolean (`task.auto_mode`) that makes all stages advance without human approval. It is not a `workflow.yaml` field — it is a runtime property of the Trak, set at creation time or toggled via CLI/API.
+
+- When `auto_mode = true`: every stage in the Trak auto-advances after producing output. Gates still run; only the human approval pause is skipped.
+- When `auto_mode = false` (default): every stage pauses for human approval.
+
+There is no per-stage automation flag. The old `is_automated: true` stage field no longer exists — using it produces a parse error.
+
+**Avoid:** Describing `is_automated` as a valid config option. It has been removed.
 
 ---
 

@@ -8,6 +8,21 @@ import Callout from "../../../components/docs/Callout.astro";
 
 All `ork` commands output JSON by default. Pass `--pretty` for human-readable output. Run `ork --help` or `ork trak --help` for inline usage.
 
+## ork init
+
+Initialize Orkestra in the current project. Creates `.orkestra/` with default configuration files.
+
+```bash
+ork init
+```
+
+Creates:
+- `.orkestra/workflow.yaml` — default 5-stage pipeline (planning, breakdown, work, review, compound)
+- `.orkestra/agents/` — prompt templates for each stage (`planner.md`, `breakdown.md`, `worker.md`, `reviewer.md`, `compound.md`)
+- `.orkestra/scripts/checks.sh` — gate script template for the work stage
+
+If `.orkestra/` already exists, `ork init` does not overwrite existing files. Running `ork trak list` on a project without `.orkestra/` also bootstraps the directory automatically.
+
 ## Global flags
 
 | Flag | Description |
@@ -45,7 +60,7 @@ ork trak create -t <TITLE> -d <DESCRIPTION> [--flow <FLOW>] [--base_branch <BRAN
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--title` / `-t` | Yes | Trak title. |
-| `--description` / `-d` | Yes | Trak description. Passed to the agent as its task. |
+| `--description` / `-d` | Yes | Trak description. Describes the work for this Trak. |
 | `--flow` | No | Flow to assign the Trak to. Defaults to `default`. |
 | `--base_branch` / `-b` | No | Branch to base the Trak's worktree on. Defaults to the current branch. |
 
@@ -214,6 +229,8 @@ ork logs <TRAK_ID> --stage <STAGE> [--type <TYPE>] [--limit <N>] [--offset <N>]
 | `process_exit` | Script or process exit event, including exit code. |
 | `user_message` | A message sent to the agent by the user (e.g., rejection feedback). |
 
+Additional entry types (gate events, artifact events) may appear in unfiltered output. The `--type` filter accepts only the types listed above.
+
 ## ork play
 
 Run a Trak through all workflow stages non-interactively. Useful for fully automated pipelines.
@@ -233,7 +250,7 @@ ork play <DESCRIPTION> [--title <TITLE>] [--flow <FLOW>] [--base_branch <BRANCH>
 | `--no_pr` | No | Merge directly to the base branch instead of opening a pull request. |
 
 <Callout type="note">
-`ork play` runs all stages without pausing for human approval. Use it for automated pipelines or for fully-automated flows where all stages are marked `is_automated: true`. `ork play` halts if a gate fails or an agentic gate produces a reject verdict. Inspect the Trak with `ork trak show` after a failed run.
+`ork play` runs all stages without pausing for human approval. Automated gate failures trigger agent retries as usual. Agentic gate rejections auto-execute and route back to the target stage. `ork play` halts only if the agent declares the Trak failed or blocked. Inspect with `ork trak show` after a halted run.
 </Callout>
 
 ## ork pair

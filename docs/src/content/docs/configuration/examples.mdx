@@ -23,14 +23,16 @@ Best for complex features: upfront planning, parallel implementation via Subtrak
     { name: "Breakdown", description: "Split the plan into parallel Subtraks", gate: { kind: "approval" } },
     { name: "Work", description: "Implement changes in an isolated worktree", gate: [{ kind: "check" }, { kind: "approval" }] },
     { name: "Review", description: "Agent evaluates the completed work", gate: { kind: "verdict", onApproveFail: "Work" } },
-    { name: "Compound", description: "Capture learnings for future Traks", auto: true },
+    { name: "Compound", description: "Capture learnings for future Traks", gate: { kind: "approval" } },
   ]}
   terminal="Branch merged"
 />
 
-After the Breakdown stage is approved, Orkestra spawns parallel [Subtraks](/docs/core-concepts/traks) — one per item in the breakdown — using the `subtask` flow. All Subtraks complete before the parent Trak advances to Work.
+<Callout type="note">
+The `approval` indicator on Planning, Breakdown, and Compound stages represents the default human review pause present on every stage — not an explicit gate configuration. These stages have no `gate:` field in the YAML.
+</Callout>
 
-The Compound stage is marked `is_automated: true`, so it runs without a human approval step.
+After the Breakdown stage is approved, Orkestra spawns parallel [Subtraks](/docs/core-concepts/traks) — one per item in the breakdown — using the `subtask` flow. All Subtraks complete before the parent Trak advances to the next stage in its flow.
 
 ```yaml
 version: 2
@@ -43,8 +45,6 @@ flows:
         description: Clarifies requirements and produces an implementation plan
         prompt: planner.md
         model: opus
-        capabilities:
-          ask_questions: true
 
       - name: breakdown
         artifact: breakdown
@@ -67,15 +67,12 @@ flows:
         description: Reviews completed work and produces an approve/reject verdict
         prompt: reviewer.md
         model: opus
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true  # Agentic gate: agent evaluates, human confirms
 
       - name: compound
         artifact: learnings
         description: Captures learnings to improve future Traks
         prompt: compound.md
-        is_automated: true
 
     integration:
       on_failure: work
@@ -92,9 +89,7 @@ flows:
       - name: review
         artifact: verdict
         prompt: reviewer.md
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true
 
     integration:
       on_failure: work
@@ -137,9 +132,7 @@ flows:
         artifact: verdict
         description: Reviews the fix and produces an approve/reject verdict
         prompt: reviewer.md
-        capabilities:
-          approval:
-            rejection_stage: work
+        gate: true  # Agentic gate: agent evaluates, human confirms
 
     integration:
       on_failure: work
@@ -180,8 +173,6 @@ flows:
         artifact: findings
         description: Explores the codebase and clarifies what needs documenting
         prompt: docs-researcher.md
-        capabilities:
-          ask_questions: true
 
       - name: draft
         artifact: draft
@@ -192,9 +183,7 @@ flows:
         artifact: verdict
         description: Reviews the draft for accuracy, completeness, and clarity
         prompt: docs-reviewer.md
-        capabilities:
-          approval:
-            rejection_stage: draft
+        gate: true  # Agentic gate: agent evaluates, human confirms
 
     integration:
       on_failure: draft
@@ -212,7 +201,7 @@ This flow uses custom prompt templates that `ork init` does not create. Add thes
 
 See [Prompt Templates](/docs/core-concepts/prompt-templates) for guidance on writing effective stage prompts.
 
-<Callout type="warning">
+<Callout type="note">
 Flow names in `workflow.yaml` are unrestricted. If your project already defines a flow named `docs`, choose a different name (e.g., `documentation`) to avoid a conflict.
 </Callout>
 
@@ -240,8 +229,6 @@ flows:
         artifact: analysis
         description: Identifies which components need stories and their required variants
         prompt: storybook-analyzer.md
-        capabilities:
-          ask_questions: true
 
       - name: generate
         artifact: summary
@@ -255,9 +242,7 @@ flows:
         artifact: verdict
         description: Reviews stories for accuracy, completeness, and visual correctness
         prompt: reviewer.md
-        capabilities:
-          approval:
-            rejection_stage: generate
+        gate: true  # Agentic gate: agent evaluates, human confirms
 
     integration:
       on_failure: generate

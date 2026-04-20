@@ -1,68 +1,56 @@
 ---
 title: Capabilities
-description: Capabilities extend a stage with optional behaviors — asking clarifying questions, producing agentic verdicts, or breaking work into parallel Subtraks.
+description: Stage extensions — questions, agentic gate verdicts, and parallel Subtrak decomposition.
 order: 5
 ---
 
 import Callout from "../../../components/docs/Callout.astro";
 
-Not every [stage](/docs/core-concepts/stages) has the same needs. A planning stage may need to clarify requirements before it can act. A review stage should evaluate completed work and recommend routing. A breakdown stage needs to split a large task into parallel pieces. Capabilities extend a stage to handle these situations without requiring separate infrastructure.
+Stages can be extended in three ways. **Questions** are available on every stage with no configuration. **Agentic Gates** (`gate: true`) add an agent-produced verdict to the human approval step. **Subtraks** (`capabilities.subtasks`) let an agent decompose work into parallel child Traks. This page covers all three — note that only `capabilities.subtasks` uses the `capabilities` YAML field; gates are a separate top-level field.
 
-Capabilities are configured per stage in `workflow.yaml`. Multiple capabilities can coexist on the same stage.
+## Questions
 
-## Ask questions
-
-A stage with `ask_questions` enabled can pause and ask the human clarifying questions instead of immediately producing an artifact. The agent produces a list of questions; the Trak pauses in Awaiting Approval; the human answers each one; the session resumes with those answers before the agent produces its artifact.
+Every agent stage can ask clarifying questions — no configuration needed. When an agent produces questions, the Trak pauses for the human to answer. The session resumes with those answers before the agent produces its artifact.
 
 Multiple question rounds are supported. The agent keeps asking until it has what it needs, then produces the artifact.
 
-**Typical use:** Planning stages, where ambiguous requirements would cause the agent to guess wrong or produce a plan that needs immediate rejection.
+**Typical use:** Planning stages, where ambiguous requirements would cause the agent to guess wrong.
 
-## Approval (Agentic Gate)
+## Agentic Gate
 
-A stage with `approval` enabled acts as an **Agentic Gate**: instead of producing a plain artifact, the agent produces an explicit **approve** or **reject** verdict.
+A stage with `gate: true` acts as an **Agentic Gate**: instead of producing a plain artifact, the agent produces an explicit **approve** or **reject** verdict.
 
 **On approve** — the verdict is stored as the stage's artifact and the Trak advances normally.
 
-**On reject** — the Trak routes to a specified earlier stage (defaulting to the previous stage if none is specified). The rejection includes the agent's reasoning as feedback.
+**On reject** — the agent specifies which earlier stage to route back to. The rejection includes the agent's reasoning as feedback.
 
-When the stage is not automated, a reject verdict pauses in Awaiting Approval. The human can:
+When the Trak is not in auto mode, a reject verdict pauses for human review. The human can:
 - **Confirm** the rejection — the Trak routes to the target stage with the feedback
 - **Override** the rejection — the verdict is discarded and the same stage continues with a new iteration
 
 This gives the human final say over agent-produced verdicts without requiring them to perform the evaluation themselves.
 
 <Callout type="note">
-The config key for this capability is <code>capabilities.approval</code>, but what it configures is an Agentic Gate — not the human approval that already exists on every non-automated stage. Every stage already has human approval. This adds an agent-produced verdict for the human to act on. See <a href="/docs/core-concepts/gates">Gates</a> for the distinction.
+`gate: true` configures an **Agentic Gate** — not the human approval step that exists on every stage. Every stage already pauses for human approval. What `gate: true` adds is an agent-produced verdict for the human to act on. See <a href="/docs/core-concepts/gates">Gates</a> for the distinction between agentic and automated gates.
 </Callout>
-
-The `approval` capability has two optional settings:
-
-- **`rejection_stage`** — the stage to route to on reject. Defaults to the previous stage.
-- **`reset_session`** — if `true`, the target stage starts a fresh agent session with the full prompt. If `false` (default), the existing session is resumed with the rejection as feedback.
 
 **Typical use:** Review stages, where an agent evaluates a `work` stage's output and recommends whether to accept or send it back.
 
-## Subtraks (subtasks)
+## Subtraks
 
-A stage with `subtasks` enabled can decompose the [Trak](/docs/core-concepts/traks) into child Traks called **Subtraks**. The agent produces a structured breakdown; the human reviews it; on approval, Orkestra creates the Subtraks and the parent enters the Waiting on Subtraks phase.
+A stage with `capabilities.subtasks` can decompose the [Trak](/docs/core-concepts/traks) into child Traks called **Subtraks**. The agent produces a structured breakdown; the human reviews it; on approval, Orkestra creates the Subtraks and the parent enters the Waiting on Subtraks phase.
 
 Subtraks can declare dependencies on each other. Those without dependencies start immediately and run in parallel. Those with dependencies wait until their predecessors complete.
 
-When all Subtraks finish, the parent advances to the configured `completion_stage` (or the next stage in its flow). If any Subtrak fails, the parent fails immediately.
+When all Subtraks finish, the parent advances to the next stage in its flow. If any Subtrak fails, the parent fails immediately.
 
-The `subtasks` capability has two optional settings:
+The `subtasks` capability has one optional setting:
 
 - **`flow`** — the flow assigned to child Traks. Defaults to the `default` flow.
-- **`completion_stage`** — where the parent resumes after all children complete. Defaults to the next stage.
 
 **Single-Subtrak inlining:** If the breakdown produces exactly one Subtrak, Orkestra inlines it directly onto the parent Trak — no child Trak is created. The parent advances with the Subtrak's instructions as a breakdown artifact.
 
-**Typical use:** Breakdown stages, where a large Trak needs to be split into parallel implementation tasks before the work stage begins.
-
-## Combining capabilities
-
-`ask_questions` and `approval` can coexist on a single stage. `subtasks` and `approval` should not — their output types conflict.
+**Typical use:** Breakdown stages, where a large Trak needs to be split into parallel implementation Subtraks before the work stage begins.
 
 ## What's next
 

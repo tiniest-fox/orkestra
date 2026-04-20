@@ -1,0 +1,15 @@
+{
+  "entry": [
+    "src/**/*.{ts,tsx,astro}",
+    "functions/**/*.js",
+    "postcss.config.js"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx,astro}",
+    "functions/**/*.js"
+  ],
+  "ignoreDependencies": [
+    "@tailwindcss/typography",
+    "tailwindcss"
+  ]
+}

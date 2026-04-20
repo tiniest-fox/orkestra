@@ -6,7 +6,7 @@ order: 2
 
 import Callout from "../../../components/docs/Callout.astro";
 
-Software work needs identity, isolation, and traceability. Each Trak is a self-contained unit of work — one feature, one bug fix, one documentation update — running in its own git worktree, following its own pipeline, accumulating its own context.
+Running multiple AI agents in the same working directory creates conflicts. Each Trak is a self-contained unit of work — one feature, one bug fix, one documentation update — running in its own git worktree, following its own pipeline, accumulating its own context.
 
 ## Trak identity
 
@@ -44,16 +44,20 @@ A Trak moves through phases as it runs:
 
 **Waiting on Subtraks** — A breakdown stage decomposed the Trak into child Traks. The parent waits for all children to complete. Any child failure immediately fails the parent.
 
-**Done** — The final stage completed. Orkestra rebases and merges the Trak's branch to the base branch.
+**Done** — All stages completed. The Trak is ready for integration — merge directly or open a pull request.
 
 **Failed** — An agent declared it cannot complete the work, or a fatal error occurred.
 
-## Automated Traks
+**Blocked** — An agent declared it is blocked on something external. Use `ork trak retry` to resume when the blocker is resolved.
 
-By default, each stage pauses for human approval after producing output. Stages configured with `is_automated: true` in `workflow.yaml` skip this pause. A Trak where every stage is automated runs hands-off from creation to merge.
+## Auto mode
+
+By default, each stage pauses for human approval after producing output. A Trak in **auto mode** skips these pauses — all stages advance automatically from creation to merge.
+
+Auto mode is a Trak-level setting. It applies to every stage uniformly; there is no per-stage automation flag. Auto mode can be set at Trak creation time or toggled later via the desktop app or API.
 
 <Callout type="note">
-There is no single "auto mode" toggle on a Trak. Full automation emerges from each stage having <code>is_automated: true</code>. See <a href="/docs/core-concepts/stages">Stages</a> for details.
+Auto mode does not bypass [gates](/docs/core-concepts/gates). Automated gate scripts still run and can still fail — triggering agent retries. Only the human approval pause is skipped.
 </Callout>
 
 ## Subtraks

@@ -33,9 +33,9 @@ OpenCode does not support native JSON schema enforcement. Orkestra embeds the sc
 
 ## Session continuity
 
-Agent sessions are stateful. When a stage's output is rejected and the agent retries, Orkestra resumes the same session — the agent sees its full conversation history including the rejection feedback. It does not restart from the beginning.
+Agent sessions are stateful. When a stage's output is rejected and the agent retries, Orkestra resumes the same session — the agent sees its full conversation history including every previous rejection and gate failure. It does not restart from the beginning.
 
-Session continuity is scoped to a stage. Moving to a new stage always starts a new session. Within a stage, sessions persist across iterations unless `reset_session: true` is set on an `approval` capability.
+Session continuity is scoped to a stage. Moving to a new stage always starts a new session.
 
 ## Output types
 
@@ -46,10 +46,10 @@ An agent can produce one of the following outputs:
 | Artifact | Text stored under the stage's artifact name. Trak advances. |
 | Questions | A list of clarifying questions. Trak pauses until answered. |
 | Subtraks | A breakdown into child Traks. Trak pauses for human review. |
-| Approve | An approval verdict. Trak advances (used with `approval` capability). |
-| Reject | A rejection verdict. Trak routes to an earlier stage. |
+| Approve | An approval verdict. Trak advances (produced by stages with `gate: true`). |
+| Reject | A rejection verdict. Trak routes to an earlier stage (produced by stages with `gate: true`). |
 | Failed | Agent cannot complete the work. Trak is marked Failed. |
-| Blocked | Agent is blocked on something external. Trak is marked Blocked. |
+| Blocked | Agent is blocked on something external. Trak is marked Blocked. Use `ork trak retry` to resume. |
 
 Only outputs that match the stage's configured capabilities are valid. An agent on a stage without `subtasks` enabled cannot produce a Subtraks output.
 
@@ -57,7 +57,7 @@ Only outputs that match the stage's configured capabilities are valid. An agent 
 
 Stages can restrict which tools agents are allowed to use. Common uses: preventing agents from running tests themselves when a gate handles it, or blocking edits to lock files.
 
-Restrictions are configured as patterns with optional messages. The message is injected into the agent's prompt to explain why the restriction exists, which helps the agent work around it rather than attempting the disallowed action.
+Restrictions are configured as patterns with optional messages. The message is injected into the agent's prompt to explain why the restriction exists, which helps the agent work around it rather than attempting the disallowed action. See [Tool restrictions](/docs/configuration/workflow#tool-restrictions) for the configuration format.
 
 ## What's next
 

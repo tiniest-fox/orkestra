@@ -94,6 +94,7 @@ pub fn execute(
             task_id: task_id.to_string(),
             session_id: session.id.clone(),
             last_entry_summary: None,
+            stage_completed: false,
         }) {
             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
         }
@@ -492,6 +493,7 @@ fn read_chat_output(
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
                             last_entry_summary: batch_summary,
+                            stage_completed: false,
                         }) {
                             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
                         }
@@ -529,6 +531,7 @@ fn read_chat_output(
                 task_id: task_id.to_string(),
                 session_id: session_id.to_string(),
                 last_entry_summary: finalized_summary,
+                stage_completed: false,
             }) {
                 orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
             }
@@ -554,6 +557,7 @@ fn read_chat_output(
                         task_id: task_id.to_string(),
                         session_id: session_id.to_string(),
                         last_entry_summary: None,
+                        stage_completed: true,
                     }) {
                         orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
                     }
@@ -571,6 +575,7 @@ fn read_chat_output(
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
                             last_entry_summary: flushed_summary,
+                            stage_completed: false,
                         });
                     }
                 }
@@ -613,6 +618,7 @@ fn read_chat_output(
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
                             last_entry_summary: None,
+                            stage_completed: false,
                         }) {
                             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
                         }
@@ -719,6 +725,7 @@ fn read_chat_output(
             task_id: task_id.to_string(),
             session_id: session_id.to_string(),
             last_entry_summary: None, // ProcessExit is not summarizable
+            stage_completed: false,
         }) {
             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
         }
@@ -1329,6 +1336,7 @@ mod tests {
     /// Spawn `cat` with the given content pre-written to stdin, returning a handle
     /// whose stdout will yield those lines.  `cat` exits when stdin closes (which
     /// `write_prompt` arranges), so `handle.lines()` will see EOF after draining.
+    #[allow(clippy::zombie_processes)]
     fn make_scripted_handle(content: &str) -> (u32, ProcessHandle) {
         let mut child = Command::new("cat")
             .stdin(Stdio::piped())

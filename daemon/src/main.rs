@@ -306,6 +306,9 @@ async fn run(
     let event_tx_for_log = event_tx.clone();
     std::thread::spawn(move || {
         while let Ok(notification) = log_rx.recv() {
+            if notification.stage_completed {
+                let _ = event_tx_for_log.send(Event::task_updated(&notification.task_id));
+            }
             let _ = event_tx_for_log.send(Event::log_entry_appended(
                 notification.task_id,
                 notification.session_id,

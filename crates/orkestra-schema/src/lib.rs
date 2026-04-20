@@ -4,10 +4,12 @@
 //! artifact names). Pure logic with no I/O — schemas are assembled from
 //! embedded JSON component files.
 
+pub mod compact;
 pub mod examples;
 pub mod generate_schema;
 pub mod types;
 
+pub use compact::execute as compact_schema;
 pub use generate_schema::execute as generate_stage_schema;
 use std::sync::LazyLock;
 pub use types::SchemaConfig;

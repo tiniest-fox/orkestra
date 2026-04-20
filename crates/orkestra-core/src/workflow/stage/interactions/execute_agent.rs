@@ -73,6 +73,7 @@ pub(crate) fn execute(
 
     // 1. Get JSON schema (needed for BOTH first spawn and resume)
     let json_schema = get_stage_schema(workflow, prompt_service, task, stage)?;
+    let compact_json_schema = orkestra_schema::compact_schema(&json_schema);
 
     // 2. Resolve the provider to check capabilities
     let model_spec = workflow
@@ -124,6 +125,7 @@ pub(crate) fn execute(
         user_prompt,
         system_prompt,
         &json_schema,
+        &compact_json_schema,
         &resolved.capabilities,
     )?;
 
@@ -487,12 +489,17 @@ fn get_stage_schema(
 /// Apply provider-specific fallbacks for system prompt and schema enforcement.
 ///
 /// Returns `(final_user_prompt, optional_system_prompt_for_config)`.
+///
+/// Always injects the compact schema reference so every agent sees the schema.
+/// Providers without native JSON schema support additionally receive strict
+/// enforcement wording.
 pub(crate) fn apply_provider_fallbacks(
     task_id: &str,
     stage: &str,
     mut user_prompt: String,
     system_prompt: String,
-    json_schema: &str,
+    _json_schema: &str,
+    compact_json_schema: &str,
     capabilities: &ProviderCapabilities,
 ) -> Result<(String, Option<String>), ExecutionError> {
     // System prompt fallback (prepend to user message if provider doesn't support CLI flag)
@@ -509,7 +516,10 @@ pub(crate) fn apply_provider_fallbacks(
         None
     };
 
-    // Schema enforcement fallback (append to user message if provider doesn't support native JSON schema)
+    // Schema reference — always injected so every agent sees the schema
+    user_prompt = append_schema_reference(&user_prompt, compact_json_schema)?;
+
+    // Schema enforcement — only for providers without native JSON schema support
     if !capabilities.supports_json_schema {
         orkestra_debug!(
             "exec",
@@ -517,7 +527,7 @@ pub(crate) fn apply_provider_fallbacks(
             task_id,
             stage
         );
-        user_prompt = append_schema_enforcement(&user_prompt, json_schema)?;
+        user_prompt = append_schema_enforcement(&user_prompt)?;
     }
 
     Ok((user_prompt, system_prompt_for_config))
@@ -554,6 +564,9 @@ fn apply_tool_restrictions(
 const SCHEMA_ENFORCEMENT_TEMPLATE: &str =
     include_str!("../../../prompts/templates/schema_enforcement.md");
 
+const SCHEMA_REFERENCE_TEMPLATE: &str =
+    include_str!("../../../prompts/templates/schema_reference.md");
+
 const TOOL_RESTRICTIONS_TEMPLATE: &str =
     include_str!("../../../prompts/templates/tool_restrictions.md");
 
@@ -564,17 +577,33 @@ static AGENT_EXEC_TEMPLATES: LazyLock<handlebars::Handlebars<'static>> = LazyLoc
         .expect("tool_restrictions template should be valid");
     hb.register_template_string("schema_enforcement", SCHEMA_ENFORCEMENT_TEMPLATE)
         .expect("schema_enforcement template should be valid");
+    hb.register_template_string("schema_reference", SCHEMA_REFERENCE_TEMPLATE)
+        .expect("schema_reference template should be valid");
     hb
 });
 
-/// Append a schema enforcement section to a prompt for providers that don't
-/// support native `--json-schema` enforcement.
-fn append_schema_enforcement(prompt: &str, json_schema: &str) -> Result<String, ExecutionError> {
+/// Append a compact schema reference section to a prompt so every agent sees
+/// the expected output schema regardless of provider capabilities.
+fn append_schema_reference(
+    prompt: &str,
+    compact_json_schema: &str,
+) -> Result<String, ExecutionError> {
     let rendered = AGENT_EXEC_TEMPLATES
         .render(
-            "schema_enforcement",
-            &serde_json::json!({ "json_schema": json_schema }),
+            "schema_reference",
+            &serde_json::json!({ "compact_json_schema": compact_json_schema }),
         )
+        .map_err(|e| {
+            ExecutionError::ConfigError(format!("Failed to render schema reference template: {e}"))
+        })?;
+    Ok(format!("{prompt}\n\n{rendered}"))
+}
+
+/// Append a schema enforcement section to a prompt for providers that don't
+/// support native `--json-schema` enforcement.
+fn append_schema_enforcement(prompt: &str) -> Result<String, ExecutionError> {
+    let rendered = AGENT_EXEC_TEMPLATES
+        .render("schema_enforcement", &serde_json::json!({}))
         .map_err(|e| {
             ExecutionError::ConfigError(format!(
                 "Failed to render schema enforcement template: {e}"
@@ -651,22 +680,30 @@ mod tests {
     #[test]
     fn test_append_schema_enforcement() {
         let prompt = "Do the task";
-        let schema = r#"{"type":"object","properties":{"result":{"type":"string"}}}"#;
-        let result = append_schema_enforcement(prompt, schema).unwrap();
+        let result = append_schema_enforcement(prompt).unwrap();
 
         assert!(result.starts_with("Do the task"));
         assert!(result.contains("## Required Output Format"));
-        assert!(result.contains(schema));
         assert!(result.contains("Output ONLY the JSON object"));
     }
 
     #[test]
     fn test_append_schema_enforcement_preserves_original_prompt() {
         let prompt = "Line 1\nLine 2\nLine 3";
-        let schema = r#"{"type":"object"}"#;
-        let result = append_schema_enforcement(prompt, schema).unwrap();
+        let result = append_schema_enforcement(prompt).unwrap();
 
         assert!(result.starts_with("Line 1\nLine 2\nLine 3\n"));
+    }
+
+    #[test]
+    fn test_append_schema_reference() {
+        let prompt = "Do the task";
+        let compact_schema = r#"{"type":"object","properties":{"type":{"enum":["summary"]}}}"#;
+        let result = append_schema_reference(prompt, compact_schema).unwrap();
+
+        assert!(result.starts_with("Do the task"));
+        assert!(result.contains("## JSON Schema Reference"));
+        assert!(result.contains(compact_schema));
     }
 
     #[test]
@@ -713,6 +750,7 @@ mod tests {
         let system_prompt =
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
         let json_schema = r#"{"type":"object"}"#;
+        let compact_schema = r#"{"type":"object"}"#;
 
         let claude_caps = ProviderCapabilities {
             supports_json_schema: true,
@@ -728,12 +766,16 @@ mod tests {
             user_prompt,
             system_prompt.clone(),
             json_schema,
+            compact_schema,
             &claude_caps,
         )
         .unwrap();
 
-        // User message should remain unchanged
-        assert_eq!(final_user, "Do the work");
+        // User message should contain the schema reference (unconditional)
+        assert!(final_user.contains("## JSON Schema Reference"));
+        assert!(final_user.contains(compact_schema));
+        // Should NOT contain enforcement wording (Claude has native support)
+        assert!(!final_user.contains("Output ONLY the JSON object"));
         // System prompt should be in config
         assert_eq!(sys_for_config, Some(system_prompt));
     }
@@ -746,6 +788,7 @@ mod tests {
         let system_prompt =
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
         let json_schema = r#"{"type":"object"}"#;
+        let compact_schema = r#"{"type":"object"}"#;
 
         let opencode_caps = ProviderCapabilities {
             supports_json_schema: false,
@@ -761,6 +804,7 @@ mod tests {
             user_prompt.clone(),
             system_prompt.clone(),
             json_schema,
+            compact_schema,
             &opencode_caps,
         )
         .unwrap();
@@ -770,12 +814,11 @@ mod tests {
         assert!(final_user.contains("\n\nDo the work"));
         // System prompt should NOT be in config
         assert!(sys_for_config.is_none());
-
-        // Verify the exact separator used
-        assert!(
-            final_user.contains(&format!("{system_prompt}\n\n{user_prompt}")),
-            "Expected system prompt and user message joined with '\\n\\n' separator"
-        );
+        // Should contain schema reference
+        assert!(final_user.contains("## JSON Schema Reference"));
+        assert!(final_user.contains(compact_schema));
+        // Should contain enforcement wording
+        assert!(final_user.contains("Output ONLY the JSON object"));
     }
 
     #[test]

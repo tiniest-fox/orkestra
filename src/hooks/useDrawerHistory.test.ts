@@ -148,6 +148,67 @@ describe("useDrawerHistory — browser mode", () => {
   });
 });
 
+describe("useDrawerHistory — Storybook mode", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv("STORYBOOK", "true");
+    vi.spyOn(history, "pushState");
+    vi.spyOn(history, "back");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("does not push history state when drawer opens", async () => {
+    const { useDrawerHistory } = await import("./useDrawerHistory");
+    const closeAll = vi.fn();
+
+    const { rerender } = renderHook(
+      ({ open }: { open: boolean }) => useDrawerHistory(open, closeAll),
+      { initialProps: { open: false } },
+    );
+
+    rerender({ open: true });
+
+    expect(history.pushState).not.toHaveBeenCalled();
+  });
+
+  it("does not call history.back when drawer closes", async () => {
+    const { useDrawerHistory } = await import("./useDrawerHistory");
+    const closeAll = vi.fn();
+
+    const { rerender } = renderHook(
+      ({ open }: { open: boolean }) => useDrawerHistory(open, closeAll),
+      { initialProps: { open: false } },
+    );
+
+    rerender({ open: true });
+    rerender({ open: false });
+
+    expect(history.back).not.toHaveBeenCalled();
+  });
+
+  it("does not call closeAll on popstate", async () => {
+    const { useDrawerHistory } = await import("./useDrawerHistory");
+    const closeAll = vi.fn();
+
+    const { rerender } = renderHook(
+      ({ open }: { open: boolean }) => useDrawerHistory(open, closeAll),
+      { initialProps: { open: false } },
+    );
+
+    rerender({ open: true });
+
+    act(() => {
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    });
+
+    expect(closeAll).not.toHaveBeenCalled();
+  });
+});
+
 describe("useDrawerHistory — Tauri mode", () => {
   beforeEach(() => {
     vi.resetModules();

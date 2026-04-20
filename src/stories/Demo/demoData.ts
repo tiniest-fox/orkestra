@@ -215,6 +215,16 @@ export const demoTaskWithQuestions = createMockWorkflowTaskView({
   base_branch: "main",
   created_at: "2026-04-06T14:00:00Z",
   updated_at: "2026-04-07T09:30:00Z",
+  iterations: [
+    createMockIteration({
+      id: "demo-ci-cd-iter-1",
+      task_id: "demo-ci-cd-pipeline",
+      stage: "plan",
+      iteration_number: 1,
+      started_at: "2026-04-06T14:00:00Z",
+      ended_at: undefined,
+    }),
+  ],
   derived: {
     has_questions: true,
     pending_questions: [
@@ -232,6 +242,19 @@ export const demoTaskWithQuestions = createMockWorkflowTaskView({
           { label: "Rolling deploy", description: "Zero downtime, gradual rollout" },
           { label: "Blue-green", description: "Instant cutover, requires double infra" },
           { label: "Recreate", description: "Simple but causes brief downtime" },
+        ],
+      }),
+    ],
+    stages_with_logs: [
+      createMockStageLogInfo({
+        stage: "plan",
+        sessions: [
+          createMockSessionLogInfo({
+            session_id: "demo-ci-cd-plan-session",
+            run_number: 1,
+            is_current: true,
+            created_at: "2026-04-06T14:00:00Z",
+          }),
         ],
       }),
     ],
@@ -271,6 +294,24 @@ export const demoTaskParent = createMockWorkflowTaskView({
   base_branch: "main",
   created_at: "2026-04-03T09:30:00Z",
   updated_at: "2026-04-07T08:00:00Z",
+  iterations: [
+    createMockIteration({
+      id: "demo-fts-iter-1",
+      task_id: "demo-full-text-search",
+      stage: "plan",
+      iteration_number: 1,
+      started_at: "2026-04-03T09:30:00Z",
+      ended_at: "2026-04-03T10:00:00Z",
+    }),
+    createMockIteration({
+      id: "demo-fts-iter-2",
+      task_id: "demo-full-text-search",
+      stage: "breakdown",
+      iteration_number: 1,
+      started_at: "2026-04-03T10:00:00Z",
+      ended_at: "2026-04-03T10:45:00Z",
+    }),
+  ],
   derived: {
     is_waiting_on_children: true,
     subtask_progress: createMockSubtaskProgress({
@@ -284,6 +325,30 @@ export const demoTaskParent = createMockWorkflowTaskView({
       interrupted: 0,
       needs_review: 0,
     }),
+    stages_with_logs: [
+      createMockStageLogInfo({
+        stage: "plan",
+        sessions: [
+          createMockSessionLogInfo({
+            session_id: "demo-fts-plan-session",
+            run_number: 1,
+            is_current: false,
+            created_at: "2026-04-03T09:30:00Z",
+          }),
+        ],
+      }),
+      createMockStageLogInfo({
+        stage: "breakdown",
+        sessions: [
+          createMockSessionLogInfo({
+            session_id: "demo-fts-breakdown-session",
+            run_number: 1,
+            is_current: false,
+            created_at: "2026-04-03T10:00:00Z",
+          }),
+        ],
+      }),
+    ],
   },
 });
 
@@ -321,10 +386,49 @@ export const demoTaskDone = createMockWorkflowTaskView({
   created_at: "2026-03-28T09:30:00Z",
   updated_at: "2026-03-30T11:00:00Z",
   completed_at: "2026-03-30T11:00:00Z",
+  iterations: [
+    createMockIteration({
+      id: "demo-memleak-iter-1",
+      task_id: "demo-memory-leak-fix",
+      stage: "plan",
+      iteration_number: 1,
+      started_at: "2026-03-28T09:30:00Z",
+      ended_at: "2026-03-28T10:00:00Z",
+    }),
+    createMockIteration({
+      id: "demo-memleak-iter-2",
+      task_id: "demo-memory-leak-fix",
+      stage: "work",
+      iteration_number: 1,
+      started_at: "2026-03-28T11:00:00Z",
+      ended_at: "2026-03-29T14:00:00Z",
+    }),
+    createMockIteration({
+      id: "demo-memleak-iter-3",
+      task_id: "demo-memory-leak-fix",
+      stage: "review",
+      iteration_number: 1,
+      started_at: "2026-03-30T09:00:00Z",
+      ended_at: "2026-03-30T11:00:00Z",
+    }),
+  ],
   derived: {
     is_done: true,
     is_terminal: true,
     current_stage: null,
+    stages_with_logs: [
+      createMockStageLogInfo({
+        stage: "work",
+        sessions: [
+          createMockSessionLogInfo({
+            session_id: "demo-memleak-work-session",
+            run_number: 1,
+            is_current: false,
+            created_at: "2026-03-28T11:00:00Z",
+          }),
+        ],
+      }),
+    ],
   },
 });
 
@@ -362,6 +466,14 @@ export const demoTaskGateRunning = createMockWorkflowTaskView({
       created_at: "2026-04-05T09:00:00Z",
       iteration: 1,
     }),
+    summary: createMockArtifact({
+      name: "summary",
+      content:
+        "## Summary\n\n- Integrated `passport-oauth2` with Google and GitHub providers\n- Replaced express-session middleware with OAuth2 token validation\n- Updated login/logout routes to use `/auth/google` and `/auth/github` redirect flows\n- Added session migration script for existing cookie-based sessions\n- All 47 auth tests passing",
+      stage: "work",
+      created_at: "2026-04-07T14:00:00Z",
+      iteration: 1,
+    }),
   },
   auto_mode: true,
   flow: "default",
@@ -389,6 +501,19 @@ export const demoTaskGateRunning = createMockWorkflowTaskView({
   derived: {
     is_system_active: true,
     phase_icon: "gate",
+    stages_with_logs: [
+      createMockStageLogInfo({
+        stage: "work",
+        sessions: [
+          createMockSessionLogInfo({
+            session_id: "demo-oauth2-work-session",
+            run_number: 1,
+            is_current: false,
+            created_at: "2026-04-07T12:00:00Z",
+          }),
+        ],
+      }),
+    ],
   },
 });
 
@@ -505,7 +630,253 @@ const reviewSessionLogs: LogEntry[] = [
   },
 ];
 
+const ciCdPlanSessionLogs: LogEntry[] = [
+  {
+    type: "text",
+    content:
+      "I need to set up a CI/CD pipeline for staging. Let me start by checking what CI configuration already exists in the repository.",
+  },
+  {
+    type: "tool_use",
+    tool: "Read",
+    id: "tool-1",
+    input: { tool: "read", file_path: ".github/workflows/ci.yml" },
+  },
+  {
+    type: "tool_result",
+    tool: "Read",
+    tool_use_id: "tool-1",
+    content: "File not found.",
+  },
+  {
+    type: "tool_use",
+    tool: "Glob",
+    id: "tool-2",
+    input: { tool: "glob", pattern: "**/.circleci/**" },
+  },
+  {
+    type: "tool_result",
+    tool: "Glob",
+    tool_use_id: "tool-2",
+    content: "No matches found.",
+  },
+  {
+    type: "text",
+    content:
+      "No existing CI configuration found. Before I can proceed with the plan, I need to understand a few things about the target setup — the choice of CI provider significantly affects the file structure, secrets management, and caching strategy. I also need to know the intended deployment strategy since that determines how the staging environment is updated.",
+  },
+];
+
+const ftsPlanSessionLogs: LogEntry[] = [
+  {
+    type: "text",
+    content:
+      "The goal is to add full-text search across tasks and assistant conversations using PostgreSQL's built-in FTS capabilities. Let me first check the current schema to understand the table structure.",
+  },
+  {
+    type: "tool_use",
+    tool: "Read",
+    id: "tool-1",
+    input: {
+      tool: "read",
+      file_path: "crates/orkestra-store/src/migrations/V1__initial_schema.sql",
+    },
+  },
+  {
+    type: "tool_result",
+    tool: "Read",
+    tool_use_id: "tool-1",
+    content:
+      "CREATE TABLE workflow_tasks (\n  id TEXT PRIMARY KEY,\n  title TEXT NOT NULL,\n  description TEXT,\n  state TEXT NOT NULL,\n  ...\n);\n\nCREATE TABLE assistant_messages (\n  id TEXT PRIMARY KEY,\n  session_id TEXT NOT NULL,\n  content TEXT NOT NULL,\n  ...\n);",
+  },
+  {
+    type: "text",
+    content:
+      "Good. Both `workflow_tasks` and `assistant_messages` have `TEXT` columns to index. The FTS approach will use `tsvector` columns with GIN indexes on `title || description` for tasks and `content` for messages. Ranking with `ts_rank_cd` and snippet extraction via `ts_headline` will make results actionable.",
+  },
+  {
+    type: "artifact_produced",
+    name: "plan",
+    artifact_id: "demo-fts-plan-artifact",
+    artifact: {
+      name: "plan",
+      content:
+        "## Plan\n\nImplement full-text search across tasks and assistant conversations using PostgreSQL `tsvector` + `tsquery`.\n\n### Subtasks\n1. Add FTS columns and indexes to the schema\n2. Build search API endpoint\n3. Wire up frontend search input\n4. Add ranking/highlighting\n5. Write e2e tests",
+      stage: "plan",
+      created_at: "2026-04-03T10:00:00Z",
+      iteration: 1,
+    },
+  },
+];
+
+const ftsBreakdownSessionLogs: LogEntry[] = [
+  {
+    type: "text",
+    content:
+      "Analyzing the FTS plan. Five distinct concerns: schema migration, API layer, frontend UI, snippet highlighting, and e2e coverage. Each can be worked independently with clear interfaces between them — the schema migration must land first, but the other four are parallelizable.",
+  },
+  {
+    type: "text",
+    content:
+      "Decomposing into subtasks: `schema-fts` blocks everything else; `api-search` depends only on schema; `frontend-search` and `highlighting` depend on the API; `e2e-search` depends on all four.",
+  },
+  {
+    type: "artifact_produced",
+    name: "breakdown",
+    artifact_id: "demo-fts-breakdown-artifact",
+    artifact: {
+      name: "breakdown",
+      content:
+        "## Breakdown\n\n5 subtasks created:\n- `schema-fts`: Add tsvector columns and GIN indexes\n- `api-search`: POST /search endpoint with ranking\n- `frontend-search`: Search input + results panel\n- `highlighting`: Snippet extraction with ts_headline\n- `e2e-search`: End-to-end test coverage",
+      stage: "breakdown",
+      created_at: "2026-04-03T10:45:00Z",
+      iteration: 1,
+    },
+  },
+];
+
+const memleakWorkSessionLogs: LogEntry[] = [
+  {
+    type: "text",
+    content:
+      "The issue is memory growth in the WebSocket handler over time. Most likely cause is unbounded event listener accumulation on reconnects. Let me run the heap profiler to confirm.",
+  },
+  {
+    type: "tool_use",
+    tool: "Bash",
+    id: "tool-1",
+    input: { tool: "bash", command: "node --expose-gc scripts/heap-profile.js --duration=60" },
+  },
+  {
+    type: "tool_result",
+    tool: "Bash",
+    tool_use_id: "tool-1",
+    content:
+      "Heap snapshot saved to heap-20260328.heapsnapshot\nRetained size growth: +42MB over 60s\nTop retainer: EventEmitter → WebSocket (1847 listeners on 'message')",
+  },
+  {
+    type: "text",
+    content:
+      "1847 listeners on 'message' — that's the leak. Each reconnect adds a new listener without cleaning up the old one. Let me look at the WebSocket handler.",
+  },
+  {
+    type: "tool_use",
+    tool: "Read",
+    id: "tool-2",
+    input: { tool: "read", file_path: "src/server/websocket/handler.ts" },
+  },
+  {
+    type: "tool_result",
+    tool: "Read",
+    tool_use_id: "tool-2",
+    content:
+      'export function attachHandlers(ws: WebSocket) {\n  ws.on("message", (data) => {\n    handleMessage(data);\n  });\n  ws.on("open", () => attachHandlers(ws)); // BUG: re-registers on every open\n}',
+  },
+  {
+    type: "text",
+    content:
+      "Found it. `attachHandlers` is called recursively on every `open` event, stacking listeners. Fix: store the handler reference and remove it before re-registering, or restructure to avoid the recursive call entirely.",
+  },
+  {
+    type: "tool_use",
+    tool: "Edit",
+    id: "tool-3",
+    input: { tool: "edit", file_path: "src/server/websocket/handler.ts" },
+  },
+  {
+    type: "tool_result",
+    tool: "Edit",
+    tool_use_id: "tool-3",
+    content: "File updated successfully.",
+  },
+  {
+    type: "tool_use",
+    tool: "Bash",
+    id: "tool-4",
+    input: { tool: "bash", command: "cargo test -p orkestra-core -- websocket" },
+  },
+  {
+    type: "tool_result",
+    tool: "Bash",
+    tool_use_id: "tool-4",
+    content:
+      "running 8 tests\ntest websocket::handler::listener_count_is_one_after_reconnect ... ok\ntest result: ok. 8 passed; 0 failed",
+  },
+  {
+    type: "text",
+    content:
+      "Fix confirmed. `listenerCount('message')` stays at 1 across 10 simulated reconnects. Heap growth in the profiler is now flat.",
+  },
+];
+
+const oauth2WorkSessionLogs: LogEntry[] = [
+  {
+    type: "text",
+    content:
+      "Starting the OAuth2 migration. The plan calls for integrating `passport-oauth2` with Google and GitHub providers, then replacing the existing session-cookie middleware. Let me check the current auth setup first.",
+  },
+  {
+    type: "tool_use",
+    tool: "Read",
+    id: "tool-1",
+    input: { tool: "read", file_path: "src/middleware/auth.ts" },
+  },
+  {
+    type: "tool_result",
+    tool: "Read",
+    tool_use_id: "tool-1",
+    content:
+      'import session from "express-session";\nimport { sessionStore } from "../store/session";\n\nexport const authMiddleware = session({\n  secret: process.env.SESSION_SECRET,\n  store: sessionStore,\n  resave: false,\n  saveUninitialized: false,\n});',
+  },
+  {
+    type: "tool_use",
+    tool: "Write",
+    id: "tool-2",
+    input: { tool: "write", file_path: "src/auth/providers.ts" },
+  },
+  {
+    type: "tool_result",
+    tool: "Write",
+    tool_use_id: "tool-2",
+    content: "File written successfully.",
+  },
+  {
+    type: "tool_use",
+    tool: "Edit",
+    id: "tool-3",
+    input: { tool: "edit", file_path: "src/routes/auth.ts" },
+  },
+  {
+    type: "tool_result",
+    tool: "Edit",
+    tool_use_id: "tool-3",
+    content: "File updated successfully.",
+  },
+  {
+    type: "tool_use",
+    tool: "Bash",
+    id: "tool-4",
+    input: { tool: "bash", command: "pnpm test --filter=auth" },
+  },
+  {
+    type: "tool_result",
+    tool: "Bash",
+    tool_use_id: "tool-4",
+    content: "✓ 47 tests passed (auth suite)\nAll tests passed.",
+  },
+  {
+    type: "text",
+    content:
+      "OAuth2 providers wired up and all 47 auth tests passing. Session migration script added for existing cookie-based sessions.",
+  },
+];
+
 export const demoLogsBySession: Record<string, LogEntry[]> = {
   "demo-rate-limiting-work-session": workingSessionLogs,
   "demo-db-pooling-review-session": reviewSessionLogs,
+  "demo-ci-cd-plan-session": ciCdPlanSessionLogs,
+  "demo-fts-plan-session": ftsPlanSessionLogs,
+  "demo-fts-breakdown-session": ftsBreakdownSessionLogs,
+  "demo-memleak-work-session": memleakWorkSessionLogs,
+  "demo-oauth2-work-session": oauth2WorkSessionLogs,
 };

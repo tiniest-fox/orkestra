@@ -7,6 +7,16 @@ const config: StorybookConfig = {
     name: "@storybook/react-vite",
     options: {},
   },
+  viteFinal: (viteConfig) => {
+    viteConfig.server ??= {};
+    viteConfig.server.watch ??= {};
+    viteConfig.server.watch.ignored = [
+      "**/target/**",
+      "**/node_modules/**",
+      "**/.git/**",
+    ];
+    return viteConfig;
+  },
 };
 
 export default config;

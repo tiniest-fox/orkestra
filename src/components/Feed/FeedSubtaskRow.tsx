@@ -35,7 +35,6 @@ export function FeedSubtaskRow({
     <FeedRow
       task={subtask}
       config={config}
-      paddingClass="px-6"
       subtitle={<IterationChain iterations={subtask.iterations} />}
       isSubtask
       isFocused={isFocused}

@@ -15,7 +15,6 @@ import { SubtaskProgressBar } from "./SubtaskProgressBar";
 interface FeedRowProps {
   task: WorkflowTaskView;
   config: WorkflowConfig;
-  paddingClass: string;
   subtitle: React.ReactNode;
   faded?: boolean;
   isSubtask?: boolean;
@@ -38,7 +37,6 @@ interface FeedRowProps {
 export function FeedRow({
   task,
   config,
-  paddingClass,
   subtitle,
   faded,
   isSubtask,
@@ -58,6 +56,7 @@ export function FeedRow({
   const segments = useMemo(() => computePipelineSegments(task, config), [task, config]);
   const rowRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const paddingClass = isMobile ? "px-2" : "px-6";
   useNavItem(task.id, rowRef);
 
   const stateClasses = [

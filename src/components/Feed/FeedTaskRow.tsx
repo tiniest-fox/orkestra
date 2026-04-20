@@ -45,7 +45,6 @@ function FeedTaskRowInner({
     <FeedRow
       task={task}
       config={config}
-      paddingClass="px-6"
       subtitle={<IterationChain iterations={task.iterations} />}
       faded={isCompleted}
       isFocused={isFocused}

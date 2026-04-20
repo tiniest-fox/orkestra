@@ -400,6 +400,7 @@ impl StageExecutionService {
             &task.id,
             stage,
             generate_session_id(),
+            trigger.cloned(),
         )
         .map_err(|e| SpawnError::SessionError(e.to_string()))?;
 

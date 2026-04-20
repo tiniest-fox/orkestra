@@ -80,6 +80,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -98,6 +99,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -120,6 +122,7 @@ mod tests {
             "task-1",
             "planning",
             Some("ignored-uuid".into()),
+            None,
         )
         .unwrap();
         assert_eq!(ctx.session_id, first_ctx.session_id);
@@ -136,6 +139,7 @@ mod tests {
             "task-1",
             "planning",
             Some("my-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -157,6 +161,7 @@ mod tests {
             "task-1",
             "planning",
             None,
+            None,
         )
         .unwrap();
 
@@ -173,8 +178,15 @@ mod tests {
     fn test_no_resume_without_session_id() {
         let (store, iter_svc) = create_deps();
 
-        session::on_spawn_starting::execute(store.as_ref(), &iter_svc, "task-1", "planning", None)
-            .unwrap();
+        session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "planning",
+            None,
+            None,
+        )
+        .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
         simulate_agent_exit(&store, "task-1", "planning");
 
@@ -183,6 +195,7 @@ mod tests {
             &iter_svc,
             "task-1",
             "planning",
+            None,
             None,
         )
         .unwrap();
@@ -210,6 +223,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -221,6 +235,7 @@ mod tests {
             "task-2",
             "planning",
             Some("test-uuid-2".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-2", "planning", 12346).unwrap();
@@ -247,6 +262,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         assert_eq!(ctx.session_id, Some("test-uuid".to_string()));
@@ -276,6 +292,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -287,6 +304,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -305,6 +323,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -329,6 +348,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_spawn_failed::execute(
@@ -367,6 +387,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_spawn_failed::execute(
@@ -383,6 +404,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         assert!(
@@ -406,6 +428,7 @@ mod tests {
             "task-1",
             "work",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -448,6 +471,7 @@ mod tests {
             "task-1",
             "work",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -480,6 +504,7 @@ mod tests {
             "task-1",
             "work",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -512,6 +537,7 @@ mod tests {
             "task-1",
             "review",
             Some("original-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
@@ -540,6 +566,7 @@ mod tests {
             "task-1",
             "review",
             Some("new-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -565,6 +592,7 @@ mod tests {
             "task-1",
             "review",
             Some("original-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
@@ -595,6 +623,7 @@ mod tests {
             "task-1",
             "review",
             Some("new-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -615,6 +644,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -633,6 +663,7 @@ mod tests {
             "task-1",
             "planning",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         assert!(!ctx.is_resume);
@@ -653,6 +684,7 @@ mod tests {
             "task-1",
             "work",
             Some("test-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "work", 12345).unwrap();
@@ -672,6 +704,7 @@ mod tests {
             "task-1",
             "work",
             Some("new-uuid".into()),
+            None,
         )
         .unwrap();
         assert!(!ctx.is_resume);
@@ -701,6 +734,7 @@ mod tests {
             "task-1",
             "planning",
             Some("original-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -721,6 +755,7 @@ mod tests {
             "task-1",
             "planning",
             Some("fresh-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -754,6 +789,7 @@ mod tests {
             "task-1",
             "planning",
             Some("original-uuid".into()),
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -774,6 +810,7 @@ mod tests {
             "task-1",
             "planning",
             Some("ignored-uuid".into()),
+            None,
         )
         .unwrap();
 
@@ -796,6 +833,7 @@ mod tests {
             "task-1",
             "planning",
             None, // Own-ID provider
+            None,
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
@@ -828,6 +866,7 @@ mod tests {
             "task-1",
             "planning",
             None, // Own-ID provider
+            None,
         )
         .unwrap();
 

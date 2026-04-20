@@ -23,6 +23,7 @@ pub(crate) fn execute(
     task_id: &str,
     stage: &str,
     initial_session_id: Option<String>,
+    trigger: Option<IterationTrigger>,
 ) -> WorkflowResult<SessionSpawnContext> {
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -54,7 +55,7 @@ pub(crate) fn execute(
             task_id,
             stage
         );
-        iteration_service.create_iteration(task_id, stage, None)?
+        iteration_service.create_iteration(task_id, stage, trigger)?
     };
 
     // Compute is_resume BEFORE saving the session or linking the iteration.

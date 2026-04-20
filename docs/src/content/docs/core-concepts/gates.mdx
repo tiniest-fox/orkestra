@@ -8,7 +8,7 @@ import Callout from "../../../components/docs/Callout.astro";
 
 Agents don't always get it right on the first pass. Gates catch failures and route work back for correction — without you having to watch.
 
-A gate is attached to a [stage](/docs/core-concepts/stages) in `workflow.yaml`. Orkestra supports two kinds:
+A gate is attached to a [stage](/docs/core-concepts/stages). Orkestra supports two kinds:
 
 - **Automated gate** — a shell script runs after the agent produces output. Exit zero passes; non-zero sends the output back to the agent as feedback and triggers a retry.
 - **Agentic gate** — an AI agent evaluates the work and produces an approve or reject verdict. The Trak then pauses for human review before routing.
@@ -19,7 +19,7 @@ A gate is attached to a [stage](/docs/core-concepts/stages) in `workflow.yaml`. 
 2. The gate script runs in the Trak's worktree.
 3. **Exit 0** — the gate passes. The artifact proceeds to human review.
 4. **Non-zero exit** — the gate fails. The script's output (stdout and stderr) is sent back to the agent as feedback. The agent retries.
-5. The loop continues until the gate passes.
+5. The loop continues until the gate passes. There is no retry limit — the loop is unbounded. To break a stuck gate, use `ork trak skip` to advance past the stage or `ork trak send-to-stage` to reroute.
 
 The agent session is resumed on each retry — the agent sees its full conversation history including every previous gate failure and the feedback it produced.
 
@@ -50,13 +50,7 @@ Gate scripts run in the Trak's worktree and have access to these environment var
 
 ## Agentic gate
 
-Configure an agentic gate by setting `gate: true` on a stage:
-
-```yaml
-- name: review
-  artifact: verdict
-  gate: true
-```
+Configure an agentic gate by setting `gate: true` on a stage. See the [Workflow Reference](/docs/configuration/workflow#gate-fields) for the full field specification.
 
 The agent produces a structured verdict (`approve` or `reject`) with reasoning. On reject, the agent specifies which earlier stage to route back to. If the Trak is not in auto mode, a human must confirm the rejection before routing executes — they can also override and continue regardless of the verdict.
 

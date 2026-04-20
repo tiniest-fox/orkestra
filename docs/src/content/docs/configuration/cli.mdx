@@ -8,6 +8,21 @@ import Callout from "../../../components/docs/Callout.astro";
 
 All `ork` commands output JSON by default. Pass `--pretty` for human-readable output. Run `ork --help` or `ork trak --help` for inline usage.
 
+## ork init
+
+Initialize Orkestra in the current project. Creates `.orkestra/` with default configuration files.
+
+```bash
+ork init
+```
+
+Creates:
+- `.orkestra/workflow.yaml` — default 5-stage pipeline (planning, breakdown, work, review, compound)
+- `.orkestra/agents/` — prompt templates for each stage (`planner.md`, `breakdown.md`, `worker.md`, `reviewer.md`, `compound.md`)
+- `.orkestra/scripts/checks.sh` — gate script template for the work stage
+
+If `.orkestra/` already exists, `ork init` does not overwrite existing files. Running `ork trak list` on a project without `.orkestra/` also bootstraps the directory automatically.
+
 ## Global flags
 
 | Flag | Description |
@@ -233,7 +248,7 @@ ork play <DESCRIPTION> [--title <TITLE>] [--flow <FLOW>] [--base_branch <BRANCH>
 | `--no_pr` | No | Merge directly to the base branch instead of opening a pull request. |
 
 <Callout type="note">
-`ork play` runs all stages without pausing for human approval — equivalent to running a Trak in auto mode. `ork play` halts if a gate fails or an agentic gate produces a reject verdict. Inspect the Trak with `ork trak show` after a failed run.
+`ork play` runs all stages without pausing for human approval — equivalent to running a Trak in auto mode. Automated gate failures trigger agent retries as usual. `ork play` halts if an agentic gate produces a reject verdict or the agent declares the Trak failed or blocked. Inspect the Trak with `ork trak show` after a failed run.
 </Callout>
 
 ## ork pair

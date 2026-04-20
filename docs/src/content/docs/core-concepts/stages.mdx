@@ -4,8 +4,6 @@ description: A stage is a single step in a Trak's pipeline — an agent that pro
 order: 3
 ---
 
-import Callout from "../../../components/docs/Callout.astro";
-
 A single agent pass is rarely enough for complex work. Planning before implementation, verification after — these are distinct responsibilities that benefit from separate prompts and separate context. Stages divide a [Trak's](/docs/core-concepts/traks) pipeline into sequential steps, each with a focused goal and its own output.
 
 ## Artifacts
@@ -13,10 +11,6 @@ A single agent pass is rarely enough for complex work. Planning before implement
 Every stage produces a **named artifact**: text output stored in `.orkestra/.artifacts/`. Artifact names are unique within a flow.
 
 Artifacts from earlier stages are automatically injected into the prompt of every later agent stage. A `review` stage sees the `plan` and `summary` artifacts without any manual wiring. The pipeline accumulates context as it advances.
-
-<Callout type="warning">
-Artifact names must be unique within a flow. Two stages with the same artifact name will conflict.
-</Callout>
 
 ## Iterations and rejection
 
@@ -38,7 +32,7 @@ Auto mode is a Trak-level setting, not a per-stage configuration. It applies to 
 
 ## Capabilities
 
-Agent stages can be extended with [capabilities](/docs/core-concepts/capabilities) that change what the agent can produce. The `subtasks` capability allows the agent to decompose the Trak into child Traks. Every stage can ask questions without any capability flag.
+Agent stages can be extended with [capabilities](/docs/core-concepts/capabilities) that change what the agent can produce. The Subtraks capability allows the agent to decompose the Trak into child Traks. Every stage can ask questions without any capability flag.
 
 ## What's next
 

@@ -72,7 +72,7 @@ Each item in `stages` configures one stage in the flow:
 `schema_file` appears in Orkestra's configuration types but has not been confirmed as a stable, user-facing feature. Omit this field unless you have confirmed it works in your version.
 </Callout>
 
-`name` and `artifact` must be unique within a flow. The names `activity_log` and `task` are reserved and cannot be used as artifact values.
+`name` and `artifact` must be unique within a flow. The names `activity_log` and `task` are reserved and cannot be used as artifact values — Orkestra injects these as built-in context.
 
 ### Model values
 
@@ -97,9 +97,9 @@ The `capabilities` object extends what a stage can do:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `subtasks` | object | — | Allows the agent to decompose the Trak into child Traks (Subtraks). See [Subtasks capability](#subtasks-capability). |
+| `subtasks` | object | — | Allows the agent to decompose the Trak into child Traks (Subtraks). See [Subtraks capability](#subtraks-capability). |
 
-### Subtasks capability
+### Subtraks capability
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|

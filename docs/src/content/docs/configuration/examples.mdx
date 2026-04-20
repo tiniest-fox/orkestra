@@ -28,6 +28,10 @@ Best for complex features: upfront planning, parallel implementation via Subtrak
   terminal="Branch merged"
 />
 
+<Callout type="note">
+The `approval` indicator on Planning, Breakdown, and Compound stages represents the default human review pause present on every stage — not an explicit gate configuration. These stages have no `gate:` field in the YAML.
+</Callout>
+
 After the Breakdown stage is approved, Orkestra spawns parallel [Subtraks](/docs/core-concepts/traks) — one per item in the breakdown — using the `subtask` flow. All Subtraks complete before the parent Trak advances to Work.
 
 ```yaml

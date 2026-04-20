@@ -19,12 +19,12 @@ Gates are a stage-level configuration option, not a universal behavior. A stage 
 
 ### Verdict
 
-A **Verdict** is what a gate produces: **Pass** or **Fail**.
+A **Verdict** is what a gate produces. The terms differ by gate type:
 
-- Automated Gate verdict is determined by the script's exit code (0 = Pass, non-zero = Fail).
-- Agentic Gate verdict is determined by the agent's evaluation of the work.
+- **Automated Gate** uses **Pass / Fail** — determined by the script's exit code (0 = Pass, non-zero = Fail). A Fail triggers an automatic agent retry.
+- **Agentic Gate** uses **Approve / Reject** — determined by the agent's evaluation of the work. A Reject pauses for human Approval before routing the Trak back to a previous stage.
 
-A Fail verdict from an Automated Gate triggers an automatic agent retry. A Fail verdict from an Agentic Gate pauses for human Approval before routing the Trak back to a previous stage.
+Use the correct term for each gate type. An Automated Gate never "rejects"; an Agentic Gate never "fails."
 
 ### Approval
 

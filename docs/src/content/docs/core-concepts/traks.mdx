@@ -6,7 +6,7 @@ order: 2
 
 import Callout from "../../../components/docs/Callout.astro";
 
-Software work needs identity, isolation, and traceability. Each Trak is a self-contained unit of work — one feature, one bug fix, one documentation update — running in its own git worktree, following its own pipeline, accumulating its own context.
+Running multiple AI agents in the same working directory creates conflicts. Each Trak is a self-contained unit of work — one feature, one bug fix, one documentation update — running in its own git worktree, following its own pipeline, accumulating its own context.
 
 ## Trak identity
 
@@ -52,7 +52,7 @@ A Trak moves through phases as it runs:
 
 By default, each stage pauses for human approval after producing output. A Trak in **auto mode** skips these pauses — all stages advance automatically from creation to merge.
 
-Auto mode is a Trak-level setting. It applies to every stage uniformly; there is no per-stage automation flag. Auto mode can be set at Trak creation time or toggled later via the CLI or API.
+Auto mode is a Trak-level setting. It applies to every stage uniformly; there is no per-stage automation flag. Auto mode can be set at Trak creation time or toggled later via the desktop app or API.
 
 <Callout type="note">
 Auto mode does not bypass [gates](/docs/core-concepts/gates). Automated gate scripts still run and can still fail — triggering agent retries. Only the human approval pause is skipped.

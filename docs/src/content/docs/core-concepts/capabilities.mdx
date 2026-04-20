@@ -6,7 +6,7 @@ order: 5
 
 import Callout from "../../../components/docs/Callout.astro";
 
-Not every [stage](/docs/core-concepts/stages) has the same needs. A breakdown stage needs to split a large task into parallel pieces. A review stage needs to evaluate completed work and recommend routing. Capabilities and gates extend stages to handle these situations without requiring separate infrastructure.
+Not every [stage](/docs/core-concepts/stages) has the same needs. A breakdown stage needs to split a large Trak into parallel pieces. A review stage needs to evaluate completed work and recommend routing. Capabilities and gates extend stages to handle these situations without requiring separate infrastructure.
 
 ## Questions
 
@@ -22,7 +22,7 @@ A stage with `gate: true` acts as an **Agentic Gate**: instead of producing a pl
 
 **On approve** — the verdict is stored as the stage's artifact and the Trak advances normally.
 
-**On reject** — the agent specifies which earlier stage to route back to (via `route_to` in its structured output). The rejection includes the agent's reasoning as feedback.
+**On reject** — the agent specifies which earlier stage to route back to. The rejection includes the agent's reasoning as feedback.
 
 When the Trak is not in auto mode, a reject verdict pauses for human review. The human can:
 - **Confirm** the rejection — the Trak routes to the target stage with the feedback
@@ -50,7 +50,7 @@ The `subtasks` capability has one optional setting:
 
 **Single-Subtrak inlining:** If the breakdown produces exactly one Subtrak, Orkestra inlines it directly onto the parent Trak — no child Trak is created. The parent advances with the Subtrak's instructions as a breakdown artifact.
 
-**Typical use:** Breakdown stages, where a large Trak needs to be split into parallel implementation tasks before the work stage begins.
+**Typical use:** Breakdown stages, where a large Trak needs to be split into parallel implementation Subtraks before the work stage begins.
 
 ## What's next
 

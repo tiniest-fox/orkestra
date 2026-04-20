@@ -645,7 +645,9 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
                     ) ? (
                     <ShieldX className="w-4 h-4 text-status-error" />
                   ) : (
-                    <Shield className="w-4 h-4" />
+                    <Shield
+                      className={`w-4 h-4 ${item.artifactContext.isGateRunning ? "text-accent animate-spin-bounce" : ""}`}
+                    />
                   )}
                 </button>
               )}

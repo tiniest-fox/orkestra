@@ -9868,3 +9868,53 @@ fn test_prompt_sections_threaded_to_run_config() {
         "Feedback section content should match reviewer rejection message"
     );
 }
+
+// =============================================================================
+// Schema Reference Injection Test
+// =============================================================================
+
+/// Verify that every agent spawn includes a compact schema reference in the user
+/// prompt, regardless of provider capabilities.
+///
+/// This exercises the default claudecode provider (which has native `--json-schema`
+/// support) to confirm schema reference injection is unconditional — not gated on
+/// whether the provider needs enforcement wording.
+#[test]
+fn test_schema_reference_injected_for_default_provider() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test schema injection", "Verify schema reference", None);
+    let task_id = task.id.clone();
+
+    // Advance: spawns the first stage (planning) agent
+    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "A plan"));
+    ctx.advance();
+
+    // The user prompt (not the system prompt) should contain the schema reference
+    let run_config = ctx.last_run_config();
+    assert!(
+        run_config.prompt.contains("## JSON Schema Reference"),
+        "User prompt should contain '## JSON Schema Reference'. Got:\n{}",
+        &run_config.prompt[..run_config.prompt.len().min(1000)]
+    );
+
+    // Schema reference should contain actual JSON (starts with '{')
+    let reference_start = run_config
+        .prompt
+        .find("## JSON Schema Reference")
+        .expect("schema reference heading must be present");
+    let after_heading = &run_config.prompt[reference_start..];
+    assert!(
+        after_heading.contains('{'),
+        "Schema reference section should contain JSON schema content"
+    );
+
+    // Enforcement wording should NOT be present (claudecode has native schema support)
+    assert!(
+        !run_config.prompt.contains("Output ONLY the JSON object"),
+        "Default provider (claudecode) should not get enforcement wording"
+    );
+}

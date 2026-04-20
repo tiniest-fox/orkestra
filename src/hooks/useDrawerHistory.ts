@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 
 const IS_TAURI = Boolean(import.meta.env.TAURI_ENV_PLATFORM);
+const IS_STORYBOOK = Boolean(import.meta.env.STORYBOOK);
 
 /**
  * When `drawerOpen` becomes true, pushes a sentinel history entry so the browser
@@ -16,7 +17,7 @@ export function useDrawerHistory(drawerOpen: boolean, closeAll: () => void): voi
 
   // Push/pop sentinel on drawer open/close.
   useEffect(() => {
-    if (IS_TAURI) return;
+    if (IS_TAURI || IS_STORYBOOK) return;
 
     if (drawerOpen && !historyPushedRef.current) {
       history.pushState({ orkestra_drawer: true }, "");
@@ -31,7 +32,7 @@ export function useDrawerHistory(drawerOpen: boolean, closeAll: () => void): voi
 
   // Handle browser back button pressing the sentinel entry off the stack.
   useEffect(() => {
-    if (IS_TAURI) return;
+    if (IS_TAURI || IS_STORYBOOK) return;
 
     function onPopState() {
       if (!historyPushedRef.current) {

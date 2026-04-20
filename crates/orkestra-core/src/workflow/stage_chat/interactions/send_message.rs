@@ -794,7 +794,7 @@ mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
     use crate::workflow::config::{StageConfig, WorkflowConfig};
-    use crate::workflow::domain::{StageSession, Task};
+    use crate::workflow::domain::{IterationTrigger, StageSession, Task};
     use crate::workflow::execution::{default_test_registry, AgentParser};
     use crate::workflow::ports::WorkflowStore;
     use crate::workflow::runtime::TaskState;
@@ -1745,6 +1745,252 @@ mod tests {
         assert!(
             system_text_entries.is_empty(),
             "no [System] Text entries should exist — UserMessage replaces them"
+        );
+    }
+
+    // -- Chat completion detection tests --
+
+    #[test]
+    fn chat_claude_code_markdown_fenced_json_completes_stage() {
+        // Fenced JSON is detected: ExtractedJson(valid=true) is stored, no Text entries
+        // containing the raw JSON reach the store, and a ChatCompletion iteration is created.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-cc-fenced",
+            "Fenced JSON chat test",
+            "Verify fenced JSON detection",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-cc-fenced",
+            "task-cc-fenced",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let content = "```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-cc-fenced",
+            "task-cc-fenced",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-cc-fenced").unwrap();
+
+        // Detection succeeded: ExtractedJson(valid=true) must be present.
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) should be present. Got: {entries:?}"
+        );
+
+        // No Text entry should contain raw JSON content — buffered and discarded on detection.
+        let json_text_entries: Vec<_> = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { content } if content.contains("\"type\":")))
+            .collect();
+        assert!(
+            json_text_entries.is_empty(),
+            "no Text entry should contain raw JSON content. Got: {json_text_entries:?}"
+        );
+
+        // A ChatCompletion iteration must be created.
+        let iterations = store.get_iterations("task-cc-fenced").unwrap();
+        assert!(
+            iterations.iter().any(|i| i.stage == "work"
+                && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))),
+            "ChatCompletion iteration should be created. Got: {iterations:?}"
+        );
+    }
+
+    #[test]
+    fn chat_claude_code_mixed_prose_and_fence_completes_stage() {
+        // Mixed prose + fenced JSON: prose is persisted as a Text entry (it arrives before
+        // the fence, so it is not buffered), JSON is buffered and discarded on detection,
+        // and a ChatCompletion iteration is created.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-cc-mixed",
+            "Mixed prose + JSON chat test",
+            "Verify prose persists and JSON does not",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-cc-mixed",
+            "task-cc-mixed",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        // Prose arrives first (not buffered) then fenced JSON (buffered, discarded on Completed).
+        let content =
+            "Analysis complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-cc-mixed",
+            "task-cc-mixed",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-cc-mixed").unwrap();
+
+        // Detection succeeded.
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) should be present. Got: {entries:?}"
+        );
+
+        // Prose "Analysis complete." must be saved as a Text log entry.
+        assert!(
+            entries.iter().any(
+                |e| matches!(e, LogEntry::Text { content } if content == "Analysis complete.")
+            ),
+            "prose 'Analysis complete.' should be saved as a Text log entry. Got: {entries:?}"
+        );
+
+        // The JSON lines must NOT be saved as a Text log entry (buffered and discarded).
+        assert!(
+            !entries.iter().any(|e| matches!(e, LogEntry::Text { content } if content.contains("\"type\":\"summary\""))),
+            "raw JSON should not appear as a Text log entry. Got: {entries:?}"
+        );
+
+        // A ChatCompletion iteration must be created.
+        let iterations = store.get_iterations("task-cc-mixed").unwrap();
+        assert!(
+            iterations.iter().any(|i| i.stage == "work"
+                && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))),
+            "ChatCompletion iteration should be created. Got: {iterations:?}"
+        );
+    }
+
+    #[test]
+    fn chat_completion_notification_has_stage_completed_flag() {
+        // When chat-mode structured output detection completes a stage, exactly one
+        // LogNotification emitted to the channel has stage_completed=true. All other
+        // notifications in the same session have stage_completed=false.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-cc-notify",
+            "Notification flag test",
+            "Verify stage_completed flag in LogNotification",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-cc-notify",
+            "task-cc-notify",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel::<LogNotification>();
+
+        let content = "```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-cc-notify",
+            "task-cc-notify",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            Some(&tx),
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        // Drain all notifications accumulated during the session.
+        let mut notifications: Vec<LogNotification> = Vec::new();
+        while let Ok(n) = rx.try_recv() {
+            notifications.push(n);
+        }
+
+        assert!(
+            !notifications.is_empty(),
+            "should have received at least one LogNotification from the chat session"
+        );
+
+        // Exactly one notification must have stage_completed=true.
+        let completed: Vec<_> = notifications.iter().filter(|n| n.stage_completed).collect();
+        assert_eq!(
+            completed.len(),
+            1,
+            "exactly one LogNotification should have stage_completed=true. \
+             Got {} completed out of {} total. Notifications: {notifications:?}",
+            completed.len(),
+            notifications.len()
+        );
+
+        // All other notifications must have stage_completed=false.
+        let non_completed: Vec<_> = notifications
+            .iter()
+            .filter(|n| !n.stage_completed)
+            .collect();
+        assert_eq!(
+            non_completed.len(),
+            notifications.len() - 1,
+            "all notifications except the stage_completed one should have stage_completed=false. \
+             Got: {non_completed:?}"
         );
     }
 }

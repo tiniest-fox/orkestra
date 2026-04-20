@@ -360,7 +360,22 @@ pub fn run() {
             // placeholder (0 bytes) from a real compiled binary.
             let bundled_ork: Option<PathBuf> = app.path().resource_dir().ok().and_then(|dir| {
                 let p = dir.join("ork");
-                is_real_ork_binary(&p).then_some(p)
+                if !is_real_ork_binary(&p) {
+                    return None;
+                }
+                // Ensure the bundled binary is executable. Tauri preserves file
+                // permissions when bundling resources, but be explicit on Unix in
+                // case the source binary lost its +x bit at some point.
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(meta) = p.metadata() {
+                        let mut perms = meta.permissions();
+                        perms.set_mode(perms.mode() | 0o111);
+                        std::fs::set_permissions(&p, perms).ok();
+                    }
+                }
+                Some(p)
             });
             if let Some(ref ork_path) = bundled_ork {
                 // Register the bundled binary path via OnceLock so the agent spawner

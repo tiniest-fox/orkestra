@@ -155,3 +155,100 @@ flows:
         gate: true
     integration:
       on_failure: write
+
+  # Docs pipeline: research → write → edit → compound.
+  # Use this flow for documenting features, APIs, and concepts.
+  # The research stage explores the codebase and produces a structured analysis.
+  # The write stage authors MDX docs in docs/src/content/docs/. The edit stage
+  # reviews for accuracy, writing quality, and style before approving or rejecting.
+  docs:
+    stages:
+      # Research: explore the codebase and produce a structured analysis.
+      # Read-only. Ask clarifying questions to scope the document first.
+      - name: research
+        description: Explores the codebase and produces a detailed analysis to guide documentation
+        artifact: analysis
+        prompt: researcher.md
+        model: opus
+        capabilities:
+          ask_questions: true
+        disallowed_tools:
+          - pattern: "Edit"
+            message: "Research is read-only — explore and document findings, don't modify files"
+          - pattern: "Write"
+            message: "Research is read-only — explore and document findings, don't modify files"
+
+      # Write: author MDX documentation from the research analysis.
+      # Gate runs docs checks to catch lint/type errors before the edit stage.
+      - name: write
+        description: Authors MDX documentation in docs/src/content/docs/ based on the research analysis
+        artifact: draft
+        prompt: writer.md
+        model: sonnet
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-docs.sh"
+          timeout_seconds: 300
+
+      # Edit: review documentation for accuracy, writing quality, and style.
+      # On rejection, sends the Trak back to the write stage with feedback.
+      - name: edit
+        description: Reviews documentation for technical accuracy, writing quality, and style adherence
+        artifact: verdict
+        prompt: editor.md
+        model: opus
+        capabilities:
+          approval:
+            rejection_stage: write
+        disallowed_tools:
+          - pattern: "Edit"
+            message: "Editor is read-only — use approve or reject to provide feedback"
+          - pattern: "Write"
+            message: "Editor is read-only — use approve or reject to provide feedback"
+
+      # Compound: capture improvements to editorial guidelines and agent prompts.
+      # Runs automatically after a doc is approved.
+      - name: compound
+        description: Captures learnings from the completed Trak to improve future documentation work
+        artifact: learnings
+        prompt: compound-docs.md
+        model: sonnet
+        is_automated: true
+
+    integration:
+      on_failure: write
+
+  # Component pipeline: spec → build → review.
+  # Use this flow when a validated component request needs to be built.
+  # The spec stage defines the component's purpose, props, and design.
+  # The build stage implements it as an Astro component in docs/src/components/docs/.
+  # The review stage checks correctness, design system adherence, and usage docs.
+  component:
+    stages:
+      - name: spec
+        description: Defines the component's purpose, props, visual design, and usage examples based on the request
+        artifact: spec
+        prompt: planner.md
+        model: opus
+        capabilities:
+          ask_questions: true
+
+      - name: build
+        description: Implements the Astro component and updates docs/editorial/components.md
+        artifact: summary
+        prompt: worker.md
+        model: sonnet
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-docs.sh"
+          timeout_seconds: 300
+
+      - name: review
+        description: Reviews the component for correctness, design system adherence, and documentation quality
+        artifact: verdict
+        prompt: reviewer.md
+        model: opus
+        capabilities:
+          approval:
+            rejection_stage: build
+
+    integration:
+      on_failure: build

@@ -31,4 +31,6 @@ pub struct LogNotification {
     /// Human-readable summary of the last log entry in the batch.
     /// None if no entry in the batch was summarizable.
     pub last_entry_summary: Option<String>,
+    /// When true, the stage completed from chat — listeners should also emit `task_updated`.
+    pub stage_completed: bool,
 }

@@ -60,7 +60,7 @@ ork trak create -t <TITLE> -d <DESCRIPTION> [--flow <FLOW>] [--base_branch <BRAN
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--title` / `-t` | Yes | Trak title. |
-| `--description` / `-d` | Yes | Trak description. Passed to the agent as its task. |
+| `--description` / `-d` | Yes | Trak description. Describes the work for this Trak. |
 | `--flow` | No | Flow to assign the Trak to. Defaults to `default`. |
 | `--base_branch` / `-b` | No | Branch to base the Trak's worktree on. Defaults to the current branch. |
 
@@ -229,6 +229,8 @@ ork logs <TRAK_ID> --stage <STAGE> [--type <TYPE>] [--limit <N>] [--offset <N>]
 | `process_exit` | Script or process exit event, including exit code. |
 | `user_message` | A message sent to the agent by the user (e.g., rejection feedback). |
 
+Additional entry types (gate events, artifact events) may appear in unfiltered output. The `--type` filter accepts only the types listed above.
+
 ## ork play
 
 Run a Trak through all workflow stages non-interactively. Useful for fully automated pipelines.
@@ -248,7 +250,7 @@ ork play <DESCRIPTION> [--title <TITLE>] [--flow <FLOW>] [--base_branch <BRANCH>
 | `--no_pr` | No | Merge directly to the base branch instead of opening a pull request. |
 
 <Callout type="note">
-`ork play` runs all stages without pausing for human approval — equivalent to running a Trak in auto mode. Automated gate failures trigger agent retries as usual. `ork play` halts if an agentic gate produces a reject verdict or the agent declares the Trak failed or blocked. Inspect the Trak with `ork trak show` after a failed run.
+`ork play` runs all stages without pausing for human approval. Automated gate failures trigger agent retries as usual. Agentic gate rejections auto-execute and route back to the target stage. `ork play` halts only if the agent declares the Trak failed or blocked. Inspect with `ork trak show` after a halted run.
 </Callout>
 
 ## ork pair

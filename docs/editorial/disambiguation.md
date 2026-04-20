@@ -33,7 +33,7 @@ Use the correct term for each gate type. An Automated Gate never "rejects"; an A
 There are two situations where a human gives Approval:
 
 1. **Approving a work product** — the human reviews what an agent produced at a regular stage and decides to advance or send it back.
-2. **Approving an Agentic Gate's verdict** — the human reviews the gate's Pass or Fail verdict and either accepts it (follows the recommended routing) or overrides it (sends the agent back to work regardless of the verdict).
+2. **Approving an Agentic Gate's verdict** — the human reviews the gate's Approve or Reject verdict and either accepts it (follows the recommended routing) or overrides it (sends the agent back to work regardless of the verdict).
 
 **The confusion to avoid:** Approval is not a gate, and gates do not give approval. Gates produce verdicts; humans give approval. An Agentic Gate is not "adding human approval to a stage" — every stage already has human approval. What it adds is an agent-produced verdict for the human to act on.
 

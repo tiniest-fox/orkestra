@@ -32,7 +32,7 @@ Best for complex features: upfront planning, parallel implementation via Subtrak
 The `approval` indicator on Planning, Breakdown, and Compound stages represents the default human review pause present on every stage — not an explicit gate configuration. These stages have no `gate:` field in the YAML.
 </Callout>
 
-After the Breakdown stage is approved, Orkestra spawns parallel [Subtraks](/docs/core-concepts/traks) — one per item in the breakdown — using the `subtask` flow. All Subtraks complete before the parent Trak advances to Work.
+After the Breakdown stage is approved, Orkestra spawns parallel [Subtraks](/docs/core-concepts/traks) — one per item in the breakdown — using the `subtask` flow. All Subtraks complete before the parent Trak advances to the next stage in its flow.
 
 ```yaml
 version: 2
@@ -201,7 +201,7 @@ This flow uses custom prompt templates that `ork init` does not create. Add thes
 
 See [Prompt Templates](/docs/core-concepts/prompt-templates) for guidance on writing effective stage prompts.
 
-<Callout type="warning">
+<Callout type="note">
 Flow names in `workflow.yaml` are unrestricted. If your project already defines a flow named `docs`, choose a different name (e.g., `documentation`) to avoid a conflict.
 </Callout>
 

@@ -59,20 +59,18 @@ Each item in `stages` configures one stage in the flow:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | Yes | — | Unique identifier within the flow. Shown in CLI output and logs. |
-| `artifact` | string | Yes | — | Name under which the stage's output is stored and injected into later stages as context. Must be unique within the flow. Reserved values: `activity_log`, `task`. |
+| `artifact` | string | Yes | — | Name under which the stage's output is stored and injected into later stages as context. Must be unique within the flow. Reserved values: `activity_log`, `trak`. |
 | `description` | string | No | — | Human-readable description. Shown in UI and logs. |
 | `prompt` | string | No | `{name}.md` | Path to the [prompt template](/docs/core-concepts/prompt-templates), relative to `.orkestra/agents/`. Defaults to `{name}.md`. |
 | `model` | string | No | Default | AI model to use. See [Model values](#model-values). |
 | `capabilities` | object | No | — | Optional extensions to stage behavior. See [Capabilities](#capabilities). |
 | `gate` | boolean or object | No | — | Gate that runs after the agent produces output. `true` for an agentic gate; an object for an automated gate. See [Gate fields](#gate-fields). |
 | `disallowed_tools` | list | No | `[]` | Tools the agent cannot use. See [Tool restrictions](#tool-restrictions). |
-| `schema_file` | string | No | — | Advanced / unverified — confirm stability before use. Path to a custom JSON schema for the stage output, relative to `.orkestra/schemas/`. If omitted, Orkestra generates a schema from the stage's capabilities. |
+| `schema_file` | string | No | — | Path to a custom JSON schema for the stage output, relative to `.orkestra/schemas/`. If omitted, Orkestra generates a schema from the stage's capabilities. |
 
 <Callout type="warning" title="schema_file is unverified">
 `schema_file` appears in Orkestra's configuration types but has not been confirmed as a stable, user-facing feature. Omit this field unless you have confirmed it works in your version.
 </Callout>
-
-`name` and `artifact` must be unique within a flow. The names `activity_log` and `task` are reserved and cannot be used as artifact values — Orkestra injects these as built-in context.
 
 ### Model values
 
@@ -144,7 +142,7 @@ Tool restrictions apply to Claude Code agents only. For OpenCode agents, the res
 Orkestra validates `workflow.yaml` at startup and reports errors immediately:
 
 - Stage `name` must be unique within a flow.
-- Stage `artifact` must be unique within a flow. `activity_log` and `task` are reserved.
+- Stage `artifact` must be unique within a flow. `activity_log` and `trak` are reserved.
 - `integration.on_failure` must name an existing stage in the flow.
 - `subtasks.flow` must name an existing flow (if specified).
 - `gate.timeout_seconds` must be greater than 0.
@@ -201,7 +199,7 @@ flows:
     integration:
       on_failure: work  # If merge fails, route back to the work stage
 
-  # Subtask pipeline — simpler flow for child Traks
+  # Subtrak pipeline — simpler flow for child Traks
   subtask:
     stages:
       - name: work

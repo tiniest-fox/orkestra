@@ -6,7 +6,7 @@ order: 5
 
 import Callout from "../../../components/docs/Callout.astro";
 
-Not every [stage](/docs/core-concepts/stages) has the same needs. A breakdown stage needs to split a large Trak into parallel pieces. A review stage needs to evaluate completed work and recommend routing. Capabilities and gates extend stages to handle these situations without requiring separate infrastructure.
+Stages can be extended in three ways. **Questions** are available on every stage with no configuration. **Agentic Gates** (`gate: true`) add an agent-produced verdict to the human approval step. **Subtraks** (`capabilities.subtasks`) let an agent decompose work into parallel child Traks. This page covers all three — note that only `capabilities.subtasks` uses the `capabilities` YAML field; gates are a separate top-level field.
 
 ## Questions
 

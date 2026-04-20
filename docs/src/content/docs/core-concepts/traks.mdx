@@ -44,9 +44,11 @@ A Trak moves through phases as it runs:
 
 **Waiting on Subtraks** — A breakdown stage decomposed the Trak into child Traks. The parent waits for all children to complete. Any child failure immediately fails the parent.
 
-**Done** — The final stage completed. Orkestra rebases and merges the Trak's branch to the base branch.
+**Done** — All stages completed. The Trak is ready for integration — merge directly or open a pull request.
 
 **Failed** — An agent declared it cannot complete the work, or a fatal error occurred.
+
+**Blocked** — An agent declared it is blocked on something external. Use `ork trak retry` to resume when the blocker is resolved.
 
 ## Auto mode
 

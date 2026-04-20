@@ -19,7 +19,7 @@ A gate is attached to a [stage](/docs/core-concepts/stages). Orkestra supports t
 2. The gate script runs in the Trak's worktree.
 3. **Exit 0** — the gate passes. The artifact proceeds to human review.
 4. **Non-zero exit** — the gate fails. The script's output (stdout and stderr) is sent back to the agent as feedback. The agent retries.
-5. The loop continues until the gate passes. There is no retry limit — the loop is unbounded. To break a stuck gate, use `ork trak skip` to advance past the stage or `ork trak send-to-stage` to reroute.
+5. The loop continues until the gate passes. There is no retry limit — the loop is unbounded. To break a stuck gate, use `ork trak skip` to advance past the stage, `ork trak send-to-stage` to reroute, or `ork trak restart` to start the stage fresh.
 
 The agent session is resumed on each retry — the agent sees its full conversation history including every previous gate failure and the feedback it produced.
 

@@ -298,6 +298,43 @@ describe("buildVirtualItems", () => {
     }
   });
 
+  it("artifact-body item has gatePassed=false and isGateRunning=false when gate failed", () => {
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "work",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    const gateEntries: LogEntry[] = [
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "FAILED: tests failed" },
+      { type: "gate_completed", exit_code: 1, passed: false },
+    ];
+    const entries: LogEntry[] = [
+      { type: "artifact_produced", name: "plan", artifact_id: "art-1", artifact },
+      ...gateEntries,
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const artifactContext: ArtifactContext = {
+      gateEntries,
+      isGateRunning: false,
+      gatePassed: false,
+    };
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "art-1",
+      artifactContext,
+    });
+    const bodyItem = items.find((i) => i.kind === "artifact-body");
+    expect(bodyItem).toBeDefined();
+    if (bodyItem?.kind === "artifact-body") {
+      expect(bodyItem.gateEntries).toHaveLength(3);
+      expect(bodyItem.gatePassed).toBe(false);
+      expect(bodyItem.isGateRunning).toBe(false);
+    }
+  });
+
   it("gate entries without a preceding artifact render normally as agent-entry items", () => {
     const entries: LogEntry[] = [
       { type: "gate_started", command: "checks.sh" },

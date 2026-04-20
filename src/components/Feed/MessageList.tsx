@@ -891,8 +891,9 @@ export function MessageList({
     if (!gateState) return;
     if (gateState.isRunning)
       setGateView(true); // Gate started → show output
-    else if (gateState.passed) setGateView(false); // Gate passed → show artifact
-    // Gate failed → keep showing gate output (no auto-switch)
+    else if (gateState.passed)
+      setGateView(false); // Gate passed → show artifact
+    else setGateView(true); // Gate failed → show gate logs
   }, [gateState?.isRunning, gateState?.passed, gateState]);
 
   // -- Auto-scroll state (only relevant when isScrollContainer) --

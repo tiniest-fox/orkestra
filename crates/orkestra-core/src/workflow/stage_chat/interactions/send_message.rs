@@ -94,6 +94,7 @@ pub fn execute(
             task_id: task_id.to_string(),
             session_id: session.id.clone(),
             last_entry_summary: None,
+            stage_completed: false,
         }) {
             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
         }
@@ -458,7 +459,6 @@ fn read_chat_output(
         });
     }
 
-    let mut accumulated_text: Vec<String> = Vec::new();
     let mut buf_state = TextBufferState::default();
 
     for line in handle.lines() {
@@ -473,9 +473,6 @@ fn read_chat_output(
                 let mut batch_count = 0usize;
                 let batch_summary = LogEntry::last_summary(&update.log_entries);
                 for entry in update.log_entries {
-                    if let LogEntry::Text { ref content } = entry {
-                        accumulated_text.push(content.clone());
-                    }
                     for e in buffer_or_persist(entry, &mut buf_state) {
                         if let Err(e) = store.append_log_entry(session_id, &e, None) {
                             orkestra_debug!("stage_chat", "Failed to append log entry: {}", e);
@@ -492,6 +489,7 @@ fn read_chat_output(
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
                             last_entry_summary: batch_summary,
+                            stage_completed: false,
                         }) {
                             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
                         }
@@ -505,14 +503,11 @@ fn read_chat_output(
         }
     }
 
-    // Finalize parser and accumulate text from finalized entries
+    // Finalize parser and pass finalized entries through the buffer state machine
     let finalized = parser.finalize();
     let mut finalized_count = 0usize;
     let finalized_summary = LogEntry::last_summary(&finalized);
     for entry in finalized {
-        if let LogEntry::Text { ref content } = entry {
-            accumulated_text.push(content.clone());
-        }
         for e in buffer_or_persist(entry, &mut buf_state) {
             if let Err(e) = store.append_log_entry(session_id, &e, None) {
                 orkestra_debug!("stage_chat", "Failed to append finalized log entry: {}", e);
@@ -529,18 +524,54 @@ fn read_chat_output(
                 task_id: task_id.to_string(),
                 session_id: session_id.to_string(),
                 last_entry_summary: finalized_summary,
+                stage_completed: false,
             }) {
                 orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
             }
         }
     }
 
+    // Build trailing text candidate from the buffer.
+    //
+    // Only attempt structured output detection when the buffer holds content that the
+    // state machine identified as a JSON candidate (`json_complete = true`).  This
+    // scopes detection to the *trailing* portion of the response — the final block the
+    // model output as its last text — rather than scanning the entire accumulated
+    // response, which could match a JSON example written mid-response and trigger a
+    // false-positive stage completion.
+    let trailing_text: Option<String> = if buf_state.json_complete && !buf_state.buffer.is_empty() {
+        let text = buf_state
+            .buffer
+            .iter()
+            .filter_map(|e| {
+                if let LogEntry::Text { content } = e {
+                    Some(content.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
+    } else {
+        None
+    };
+
     // Try to detect structured output and complete the stage
     let mut detection_succeeded = false;
-    if !accumulated_text.is_empty() {
-        let full_text = accumulated_text.join("\n");
-        match try_complete_from_output::execute(store, workflow, schema, task_id, stage, &full_text)
-        {
+    if let Some(trailing_text) = trailing_text {
+        match try_complete_from_output::execute(
+            store,
+            workflow,
+            schema,
+            task_id,
+            stage,
+            &trailing_text,
+        ) {
             Ok(DetectionResult::Completed { raw_json }) => {
                 orkestra_debug!(
                     "stage_chat",
@@ -554,6 +585,7 @@ fn read_chat_output(
                         task_id: task_id.to_string(),
                         session_id: session_id.to_string(),
                         last_entry_summary: None,
+                        stage_completed: true,
                     }) {
                         orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
                     }
@@ -571,6 +603,7 @@ fn read_chat_output(
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
                             last_entry_summary: flushed_summary,
+                            stage_completed: false,
                         });
                     }
                 }
@@ -613,6 +646,7 @@ fn read_chat_output(
                             task_id: task_id.to_string(),
                             session_id: session_id.to_string(),
                             last_entry_summary: None,
+                            stage_completed: false,
                         }) {
                             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
                         }
@@ -719,6 +753,7 @@ fn read_chat_output(
             task_id: task_id.to_string(),
             session_id: session_id.to_string(),
             last_entry_summary: None, // ProcessExit is not summarizable
+            stage_completed: false,
         }) {
             orkestra_debug!("stage_chat", "Log notification send failed: {}", e);
         }
@@ -787,7 +822,7 @@ mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
     use crate::workflow::config::{StageConfig, WorkflowConfig};
-    use crate::workflow::domain::{StageSession, Task};
+    use crate::workflow::domain::{IterationTrigger, StageSession, Task};
     use crate::workflow::execution::{default_test_registry, AgentParser};
     use crate::workflow::ports::WorkflowStore;
     use crate::workflow::runtime::TaskState;
@@ -1329,6 +1364,7 @@ mod tests {
     /// Spawn `cat` with the given content pre-written to stdin, returning a handle
     /// whose stdout will yield those lines.  `cat` exits when stdin closes (which
     /// `write_prompt` arranges), so `handle.lines()` will see EOF after draining.
+    #[allow(clippy::zombie_processes)]
     fn make_scripted_handle(content: &str) -> (u32, ProcessHandle) {
         let mut child = Command::new("cat")
             .stdin(Stdio::piped())
@@ -1737,6 +1773,252 @@ mod tests {
         assert!(
             system_text_entries.is_empty(),
             "no [System] Text entries should exist — UserMessage replaces them"
+        );
+    }
+
+    // -- Chat completion detection tests --
+
+    #[test]
+    fn chat_claude_code_markdown_fenced_json_completes_stage() {
+        // Fenced JSON is detected: ExtractedJson(valid=true) is stored, no Text entries
+        // containing the raw JSON reach the store, and a ChatCompletion iteration is created.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-cc-fenced",
+            "Fenced JSON chat test",
+            "Verify fenced JSON detection",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-cc-fenced",
+            "task-cc-fenced",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let content = "```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-cc-fenced",
+            "task-cc-fenced",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-cc-fenced").unwrap();
+
+        // Detection succeeded: ExtractedJson(valid=true) must be present.
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) should be present. Got: {entries:?}"
+        );
+
+        // No Text entry should contain raw JSON content — buffered and discarded on detection.
+        let json_text_entries: Vec<_> = entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::Text { content } if content.contains("\"type\":")))
+            .collect();
+        assert!(
+            json_text_entries.is_empty(),
+            "no Text entry should contain raw JSON content. Got: {json_text_entries:?}"
+        );
+
+        // A ChatCompletion iteration must be created.
+        let iterations = store.get_iterations("task-cc-fenced").unwrap();
+        assert!(
+            iterations.iter().any(|i| i.stage == "work"
+                && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))),
+            "ChatCompletion iteration should be created. Got: {iterations:?}"
+        );
+    }
+
+    #[test]
+    fn chat_claude_code_mixed_prose_and_fence_completes_stage() {
+        // Mixed prose + fenced JSON: prose is persisted as a Text entry (it arrives before
+        // the fence, so it is not buffered), JSON is buffered and discarded on detection,
+        // and a ChatCompletion iteration is created.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-cc-mixed",
+            "Mixed prose + JSON chat test",
+            "Verify prose persists and JSON does not",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-cc-mixed",
+            "task-cc-mixed",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        // Prose arrives first (not buffered) then fenced JSON (buffered, discarded on Completed).
+        let content =
+            "Analysis complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-cc-mixed",
+            "task-cc-mixed",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            None,
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        let entries = store.get_log_entries("ss-cc-mixed").unwrap();
+
+        // Detection succeeded.
+        assert!(
+            entries
+                .iter()
+                .any(|e| matches!(e, LogEntry::ExtractedJson { valid: true, .. })),
+            "ExtractedJson(valid=true) should be present. Got: {entries:?}"
+        );
+
+        // Prose "Analysis complete." must be saved as a Text log entry.
+        assert!(
+            entries.iter().any(
+                |e| matches!(e, LogEntry::Text { content } if content == "Analysis complete.")
+            ),
+            "prose 'Analysis complete.' should be saved as a Text log entry. Got: {entries:?}"
+        );
+
+        // The JSON lines must NOT be saved as a Text log entry (buffered and discarded).
+        assert!(
+            !entries.iter().any(|e| matches!(e, LogEntry::Text { content } if content.contains("\"type\":\"summary\""))),
+            "raw JSON should not appear as a Text log entry. Got: {entries:?}"
+        );
+
+        // A ChatCompletion iteration must be created.
+        let iterations = store.get_iterations("task-cc-mixed").unwrap();
+        assert!(
+            iterations.iter().any(|i| i.stage == "work"
+                && matches!(i.incoming_context, Some(IterationTrigger::ChatCompletion))),
+            "ChatCompletion iteration should be created. Got: {iterations:?}"
+        );
+    }
+
+    #[test]
+    fn chat_completion_notification_has_stage_completed_flag() {
+        // When chat-mode structured output detection completes a stage, exactly one
+        // LogNotification emitted to the channel has stage_completed=true. All other
+        // notifications in the same session have stage_completed=false.
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+
+        let mut task = Task::new(
+            "task-cc-notify",
+            "Notification flag test",
+            "Verify stage_completed flag in LogNotification",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let session = StageSession::new(
+            "ss-cc-notify",
+            "task-cc-notify",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        store.save_stage_session(&session).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel::<LogNotification>();
+
+        let content = "```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```\n";
+        let (pid, mut handle) = make_scripted_handle(content);
+        let stderr = handle.take_stderr();
+
+        let registry = Arc::new(default_test_registry());
+        read_chat_output(
+            pid,
+            &store,
+            "ss-cc-notify",
+            "task-cc-notify",
+            "work",
+            Box::new(TextLineParser),
+            handle,
+            stderr,
+            &integration_workflow(),
+            &integration_schema(),
+            Some(&tx),
+            &registry,
+            Path::new("/tmp"),
+            "default",
+            0,
+        );
+
+        // Drain all notifications accumulated during the session.
+        let mut notifications: Vec<LogNotification> = Vec::new();
+        while let Ok(n) = rx.try_recv() {
+            notifications.push(n);
+        }
+
+        assert!(
+            !notifications.is_empty(),
+            "should have received at least one LogNotification from the chat session"
+        );
+
+        // Exactly one notification must have stage_completed=true.
+        let completed: Vec<_> = notifications.iter().filter(|n| n.stage_completed).collect();
+        assert_eq!(
+            completed.len(),
+            1,
+            "exactly one LogNotification should have stage_completed=true. \
+             Got {} completed out of {} total. Notifications: {notifications:?}",
+            completed.len(),
+            notifications.len()
+        );
+
+        // All other notifications must have stage_completed=false.
+        let non_completed: Vec<_> = notifications
+            .iter()
+            .filter(|n| !n.stage_completed)
+            .collect();
+        assert_eq!(
+            non_completed.len(),
+            notifications.len() - 1,
+            "all notifications except the stage_completed one should have stage_completed=false. \
+             Got: {non_completed:?}"
         );
     }
 }

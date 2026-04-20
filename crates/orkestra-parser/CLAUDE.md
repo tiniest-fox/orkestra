@@ -24,6 +24,7 @@ src/
     │   ├── check_api_error.rs           # Detect API errors in JSONL
     │   ├── extract_fenced_json.rs       # Extract JSON from markdown fences
     │   ├── extract_from_jsonl.rs        # Scan JSONL for structured_output
+    │   ├── extract_from_text_content.rs # Shared text-based extraction cascade (ork fence → fenced JSON → raw JSON); requires "type" field
     │   ├── parse_stage_output.rs        # Schema validation + type interpretation
     │   └── strip_markdown_fences.rs     # Remove ```json fences
     └── stream/          # Shared stream parsing
@@ -40,8 +41,8 @@ src/
 parse_completion(parser, output, schema)
     │
     ├── parser.extract_output(output)    ← Provider-specific JSON extraction
-    │   └── Claude: scan JSONL for structured_output
-    │   └── OpenCode: JSONL → last_text → fenced JSON
+    │   └── Claude: scan JSONL for structured_output → fallback: extract_from_text_content(last_text)
+    │   └── OpenCode: scan JSONL → fallback: extract_from_text_content(last_text)
     │
     └── parse_stage_output::execute()    ← Centralized schema validation + typing
         └── Same for both providers
@@ -49,13 +50,15 @@ parse_completion(parser, output, schema)
 
 The trait handles provider differences; `parse_stage_output` is the single source of truth for what output types exist.
 
+**Extraction pipeline principle:** Both parsers share `extract_from_text_content` as the single text-based extraction cascade. Never add a second extraction path — any new strategy belongs there. The cascade requires a `"type"` field on all strategies except ork fences (which are explicit opt-in markers validated downstream by `parse_stage_output`). Chat-mode detection (`try_complete_from_output`) also delegates to this same function and must pass only trailing buffer content — never all accumulated text — to prevent mid-response false positives.
+
 ## Provider Differences
 
 | Concern | Claude Code | OpenCode |
 |---------|-------------|----------|
 | Output format | JSONL with `structured_output` wrapper | Fenced JSON in text events |
 | Session ID | Caller supplies via `--session-id` | Extracted from `sessionID` field |
-| Stream text | Text accumulated in `last_text` for ork fence fallback | Buffered, classified in `finalize()` |
+| Stream text | Text accumulated in `last_text`; passed to `extract_from_text_content` as fallback | Buffered, classified in `finalize()` |
 | Tool result tracking | Maps `tool_use_id` → `tool_name` | Inline in tool_use event (v1.1+) |
 | Subagent detection | Tracks Agent tool IDs | N/A |
 

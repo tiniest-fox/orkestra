@@ -7,9 +7,7 @@ use orkestra_types::domain::LogEntry;
 use crate::interactions::opencode::{
     classify_buffered_text, extract_text_content, extract_tool_result_event, extract_tool_use_event,
 };
-use crate::interactions::output::{
-    extract_fenced_json, extract_from_jsonl, extract_ork_fence, strip_markdown_fences,
-};
+use crate::interactions::output::{extract_from_jsonl, extract_from_text_content};
 use crate::interface::AgentParser;
 use crate::types::ParsedUpdate;
 
@@ -207,19 +205,7 @@ impl AgentParser for OpenCodeParserService {
 
         // Fall back to last_text (accumulated during streaming)
         if let Some(ref text) = self.last_text {
-            let stripped = strip_markdown_fences::execute(text);
-            // Verify it's valid JSON
-            if serde_json::from_str::<serde_json::Value>(&stripped).is_ok() {
-                return Ok(stripped);
-            }
-
-            // Try extracting a fenced JSON block from mixed prose+JSON text
-            if let Some((_prose, json_str)) = extract_fenced_json::execute(text) {
-                return Ok(json_str);
-            }
-
-            // Tier 3: ork fence in last_text
-            if let Some(json_str) = extract_ork_fence::execute(text) {
+            if let Some(json_str) = extract_from_text_content::execute(text) {
                 return Ok(json_str);
             }
         }

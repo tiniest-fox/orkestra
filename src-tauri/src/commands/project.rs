@@ -483,6 +483,12 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
         std::thread::spawn(move || {
             while let Ok(notification) = log_rx.recv() {
                 if let Some(ref window) = window_for_log {
+                    if notification.stage_completed {
+                        let _ = window.emit(
+                            "task-updated",
+                            serde_json::json!({ "task_id": notification.task_id }),
+                        );
+                    }
                     let _ = window.emit(
                         "log-entry-appended",
                         serde_json::json!({

@@ -650,6 +650,7 @@ impl StageExecutionService {
                     task_id: task_id.to_string(),
                     session_id: stage_session_id.to_string(),
                     last_entry_summary: summary,
+                    stage_completed: false,
                 }) {
                     crate::orkestra_debug!("stage", "Log notification send failed: {}", e);
                 }
@@ -810,6 +811,7 @@ impl StageExecutionService {
                     task_id: notification.task_id,
                     session_id: notification.stage_session_id,
                     last_entry_summary: notification.summary,
+                    stage_completed: false,
                 }) {
                     crate::orkestra_debug!("stage", "Gate log notification send failed: {}", e);
                 }

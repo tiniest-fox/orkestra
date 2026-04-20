@@ -18,7 +18,7 @@ The `.orkestra/scripts/` directory contains three shell scripts that Orkestra ex
 
 The gate script. Runs after the agent completes a stage that references it via `gate.command`. Its exit code determines what happens next:
 
-- **Exit 0** — gate passes. The stage advances to human review (or auto-advances if `is_automated: true`).
+- **Exit 0** — gate passes. The stage advances to human review (or auto-advances if the Trak is in auto mode).
 - **Non-zero exit** — gate fails. stdout and stderr are captured and sent to the agent as feedback. The agent retries.
 
 <Callout type="warning">

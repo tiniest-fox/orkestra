@@ -35,7 +35,7 @@ OpenCode does not support native JSON schema enforcement. Orkestra embeds the sc
 
 Agent sessions are stateful. When a stage's output is rejected and the agent retries, Orkestra resumes the same session — the agent sees its full conversation history including the rejection feedback. It does not restart from the beginning.
 
-Session continuity is scoped to a stage. Moving to a new stage always starts a new session. Within a stage, sessions persist across iterations unless `reset_session: true` is set on an `approval` capability.
+Session continuity is scoped to a stage. Moving to a new stage always starts a new session. Within a stage, sessions persist across iterations — the agent sees its full conversation history including every rejection and gate failure.
 
 ## Output types
 

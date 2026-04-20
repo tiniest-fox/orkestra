@@ -28,7 +28,7 @@ A Fail verdict from an Automated Gate triggers an automatic agent retry. A Fail 
 
 ### Approval
 
-**Approval** is always human. It is the universal mechanism by which a human decides what happens next. Every stage requires Approval before advancing, unless `is_automated: true` is set.
+**Approval** is always human. It is the universal mechanism by which a human decides what happens next. Every stage requires Approval before advancing, unless the Trak is in auto mode.
 
 There are two situations where a human gives Approval:
 
@@ -37,9 +37,9 @@ There are two situations where a human gives Approval:
 
 **The confusion to avoid:** Approval is not a gate, and gates do not give approval. Gates produce verdicts; humans give approval. An Agentic Gate is not "adding human approval to a stage" — every stage already has human approval. What it adds is an agent-produced verdict for the human to act on.
 
-### `capabilities.approval` in workflow.yaml
+### `gate: true` in workflow.yaml
 
-The current config key `capabilities.approval` is a **misleading name** — it predates this terminology and is likely to change. When documenting this capability, describe it as configuring a stage as an **Agentic Gate**, not as "adding approval." The config key is an implementation detail; the concept is an Agentic Gate.
+Setting `gate: true` on a stage configures it as an **Agentic Gate**. When documenting this, describe it as configuring a stage as an Agentic Gate — not as "adding approval." Every stage already has human approval; what `gate: true` adds is an agent-produced verdict for the human to act on.
 
 ---
 
@@ -70,14 +70,16 @@ When writing lifecycle diagrams or state tables, always use the right column. If
 
 ---
 
-## "Auto mode" vs. `is_automated` (per-stage automation)
+## "Auto mode" (task-level automation)
 
-These are **not the same scope**:
+**Auto mode** is a Trak-level boolean (`task.auto_mode`) that makes all stages advance without human approval. It is not a `workflow.yaml` field — it is a runtime property of the Trak, set at creation time or toggled via CLI/API.
 
-- **`is_automated: true`** — a per-stage field in `workflow.yaml` that skips human Approval after that stage. Automation is configured stage-by-stage.
-- **"Auto mode"** — a colloquial term sometimes used to describe a Trak that runs fully autonomously (all stages automated). This is not a documented Trak-level field; it emerges from all stages having `is_automated: true`.
+- When `auto_mode = true`: every stage in the Trak auto-advances after producing output. Gates still run; only the human approval pause is skipped.
+- When `auto_mode = false` (default): every stage pauses for human approval.
 
-**Avoid:** Describing "auto mode" as a Trak-level toggle or a single configuration option. A reader who encounters the phrase and looks for it in Workflow Configuration will only find `is_automated` on individual stages. If you need to describe fully-automated Traks, say "a Trak where all stages have `is_automated: true`" rather than "a Trak in auto mode".
+There is no per-stage automation flag. The old `is_automated: true` stage field no longer exists — using it produces a parse error.
+
+**Avoid:** Describing `is_automated` as a valid config option. It has been removed.
 
 ---
 

@@ -233,7 +233,7 @@ ork play <DESCRIPTION> [--title <TITLE>] [--flow <FLOW>] [--base_branch <BRANCH>
 | `--no_pr` | No | Merge directly to the base branch instead of opening a pull request. |
 
 <Callout type="note">
-`ork play` runs all stages without pausing for human approval. Use it for automated pipelines or for fully-automated flows where all stages are marked `is_automated: true`. `ork play` halts if a gate fails or an agentic gate produces a reject verdict. Inspect the Trak with `ork trak show` after a failed run.
+`ork play` runs all stages without pausing for human approval — equivalent to running a Trak in auto mode. `ork play` halts if a gate fails or an agentic gate produces a reject verdict. Inspect the Trak with `ork trak show` after a failed run.
 </Callout>
 
 ## ork pair

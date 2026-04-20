@@ -1,20 +1,23 @@
 ---
 title: Gates
-description: A gate is a shell script that runs after an agent completes a stage. Failure sends the agent back to fix the problem automatically.
+description: Gates check an agent's output before it reaches human review — either as a shell script that retries automatically, or as an agent verdict that a human confirms.
 order: 4
 ---
 
 import Callout from "../../../components/docs/Callout.astro";
 
-Agents don't always get it right on the first pass. Quality gates catch failures automatically and send the agent back to fix them — without you having to watch.
+Agents don't always get it right on the first pass. Gates catch failures and route work back for correction — without you having to watch.
 
-A gate is a shell script attached to a [stage](/docs/core-concepts/stages). After the agent produces output, the gate runs in the [Trak's](/docs/core-concepts/traks) worktree. Exit zero means the work passes. A non-zero exit means the agent retries with the script's output as feedback.
+A gate is attached to a [stage](/docs/core-concepts/stages) in `workflow.yaml`. Orkestra supports two kinds:
 
-## The retry loop
+- **Automated gate** — a shell script runs after the agent produces output. Exit zero passes; non-zero sends the output back to the agent as feedback and triggers a retry.
+- **Agentic gate** — an AI agent evaluates the work and produces an approve or reject verdict. The Trak then pauses for human review before routing.
+
+## Automated gate: the retry loop
 
 1. The agent completes its work and produces an artifact.
 2. The gate script runs in the Trak's worktree.
-3. **Exit 0** — the gate passes. The artifact proceeds to human review (or auto-advances if the stage is automated).
+3. **Exit 0** — the gate passes. The artifact proceeds to human review.
 4. **Non-zero exit** — the gate fails. The script's output (stdout and stderr) is sent back to the agent as feedback. The agent retries.
 5. The loop continues until the gate passes.
 
@@ -45,17 +48,24 @@ Gate scripts run in the Trak's worktree and have access to these environment var
 | `ORKESTRA_BRANCH` | The Trak's git branch name |
 | `ORKESTRA_PARENT_ID` | Parent Trak ID (only set for Subtraks) |
 
-## Agentic Gates
+## Agentic gate
 
-The shell-script gate described here is a deterministic check — the exit code determines the verdict. Orkestra also supports a second form: an **Agentic Gate**, where an AI agent evaluates the work and produces a pass or fail verdict. Agentic Gates are configured with the `approval` [capability](/docs/core-concepts/capabilities) on a review stage.
+Configure an agentic gate by setting `gate: true` on a stage:
+
+```yaml
+- name: review
+  artifact: verdict
+  gate: true
+```
+
+The agent produces a structured verdict (`approve` or `reject`) with reasoning. On reject, the agent specifies which earlier stage to route back to. If the Trak is not in auto mode, a human must confirm the rejection before routing executes — they can also override and continue regardless of the verdict.
 
 <Callout type="note">
-Gates (shell scripts) trigger automatic retries with no human involvement. Agentic Gates produce a verdict that a human reviews before the Trak is routed. They are different mechanisms that serve different needs.
+Automated gates trigger retries with no human involvement. Agentic gates produce a verdict that a human reviews before the Trak is routed. They serve different needs: automated gates enforce objective quality bars; agentic gates capture subjective evaluation.
 </Callout>
 
 ## Constraints
 
-- Gates only apply to agent stages. Script stages cannot have a gate.
 - Gate scripts run in the Trak's **worktree** directory, not the project root.
 - A gate that times out is treated as a failure (non-zero exit).
 - Gates run after the agent produces output — they do not interrupt mid-execution.

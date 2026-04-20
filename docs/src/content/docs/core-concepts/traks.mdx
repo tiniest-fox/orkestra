@@ -48,12 +48,14 @@ A Trak moves through phases as it runs:
 
 **Failed** — An agent declared it cannot complete the work, or a fatal error occurred.
 
-## Automated Traks
+## Auto mode
 
-By default, each stage pauses for human approval after producing output. Stages configured with `is_automated: true` in `workflow.yaml` skip this pause. A Trak where every stage is automated runs hands-off from creation to merge.
+By default, each stage pauses for human approval after producing output. A Trak in **auto mode** skips these pauses — all stages advance automatically from creation to merge.
+
+Auto mode is a Trak-level setting. It applies to every stage uniformly; there is no per-stage automation flag. Auto mode can be set at Trak creation time or toggled later via the CLI or API.
 
 <Callout type="note">
-There is no single "auto mode" toggle on a Trak. Full automation emerges from each stage having <code>is_automated: true</code>. See <a href="/docs/core-concepts/stages">Stages</a> for details.
+Auto mode does not bypass [gates](/docs/core-concepts/gates). Automated gate scripts still run and can still fail — triggering agent retries. Only the human approval pause is skipped.
 </Callout>
 
 ## Subtraks

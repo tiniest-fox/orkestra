@@ -64,7 +64,8 @@ Use the user-facing phase names instead:
 | `AwaitingApproval` | Awaiting Approval |
 | `WaitingOnChildren` | Waiting on Subtraks |
 | `Done` / `Archived` | Done |
-| `Failed` / `Blocked` | Failed |
+| `Failed` | Failed |
+| `Blocked` | Blocked |
 
 When writing lifecycle diagrams or state tables, always use the right column. If you encounter internal state strings in source code or log output, translate them before including them in documentation.
 

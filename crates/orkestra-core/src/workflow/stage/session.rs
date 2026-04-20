@@ -495,6 +495,41 @@ mod tests {
     }
 
     #[test]
+    fn test_trigger_forwarded_to_new_iteration() {
+        // When on_spawn_starting creates a new iteration (no active iteration exists),
+        // the caller's trigger must be forwarded to create_iteration so that feedback
+        // survives daemon restarts.
+        use crate::workflow::domain::IterationTrigger;
+        let (store, iter_svc) = create_deps();
+
+        let ctx = session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "work",
+            Some("test-uuid".into()),
+            Some(IterationTrigger::Feedback {
+                feedback: "Please fix the bug".into(),
+            }),
+        )
+        .unwrap();
+
+        let iteration = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
+        assert_eq!(ctx.iteration_id, iteration.id);
+        assert!(
+            matches!(
+                &iteration.incoming_context,
+                Some(IterationTrigger::Feedback { feedback }) if feedback == "Please fix the bug"
+            ),
+            "iteration must carry the forwarded trigger; got: {:?}",
+            iteration.incoming_context
+        );
+    }
+
+    #[test]
     fn test_mark_trigger_delivered_noop_when_no_trigger() {
         let (store, iter_svc) = create_deps();
 

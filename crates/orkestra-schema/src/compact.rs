@@ -7,10 +7,13 @@ use serde_json::Value;
 /// Used to inject a readable but token-efficient schema reference into agent
 /// prompts. The full schema (with descriptions) is still passed via `--json-schema`
 /// for providers that support native enforcement.
-pub fn execute(json: &str) -> String {
-    let mut value: Value = serde_json::from_str(json).expect("schema should be valid JSON");
+///
+/// Returns an error if `json` is not valid JSON (e.g. a malformed custom schema
+/// file loaded from disk).
+pub fn execute(json: &str) -> Result<String, serde_json::Error> {
+    let mut value: Value = serde_json::from_str(json)?;
     strip_descriptions(&mut value);
-    serde_json::to_string(&value).expect("schema should serialize")
+    Ok(serde_json::to_string(&value).expect("schema should serialize"))
 }
 
 // -- Helpers --
@@ -51,7 +54,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
         });
-        let compact = execute(&schema);
+        let compact = execute(&schema).unwrap();
         let parsed: Value = serde_json::from_str(&compact).unwrap();
 
         // Verify no description keys remain anywhere in the schema
@@ -89,7 +92,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
         });
-        let compact = execute(&schema);
+        let compact = execute(&schema).unwrap();
         let parsed: Value = serde_json::from_str(&compact).unwrap();
 
         // required, additionalProperties, and property names should all survive

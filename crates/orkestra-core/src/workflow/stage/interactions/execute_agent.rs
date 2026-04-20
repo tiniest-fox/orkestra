@@ -73,7 +73,8 @@ pub(crate) fn execute(
 
     // 1. Get JSON schema (needed for BOTH first spawn and resume)
     let json_schema = get_stage_schema(workflow, prompt_service, task, stage)?;
-    let compact_json_schema = orkestra_schema::compact_schema(&json_schema);
+    let compact_json_schema = orkestra_schema::compact_schema(&json_schema)
+        .map_err(|e| ExecutionError::ConfigError(format!("Invalid JSON schema: {e}")))?;
 
     // 2. Resolve the provider to check capabilities
     let model_spec = workflow
@@ -124,7 +125,6 @@ pub(crate) fn execute(
         stage,
         user_prompt,
         system_prompt,
-        &json_schema,
         &compact_json_schema,
         &resolved.capabilities,
     )?;
@@ -498,7 +498,6 @@ pub(crate) fn apply_provider_fallbacks(
     stage: &str,
     mut user_prompt: String,
     system_prompt: String,
-    _json_schema: &str,
     compact_json_schema: &str,
     capabilities: &ProviderCapabilities,
 ) -> Result<(String, Option<String>), ExecutionError> {
@@ -749,7 +748,6 @@ mod tests {
         let user_prompt = "Do the work".to_string();
         let system_prompt =
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
-        let json_schema = r#"{"type":"object"}"#;
         let compact_schema = r#"{"type":"object"}"#;
 
         let claude_caps = ProviderCapabilities {
@@ -765,7 +763,6 @@ mod tests {
             stage,
             user_prompt,
             system_prompt.clone(),
-            json_schema,
             compact_schema,
             &claude_caps,
         )
@@ -787,7 +784,6 @@ mod tests {
         let user_prompt = "Do the work".to_string();
         let system_prompt =
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
-        let json_schema = r#"{"type":"object"}"#;
         let compact_schema = r#"{"type":"object"}"#;
 
         let opencode_caps = ProviderCapabilities {
@@ -803,7 +799,6 @@ mod tests {
             stage,
             user_prompt.clone(),
             system_prompt.clone(),
-            json_schema,
             compact_schema,
             &opencode_caps,
         )

@@ -161,13 +161,12 @@ mod tests {
         task.state = TaskState::awaiting_question_answer("planning");
         store.save_task(&task).unwrap();
 
-        let result = execute_queued(
+        let result = execute(
             store.as_ref(),
             &workflow,
             &iter_service,
             &task.id,
             "Please use PostgreSQL",
-            task.clone(),
         )
         .unwrap();
 
@@ -200,13 +199,12 @@ mod tests {
         task.state = TaskState::interrupted("work");
         store.save_task(&task).unwrap();
 
-        let result = execute_queued(
+        let result = execute(
             store.as_ref(),
             &workflow,
             &iter_service,
             &task.id,
             "Continue with the implementation",
-            task.clone(),
         )
         .unwrap();
 
@@ -241,13 +239,12 @@ mod tests {
             .create_iteration(&task.id, "work", None)
             .unwrap();
 
-        let result = execute_queued(
+        let result = execute(
             store.as_ref(),
             &workflow,
             &iter_service,
             &task.id,
             "Try a different approach",
-            task.clone(),
         )
         .unwrap();
 
@@ -274,13 +271,12 @@ mod tests {
             .create_iteration(&task.id, "planning", None)
             .unwrap();
 
-        let result = execute_queued(
+        let result = execute(
             store.as_ref(),
             &workflow,
             &iter_service,
             &task.id,
             "Please retry",
-            task.clone(),
         )
         .unwrap();
 
@@ -307,13 +303,12 @@ mod tests {
             .create_iteration(&task.id, "work", None)
             .unwrap();
 
-        let result = execute_queued(
+        let result = execute(
             store.as_ref(),
             &workflow,
             &iter_service,
             &task.id,
             "The service is now available",
-            task.clone(),
         )
         .unwrap();
 

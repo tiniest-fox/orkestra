@@ -236,8 +236,11 @@ fn read_lock_state(lock_path: &Path) -> LockState {
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+        .map(|d| d.as_secs())
+        // If the system clock is before UNIX_EPOCH, use u64::MAX so the lock
+        // appears maximally fresh (age = 0 via saturating_sub) rather than
+        // maximally stale (age = current_time via unwrap_or(0)).
+        .unwrap_or(u64::MAX)
 }
 
 /// Write `{our_pid}:{timestamp}` to `lock_path`, then verify we still own it after 10ms.

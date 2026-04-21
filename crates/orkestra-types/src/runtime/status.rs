@@ -77,7 +77,6 @@ pub enum TaskState {
     // Failed and Blocked are NOT terminal — is_terminal() returns false for
     // them. They require a human action (send_message) to resume, making them
     // more like Interrupted than Done/Archived.
-
     /// Task failed and cannot continue without human intervention.
     Failed {
         #[serde(default, skip_serializing_if = "Option::is_none")]

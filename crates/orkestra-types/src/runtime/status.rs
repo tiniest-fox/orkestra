@@ -62,10 +62,6 @@ pub enum TaskState {
     /// Agent was interrupted by the user. Awaiting resume.
     Interrupted { stage: String },
 
-    // -- Interactive --
-    /// User is directing work turn-by-turn in the task's worktree.
-    Interactive { stage: String },
-
     // -- Parent --
     /// Waiting for child tasks to complete before advancing.
     WaitingOnChildren { stage: String },
@@ -77,7 +73,11 @@ pub enum TaskState {
     /// Task completed and integrated (branch merged).
     Archived,
 
-    /// Task failed and cannot continue.
+    // -- Resumable Failure --
+    // Failed and Blocked are NOT terminal — is_terminal() returns false for
+    // them. They require a human action (send_message) to resume, making them
+    // more like Interrupted than Done/Archived.
+    /// Task failed and cannot continue without human intervention.
     Failed {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stage: Option<String>,
@@ -177,12 +177,6 @@ impl TaskState {
         }
     }
 
-    pub fn interactive(stage: impl Into<String>) -> Self {
-        Self::Interactive {
-            stage: stage.into(),
-        }
-    }
-
     pub fn waiting_on_children(stage: impl Into<String>) -> Self {
         Self::WaitingOnChildren {
             stage: stage.into(),
@@ -239,7 +233,6 @@ impl TaskState {
             | Self::AwaitingQuestionAnswer { stage }
             | Self::AwaitingRejectionConfirmation { stage }
             | Self::Interrupted { stage }
-            | Self::Interactive { stage }
             | Self::WaitingOnChildren { stage }
             | Self::Failed {
                 stage: Some(stage), ..
@@ -257,10 +250,7 @@ impl TaskState {
 
     /// Check if this is a terminal state (task will not progress further).
     pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            Self::Done | Self::Archived | Self::Failed { .. } | Self::Blocked { .. }
-        )
+        matches!(self, Self::Done | Self::Archived)
     }
 
     /// Check if a human action is needed to proceed.
@@ -271,6 +261,8 @@ impl TaskState {
                 | Self::AwaitingQuestionAnswer { .. }
                 | Self::AwaitingRejectionConfirmation { .. }
                 | Self::Interrupted { .. }
+                | Self::Failed { .. }
+                | Self::Blocked { .. }
         )
     }
 
@@ -322,11 +314,6 @@ impl TaskState {
     pub fn can_transition(&self) -> bool {
         !self.is_terminal()
     }
-
-    /// Check if the task is in interactive mode.
-    pub fn is_interactive(&self) -> bool {
-        matches!(self, Self::Interactive { .. })
-    }
 }
 
 // ============================================================================
@@ -354,7 +341,6 @@ impl fmt::Display for TaskState {
                 write!(f, "awaiting_rejection_confirmation ({stage})")
             }
             Self::Interrupted { stage } => write!(f, "interrupted ({stage})"),
-            Self::Interactive { stage } => write!(f, "interactive ({stage})"),
             Self::WaitingOnChildren { stage } => write!(f, "waiting_on_children ({stage})"),
             Self::Done => write!(f, "done"),
             Self::Archived => write!(f, "archived"),
@@ -395,8 +381,9 @@ mod tests {
     fn test_terminal_states() {
         assert!(TaskState::Done.is_terminal());
         assert!(TaskState::Archived.is_terminal());
-        assert!(TaskState::failed("error").is_terminal());
-        assert!(TaskState::blocked("reason").is_terminal());
+        // Failed and Blocked are no longer terminal — they can receive send_message
+        assert!(!TaskState::failed("error").is_terminal());
+        assert!(!TaskState::blocked("reason").is_terminal());
 
         assert!(!TaskState::Done.can_transition());
         assert!(!TaskState::Archived.can_transition());
@@ -535,6 +522,8 @@ mod tests {
         assert!(TaskState::awaiting_question_answer("planning").needs_human_action());
         assert!(TaskState::awaiting_rejection_confirmation("review").needs_human_action());
         assert!(TaskState::interrupted("work").needs_human_action());
+        assert!(TaskState::failed("error").needs_human_action());
+        assert!(TaskState::blocked("reason").needs_human_action());
 
         assert!(!TaskState::agent_working("work").needs_human_action());
         assert!(!TaskState::queued("work").needs_human_action());

@@ -72,13 +72,6 @@ function resolveColors(
       extraClass,
     };
   }
-  if (derived.is_chatting || derived.chat_agent_active) {
-    return {
-      colors: { bg: "bg-status-cyan-bg", icon: "text-status-cyan" },
-      symbol: "⋯",
-      extraClass,
-    };
-  }
   if (derived.has_questions) {
     return {
       colors: { bg: "bg-status-info-bg", icon: "text-status-info" },
@@ -90,13 +83,6 @@ function resolveColors(
     return {
       colors: { bg: "bg-status-purple-bg", icon: "text-status-purple" },
       symbol: "⦿",
-      extraClass,
-    };
-  }
-  if (derived.is_interactive) {
-    return {
-      colors: { bg: "bg-status-purple-bg", icon: "text-status-purple" },
-      symbol: "⟡",
       extraClass,
     };
   }

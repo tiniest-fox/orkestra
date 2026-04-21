@@ -322,16 +322,12 @@ fn extract_integration_context<'a>(
 /// Extract feedback text from an iteration trigger.
 fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
     trigger.and_then(|t| match t {
-        IterationTrigger::Rejection { feedback, .. } | IterationTrigger::Feedback { feedback } => {
-            Some(feedback.as_str())
-        }
+        IterationTrigger::Rejection { feedback, .. } => Some(feedback.as_str()),
         IterationTrigger::GateFailure { error } => Some(error.as_str()),
-        IterationTrigger::RetryFailed { instructions }
-        | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
-        IterationTrigger::ManualResume { message } => message.as_deref(),
         IterationTrigger::Redirect { message, .. } | IterationTrigger::Restart { message, .. } => {
             Some(message.as_str())
         }
+        IterationTrigger::UserMessage { message } => Some(message.as_str()),
         _ => None,
     })
 }
@@ -393,9 +389,6 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
     match trigger {
         // First iteration or no special context
         None | Some(IterationTrigger::Interrupted) => ResumeType::Continue,
-        Some(IterationTrigger::Feedback { feedback }) => ResumeType::Feedback {
-            feedback: feedback.clone(),
-        },
         // Rejection and Integration always supersede the session via should_supersede_session(),
         // so these arms are unreachable — trigger_to_resume_type is only called when
         // is_resume=true, which requires an existing (non-superseded) session.
@@ -414,40 +407,18 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
                 })
                 .collect(),
         },
-        // Gate failure is treated like feedback - agent needs to fix the issues
-        Some(IterationTrigger::GateFailure { error }) => ResumeType::Feedback {
-            feedback: format!("The gate checks failed:\n\n{error}"),
-        },
-        Some(IterationTrigger::RetryFailed { instructions }) => ResumeType::RetryFailed {
-            instructions: instructions.clone(),
-        },
-        Some(IterationTrigger::RetryBlocked { instructions }) => ResumeType::RetryBlocked {
-            instructions: instructions.clone(),
-        },
-        Some(IterationTrigger::ManualResume { message }) => ResumeType::ManualResume {
-            message: message.clone(),
+        // Gate failure delivers the error as a user message so the agent can fix the issues.
+        Some(IterationTrigger::GateFailure { error }) => ResumeType::UserMessage {
+            message: format!("The gate checks failed:\n\n{error}"),
         },
         Some(IterationTrigger::PrFeedback { .. }) => unreachable!(
             "PrFeedback triggers always supersede the session; is_resume cannot be true here"
         ),
-        Some(IterationTrigger::ReturnToWork { message }) => ResumeType::ReturnToWork {
-            message: message.clone(),
-        },
         Some(IterationTrigger::Redirect { .. }) => {
             unreachable!("redirect supersedes the session")
         }
         Some(IterationTrigger::Restart { .. }) => {
             unreachable!("restart supersedes the session")
-        }
-        Some(IterationTrigger::ReturnFromInteractive) => {
-            unreachable!(
-                "ReturnFromInteractive triggers always supersede the session; is_resume cannot be true here"
-            )
-        }
-        Some(IterationTrigger::ChatCompletion) => {
-            // Stage was completed during chat — if a new spawn is triggered after this,
-            // continue in the existing session without special context.
-            ResumeType::Continue
         }
         // MalformedOutput resumes in the existing session with a corrective prompt.
         // The attempt count and max_attempts are stored in the trigger when the retry iteration
@@ -460,6 +431,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
             error: error.clone(),
             attempt: *attempt,
             max_attempts: *max_attempts,
+        },
+        Some(IterationTrigger::UserMessage { message }) => ResumeType::UserMessage {
+            message: message.clone(),
         },
     }
 }

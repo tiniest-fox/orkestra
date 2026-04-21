@@ -53,7 +53,6 @@ pub fn execute(
     let mut task = Task::new(&id, title, description, &first_stage.name, &now);
     task.base_branch = resolved_base_branch;
     task.auto_mode = matches!(mode, TaskCreationMode::AutoMode);
-    task.created_interactive = matches!(mode, TaskCreationMode::Interactive);
     task.flow = flow_name.to_string();
 
     // Start in AwaitingSetup - orchestrator will pick this up and trigger setup

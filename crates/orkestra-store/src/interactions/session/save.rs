@@ -13,8 +13,8 @@ pub fn execute(conn: &Connection, session: &StageSession) -> WorkflowResult<()> 
     conn.execute(
         "INSERT OR REPLACE INTO workflow_stage_sessions (
             id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-            session_state, created_at, updated_at, has_activity, chat_active
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            session_state, created_at, updated_at, has_activity
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             session.id,
             session.task_id,
@@ -26,7 +26,6 @@ pub fn execute(conn: &Connection, session: &StageSession) -> WorkflowResult<()> 
             session.created_at,
             session.updated_at,
             i32::from(session.has_activity),
-            i32::from(session.chat_active),
         ],
     )
     .map_err(|e| WorkflowError::Storage(e.to_string()))?;

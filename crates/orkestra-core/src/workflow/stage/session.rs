@@ -18,8 +18,7 @@ pub struct SessionSpawnContext {
     pub session_id: Option<String>,
     /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
     /// True when the session has a stored ID AND either `has_activity` (agent produced output)
-    /// OR the active iteration has a human-initiated resume trigger (`ManualResume` or
-    /// `ReturnToWork`).
+    /// OR the active iteration has a human-initiated resume trigger (`UserMessage`).
     /// Forced to `false` when `session_id` is `None` (can't resume without a session ID).
     pub is_resume: bool,
     /// The `StageSession.id` for log correlation. Unlike the old `"{task_id}-{stage}"`
@@ -479,8 +478,8 @@ mod tests {
             .get_active_iteration("task-1", "work")
             .unwrap()
             .unwrap();
-        iter.incoming_context = Some(IterationTrigger::Feedback {
-            feedback: "fix this".into(),
+        iter.incoming_context = Some(IterationTrigger::UserMessage {
+            message: "fix this".into(),
         });
         iter.trigger_delivered = true;
         store.save_iteration(&iter).unwrap();
@@ -508,8 +507,8 @@ mod tests {
             "task-1",
             "work",
             Some("test-uuid".into()),
-            Some(IterationTrigger::Feedback {
-                feedback: "Please fix the bug".into(),
+            Some(IterationTrigger::UserMessage {
+                message: "Please fix the bug".into(),
             }),
         )
         .unwrap();
@@ -522,7 +521,7 @@ mod tests {
         assert!(
             matches!(
                 &iteration.incoming_context,
-                Some(IterationTrigger::Feedback { feedback }) if feedback == "Please fix the bug"
+                Some(IterationTrigger::UserMessage { message }) if message == "Please fix the bug"
             ),
             "iteration must carry the forwarded trigger; got: {:?}",
             iteration.incoming_context
@@ -559,9 +558,9 @@ mod tests {
     }
 
     #[test]
-    fn test_resume_when_manual_resume_trigger_no_activity() {
-        // Interrupt→resume: agent exits without producing output (has_activity = false),
-        // then user resumes. Should resume the existing session, not start fresh.
+    fn test_resume_when_user_message_trigger_no_activity() {
+        // Interrupt→send_message: agent exits without producing output (has_activity = false),
+        // then user sends a message. Should resume the existing session, not start fresh.
         use crate::workflow::domain::IterationTrigger;
         let (store, iter_svc) = create_deps();
 
@@ -585,73 +584,18 @@ mod tests {
             .unwrap();
         assert!(!s.has_activity, "precondition: no activity");
 
-        // User resumes from interrupt — creates new iteration with ManualResume trigger
+        // User sends message — creates new iteration with UserMessage trigger
         iter_svc
             .create_iteration(
                 "task-1",
                 "review",
-                Some(IterationTrigger::ManualResume { message: None }),
-            )
-            .unwrap();
-
-        // Next spawn: should resume the existing session (ManualResume overrides missing activity)
-        let ctx = session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("new-uuid".into()),
-            None,
-        )
-        .unwrap();
-
-        assert!(ctx.is_resume, "ManualResume trigger should cause resume");
-        assert_eq!(
-            ctx.session_id, first_ctx.session_id,
-            "original session ID must be preserved"
-        );
-    }
-
-    #[test]
-    fn test_resume_when_return_to_work_trigger_no_activity() {
-        // Interrupt→chat→return_to_work: agent exits without producing output
-        // (has_activity = false), user chats, then returns to work. Should resume
-        // the existing session, not start fresh.
-        use crate::workflow::domain::IterationTrigger;
-        let (store, iter_svc) = create_deps();
-
-        // First spawn
-        let first_ctx = session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("original-uuid".into()),
-            None,
-        )
-        .unwrap();
-        session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
-
-        // Agent exits without producing structured output (no has_activity)
-        simulate_agent_exit(&store, "task-1", "review");
-        let s = store
-            .get_stage_session("task-1", "review")
-            .unwrap()
-            .unwrap();
-        assert!(!s.has_activity, "precondition: no activity");
-
-        // User chats then returns to work — creates new iteration with ReturnToWork trigger
-        iter_svc
-            .create_iteration(
-                "task-1",
-                "review",
-                Some(IterationTrigger::ReturnToWork {
-                    message: Some("Just submit a rejection".to_string()),
+                Some(IterationTrigger::UserMessage {
+                    message: String::new(),
                 }),
             )
             .unwrap();
 
-        // Next spawn: should resume the existing session (ReturnToWork overrides missing activity)
+        // Next spawn: should resume the existing session (UserMessage overrides missing activity)
         let ctx = session::on_spawn_starting::execute(
             store.as_ref(),
             &iter_svc,
@@ -662,7 +606,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(ctx.is_resume, "ReturnToWork trigger should cause resume");
+        assert!(ctx.is_resume, "UserMessage trigger should cause resume");
         assert_eq!(
             ctx.session_id, first_ctx.session_id,
             "original session ID must be preserved"

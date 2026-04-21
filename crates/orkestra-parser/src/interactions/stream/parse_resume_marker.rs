@@ -26,13 +26,9 @@ pub fn execute(text: &str) -> Option<ResumeMarker> {
         ["resume", _stage, resume_type] => {
             let marker_type = match *resume_type {
                 "continue" => ResumeMarkerType::Continue,
-                "feedback" => ResumeMarkerType::Feedback,
                 "integration" => ResumeMarkerType::Integration,
                 "answers" => ResumeMarkerType::Answers,
-                "retry_failed" => ResumeMarkerType::RetryFailed,
-                "retry_blocked" => ResumeMarkerType::RetryBlocked,
-                "manual_resume" => ResumeMarkerType::ManualResume,
-                "return_to_work" => ResumeMarkerType::ReturnToWork,
+                "user_message" => ResumeMarkerType::UserMessage,
                 _ => return None,
             };
             Some(ResumeMarker {
@@ -60,12 +56,6 @@ mod tests {
         assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
         assert_eq!(marker.content, "Continue working");
 
-        let marker = execute("<!orkestra:resume:review:feedback>\n\nPlease fix this bug");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Feedback);
-        assert_eq!(marker.content, "Please fix this bug");
-
         let marker = execute("<!orkestra:resume:work:integration>\n\nMerge conflict in file.rs");
         assert!(marker.is_some());
         let marker = marker.unwrap();
@@ -78,6 +68,8 @@ mod tests {
         assert!(execute("Fix the bug please").is_none());
         assert!(execute("# Worker Agent\nDo stuff").is_none());
         assert!(execute("").is_none());
+        // Removed variants fall through to _ => None
+        assert!(execute("<!orkestra:resume:review:feedback>\n\nPlease fix this bug").is_none());
     }
 
     #[test]
@@ -94,14 +86,21 @@ mod tests {
     #[test]
     fn test_resume_marker_type_as_str() {
         assert_eq!(ResumeMarkerType::Continue.as_str(), "continue");
-        assert_eq!(ResumeMarkerType::Feedback.as_str(), "feedback");
         assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
         assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
-        assert_eq!(ResumeMarkerType::RetryFailed.as_str(), "retry_failed");
-        assert_eq!(ResumeMarkerType::RetryBlocked.as_str(), "retry_blocked");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
-        assert_eq!(ResumeMarkerType::ManualResume.as_str(), "manual_resume");
-        assert_eq!(ResumeMarkerType::ReturnToWork.as_str(), "return_to_work");
+        assert_eq!(ResumeMarkerType::UserMessage.as_str(), "user_message");
+    }
+
+    #[test]
+    fn test_parse_resume_marker_user_message() {
+        let marker = execute(
+            "<!orkestra:resume:work:user_message>\n\nPlease add error handling for this edge case.",
+        );
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::UserMessage);
+        assert!(marker.content.contains("error handling"));
     }
 
     #[test]
@@ -114,44 +113,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_resume_marker_retry_failed() {
-        let marker =
-            execute("<!orkestra:resume:work:retry_failed>\n\nRetrying after task failure.");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::RetryFailed);
-        assert!(marker.content.contains("failure"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_retry_blocked() {
-        let marker =
-            execute("<!orkestra:resume:work:retry_blocked>\n\nRetrying after task was blocked.");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::RetryBlocked);
-        assert!(marker.content.contains("blocked"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_manual_resume() {
+    fn test_parse_resume_marker_manual_resume_returns_none() {
         let marker = execute(
             "<!orkestra:resume:work:manual_resume>\n\nMessage from the user:\n\nPlease fix the bug",
         );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::ManualResume);
-        assert!(marker.content.contains("Message from the user"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_return_to_work() {
-        let marker = execute(
-            "<!orkestra:resume:work:return_to_work>\n\n# Worker Agent\n\nReturn to work prompt",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::ReturnToWork);
-        assert!(marker.content.contains("Return to work prompt"));
+        assert!(marker.is_none());
     }
 }

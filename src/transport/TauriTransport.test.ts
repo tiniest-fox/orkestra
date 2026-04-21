@@ -42,14 +42,6 @@ describe("TauriTransport", () => {
       expect(mockInvoke).toHaveBeenCalledWith("workflow_approve", { taskId: "abc-123" });
     });
 
-    it("maps reject to workflow_reject with camelCase params", async () => {
-      await transport.call("reject", { task_id: "abc", feedback: "needs work" });
-      expect(mockInvoke).toHaveBeenCalledWith("workflow_reject", {
-        taskId: "abc",
-        feedback: "needs work",
-      });
-    });
-
     it("maps create_task to workflow_create_task with camelCase params", async () => {
       await transport.call("create_task", {
         title: "My task",
@@ -73,19 +65,6 @@ describe("TauriTransport", () => {
     it("maps git_sync_status to workflow_git_sync_status", async () => {
       await transport.call("git_sync_status");
       expect(mockInvoke).toHaveBeenCalledWith("workflow_git_sync_status", {});
-    });
-
-    it("maps return_to_work to workflow_return_to_work", async () => {
-      await transport.call("return_to_work", { task_id: "t1" });
-      expect(mockInvoke).toHaveBeenCalledWith("workflow_return_to_work", { taskId: "t1" });
-    });
-
-    it("passes through stage_chat_send without renaming", async () => {
-      await transport.call("stage_chat_send", { task_id: "t1", message: "hello" });
-      expect(mockInvoke).toHaveBeenCalledWith("stage_chat_send", {
-        taskId: "t1",
-        message: "hello",
-      });
     });
 
     it("passes through assistant_send_message without renaming", async () => {

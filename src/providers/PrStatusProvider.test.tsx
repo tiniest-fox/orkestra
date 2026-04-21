@@ -51,9 +51,6 @@ function createMockTask(id: string, prUrl?: string): WorkflowTaskView {
       pending_approval: false,
       stages_with_logs: [],
       subtask_progress: null,
-      is_chatting: false,
-      chat_agent_active: false,
-      is_interactive: false,
       can_bypass: false,
     },
   };

@@ -33,7 +33,7 @@ export interface FeedGroupResult {
  * subtasks that need attention into the Needs Review section.
  *
  * Classification order (first match wins):
- * - needs_review: derived.needs_review || derived.has_questions || is_blocked || is_interrupted || subtask needs review || is_chatting || chat_agent_active || is_interactive
+ * - needs_review: derived.needs_review || derived.has_questions || is_blocked || is_interrupted || subtask needs review
  * - integrating: state.type === "integrating" → ready_to_ship
  * - merged_pr: derived.is_done AND prStates entry is "merged"
  * - closed_pr: derived.is_done AND prStates entry is "closed"
@@ -86,10 +86,7 @@ export function groupTasksForFeed(
       task.derived.has_questions ||
       task.derived.is_blocked ||
       task.derived.is_interrupted ||
-      subtaskNeedsAttention.has(task.id) ||
-      task.derived.is_chatting ||
-      task.derived.chat_agent_active ||
-      task.derived.is_interactive
+      subtaskNeedsAttention.has(task.id)
     ) {
       needsReview.push(task);
     } else if (task.state.type === "integrating") {

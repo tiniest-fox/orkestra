@@ -24,8 +24,6 @@ mod differential;
 mod git_sync;
 #[path = "e2e/integration.rs"]
 mod integration;
-#[path = "e2e/interactive.rs"]
-mod interactive;
 #[path = "e2e/lock.rs"]
 mod lock;
 #[path = "e2e/multi_project.rs"]
@@ -38,8 +36,6 @@ mod pr_description_audit;
 mod resources;
 #[path = "e2e/squash_commits.rs"]
 mod squash_commits;
-#[path = "e2e/stage_chat.rs"]
-mod stage_chat;
 #[path = "e2e/startup.rs"]
 mod startup;
 #[path = "e2e/subtasks.rs"]

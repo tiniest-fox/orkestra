@@ -5,7 +5,6 @@ import { nextStageInFlow } from "./workflowNavigation";
 
 export type OptimisticAction =
   | { type: "approve" }
-  | { type: "reject"; feedback: string }
   | { type: "answer_questions" }
   | { type: "interrupt" }
   | { type: "resume" }
@@ -59,25 +58,6 @@ export function applyOptimisticTransition(
           derived: {
             ...task.derived,
             current_stage: target,
-            needs_review: false,
-            is_working: true,
-            pending_rejection: null,
-          },
-        };
-      }
-      return null;
-    }
-
-    case "reject": {
-      if (
-        task.state.type === "awaiting_approval" ||
-        task.state.type === "awaiting_rejection_confirmation"
-      ) {
-        return {
-          ...task,
-          state: { type: "agent_working", stage: task.state.stage },
-          derived: {
-            ...task.derived,
             needs_review: false,
             is_working: true,
             pending_rejection: null,

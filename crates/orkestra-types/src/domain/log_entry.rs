@@ -216,7 +216,7 @@ pub struct AnnotatedLogEntry {
     /// The log entry content.
     pub entry: LogEntry,
     /// The iteration that was active when this log entry was written.
-    /// `None` for chat-mode messages (written before a `ChatCompletion` iteration exists).
+    /// `None` for log entries written before the current iteration was created.
     pub iteration_id: Option<String>,
 }
 

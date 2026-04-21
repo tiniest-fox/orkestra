@@ -65,8 +65,6 @@ pub struct PrCheckData {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IterationTrigger {
-    /// Human rejected previous output.
-    Feedback { feedback: String },
     /// Agent (reviewer) rejected and sent work back to this stage.
     Rejection {
         from_stage: String,
@@ -95,18 +93,6 @@ pub enum IterationTrigger {
     Interrupted,
     /// Gate script failed. The task re-queues with this error as context.
     GateFailure { error: String },
-    /// Human retried a failed task, optionally with instructions.
-    RetryFailed { instructions: Option<String> },
-    /// Human retried a blocked task, optionally with instructions.
-    RetryBlocked { instructions: Option<String> },
-    /// User interrupted and then resumed, optionally with a message.
-    ManualResume { message: Option<String> },
-    /// The user chatted with the agent and is now returning to structured work.
-    ///
-    /// Carries the optional final message the user typed before clicking
-    /// "Return to Work", which is injected into the resume prompt so the
-    /// agent sees it as a closing instruction.
-    ReturnToWork { message: Option<String> },
     /// Human redirected the task to this stage from another stage.
     Redirect {
         /// The stage the task was redirected from.
@@ -119,13 +105,11 @@ pub enum IterationTrigger {
         /// Human-provided context explaining the restart.
         message: String,
     },
-    /// Task exited interactive mode and is returning to structured work.
-    /// Old DB records with `interactive` type deserialize as this variant.
-    #[serde(alias = "interactive")]
-    ReturnFromInteractive,
-    /// The agent produced structured output during a chat conversation,
-    /// completing the stage without requiring `return_to_work`.
-    ChatCompletion,
+    /// User sent a message to the agent (unified `send_message` API).
+    ///
+    /// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, or `Interrupted`.
+    /// Creates a new iteration and transitions the task to `Queued`.
+    UserMessage { message: String },
     /// Agent produced output that couldn't be parsed as structured JSON.
     MalformedOutput {
         error: String,
@@ -359,19 +343,6 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_trigger_feedback() {
-        let trigger = IterationTrigger::Feedback {
-            feedback: "Tests are failing".to_string(),
-        };
-        let json = serde_json::to_string(&trigger).unwrap();
-        assert!(json.contains("\"type\":\"feedback\""));
-        assert!(json.contains("Tests are failing"));
-
-        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, trigger);
-    }
-
-    #[test]
     fn test_iteration_trigger_rejection() {
         let trigger = IterationTrigger::Rejection {
             from_stage: "review".to_string(),
@@ -425,87 +396,11 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_with_context() {
-        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
-            IterationTrigger::Feedback {
-                feedback: "Add error handling".to_string(),
-            },
-        );
-
-        assert!(iter.incoming_context.is_some());
-        match &iter.incoming_context {
-            Some(IterationTrigger::Feedback { feedback }) => {
-                assert_eq!(feedback, "Add error handling");
-            }
-            _ => panic!("Expected Feedback trigger"),
-        }
-    }
-
-    #[test]
-    fn test_iteration_with_context_serialization() {
-        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
-            IterationTrigger::Feedback {
-                feedback: "Fix tests".to_string(),
-            },
-        );
-
-        let json = serde_json::to_string(&iter).unwrap();
-        assert!(json.contains("\"incoming_context\""));
-        assert!(json.contains("\"type\":\"feedback\""));
-        assert!(json.contains("Fix tests"));
-
-        let parsed: Iteration = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, iter);
-    }
-
-    #[test]
     fn test_iteration_without_context_omits_field() {
         let iter = Iteration::new("iter-1", "task-1", "planning", 1, "now");
         let yaml = serde_yaml::to_string(&iter).unwrap();
         // incoming_context should be omitted when None
         assert!(!yaml.contains("incoming_context"));
-    }
-
-    #[test]
-    fn test_iteration_trigger_manual_resume() {
-        let trigger = IterationTrigger::ManualResume {
-            message: Some("Fix the validation logic".to_string()),
-        };
-        let json = serde_json::to_string(&trigger).unwrap();
-        assert!(json.contains("\"type\":\"manual_resume\""));
-        assert!(json.contains("Fix the validation logic"));
-
-        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, trigger);
-    }
-
-    #[test]
-    fn test_iteration_trigger_manual_resume_no_message() {
-        let trigger = IterationTrigger::ManualResume { message: None };
-        let json = serde_json::to_string(&trigger).unwrap();
-        assert!(json.contains("\"type\":\"manual_resume\""));
-        // message should be omitted or null when None
-        assert!(json.contains("\"message\":null") || !json.contains("message"));
-
-        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, trigger);
-    }
-
-    #[test]
-    fn test_iteration_with_manual_resume_context() {
-        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
-            IterationTrigger::ManualResume {
-                message: Some("Continue with tests".to_string()),
-            },
-        );
-
-        assert!(iter.incoming_context.is_some());
-        match &iter.incoming_context {
-            Some(IterationTrigger::ManualResume { message }) => {
-                assert_eq!(message.as_deref(), Some("Continue with tests"));
-            }
-            _ => panic!("Expected ManualResume trigger"),
-        }
     }
 
     #[test]

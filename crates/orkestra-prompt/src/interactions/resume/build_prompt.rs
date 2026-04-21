@@ -12,15 +12,11 @@ use crate::types::{AgentConfigError, ResumeType};
 // ============================================================================
 
 const RESUME_CONTINUE: &str = include_str!("../../templates/resume/continue.md");
-const RESUME_FEEDBACK: &str = include_str!("../../templates/resume/feedback.md");
 const RESUME_INTEGRATION: &str = include_str!("../../templates/resume/integration.md");
 const RESUME_ANSWERS: &str = include_str!("../../templates/resume/answers.md");
-const RESUME_RETRY_FAILED: &str = include_str!("../../templates/resume/retry_failed.md");
-const RESUME_RETRY_BLOCKED: &str = include_str!("../../templates/resume/retry_blocked.md");
-const RESUME_MANUAL_RESUME: &str = include_str!("../../templates/resume/manual_resume.md");
 const RESUME_PR_COMMENTS: &str = include_str!("../../templates/resume/pr_comments.md");
-const RESUME_RETURN_TO_WORK: &str = include_str!("../../templates/resume/return_to_work.md");
 const RESUME_MALFORMED_OUTPUT: &str = include_str!("../../templates/resume/malformed_output.md");
+const RESUME_USER_MESSAGE: &str = include_str!("../../templates/resume/user_message.md");
 
 // ============================================================================
 // Interaction
@@ -39,9 +35,6 @@ pub fn execute(
 ) -> Result<String, AgentConfigError> {
     let (template, mut context) = match &resume_type {
         ResumeType::Continue => (RESUME_CONTINUE, serde_json::json!({})),
-        ResumeType::Feedback { feedback } => {
-            (RESUME_FEEDBACK, serde_json::json!({ "feedback": feedback }))
-        }
         ResumeType::Integration {
             message,
             conflict_files,
@@ -56,18 +49,6 @@ pub fn execute(
         ResumeType::Answers { answers } => {
             (RESUME_ANSWERS, serde_json::json!({ "answers": answers }))
         }
-        ResumeType::RetryFailed { instructions } => (
-            RESUME_RETRY_FAILED,
-            serde_json::json!({ "instructions": instructions }),
-        ),
-        ResumeType::RetryBlocked { instructions } => (
-            RESUME_RETRY_BLOCKED,
-            serde_json::json!({ "instructions": instructions }),
-        ),
-        ResumeType::ManualResume { message } => (
-            RESUME_MANUAL_RESUME,
-            serde_json::json!({ "message": message }),
-        ),
         ResumeType::PrComments {
             comments,
             checks,
@@ -76,10 +57,6 @@ pub fn execute(
             RESUME_PR_COMMENTS,
             serde_json::json!({ "comments": comments, "checks": checks, "guidance": guidance }),
         ),
-        ResumeType::ReturnToWork { message } => (
-            RESUME_RETURN_TO_WORK,
-            serde_json::json!({ "message": message }),
-        ),
         ResumeType::MalformedOutput {
             error,
             attempt,
@@ -87,6 +64,10 @@ pub fn execute(
         } => (
             RESUME_MALFORMED_OUTPUT,
             serde_json::json!({ "error": error, "attempt": attempt, "max_attempts": max_attempts }),
+        ),
+        ResumeType::UserMessage { message } => (
+            RESUME_USER_MESSAGE,
+            serde_json::json!({ "message": message }),
         ),
     };
 
@@ -140,25 +121,6 @@ mod tests {
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
-        assert!(!prompt.contains("Updated Input Artifacts"));
-    }
-
-    #[test]
-    fn test_feedback() {
-        let artifact_names = vec!["summary".to_string()];
-        let prompt = execute(
-            "review",
-            &ResumeType::Feedback {
-                feedback: "Add more error handling".to_string(),
-            },
-            "main",
-            &artifact_names,
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
-        assert!(prompt.contains("Add more error handling"));
-        assert!(prompt.contains("revision"));
         assert!(!prompt.contains("Updated Input Artifacts"));
     }
 
@@ -240,76 +202,6 @@ mod tests {
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(!prompt.contains("Updated Input Artifacts"));
-    }
-
-    #[test]
-    fn test_manual_resume_with_message() {
-        let artifact_names = vec!["plan".to_string()];
-        let prompt = execute(
-            "work",
-            &ResumeType::ManualResume {
-                message: Some("Fix the validation logic".to_string()),
-            },
-            "main",
-            &artifact_names,
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:work:manual_resume>"));
-        assert!(prompt.contains("interrupted by the user"));
-        assert!(prompt.contains("Message from the user"));
-        assert!(prompt.contains("Fix the validation logic"));
-        assert!(prompt.contains("JSON"));
-        assert!(!prompt.contains("Updated Input Artifacts"));
-    }
-
-    #[test]
-    fn test_manual_resume_no_message() {
-        let prompt = execute(
-            "review",
-            &ResumeType::ManualResume { message: None },
-            "main",
-            &[],
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:manual_resume>"));
-        assert!(prompt.contains("interrupted by the user"));
-        assert!(prompt.contains("JSON"));
-        assert!(!prompt.contains("Message from the user"));
-    }
-
-    #[test]
-    fn test_return_to_work() {
-        let prompt = execute(
-            "review",
-            &ResumeType::ReturnToWork { message: None },
-            "main",
-            &[],
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:return_to_work>"));
-        assert!(prompt.contains("free-form conversation"));
-        assert!(prompt.contains("structured output"));
-        assert!(prompt.contains("JSON"));
-    }
-
-    #[test]
-    fn test_return_to_work_with_message() {
-        let prompt = execute(
-            "review",
-            &ResumeType::ReturnToWork {
-                message: Some("Please also fix the typo in line 42".to_string()),
-            },
-            "main",
-            &[],
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:return_to_work>"));
-        assert!(prompt.contains("Please also fix the typo in line 42"));
-        assert!(prompt.contains("structured output"));
     }
 
     #[test]
@@ -460,6 +352,24 @@ mod tests {
         assert!(prompt.contains("attempt 2 of 4"));
         assert!(prompt.contains("no structured output found"));
         assert!(prompt.contains("```ork"));
+    }
+
+    #[test]
+    fn test_user_message_resume() {
+        let prompt = execute(
+            "work",
+            &ResumeType::UserMessage {
+                message: "Please also add error handling for the edge case".to_string(),
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:user_message>"));
+        assert!(prompt.contains("Please also add error handling for the edge case"));
+        assert!(prompt.contains("Address their request"));
+        assert!(prompt.contains("JSON"));
     }
 
     #[test]

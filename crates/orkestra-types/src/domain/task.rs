@@ -17,8 +17,6 @@ pub enum TaskCreationMode {
     Normal,
     /// Auto mode — task runs through stages without pausing for approval.
     AutoMode,
-    /// Interactive mode — task enters Interactive state after setup.
-    Interactive,
 }
 
 /// A task in the workflow system.
@@ -93,10 +91,6 @@ pub struct Task {
     #[serde(default)]
     pub auto_mode: bool,
 
-    /// Whether this task was created in interactive mode (creation-time property).
-    #[serde(default, rename = "interactive")]
-    pub created_interactive: bool,
-
     /// Named flow for this task (e.g., "quick"). Defaults to "default" (full pipeline).
     #[serde(default = "default_flow_name")]
     pub flow: String,
@@ -143,7 +137,6 @@ impl Task {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
-            created_interactive: false,
             flow: "default".to_string(),
             created_at: created.clone(),
             updated_at: created,
@@ -283,11 +276,9 @@ impl Task {
 
     /// Check if the task is in a state that allows stage bypass (skip/send-to-stage/restart).
     ///
-    /// Valid when task is idle (queued but not yet running), paused for human input, or in
-    /// interactive mode: `Queued`, `AwaitingApproval`, `AwaitingQuestionAnswer`,
-    /// `AwaitingRejectionConfirmation`, `Interrupted`, `Failed`, `Blocked`, or `Interactive`.
-    ///
-    /// Note: `enter_interactive` also accepts `Done` state independently of this predicate.
+    /// Valid when task is idle (queued but not yet running) or paused for human input:
+    /// `Queued`, `AwaitingApproval`, `AwaitingQuestionAnswer`,
+    /// `AwaitingRejectionConfirmation`, `Interrupted`, `Failed`, or `Blocked`.
     pub fn can_bypass(&self) -> bool {
         matches!(
             self.state,
@@ -298,7 +289,6 @@ impl Task {
                 | TaskState::Interrupted { .. }
                 | TaskState::Failed { .. }
                 | TaskState::Blocked { .. }
-                | TaskState::Interactive { .. }
         )
     }
 }
@@ -324,7 +314,6 @@ pub struct TaskHeader {
     pub base_commit: String,
     pub pr_url: Option<String>,
     pub auto_mode: bool,
-    pub created_interactive: bool,
     pub flow: String,
     pub created_at: String,
     pub updated_at: String,
@@ -374,7 +363,6 @@ impl From<&Task> for TaskHeader {
             base_commit: task.base_commit.clone(),
             pr_url: task.pr_url.clone(),
             auto_mode: task.auto_mode,
-            created_interactive: task.created_interactive,
             flow: task.flow.clone(),
             created_at: task.created_at.clone(),
             updated_at: task.updated_at.clone(),
@@ -549,11 +537,11 @@ mod tests {
         assert!(task.is_archived());
 
         task.state = TaskState::failed("error");
-        assert!(task.is_terminal());
+        assert!(!task.is_terminal());
         assert!(task.is_failed());
 
         task.state = TaskState::blocked("waiting");
-        assert!(task.is_terminal());
+        assert!(!task.is_terminal());
         assert!(task.is_blocked());
     }
 
@@ -703,7 +691,6 @@ mod tests {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
-            created_interactive: false,
             flow: "default".to_string(),
             created_at: String::new(),
             updated_at: String::new(),
@@ -742,7 +729,6 @@ mod tests {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
-            created_interactive: false,
             flow: "default".to_string(),
             created_at: String::new(),
             updated_at: String::new(),

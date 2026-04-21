@@ -61,21 +61,24 @@ pub(crate) fn execute(
     // Compute is_resume BEFORE saving the session or linking the iteration.
     // is_resume: true if we have a session ID AND either:
     //   - the agent produced output (has_activity), OR
-    //   - the user explicitly chose to resume (ManualResume or ReturnToWork trigger).
+    //   - the user explicitly chose to resume (UserMessage trigger).
     //
-    // ManualResume and ReturnToWork both handle agents interrupted before producing
-    // structured output: has_activity stays false (only set on successful completion),
-    // but we still want to resume the existing session since the user is explicitly
-    // continuing work.
+    // UserMessage handles agents interrupted before producing structured output:
+    // has_activity stays false (only set on successful completion), but we still
+    // want to resume the existing session since the user is explicitly continuing work.
     //
     // Crash-recovery note: when an agent crashes before producing any output,
-    // has_activity=false and trigger may be Feedback or another non-superseding type.
+    // has_activity=false and trigger may be a non-superseding type.
     // In that case is_resume=false, so we spawn fresh. This is correct — resuming
     // a dead provider session (no output) would fail; fresh spawn with the full
     // initial prompt is the right recovery path.
+    //
+    // UserMessage is the exception: it is set when a user explicitly resumes an
+    // interrupted task via send_message(). Even if has_activity=false (interrupted
+    // before output), we want to continue the existing session.
     let is_human_resume = matches!(
         iteration.incoming_context,
-        Some(IterationTrigger::ManualResume { .. } | IterationTrigger::ReturnToWork { .. })
+        Some(IterationTrigger::UserMessage { .. })
     );
     let is_resume =
         session.claude_session_id.is_some() && (session.has_activity || is_human_resume);

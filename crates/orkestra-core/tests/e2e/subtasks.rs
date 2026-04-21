@@ -1253,9 +1253,9 @@ fn rerun_breakdown_with_single_subtask_clears_stale_structured_artifact() {
         task.state
     );
 
-    // Reject breakdown → stays in breakdown stage, new iteration
+    // Restart breakdown stage → stays in breakdown stage, new iteration
     env.api()
-        .reject(&parent.id, "Too many pieces, just do it as one task")
+        .restart_stage(&parent.id, "Too many pieces, just do it as one task")
         .unwrap();
 
     // Breakdown #2: single subtask (inlined) → clears stale _structured data → AwaitingReview

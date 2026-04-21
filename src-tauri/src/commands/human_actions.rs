@@ -3,7 +3,7 @@
 use crate::{error::TauriError, project_registry::ProjectRegistry};
 use orkestra_core::orkestra_debug;
 use orkestra_core::workflow::{spawn_merge_integration, spawn_pr_creation, Task};
-use orkestra_networking::{action, interactive};
+use orkestra_networking::action;
 use serde_json::Value;
 use tauri::{Emitter, State, Window};
 
@@ -23,23 +23,6 @@ pub fn workflow_approve(
     })
 }
 
-/// Reject the current stage artifact with feedback.
-///
-/// Creates a new iteration in the same stage so the agent can retry.
-#[tauri::command]
-pub fn workflow_reject(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-    feedback: String,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "reject {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id, "feedback": feedback });
-        action::reject(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
 /// Answer pending questions from the agent.
 ///
 /// Clears the pending questions and resumes the task.
@@ -54,23 +37,6 @@ pub fn workflow_answer_questions(
     registry.with_project(window.label(), |state| {
         let params = serde_json::json!({ "task_id": task_id, "answers": answers });
         action::answer_questions(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Retry a failed task by resuming from its last active stage.
-///
-/// Assumes the underlying issue has been resolved.
-#[tauri::command]
-pub fn workflow_retry(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-    instructions: Option<String>,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "retry {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id, "instructions": instructions });
-        action::retry(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -105,23 +71,6 @@ pub fn workflow_interrupt(
     registry.with_project(window.label(), |state| {
         let params = serde_json::json!({ "task_id": task_id });
         action::interrupt(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Resume an interrupted task with an optional message.
-///
-/// Creates a new iteration and sets the task to Idle for the orchestrator.
-#[tauri::command]
-pub fn workflow_resume(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-    message: Option<String>,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "resume {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id, "message": message });
-        action::resume(state.command_context(), &params).map_err(Into::into)
     })
 }
 
@@ -380,78 +329,20 @@ pub fn workflow_restart_stage(
     })
 }
 
-/// Enter interactive mode for a task.
+/// Send a message to the agent using the unified `send_message` API.
 ///
-/// Transitions the task to `Interactive` state so the user can direct the agent
-/// via `interactive_send_message`. The task must be in a bypassable state.
+/// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
+/// Creates a `UserMessage` iteration and transitions to `Queued`.
 #[tauri::command]
-pub fn interactive_enter(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "interactive_enter {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id });
-        interactive::enter(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Send a message to the interactive session for a task.
-///
-/// Creates a new interactive agent session if none exists, or reuses the existing one.
-/// The agent runs with full editing capabilities in the task's worktree.
-#[tauri::command]
-pub fn interactive_send_message(
+pub fn workflow_send_message(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
     message: String,
 ) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "interactive_send_message {task_id}");
+    orkestra_debug!("tauri", "send_message {task_id}");
     registry.with_project(window.label(), |state| {
         let params = serde_json::json!({ "task_id": task_id, "message": message });
-        interactive::send_message(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Exit interactive mode, returning the task to the pipeline or marking it Done.
-///
-/// Kills the interactive agent session if running, commits pending changes, and
-/// transitions the task: `target_stage: Some(s)` queues at that stage;
-/// `target_stage: None` marks the task as Done.
-#[tauri::command]
-pub fn interactive_exit(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-    target_stage: Option<String>,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "interactive_exit {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id, "target_stage": target_stage });
-        interactive::exit(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Return to structured work after chatting with the stage agent.
-///
-/// Clears chat state on the session and creates a new iteration with
-/// `ReturnToWork` trigger so the agent resumes with the return-to-work prompt.
-/// An optional `message` is attached to the iteration so the agent sees it as
-/// a closing instruction before returning to structured output.
-/// Valid from `AwaitingApproval` or `Interrupted`. Process killing is handled
-/// by the domain interaction.
-#[tauri::command]
-pub fn workflow_return_to_work(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-    message: Option<String>,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "return_to_work {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id, "message": message });
-        action::return_to_work(state.command_context(), &params).map_err(Into::into)
+        action::send_message(state.command_context(), &params).map_err(Into::into)
     })
 }

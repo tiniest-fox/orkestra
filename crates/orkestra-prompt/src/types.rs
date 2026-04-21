@@ -184,8 +184,6 @@ impl std::error::Error for AgentConfigError {}
 pub enum ResumeType {
     /// Agent was interrupted, continue from where left off.
     Continue,
-    /// Human provided feedback to address.
-    Feedback { feedback: String },
     /// Integration failed with merge conflict.
     Integration {
         message: String,
@@ -193,29 +191,20 @@ pub enum ResumeType {
     },
     /// Human provided answers to questions the agent asked.
     Answers { answers: Vec<ResumeQuestionAnswer> },
-    /// Human retried a failed task, optionally with instructions.
-    RetryFailed { instructions: Option<String> },
-    /// Human retried a blocked task, optionally with instructions.
-    RetryBlocked { instructions: Option<String> },
-    /// User interrupted and resumed with optional guidance.
-    ManualResume { message: Option<String> },
     /// User selected PR comments and/or failed CI checks to address.
     PrComments {
         comments: Vec<PrComment>,
         checks: Vec<PrCheckContext>,
         guidance: Option<String>,
     },
-    /// User chatted with the agent and is returning to structured output.
-    ///
-    /// Carries the optional final message the user typed before clicking
-    /// "Return to Work", injected into the resume prompt as a closing instruction.
-    ReturnToWork { message: Option<String> },
     /// Agent output was malformed — corrective prompt with attempt count.
     MalformedOutput {
         error: String,
         attempt: u32,
         max_attempts: u32,
     },
+    /// User sent a message directly; agent should address it and continue working.
+    UserMessage { message: String },
 }
 
 /// A failed CI check to address in the resume prompt.

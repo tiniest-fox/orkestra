@@ -16,12 +16,9 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "get_archived_tasks",
     // Human actions
     "approve",
-    "reject",
     "answer_questions",
-    "retry",
     "set_auto_mode",
     "interrupt",
-    "resume",
     "archive",
     "reject_with_comments",
     "address_pr_feedback",
@@ -30,17 +27,10 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "push_pr_changes",
     "pull_pr_changes",
     "retry_pr",
-    "return_to_work",
     "skip_stage",
     "send_to_stage",
     "restart_stage",
-    // Interactive mode
-    "interactive_enter",
-    "interactive_send_message",
-    "interactive_exit",
-    // Stage chat
-    "stage_chat_send",
-    "stage_chat_stop",
+    "send_message",
     // Assistant
     "assistant_send_message",
     "assistant_stop",

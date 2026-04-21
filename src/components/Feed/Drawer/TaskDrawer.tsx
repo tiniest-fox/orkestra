@@ -33,17 +33,9 @@ interface TaskDrawerBodyProps {
   onClose: () => void;
   onOpenTask: (id: string) => void;
   onOpenChat?: () => void;
-  onInteractive?: () => void;
 }
 
-function TaskDrawerBody({
-  task,
-  allTasks,
-  onClose,
-  onOpenTask,
-  onOpenChat,
-  onInteractive,
-}: TaskDrawerBodyProps) {
+function TaskDrawerBody({ task, allTasks, onClose, onOpenTask, onOpenChat }: TaskDrawerBodyProps) {
   const transport = useTransport();
   const config = useWorkflowConfig();
   const accent = drawerAccent(task, config);
@@ -63,7 +55,7 @@ function TaskDrawerBody({
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task state type change
   useEffect(() => {
     setActiveTab(defaultTab(task));
-  }, [task.id, task.state.type, task.derived.is_chatting]);
+  }, [task.id, task.state.type]);
 
   // -- Run history --
   const [selectedRunIdx, setSelectedRunIdx] = useState<number | null>(null);
@@ -82,8 +74,7 @@ function TaskDrawerBody({
 
   // -- Logs (logs tab) --
   const showLogs = activeTab === "agent" && selectedRunIdx === null;
-  const isChatting = task.derived.is_chatting;
-  const { logs, error: logsError } = useLogs(task, showLogs, undefined, isChatting);
+  const { logs, error: logsError } = useLogs(task, showLogs);
   const logScrollRef = useRef<HTMLDivElement>(null);
   // logContainerRef wires the scroll container to logScrollRef for hotkey scrolling.
   // Auto-scroll is handled inside MessageList — no useAutoScroll needed here.
@@ -144,7 +135,6 @@ function TaskDrawerBody({
         onRunStart={runScript.start}
         onRunStop={runScript.stop}
         onOpenChat={onOpenChat}
-        onInteractive={onInteractive}
       />
 
       {selectedRun ? (
@@ -190,17 +180,9 @@ export interface TaskDrawerProps {
   onClose: () => void;
   onOpenTask: (id: string) => void;
   onOpenChat?: () => void;
-  onInteractive?: () => void;
 }
 
-export function TaskDrawer({
-  task,
-  allTasks,
-  onClose,
-  onOpenTask,
-  onOpenChat,
-  onInteractive,
-}: TaskDrawerProps) {
+export function TaskDrawer({ task, allTasks, onClose, onOpenTask, onOpenChat }: TaskDrawerProps) {
   const isMobile = useIsMobile();
 
   return (
@@ -215,7 +197,6 @@ export function TaskDrawer({
                 onClose={onClose}
                 onOpenTask={onOpenTask}
                 onOpenChat={onOpenChat}
-                onInteractive={onInteractive}
               />
             </HotkeyScope>
           </DrawerTaskProvider>

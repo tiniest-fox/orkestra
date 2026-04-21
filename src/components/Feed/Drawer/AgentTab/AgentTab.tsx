@@ -174,45 +174,36 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
   ]);
 
   // Input bar visibility:
-  // Show when working, review, chatting, or interrupted (user needs to type feedback to resume).
-  // Hide when questions (answered inline), failed, blocked, done.
+  // Show when working, interrupted, failed, blocked, or awaiting_question_answer.
+  // send_message supports: AwaitingQuestionAnswer, Failed, Blocked, Interrupted.
+  // Hide for awaiting_approval/awaiting_rejection_confirmation — send_message errors there.
   const showInputBar =
-    derived.is_working || derived.needs_review || derived.is_chatting || derived.is_interrupted;
+    derived.is_working ||
+    derived.has_questions ||
+    derived.is_interrupted ||
+    derived.is_failed ||
+    derived.is_blocked;
 
   // Input bar agent active state:
   // Working → treat as agentActive (shows stop, disables textarea)
-  // Chat mode → follow chat_agent_active
-  // Review/interrupted → not active (user can type and send)
-  const inputAgentActive = derived.is_working || derived.chat_agent_active;
+  // All other states → not active (user can type and send)
+  const inputAgentActive = derived.is_working;
 
-  const onInterruptOrStop = derived.chat_agent_active
-    ? state.handleChatStop
-    : state.handleInterrupt;
+  const onInterruptOrStop = state.handleInterrupt;
 
   const {
     optimisticMessage,
     setOptimisticMessage,
     scrollTrigger: sendTrigger,
     triggerScroll,
-  } = useOptimisticMessage(logs, state.chatError);
+  } = useOptimisticMessage(logs, state.messageError);
 
   const handleSend = useCallback(() => {
     triggerScroll();
-    const msg = state.chatMessage.trim();
+    const msg = state.message.trim();
     if (msg) setOptimisticMessage(msg);
-    if (derived.is_interrupted) {
-      state.handleReturnToWork();
-    } else {
-      state.handleSendChat();
-    }
-  }, [
-    derived.is_interrupted,
-    state.handleReturnToWork,
-    state.handleSendChat,
-    state.chatMessage,
-    triggerScroll,
-    setOptimisticMessage,
-  ]);
+    state.handleSendMessage();
+  }, [state.handleSendMessage, state.message, triggerScroll, setOptimisticMessage]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -220,7 +211,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
       <FeedLogList
         logs={logs}
         error={logsError}
-        isAgentRunning={derived.is_working || derived.chat_agent_active || !!optimisticMessage}
+        isAgentRunning={derived.is_working || !!optimisticMessage}
         artifactContext={artifactContext}
         latestArtifactId={latestArtifactId}
         taskResources={task.resources}
@@ -233,17 +224,23 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
       {/* Input bar */}
       {showInputBar && (
         <ChatComposeArea
-          value={state.chatMessage}
-          onChange={state.setChatMessage}
-          textareaRef={state.chatTextareaRef}
-          sending={state.chatSending}
+          value={state.message}
+          onChange={state.setMessage}
+          textareaRef={state.messageTextareaRef}
+          sending={state.messageSending}
           agentActive={inputAgentActive}
           onSend={handleSend}
           onStop={onInterruptOrStop}
           placeholder={
-            derived.is_interrupted ? "Add instructions and resume\u2026" : "Message the agent\u2026"
+            derived.is_interrupted
+              ? "Add instructions and resume\u2026"
+              : derived.is_failed
+                ? "Send instructions to retry\u2026"
+                : derived.is_blocked
+                  ? "Send instructions to unblock\u2026"
+                  : "Message the agent\u2026"
           }
-          error={state.chatError}
+          error={state.messageError}
           onResize={handleComposeResize}
           className={`shrink-0 ${isMobile ? "px-2" : "px-6"} pb-4 bg-canvas`}
         />

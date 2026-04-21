@@ -9,7 +9,6 @@ type InvokeCommand =
   | "workflow_get_tasks"
   | "workflow_create_task"
   | "workflow_approve"
-  | "workflow_reject"
   | "workflow_answer_questions"
   | "workflow_get_config"
   | "get_project_info"
@@ -22,7 +21,6 @@ interface MockResponseMap {
   workflow_get_tasks: WorkflowTaskView[];
   workflow_create_task: WorkflowTask;
   workflow_approve: WorkflowTask;
-  workflow_reject: WorkflowTask;
   workflow_answer_questions: WorkflowTask;
   workflow_get_config: WorkflowConfig;
   get_project_info: ProjectInfo;

@@ -122,7 +122,6 @@ export type TaskState =
   | { type: "awaiting_rejection_confirmation"; stage: string }
   | { type: "interrupted"; stage: string }
   | { type: "waiting_on_children"; stage: string }
-  | { type: "interactive"; stage: string }
   | { type: "done" }
   | { type: "archived" }
   | { type: "failed"; error?: string }
@@ -265,10 +264,7 @@ export type IterationTrigger =
   | { type: "answers"; answers: WorkflowQuestionAnswer[] }
   | { type: "interrupted" }
   | { type: "gate_failure"; error: string }
-  | { type: "retry_failed"; instructions?: string }
-  | { type: "retry_blocked"; instructions?: string }
   | { type: "manual_resume"; message?: string }
-  | { type: "return_from_interactive" }
   | {
       type: "pr_feedback";
       comments: PrCommentData[];
@@ -276,7 +272,9 @@ export type IterationTrigger =
       guidance?: string;
     }
   /** Old DB records may use pr_comments as the type — treated the same as pr_feedback. */
-  | { type: "pr_comments"; comments: PrCommentData[]; checks?: PrCheckData[]; guidance?: string };
+  | { type: "pr_comments"; comments: PrCommentData[]; checks?: PrCheckData[]; guidance?: string }
+  /** User sent a message via the unified send_message API. */
+  | { type: "user_message"; message: string };
 
 /**
  * Output from a gate script run, stored on the iteration being validated.
@@ -462,11 +460,7 @@ export interface DerivedTaskState {
   pending_approval: boolean;
   stages_with_logs: StageLogInfo[];
   subtask_progress: SubtaskProgress | null;
-  is_chatting: boolean;
-  chat_agent_active: boolean;
-  /** Whether the task is in interactive (user-directed) mode. */
-  is_interactive: boolean;
-  /** Whether the task can be bypassed (skip/send-to-stage/restart/enter-interactive). */
+  /** Whether the task can be bypassed (skip/send-to-stage/restart). */
   can_bypass: boolean;
 }
 
@@ -588,12 +582,11 @@ export type ToolInput =
 /**
  * Resume type for session resumption markers.
  * - "continue": Agent was interrupted, continue from where left off
- * - "feedback": Human provided feedback to address
+ * - "feedback": Human provided feedback to address (legacy, from old sessions)
  * - "integration": Integration failed with merge conflict
  * - "answers": Human provided answers to questions
- * - "retry_failed": Human retried a failed task
- * - "retry_blocked": Human retried a blocked task
- * - "manual_resume": User interrupted and resumed with optional message
+ * - "manual_resume": User interrupted and resumed (legacy, from old sessions)
+ * - "user_message": Unified user message (send_message API)
  * - "initial": Initial agent prompt (first spawn)
  */
 export type ResumeType =
@@ -601,14 +594,9 @@ export type ResumeType =
   | "feedback"
   | "integration"
   | "answers"
-  | "recheck"
-  | "retry_failed"
-  | "retry_blocked"
   | "manual_resume"
-  | "initial"
-  | "chat"
-  | "return_to_work"
-  | "correction";
+  | "user_message"
+  | "initial";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).

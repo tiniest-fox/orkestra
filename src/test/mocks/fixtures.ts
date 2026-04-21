@@ -76,9 +76,6 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     pending_approval: false,
     stages_with_logs: [],
     subtask_progress: null,
-    is_chatting: false,
-    chat_agent_active: false,
-    is_interactive: false,
     can_bypass: false,
     ...overrides,
   };
@@ -121,12 +118,12 @@ export function createMockWorkflowTaskView(
   }
   if (state.type === "failed") {
     derivedDefaults.is_failed = true;
-    derivedDefaults.is_terminal = true;
+    derivedDefaults.is_terminal = false;
     derivedDefaults.current_stage = null;
   }
   if (state.type === "blocked") {
     derivedDefaults.is_blocked = true;
-    derivedDefaults.is_terminal = true;
+    derivedDefaults.is_terminal = false;
     derivedDefaults.current_stage = null;
   }
 
@@ -178,10 +175,6 @@ export function createMockWorkflowTaskView(
     if (state.type === "gate_running") {
       derivedDefaults.is_system_active = true;
     }
-  }
-  // Interactive state
-  if (state.type === "interactive") {
-    derivedDefaults.is_interactive = true;
   }
   // Setup states also set is_preparing (phase_icon already set above)
   if (state.type === "setting_up" || state.type === "awaiting_setup") {

@@ -180,13 +180,13 @@ mod tests {
             .create_initial_iteration("task-1", "planning")
             .unwrap();
 
-        // Create second iteration with feedback trigger
+        // Create second iteration with user message trigger
         let iteration = service
             .create_iteration(
                 "task-1",
                 "planning",
-                Some(IterationTrigger::Feedback {
-                    feedback: "Please try again".to_string(),
+                Some(IterationTrigger::UserMessage {
+                    message: "Please try again".to_string(),
                 }),
             )
             .unwrap();
@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(iteration.iteration_number, 2);
         assert!(matches!(
             iteration.incoming_context,
-            Some(IterationTrigger::Feedback { .. })
+            Some(IterationTrigger::UserMessage { .. })
         ));
     }
 
@@ -265,8 +265,8 @@ mod tests {
 
         // Test various trigger types
         let triggers = vec![
-            IterationTrigger::Feedback {
-                feedback: "Try again".to_string(),
+            IterationTrigger::UserMessage {
+                message: "Try again".to_string(),
             },
             IterationTrigger::Answers {
                 answers: vec![QuestionAnswer::new("Q?", "A", "2024-01-01T00:00:00Z")],

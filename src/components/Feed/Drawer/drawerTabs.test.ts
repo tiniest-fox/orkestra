@@ -21,22 +21,6 @@ describe("defaultTab", () => {
     expect(defaultTab(task)).toBe("agent");
   });
 
-  it("returns 'agent' when task is in chat mode", () => {
-    const task = createMockWorkflowTaskView({
-      state: { type: "agent_working", stage: "work" },
-      derived: { is_chatting: true },
-    });
-    expect(defaultTab(task)).toBe("agent");
-  });
-
-  it("returns 'agent' in chat mode even when needs_review is true", () => {
-    const task = createMockWorkflowTaskView({
-      state: { type: "awaiting_approval", stage: "review" },
-      derived: { is_chatting: true, needs_review: true },
-    });
-    expect(defaultTab(task)).toBe("agent");
-  });
-
   it("returns 'agent' when task needs review", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "awaiting_approval", stage: "work" },

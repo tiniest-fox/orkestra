@@ -18,11 +18,17 @@ pub fn get_latest(
     store.get_latest_iteration(task_id, stage)
 }
 
-/// Get feedback from the last rejection for the current stage.
+/// Get feedback from the last rejection or restart for the current stage.
+///
+/// Checks iterations in reverse order, returning:
+/// - `Outcome::Rejected/Rejection.feedback` — set by reviewer agent rejection
+/// - `IterationTrigger::Restart.message` — set by human restart (replaces old `reject()`)
 pub fn get_rejection_feedback(
     store: &dyn WorkflowStore,
     task_id: &str,
 ) -> WorkflowResult<Option<String>> {
+    use crate::workflow::domain::IterationTrigger;
+
     let task = store
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
@@ -35,9 +41,12 @@ pub fn get_rejection_feedback(
 
     for iteration in iterations.into_iter().rev() {
         if let Some(Outcome::Rejected { feedback, .. } | Outcome::Rejection { feedback, .. }) =
-            iteration.outcome
+            &iteration.outcome
         {
-            return Ok(Some(feedback));
+            return Ok(Some(feedback.clone()));
+        }
+        if let Some(IterationTrigger::Restart { message }) = &iteration.incoming_context {
+            return Ok(Some(message.clone()));
         }
     }
 

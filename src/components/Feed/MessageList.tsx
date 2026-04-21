@@ -1,4 +1,4 @@
-// Shared conversation-style message list for AssistantDrawer, InteractiveDrawer, and Logs tab.
+// Shared conversation-style message list for AssistantDrawer and Logs tab.
 
 import DOMPurify from "dompurify";
 import { ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldX } from "lucide-react";

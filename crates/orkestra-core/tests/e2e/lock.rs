@@ -99,16 +99,18 @@ fn test_second_orchestrator_blocked() {
 
     // Start orchestrator B — should be blocked by A's lock and eventually time out
     let orch_b = build_orchestrator(temp.path().to_path_buf());
-    let (events, _reason) = run_with_timeout(orch_b, Duration::from_millis(100));
+    let (events, reason) = run_with_timeout(orch_b, Duration::from_millis(100));
 
     // Stop A
     stop_a.store(true, std::sync::atomic::Ordering::Relaxed);
     handle_a.join().unwrap();
 
+    // Primary check: B's exit reason must be LockFailed (same check as test_exit_reason_already_running)
     assert!(
-        !events.is_empty(),
-        "Expected at least one error event, got none"
+        matches!(reason, OrchestratorExitReason::LockFailed(_)),
+        "Expected LockFailed exit reason (B should be blocked by A's lock), got: {reason:?}"
     );
+    // Secondary check: error event must mention the timeout
     let has_lock_error = events.iter().any(|e| {
         if let OrchestratorEvent::Error { error, .. } = e {
             error.contains("Timed out")
@@ -118,7 +120,7 @@ fn test_second_orchestrator_blocked() {
     });
     assert!(
         has_lock_error,
-        "Expected 'Timed out' lock error, got: {events:?}"
+        "Expected 'Timed out' lock error event, got: {events:?}"
     );
 }
 

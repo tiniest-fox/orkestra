@@ -20,7 +20,6 @@ mod project;
 mod queries;
 mod run_script;
 pub(crate) mod setup;
-mod stage_chat;
 mod task_crud;
 
 // Re-export all commands for use in invoke_handler!
@@ -33,5 +32,4 @@ pub use project::*;
 pub use queries::*;
 pub use run_script::*;
 pub use setup::*;
-pub use stage_chat::*;
 pub use task_crud::*;

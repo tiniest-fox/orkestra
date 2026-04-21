@@ -396,7 +396,7 @@ mod tests {
             },
         );
 
-        let prompt = "<!orkestra:resume:work:feedback>\n\nFix the bug";
+        let prompt = "<!orkestra:resume:work:user_message>\n\nFix the bug";
         let config = RunConfig::new("/tmp", prompt, TEST_SCHEMA).with_task_id("task-1");
         let (_pid, rx) = runner.run_async(config).unwrap();
 
@@ -405,7 +405,7 @@ mod tests {
         let marker = orkestra_parser::interactions::stream::parse_resume_marker::execute(prompt);
         assert!(marker.is_some());
         let marker = marker.unwrap();
-        assert_eq!(marker.marker_type.as_str(), "feedback");
+        assert_eq!(marker.marker_type.as_str(), "user_message");
         assert_eq!(marker.content, "Fix the bug");
 
         // Verify mock still sends completion

@@ -180,8 +180,10 @@ fn test_rejection_creates_new_artifact_row() {
     );
     assert_eq!(artifacts_after_first[0].content, "Plan v1");
 
-    // Human rejects — starts a new iteration.
-    ctx.api().reject(&task_id, "Needs more detail").unwrap();
+    // Human restarts stage — starts a new iteration.
+    ctx.api()
+        .restart_stage(&task_id, "Needs more detail")
+        .unwrap();
 
     // Second iteration: agent produces plan v2 → another artifact row.
     ctx.set_output(
@@ -302,71 +304,7 @@ fn test_subtask_artifact_stored_with_subtask_task_id() {
 }
 
 // =============================================================================
-// Test 7: Chat-mode completion produces an artifact row
-// =============================================================================
-
-/// When structured output is detected in accumulated chat text, the artifact is
-/// saved to `workflow_artifacts` via the same `dispatch_output` path as normal
-/// agent completion.
-#[test]
-fn test_chat_mode_completion_produces_artifact_row() {
-    let ctx = TestEnv::with_git(&planning_with_gate(), &["planning", "work"]);
-    let task = ctx.create_task("Chat artifact test", "Test chat completion artifact", None);
-    let task_id = task.id.clone();
-
-    // Drive planning agent to produce output → AwaitingApproval (agentic gate pauses here).
-    ctx.set_output(&task_id, MockAgentOutput::artifact("plan", "Initial plan."));
-    ctx.advance(); // spawn planning agent
-    ctx.advance(); // process output → AwaitingApproval, artifact row 1 stored
-
-    let artifacts_before_chat = ctx.api().list_workflow_artifacts(&task_id).unwrap();
-    assert_eq!(
-        artifacts_before_chat.len(),
-        1,
-        "One artifact row from the initial agent output"
-    );
-
-    // For a stage with an agentic gate, the schema excludes the artifact type name from the
-    // type enum — "approval" replaces it. Use approval JSON with decision="approve"; the
-    // content becomes the artifact body (handle_approval delegates "approve" to handle_artifact).
-    let chat_approval_json =
-        r#"{"type":"approval","decision":"approve","content":"Plan approved via chat."}"#;
-    let detected = ctx
-        .api()
-        .detect_chat_completion(&task_id, "planning", "default", chat_approval_json)
-        .expect("detect_chat_completion should not error");
-    assert!(
-        detected,
-        "Valid approval JSON should be detected as structured output"
-    );
-
-    // A second artifact row should have been stored for the chat completion iteration.
-    // handle_approval("approve") delegates to handle_artifact, which calls persist_and_emit_artifact.
-    let artifacts_after_chat = ctx.api().list_workflow_artifacts(&task_id).unwrap();
-    assert_eq!(
-        artifacts_after_chat.len(),
-        2,
-        "Two artifact rows: one from the initial agent, one from the chat approval"
-    );
-    assert!(
-        artifacts_after_chat.iter().all(|a| a.task_id == task_id),
-        "All artifact rows should belong to the same task"
-    );
-    assert!(
-        artifacts_after_chat.iter().all(|a| a.name == "plan"),
-        "All artifact rows should have name 'plan'"
-    );
-
-    // The chat completion artifact should contain the approval content.
-    let chat_artifact = artifacts_after_chat
-        .iter()
-        .find(|a| a.content == "Plan approved via chat.")
-        .expect("Should find the chat completion artifact by content");
-    assert_eq!(chat_artifact.stage, "planning");
-}
-
-// =============================================================================
-// Test 8: Breakdown stage artifact is stored in workflow_artifacts
+// Test 7: Breakdown stage artifact is stored in workflow_artifacts
 // =============================================================================
 
 /// Subtask breakdown output from an agent creates a row in `workflow_artifacts`.

@@ -12,16 +12,6 @@ impl WorkflowApi {
         human::approve::execute(self.store.as_ref(), &self.iteration_service, task_id)
     }
 
-    /// Reject the current stage's artifact with feedback. Retries current stage.
-    pub fn reject(&self, task_id: &str, feedback: &str) -> WorkflowResult<Task> {
-        human::reject::execute(
-            self.store.as_ref(),
-            &self.iteration_service,
-            task_id,
-            feedback,
-        )
-    }
-
     /// Answer pending questions from the agent.
     pub fn answer_questions(
         &self,
@@ -33,17 +23,6 @@ impl WorkflowApi {
             &self.iteration_service,
             task_id,
             answers,
-        )
-    }
-
-    /// Retry a failed or blocked task by resuming it from its last active stage.
-    pub fn retry(&self, task_id: &str, instructions: Option<&str>) -> WorkflowResult<Task> {
-        human::retry::execute(
-            self.store.as_ref(),
-            &self.workflow,
-            &self.iteration_service,
-            task_id,
-            instructions,
         )
     }
 
@@ -67,24 +46,14 @@ impl WorkflowApi {
         )
     }
 
-    /// Resume an interrupted task, optionally with a message for the agent.
-    pub fn resume(&self, task_id: &str, message: Option<String>) -> WorkflowResult<Task> {
-        human::resume::execute(
-            self.store.as_ref(),
-            &self.iteration_service,
-            task_id,
-            message,
-        )
-    }
-
-    /// Return to structured work after chatting with the stage agent.
+    /// Send a message to the agent using the unified `send_message` API.
     ///
-    /// Clears chat state on the session and creates a new iteration with
-    /// `ReturnToWork` trigger so the agent resumes with the appropriate prompt.
-    /// The caller should stop any running chat process before calling this.
-    pub fn return_to_work(&self, task_id: &str, message: Option<String>) -> WorkflowResult<Task> {
-        human::return_to_work::execute(
+    /// Creates a new iteration with a `UserMessage` trigger and transitions the task
+    /// to `Queued`. Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
+    pub fn send_message(&self, task_id: &str, message: &str) -> WorkflowResult<Task> {
+        human::send_message::execute(
             self.store.as_ref(),
+            &self.workflow,
             &self.iteration_service,
             task_id,
             message,
@@ -192,41 +161,6 @@ impl WorkflowApi {
             message,
         )
     }
-
-    /// Enter interactive mode for a task.
-    ///
-    /// Transitions the task from a bypass-able state to `Interactive`, pausing
-    /// the normal pipeline so the user can direct work turn-by-turn.
-    pub fn enter_interactive_mode(&self, task_id: &str) -> WorkflowResult<Task> {
-        human::enter_interactive::execute(
-            self.store.as_ref(),
-            &self.workflow,
-            &self.iteration_service,
-            task_id,
-        )
-    }
-
-    /// Exit interactive mode for a task.
-    ///
-    /// Kills any running interactive agent, commits pending changes, marks the
-    /// interactive session complete, creates a new iteration with
-    /// `ReturnFromInteractive` trigger, then transitions the task:
-    /// - `target_stage: Some(s)` → queued at that stage
-    /// - `target_stage: None` → marked as Done with `completed_at` set
-    pub fn exit_interactive_mode(
-        &self,
-        task_id: &str,
-        target_stage: Option<&str>,
-    ) -> WorkflowResult<Task> {
-        human::exit_interactive::execute(
-            self.store.as_ref(),
-            &self.workflow,
-            &self.iteration_service,
-            self.git_service.as_deref(),
-            task_id,
-            target_stage,
-        )
-    }
 }
 
 #[cfg(test)]
@@ -317,49 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reject_stays_in_same_stage() {
-        let (api, task) = api_with_task_in_review();
-
-        let task = api.reject(&task.id, "Please add more detail").unwrap();
-
-        assert_eq!(task.current_stage(), Some("planning"));
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-
-        // Rejection should preserve the original agent artifact, not overwrite with feedback
-        assert!(task.artifacts.get("plan").is_some());
-        assert_eq!(task.artifacts.get("plan").unwrap().content, "The plan");
-    }
-
-    #[test]
-    fn test_reject_creates_new_iteration() {
-        let (api, task) = api_with_task_in_review();
-
-        let _ = api.reject(&task.id, "Please add more detail").unwrap();
-
-        let iterations = api.get_iterations(&task.id).unwrap();
-        assert_eq!(iterations.len(), 2);
-        assert_eq!(iterations[1].stage, "planning");
-        assert_eq!(iterations[1].iteration_number, 2);
-    }
-
-    #[test]
-    fn test_reject_records_feedback_in_outcome() {
-        let (api, task) = api_with_task_in_review();
-
-        let _ = api.reject(&task.id, "Please add more detail").unwrap();
-
-        let iterations = api.get_iterations(&task.id).unwrap();
-        let first_iteration = &iterations[0];
-
-        match &first_iteration.outcome {
-            Some(Outcome::Rejected { feedback, .. }) => {
-                assert_eq!(feedback, "Please add more detail");
-            }
-            other => panic!("Expected Rejected outcome, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn test_answer_questions_creates_new_iteration() {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
@@ -419,121 +310,6 @@ mod tests {
 
         let result = api.answer_questions(&task.id, vec![]);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
-    }
-
-    /// Create an API with a task in Failed state at the planning stage.
-    fn api_with_failed_task() -> (WorkflowApi, Task) {
-        let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-
-        // Simulate setup completion + agent failure
-        task.worktree_path = Some("/tmp/fake-worktree".into());
-        task.state = TaskState::failed("Something went wrong");
-        api.store.save_task(&task).unwrap();
-
-        (api, task)
-    }
-
-    /// Create an API with a task in Blocked state at the planning stage.
-    fn api_with_blocked_task() -> (WorkflowApi, Task) {
-        let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-
-        // Simulate setup completion + agent blocked
-        task.worktree_path = Some("/tmp/fake-worktree".into());
-        task.state = TaskState::blocked("Waiting on external service");
-        api.store.save_task(&task).unwrap();
-
-        (api, task)
-    }
-
-    #[test]
-    fn test_retry_failed_without_instructions() {
-        let (api, task) = api_with_failed_task();
-
-        let task = api.retry(&task.id, None).unwrap();
-
-        assert_eq!(task.current_stage(), Some("planning"));
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-
-        let iterations = api.get_iterations(&task.id).unwrap();
-        let last = iterations.last().unwrap();
-        match &last.incoming_context {
-            Some(IterationTrigger::RetryFailed { instructions }) => {
-                assert!(instructions.is_none());
-            }
-            other => panic!("Expected RetryFailed trigger, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_retry_failed_with_instructions() {
-        let (api, task) = api_with_failed_task();
-
-        let task = api
-            .retry(&task.id, Some("Try using the backup API endpoint"))
-            .unwrap();
-
-        assert_eq!(task.current_stage(), Some("planning"));
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-
-        let iterations = api.get_iterations(&task.id).unwrap();
-        let last = iterations.last().unwrap();
-        match &last.incoming_context {
-            Some(IterationTrigger::RetryFailed { instructions }) => {
-                assert_eq!(
-                    instructions.as_deref(),
-                    Some("Try using the backup API endpoint")
-                );
-            }
-            other => panic!("Expected RetryFailed trigger, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_retry_blocked_with_instructions() {
-        let (api, task) = api_with_blocked_task();
-
-        let task = api
-            .retry(&task.id, Some("The dependency is now available"))
-            .unwrap();
-
-        assert_eq!(task.current_stage(), Some("planning"));
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-
-        let iterations = api.get_iterations(&task.id).unwrap();
-        let last = iterations.last().unwrap();
-        match &last.incoming_context {
-            Some(IterationTrigger::RetryBlocked { instructions }) => {
-                assert_eq!(
-                    instructions.as_deref(),
-                    Some("The dependency is now available")
-                );
-            }
-            other => panic!("Expected RetryBlocked trigger, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_retry_with_empty_instructions() {
-        let (api, task) = api_with_failed_task();
-
-        let task = api.retry(&task.id, Some("  ")).unwrap();
-
-        let iterations = api.get_iterations(&task.id).unwrap();
-        let last = iterations.last().unwrap();
-        match &last.incoming_context {
-            Some(IterationTrigger::RetryFailed { instructions }) => {
-                assert!(instructions.is_none());
-            }
-            other => panic!("Expected RetryFailed with no instructions, got {other:?}"),
-        }
     }
 
     // ========================================================================
@@ -612,39 +388,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reject_overrides_pending_rejection() {
-        let (api, task) = api_with_pending_rejection();
-
-        // Human rejects → "I disagree, re-evaluate" → stay in review, new iteration
-        let task = api
-            .reject(
-                &task.id,
-                "The implementation looks correct, please re-evaluate",
-            )
-            .unwrap();
-
-        // Should stay in review stage with Idle phase (ready for new agent run)
-        assert_eq!(task.current_stage(), Some("review"));
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-
-        // A new iteration should be created in the review stage with Feedback trigger
-        let iterations = api.store.get_iterations(&task.id).unwrap();
-        let review_iters: Vec<_> = iterations.iter().filter(|i| i.stage == "review").collect();
-        assert_eq!(review_iters.len(), 2, "Should have 2 review iterations");
-
-        let new_iter = review_iters.last().unwrap();
-        match &new_iter.incoming_context {
-            Some(IterationTrigger::Feedback { feedback }) => {
-                assert_eq!(
-                    feedback,
-                    "The implementation looks correct, please re-evaluate"
-                );
-            }
-            other => panic!("Expected Feedback trigger, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn test_set_auto_mode_confirms_pending_rejection() {
         let (api, task) = api_with_pending_rejection();
 
@@ -662,9 +405,9 @@ mod tests {
 
         let (api, task) = api_with_pending_rejection();
 
-        // Step 1: Human overrides the rejection
+        // Step 1: Human overrides the rejection by restarting the review stage
         let task = api
-            .reject(&task.id, "Please re-evaluate, the tests actually pass")
+            .restart_stage(&task.id, "Please re-evaluate, the tests actually pass")
             .unwrap();
         assert_eq!(task.current_stage(), Some("review"));
         assert!(matches!(task.state, TaskState::Queued { .. }));
@@ -734,97 +477,6 @@ mod tests {
         api.store.save_task(&task).unwrap();
 
         let result = api.interrupt(&task.id);
-        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
-    }
-
-    /// Create an API with a task in Interrupted phase
-    fn api_with_interrupted_task() -> (WorkflowApi, Task) {
-        let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-
-        // Simulate interrupted state
-        task.state = TaskState::interrupted("planning");
-        api.store.save_task(&task).unwrap();
-
-        // End the current iteration with Interrupted outcome
-        let iter = api
-            .store
-            .get_latest_iteration(&task.id, "planning")
-            .unwrap()
-            .unwrap();
-        let mut iter = iter;
-        iter.outcome = Some(Outcome::Interrupted);
-        iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
-        api.store.save_iteration(&iter).unwrap();
-
-        (api, task)
-    }
-
-    #[test]
-    fn test_resume_from_interrupted() {
-        let (api, task) = api_with_interrupted_task();
-
-        let task = api
-            .resume(
-                &task.id,
-                Some("Please continue with the implementation".to_string()),
-            )
-            .unwrap();
-
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-        assert_eq!(task.current_stage(), Some("planning"));
-
-        // Verify new iteration was created with ManualResume trigger
-        let iterations = api.get_iterations(&task.id).unwrap();
-        assert_eq!(iterations.len(), 2);
-
-        let new_iter = iterations.last().unwrap();
-        match &new_iter.incoming_context {
-            Some(IterationTrigger::ManualResume { message }) => {
-                assert_eq!(
-                    message.as_deref(),
-                    Some("Please continue with the implementation")
-                );
-            }
-            other => panic!("Expected ManualResume trigger, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_resume_without_message() {
-        let (api, task) = api_with_interrupted_task();
-
-        let task = api.resume(&task.id, None).unwrap();
-
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-
-        // Verify new iteration has ManualResume with None message
-        let iterations = api.get_iterations(&task.id).unwrap();
-        let new_iter = iterations.last().unwrap();
-        match &new_iter.incoming_context {
-            Some(IterationTrigger::ManualResume { message }) => {
-                assert!(message.is_none());
-            }
-            other => panic!("Expected ManualResume trigger, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_resume_wrong_phase() {
-        let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-
-        // Set task to AgentWorking instead of Interrupted
-        task.state = TaskState::agent_working("planning");
-        api.store.save_task(&task).unwrap();
-
-        let result = api.resume(&task.id, None);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 

@@ -9,7 +9,7 @@ pub fn execute(conn: &Connection) -> WorkflowResult<Vec<StageSession>> {
     let mut stmt = conn
         .prepare(
             "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                    session_state, created_at, updated_at, has_activity, chat_active
+                    session_state, created_at, updated_at, has_activity
              FROM workflow_stage_sessions ORDER BY task_id, created_at",
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;

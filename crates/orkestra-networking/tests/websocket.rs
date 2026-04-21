@@ -861,7 +861,6 @@ async fn test_bootstrap_unavailable_without_token() {
 }
 
 /// `create_task` with `auto_mode: true` threads the flag through to the stored task.
-/// `interactive: true` takes priority over `auto_mode` and sets `created_interactive`.
 /// Passing an unknown `flow` name returns `INVALID_TRANSITION`.
 #[tokio::test]
 async fn test_create_task_with_options() {
@@ -886,55 +885,6 @@ async fn test_create_task_with_options() {
         "auto_mode should be true on the created task"
     );
 
-    // Create with interactive: true — should return a task with created_interactive set.
-    let interactive = request(
-        &mut ws,
-        serde_json::json!({
-            "id": "req-interactive",
-            "method": "create_task",
-            "params": { "title": "Interactive task", "description": "", "interactive": true }
-        }),
-    )
-    .await;
-    assert_eq!(interactive["id"], "req-interactive");
-    assert!(
-        interactive["result"].is_object(),
-        "interactive create_task should return a task object"
-    );
-    assert_eq!(
-        interactive["result"]["interactive"], true,
-        "interactive flag should be set on the created task"
-    );
-
-    // interactive: true takes priority over auto_mode: true when both are passed.
-    let both = request(
-        &mut ws,
-        serde_json::json!({
-            "id": "req-both",
-            "method": "create_task",
-            "params": {
-                "title": "Both flags task",
-                "description": "",
-                "interactive": true,
-                "auto_mode": true
-            }
-        }),
-    )
-    .await;
-    assert_eq!(both["id"], "req-both");
-    assert!(
-        both["result"].is_object(),
-        "create_task with both flags should return a task object"
-    );
-    assert_eq!(
-        both["result"]["interactive"], true,
-        "interactive should be set when both flags are passed"
-    );
-    assert_eq!(
-        both["result"]["auto_mode"], false,
-        "auto_mode should not be set when interactive takes priority"
-    );
-
     // Create with an unknown flow — should return INVALID_TRANSITION.
     let bad_flow = request(
         &mut ws,
@@ -949,91 +899,6 @@ async fn test_create_task_with_options() {
     assert_eq!(
         bad_flow["error"]["code"], "INVALID_TRANSITION",
         "unknown flow should return INVALID_TRANSITION"
-    );
-}
-
-/// `return_to_work` on a task in `AwaitingApproval` state succeeds.
-#[tokio::test]
-async fn test_return_to_work() {
-    let (api, store, conn) = test_api();
-    let (addr, _tx) = start_test_server(Arc::clone(&api), Arc::clone(&store), conn).await;
-    let mut ws = connect(addr).await;
-
-    // Create a task and manually put it into AwaitingApproval state.
-    let task = {
-        let api_lock = api.lock().unwrap();
-        let mut task = api_lock
-            .create_task("Return to work test", "description", None)
-            .unwrap();
-        task.state = TaskState::awaiting_approval("planning");
-        store.save_task(&task).unwrap();
-        task
-    };
-
-    // Call return_to_work — should succeed and return the task in Queued state.
-    let response = request(
-        &mut ws,
-        serde_json::json!({
-            "id": "req-rtw",
-            "method": "return_to_work",
-            "params": { "task_id": task.id }
-        }),
-    )
-    .await;
-
-    assert_eq!(response["id"], "req-rtw");
-    assert!(
-        response["result"].is_object(),
-        "return_to_work should return a task object, got: {response:?}"
-    );
-}
-
-/// Stage chat handlers are correctly dispatched: both return errors (not `METHOD_NOT_FOUND`),
-/// confirming the dispatch wiring is correct.
-///
-/// - `stage_chat_send` returns `INVALID_STATE` because the test `WorkflowApi` has no
-///   provider registry configured; the handler is reached but fails the registry guard.
-/// - `stage_chat_stop` returns `TASK_NOT_FOUND` because it goes directly to the task lookup.
-#[tokio::test]
-async fn test_stage_chat_dispatch_wiring() {
-    let (api, store, conn) = test_api();
-    let (addr, _tx) = start_test_server(Arc::clone(&api), store, conn).await;
-    let mut ws = connect(addr).await;
-
-    // stage_chat_send — handler is reached but fails the provider_registry guard.
-    let send = request(
-        &mut ws,
-        serde_json::json!({
-            "id": "sc-send",
-            "method": "stage_chat_send",
-            "params": { "task_id": "nonexistent-task", "message": "hello" }
-        }),
-    )
-    .await;
-    assert_eq!(send["id"], "sc-send");
-    assert_ne!(
-        send["error"]["code"], "METHOD_NOT_FOUND",
-        "stage_chat_send must be dispatched (not METHOD_NOT_FOUND)"
-    );
-    assert_eq!(
-        send["error"]["code"], "INVALID_STATE",
-        "stage_chat_send with no registry returns INVALID_STATE before task lookup"
-    );
-
-    // stage_chat_stop — goes directly to task lookup, so returns TASK_NOT_FOUND.
-    let stop = request(
-        &mut ws,
-        serde_json::json!({
-            "id": "sc-stop",
-            "method": "stage_chat_stop",
-            "params": { "task_id": "nonexistent-task" }
-        }),
-    )
-    .await;
-    assert_eq!(stop["id"], "sc-stop");
-    assert_eq!(
-        stop["error"]["code"], "TASK_NOT_FOUND",
-        "stage_chat_stop with unknown task must return TASK_NOT_FOUND"
     );
 }
 

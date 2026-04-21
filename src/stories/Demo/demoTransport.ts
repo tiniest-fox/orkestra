@@ -61,10 +61,10 @@ export function createDemoTransport(): Transport {
           return resolve({});
         // Action RPCs — resolve successfully to make buttons interactive
         case "approve":
-        case "reject":
         case "answer_questions":
         case "interrupt":
         case "resume":
+        case "send_message":
           return resolve(null);
         default:
           return new Promise(() => {}); // pause polling chains

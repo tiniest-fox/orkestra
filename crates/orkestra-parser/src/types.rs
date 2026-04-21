@@ -337,22 +337,14 @@ pub struct ParsedUpdate {
 pub enum ResumeMarkerType {
     /// Agent was interrupted, continue from where left off.
     Continue,
-    /// Human provided feedback to address.
-    Feedback,
     /// Integration failed with merge conflict.
     Integration,
     /// Human provided answers to questions.
     Answers,
-    /// Human retried a failed task.
-    RetryFailed,
-    /// Human retried a blocked task.
-    RetryBlocked,
     /// Initial agent prompt (first spawn, not a resume).
     Initial,
-    /// User interrupted and resumed with optional guidance.
-    ManualResume,
-    /// Agent returned to structured work after a chat session.
-    ReturnToWork,
+    /// User sent a message directly to the agent.
+    UserMessage,
 }
 
 impl ResumeMarkerType {
@@ -360,14 +352,10 @@ impl ResumeMarkerType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Continue => "continue",
-            Self::Feedback => "feedback",
             Self::Integration => "integration",
             Self::Answers => "answers",
-            Self::RetryFailed => "retry_failed",
-            Self::RetryBlocked => "retry_blocked",
             Self::Initial => "initial",
-            Self::ManualResume => "manual_resume",
-            Self::ReturnToWork => "return_to_work",
+            Self::UserMessage => "user_message",
         }
     }
 }
@@ -375,7 +363,7 @@ impl ResumeMarkerType {
 /// Parsed resume marker from a user message.
 #[derive(Debug, Clone)]
 pub struct ResumeMarker {
-    /// Type of resume (continue, feedback, integration).
+    /// Type of resume (continue, integration, answers, initial, `user_message`).
     pub marker_type: ResumeMarkerType,
     /// Content after the marker.
     pub content: String,

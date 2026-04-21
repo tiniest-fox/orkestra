@@ -18,7 +18,6 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         .get::<_, Option<String>>(14)?
         .unwrap_or_else(|| "default".to_string());
     let pr_url: Option<String> = row.get(17).unwrap_or(None);
-    let created_interactive: bool = row.get::<_, i32>(18).unwrap_or(0) != 0;
     let resources_json: String = row.get(19)?;
 
     Ok(Task {
@@ -37,7 +36,6 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         base_commit: row.get(16)?,
         pr_url,
         auto_mode,
-        created_interactive,
         flow,
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
@@ -59,7 +57,6 @@ pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
         .get::<_, Option<String>>(13)?
         .unwrap_or_else(|| "default".to_string());
     let pr_url: Option<String> = row.get(16).unwrap_or(None);
-    let created_interactive: bool = row.get::<_, i32>(17).unwrap_or(0) != 0;
 
     Ok(TaskHeader {
         id: row.get(0)?,
@@ -75,7 +72,6 @@ pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
         base_commit: row.get(15)?,
         pr_url,
         auto_mode,
-        created_interactive,
         flow,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,

@@ -98,8 +98,8 @@ fn iteration_creation_bumps_updated_at() {
 
     std::thread::sleep(std::time::Duration::from_millis(5));
 
-    // Reject the task — this creates a new iteration for "work" stage
-    ctx.api().reject(&task_id, "Try again").unwrap();
+    // Restart the stage — this creates a new iteration for "work" stage
+    ctx.api().restart_stage(&task_id, "Try again").unwrap();
     ctx.advance(); // applies rejection, creates iter-work-2 → touch_task bumps updated_at
 
     let task_after = ctx.api().get_task(&task_id).unwrap();

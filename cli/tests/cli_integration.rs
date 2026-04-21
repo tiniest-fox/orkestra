@@ -575,3 +575,64 @@ fn test_stuck_task_investigation_scenario() {
     let json = serde_json::to_string(&iterations).expect("serialize iterations");
     assert!(json.contains("Tests are failing"));
 }
+
+#[test]
+fn test_flows_command() {
+    // test_workflow_with_flow() has a "quick" flow with one stage ("work") and on_failure = "work"
+    let config = test_workflow_with_flow();
+
+    // flow_names() returns names in insertion order
+    let names = config.flow_names();
+    assert!(names.contains(&"quick"), "Expected 'quick' flow");
+
+    // JSON output is a plain array of name strings
+    let json = serde_json::to_string(&names).expect("serialize flow names");
+    assert!(json.contains("\"quick\""), "JSON should contain 'quick'");
+    // Must be a JSON array, not an object
+    assert!(json.starts_with('['), "JSON output should be an array");
+
+    // --pretty: look up "quick" by name and verify stage names + integration fields
+    let flow = config
+        .flows
+        .get("quick")
+        .expect("'quick' flow should exist");
+    let stage_names: Vec<&str> = flow.stages.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(stage_names, vec!["work"]);
+    assert_eq!(flow.integration.on_failure, "work");
+    assert!(!flow.integration.auto_merge);
+}
+
+#[test]
+fn test_create_task_with_auto_mode() {
+    let (api, _store, _temp_dir) = setup_test_env(&test_workflow());
+
+    // Create task with AutoMode
+    let auto_task = api
+        .create_task_with_options(
+            "Auto task",
+            "Description",
+            None,
+            TaskCreationMode::AutoMode,
+            None,
+        )
+        .expect("create auto task");
+    assert!(
+        auto_task.auto_mode,
+        "Task created with AutoMode should have auto_mode=true"
+    );
+
+    // Create task with Normal mode — should default to false
+    let normal_task = api
+        .create_task_with_options(
+            "Normal task",
+            "Description",
+            None,
+            TaskCreationMode::Normal,
+            None,
+        )
+        .expect("create normal task");
+    assert!(
+        !normal_task.auto_mode,
+        "Task created with Normal mode should have auto_mode=false"
+    );
+}

@@ -116,6 +116,9 @@ state.has_active_agent()
 
 ## Gotchas
 
+### WorkflowConfig::new() Always Pre-Inserts a "default" Flow
+`WorkflowConfig::new(stages)` creates a flow named `"default"` and inserts it first in the `IndexMap`. If you later call `.with_flows(flows)`, those flows are appended after `"default"`. This means `config.flows.iter().next()` always returns `"default"`, not the first explicitly-added flow. In tests, look up flows by name: `config.flows.get("my-flow")` rather than `.iter().next()`.
+
 ### TaskState String Representation
 Use `Display` trait for human-readable output. The `Display` impl includes the stage in parentheses:
 ```rust

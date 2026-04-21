@@ -3,5 +3,10 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-  "postCreateCommand": "pnpm install"
+  "postCreateCommand": "pnpm install",
+  "customizations": {
+    "orkestra": {
+      "plugins": ["rust-analyzer-lsp"]
+    }
+  }
 }

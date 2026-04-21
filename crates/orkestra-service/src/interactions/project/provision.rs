@@ -10,7 +10,7 @@ use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
 use crate::interactions::{devcontainer, github, project};
-use crate::types::{Project, ProjectStatus, ResourceLimits, ServiceError};
+use crate::types::{DevcontainerConfig, Project, ProjectStatus, ResourceLimits, ServiceError};
 
 /// Clone `repo_url` into `project.path`, initialise `.orkestra`, start a
 /// container, and spawn the daemon.
@@ -318,12 +318,13 @@ async fn container_and_spawn(
     })
     .await;
 
-    // Step 6d: Run toolbox setup (symlinks, user creation, git config).
+    // Step 6d: Run toolbox setup (symlinks, user creation, git config, plugins).
     tracing::info!(project_id = %project_id, "Running toolbox setup");
     tokio::task::spawn_blocking({
         let cid = container_id.clone();
         let lp = log_path.to_path_buf();
-        move || devcontainer::run_toolbox_setup::execute(&cid, Some(&lp))
+        let plugins = plugins_from_config(&config).to_vec();
+        move || devcontainer::run_toolbox_setup::execute(&cid, &plugins, Some(&lp))
     })
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
@@ -360,6 +361,7 @@ async fn container_and_spawn(
         tracing::info!(project_id = %project_id, "Running setup commands");
         append_log(log_path, "\n=== Running setup commands ===");
         let cid = container_id.clone();
+        let plugins = plugins_from_config(&config).to_vec();
         let config = config.clone();
         let p = path.clone();
         let lp = log_path.to_path_buf();
@@ -380,7 +382,7 @@ async fn container_and_spawn(
         tracing::info!(project_id = %project_id, "Re-running toolbox setup after setup commands");
         tokio::task::spawn_blocking({
             let cid = container_id.clone();
-            move || devcontainer::run_toolbox_setup::execute(&cid, None)
+            move || devcontainer::run_toolbox_setup::execute(&cid, &plugins, None)
         })
         .await
         .map_err(|e| ServiceError::Other(e.to_string()))??;
@@ -397,6 +399,15 @@ async fn container_and_spawn(
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
     Ok(())
+}
+
+fn plugins_from_config(config: &DevcontainerConfig) -> &[String] {
+    match config {
+        DevcontainerConfig::Image { plugins, .. }
+        | DevcontainerConfig::Build { plugins, .. }
+        | DevcontainerConfig::Compose { plugins, .. } => plugins,
+        DevcontainerConfig::Default => &[],
+    }
 }
 
 /// RAII guard that hides `.git/worktrees/` from git during a pull.

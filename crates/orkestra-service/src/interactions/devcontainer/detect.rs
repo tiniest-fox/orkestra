@@ -25,6 +25,7 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
         .and_then(parse_post_create_command);
 
     let mounts = parse_mounts(&json);
+    let plugins = parse_plugins(&json);
 
     // Compose: dockerComposeFile + service.
     //
@@ -41,6 +42,7 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
             service: service.to_string(),
             post_create_command,
             mounts,
+            plugins: plugins.clone(),
         };
     }
 
@@ -61,6 +63,7 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
                 context,
                 post_create_command,
                 mounts,
+                plugins: plugins.clone(),
             };
         }
     }
@@ -71,6 +74,7 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
             image: image.to_string(),
             post_create_command,
             mounts,
+            plugins,
         };
     }
 
@@ -117,6 +121,20 @@ fn shell_quote(s: &str) -> String {
 
 fn parse_mounts(json: &serde_json::Value) -> Vec<String> {
     json.get("mounts")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_plugins(json: &serde_json::Value) -> Vec<String> {
+    json.get("customizations")
+        .and_then(|v| v.get("orkestra"))
+        .and_then(|v| v.get("plugins"))
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
@@ -329,6 +347,33 @@ mod tests {
             panic!("expected Compose variant")
         };
         assert_eq!(mounts, vec!["cache-vol:/root/.cache"]);
+    }
+
+    // -- plugins parsing tests --
+
+    #[test]
+    fn parses_plugins_from_customizations() {
+        let dir = TempDir::new().unwrap();
+        write_config(
+            &dir,
+            r#"{"image": "node:20", "customizations": {"orkestra": {"plugins": ["rust-analyzer-lsp", "typescript-lsp"]}}}"#,
+        );
+        let config = execute(dir.path());
+        let DevcontainerConfig::Image { plugins, .. } = config else {
+            panic!("expected Image variant")
+        };
+        assert_eq!(plugins, vec!["rust-analyzer-lsp", "typescript-lsp"]);
+    }
+
+    #[test]
+    fn plugins_defaults_to_empty_when_absent() {
+        let dir = TempDir::new().unwrap();
+        write_config(&dir, r#"{"image": "node:20"}"#);
+        let config = execute(dir.path());
+        let DevcontainerConfig::Image { plugins, .. } = config else {
+            panic!("expected Image variant")
+        };
+        assert!(plugins.is_empty());
     }
 
     // -- strip_json_comments unit tests --

@@ -10,14 +10,29 @@ use crate::types::ServiceError;
 /// Run `/opt/orkestra/setup.sh` inside `container_id` as root.
 ///
 /// Creates symlinks from `/opt/orkestra/bin/*` into `/usr/local/bin/`,
-/// resolves or creates the uid 1000 user, and configures git identity.
+/// resolves or creates the uid 1000 user, configures git identity, and
+/// installs any project-declared Claude Code plugins via `ORKESTRA_PLUGINS`.
 /// Idempotent — safe to run multiple times.
 ///
 /// If `log_path` is provided, any stderr output is written there on failure.
-pub fn execute(container_id: &str, log_path: Option<&Path>) -> Result<(), ServiceError> {
+pub fn execute(
+    container_id: &str,
+    plugins: &[String],
+    log_path: Option<&Path>,
+) -> Result<(), ServiceError> {
     let setup_script = format!("{TOOLBOX_MOUNT_PATH}/setup.sh");
+    let plugin_env = format!("ORKESTRA_PLUGINS={}", plugins.join(","));
     let output = Command::new("docker")
-        .args(["exec", "-u", "root", container_id, "sh", &setup_script])
+        .args([
+            "exec",
+            "-u",
+            "root",
+            "-e",
+            &plugin_env,
+            container_id,
+            "sh",
+            &setup_script,
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

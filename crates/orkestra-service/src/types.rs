@@ -65,6 +65,7 @@ pub enum DevcontainerConfig {
         image: String,
         post_create_command: Option<String>,
         mounts: Vec<String>,
+        plugins: Vec<String>,
     },
     /// A custom Dockerfile declared via `"build.dockerfile"`.
     Build {
@@ -72,6 +73,7 @@ pub enum DevcontainerConfig {
         context: String,
         post_create_command: Option<String>,
         mounts: Vec<String>,
+        plugins: Vec<String>,
     },
     /// Docker Compose declared via `"dockerComposeFile"` + `"service"`.
     Compose {
@@ -79,6 +81,7 @@ pub enum DevcontainerConfig {
         service: String,
         post_create_command: Option<String>,
         mounts: Vec<String>,
+        plugins: Vec<String>,
     },
 }
 

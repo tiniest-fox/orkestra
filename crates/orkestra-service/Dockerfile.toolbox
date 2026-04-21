@@ -56,7 +56,7 @@ cat > /opt/orkestra/setup.sh <<'SETUP_SCRIPT'
 # toolbox-setup.sh — configure toolbox tools inside a project container.
 #
 # Runs as root via `docker exec -u root`. Idempotent: safe to run multiple times.
-# Does not require network access.
+# Network access required only for first-time plugin install; all other steps are offline.
 
 set -e
 
@@ -105,6 +105,24 @@ cat > /home/orkestra/.gitconfig << 'GITCONFIG'
 	helper = gh-token
 GITCONFIG
 chown 1000:1000 /home/orkestra/.gitconfig
+
+# -- Install project-declared Claude Code plugins --
+# ORKESTRA_PLUGINS is a comma-separated list passed by run_toolbox_setup::execute().
+# Installed with HOME=/home/orkestra so cache paths are correct inside the container.
+# The grep check detects both "not installed" and "installed with wrong host HOME path".
+# Uses || true: plugins are a nice-to-have; container startup must not block on
+# network unavailability.
+
+if [ -n "$ORKESTRA_PLUGINS" ]; then
+    for plugin in $(echo "$ORKESTRA_PLUGINS" | tr ',' '\n'); do
+        INSTALLED_PLUGINS="/home/orkestra/.claude/plugins/installed_plugins.json"
+        if ! grep -qs "/home/orkestra/.claude/plugins/cache/${plugin}" "$INSTALLED_PLUGINS" 2>/dev/null; then
+            su -s /bin/sh "$USERNAME" -c \
+                "HOME=/home/orkestra /opt/orkestra/bin/claude plugin install ${plugin}@claude-plugins-official" \
+                2>/dev/null || true
+        fi
+    done
+fi
 
 # -- Configure pnpm store for the uid 1000 user --
 # Point pnpm at /opt/pnpm-store so it never falls back to creating a store

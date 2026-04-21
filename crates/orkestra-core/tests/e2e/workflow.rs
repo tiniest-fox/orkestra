@@ -189,21 +189,21 @@ fn test_exhaustive_workflow_flow() {
         Some("Initial plan v1 - not detailed enough")
     );
 
-    // Human rejects the plan
+    // Human restarts the planning stage with a message
     let task = ctx
         .api()
-        .reject(&task_id, "Need more detail on the implementation steps")
-        .expect("Should reject plan");
+        .restart_stage(&task_id, "Need more detail on the implementation steps")
+        .expect("Should restart stage");
 
     assert_eq!(task.current_stage(), Some("planning"));
     assert!(matches!(task.state, TaskState::Queued { .. }));
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    // With new model: iter1 (questions), iter2 (answers→rejected), iter3 (feedback)
+    // With new model: iter1 (questions), iter2 (answers→skipped by restart), iter3 (restart)
     assert_eq!(
         iterations.len(),
         3,
-        "Should have 3 iterations after rejection"
+        "Should have 3 iterations after restart"
     );
 
     // Check first iteration ended with AwaitingAnswers (agent asked questions)
@@ -213,14 +213,14 @@ fn test_exhaustive_workflow_flow() {
         Outcome::AwaitingAnswers { .. }
     ));
 
-    // Check second iteration ended with rejection (plan was rejected)
+    // Check second iteration ended with Skipped (stage was restarted)
     assert!(iterations[1].outcome.is_some());
     assert!(matches!(
         iterations[1].outcome.as_ref().unwrap(),
-        Outcome::Rejected { .. }
+        Outcome::Skipped { .. }
     ));
 
-    // Check third iteration has feedback context (for retry)
+    // Check third iteration has restart context
     assert!(iterations[2].incoming_context.is_some());
 
     // Orchestrator spawns planner again, produces better plan
@@ -237,12 +237,8 @@ fn test_exhaustive_workflow_flow() {
     ctx.advance(); // spawns planner agent (completion ready)
     ctx.advance(); // processes plan v2 output
 
-    // VERIFY: Planner retry after rejection → resume with feedback (Feedback trigger).
-    // Use assert_resume_prompt_contains which checks only the user message (not combined prompt).
-    ctx.assert_resume_prompt_contains(
-        "feedback",
-        &["Need more detail on the implementation steps"],
-    );
+    // VERIFY: Planner spawn after restart → full initial prompt (restart supersedes session)
+    ctx.assert_full_prompt("plan", true, false);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_awaiting_review());
@@ -263,7 +259,7 @@ fn test_exhaustive_workflow_flow() {
     assert!(matches!(task.state, TaskState::Queued { .. }));
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    // With new model: iter1 (questions), iter2 (answers→rejected), iter3 (feedback→approved), iter4 (breakdown)
+    // With new model: iter1 (questions), iter2 (answers→skipped), iter3 (restart→approved), iter4 (breakdown)
     assert_eq!(
         iterations.len(),
         4,
@@ -334,11 +330,11 @@ fn test_exhaustive_workflow_flow() {
     // VERIFY: First spawn of work stage → full prompt
     ctx.assert_full_prompt("summary", false, false);
 
-    // Human rejects the work
+    // Human restarts the work stage with a message
     let task = ctx
         .api()
-        .reject(&task_id, "Tests are failing, please fix them")
-        .expect("Should reject work");
+        .restart_stage(&task_id, "Tests are failing, please fix them")
+        .expect("Should restart work stage");
 
     assert_eq!(task.current_stage(), Some("work"));
     assert!(matches!(task.state, TaskState::Queued { .. }));
@@ -360,13 +356,12 @@ fn test_exhaustive_workflow_flow() {
     ctx.advance(); // spawns worker agent (completion ready)
     ctx.advance(); // processes work v2 output
 
-    // VERIFY: Work retry after rejection → resume with feedback (Feedback trigger).
+    // VERIFY: Work spawn after restart → full initial prompt (restart supersedes session)
     let config = ctx.last_run_config();
     assert!(
-        config.is_resume,
-        "Human rejection resumes existing session — is_resume must be true"
+        !config.is_resume,
+        "Stage restart uses fresh session — is_resume must be false"
     );
-    ctx.assert_resume_prompt_contains("feedback", &["Tests are failing, please fix them"]);
 
     // =========================================================================
     // Step 7: Work approved → Reviewing
@@ -1194,7 +1189,7 @@ fn test_gate_script_with_recovery() {
     ctx.advance(); // spawns worker (second) → drain_active → artifact processed → AwaitingGate
 
     // Verify worker got gate failure feedback in resume prompt
-    ctx.assert_resume_prompt_contains("feedback", &["gate checks failed"]);
+    ctx.assert_resume_prompt_contains("user_message", &["gate checks failed"]);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
@@ -1557,10 +1552,10 @@ fn test_opencode_no_pregenerated_session_id() {
         "Agent should have been spawned at least once"
     );
 
-    // Reject and retry — this is the bug scenario:
+    // Restart stage — this is the bug scenario:
     // Without the fix, the retry would try to resume with a pre-generated UUID,
     // causing OpenCode to hang.
-    ctx.api().reject(&task_id, "Try again").unwrap();
+    ctx.api().restart_stage(&task_id, "Try again").unwrap();
 
     ctx.set_output(
         &task_id,
@@ -2097,7 +2092,7 @@ fn test_handlebars_passthrough_for_plain_definitions() {
 // =============================================================================
 
 /// Test that retry instructions on a failed task reach the agent via the
-/// `RetryFailed` resume prompt.
+/// `user_message` resume prompt.
 #[test]
 fn test_retry_failed_with_instructions_sends_resume_prompt() {
     let ctx = TestEnv::with_git(
@@ -2127,7 +2122,7 @@ fn test_retry_failed_with_instructions_sends_resume_prompt() {
 
     // Human retries with instructions
     ctx.api()
-        .retry(&task_id, Some("Use the v2 API instead"))
+        .send_message(&task_id, "Use the v2 API instead")
         .unwrap();
 
     // Agent succeeds this time
@@ -2140,10 +2135,10 @@ fn test_retry_failed_with_instructions_sends_resume_prompt() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns agent with retry_failed resume prompt
+    ctx.advance(); // spawns agent with user_message resume prompt
 
-    // Verify the resume prompt contains the retry_failed marker and instructions
-    ctx.assert_resume_prompt_contains("retry_failed", &["Use the v2 API instead"]);
+    // Verify the resume prompt contains the user_message marker and instructions
+    ctx.assert_resume_prompt_contains("user_message", &["Use the v2 API instead"]);
 
     ctx.advance(); // processes artifact output
 
@@ -2152,7 +2147,7 @@ fn test_retry_failed_with_instructions_sends_resume_prompt() {
 }
 
 /// Test that retry instructions on a blocked task reach the agent via the
-/// `RetryBlocked` resume prompt.
+/// `user_message` resume prompt.
 #[test]
 fn test_retry_blocked_with_instructions_sends_resume_prompt() {
     let ctx = TestEnv::with_git(
@@ -2182,7 +2177,7 @@ fn test_retry_blocked_with_instructions_sends_resume_prompt() {
 
     // Human retries with context
     ctx.api()
-        .retry(&task_id, Some("CI pipeline is green now"))
+        .send_message(&task_id, "CI pipeline is green now")
         .unwrap();
 
     // Agent succeeds
@@ -2195,9 +2190,9 @@ fn test_retry_blocked_with_instructions_sends_resume_prompt() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns agent with retry_blocked resume prompt
+    ctx.advance(); // spawns agent with user_message resume prompt
 
-    ctx.assert_resume_prompt_contains("retry_blocked", &["CI pipeline is green now"]);
+    ctx.assert_resume_prompt_contains("user_message", &["CI pipeline is green now"]);
 
     ctx.advance(); // processes artifact output
 
@@ -2228,7 +2223,7 @@ fn test_retry_failed_without_instructions_sends_resume_prompt() {
     ctx.advance(); // processes failure
 
     // Human retries without instructions
-    ctx.api().retry(&task_id, None).unwrap();
+    ctx.api().send_message(&task_id, "please retry").unwrap();
 
     // Agent succeeds
     ctx.set_output(
@@ -2240,9 +2235,9 @@ fn test_retry_failed_without_instructions_sends_resume_prompt() {
             resources: vec![],
         },
     );
-    ctx.advance(); // spawns agent with retry_failed resume prompt (no instructions)
+    ctx.advance(); // spawns agent with user_message resume prompt
 
-    ctx.assert_resume_prompt_contains("retry_failed", &["try again"]);
+    ctx.assert_resume_prompt_contains("user_message", &["please retry"]);
 }
 
 // =============================================================================
@@ -2273,7 +2268,7 @@ fn test_kill_before_output_retries_without_resume() {
     assert!(task.is_failed(), "Task should be Failed after agent error");
 
     // Retry the task
-    ctx.api().retry(&task_id, None).unwrap();
+    ctx.api().send_message(&task_id, "please retry").unwrap();
 
     // Set output for the retry
     ctx.set_output(
@@ -2299,137 +2294,6 @@ fn test_kill_before_output_retries_without_resume() {
     ctx.advance(); // processes artifact
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_awaiting_review());
-}
-
-/// Test that human rejection resumes the existing agent session, even when the agent had activity.
-///
-/// Human rejection is a `Feedback` trigger — the agent resumes in its existing
-/// session with the feedback, preserving context regardless of whether the
-/// agent previously produced output (`has_activity`).
-#[test]
-fn test_human_rejection_resumes_session_even_with_activity() {
-    let ctx = TestEnv::with_git(
-        &test_default_workflow(),
-        &["planner", "breakdown", "worker", "reviewer"],
-    );
-
-    let task = ctx.create_task("Test activity resume", "A task to test", None);
-    let task_id = task.id.clone();
-
-    // Set output WITH activity (sends LogLine before Completed)
-    ctx.set_output_with_activity(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "plan".into(),
-            content: "First plan".into(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawns agent (with activity LogLine)
-    ctx.advance(); // processes artifact output
-
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_awaiting_review());
-
-    // Reject to trigger another spawn on the same stage
-    ctx.api().reject(&task_id, "Needs more detail").unwrap();
-
-    // Set output for the retry
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "plan".into(),
-            content: "Improved plan".into(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawns agent for retry (rejection → resume, Feedback trigger)
-
-    // Human rejection is a Feedback trigger — resumes existing session, even with prior activity
-    let last_config = ctx.last_run_config();
-    assert!(
-        last_config.is_resume,
-        "Human rejection resumes existing session — is_resume must be true"
-    );
-}
-
-/// Test that human rejection resumes the existing agent session (not fresh spawn).
-///
-/// When a human rejects a same-stage artifact, the Feedback trigger is used,
-/// preserving the session so the agent can resume with context.
-#[test]
-fn test_human_rejection_resumes_session() {
-    use orkestra_core::workflow::domain::SessionState;
-
-    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
-        .with_prompt("worker.md")
-        .with_gate(GateConfig::Agentic)])
-    .with_integration(IntegrationConfig::new("work"));
-
-    let ctx = TestEnv::with_git(&workflow, &["worker"]);
-    let task = ctx.create_task("Resume test", "Test human rejection resumes", None);
-    let task_id = task.id.clone();
-
-    // Work agent produces artifact
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "summary".to_string(),
-            content: "Initial work".to_string(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawns worker
-    ctx.advance(); // processes output
-
-    let session_before = ctx
-        .api()
-        .get_stage_session(&task_id, "work")
-        .unwrap()
-        .expect("Session should exist");
-    let session_id_before = session_before.id.clone();
-
-    // Human rejects
-    ctx.api().reject(&task_id, "Add error handling").unwrap();
-
-    // Set output for resume
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "summary".to_string(),
-            content: "Work with error handling".to_string(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawns worker (resume)
-    ctx.advance(); // processes output
-
-    // Session should be the SAME (not superseded)
-    let session_after = ctx
-        .api()
-        .get_stage_session(&task_id, "work")
-        .unwrap()
-        .expect("Session should exist");
-    assert_eq!(
-        session_after.id, session_id_before,
-        "Same session should be reused"
-    );
-    assert_eq!(session_after.session_state, SessionState::Active);
-
-    // Should be resume, not fresh
-    let last_config = ctx.last_run_config();
-    assert!(
-        last_config.is_resume,
-        "Human rejection should resume existing session"
-    );
-
-    // Resume prompt should contain the feedback.
-    // Use assert_resume_prompt_contains which checks only the user message (not combined prompt).
-    ctx.assert_resume_prompt_contains("feedback", &["Add error handling"]);
 }
 
 // =============================================================================
@@ -2580,7 +2444,7 @@ fn test_rejection_review_override_then_approval() {
 
     let task = ctx
         .api()
-        .reject(
+        .restart_stage(
             &task_id,
             "The implementation looks correct — please re-evaluate the edge cases",
         )
@@ -3191,9 +3055,9 @@ fn test_artifact_generation_for_all_output_types() {
         "Agent artifact output should create artifact"
     );
 
-    // Human rejects (should NOT overwrite the agent's artifact)
+    // Human restarts the stage (should NOT overwrite the agent's artifact)
     ctx.api()
-        .reject(&task_id, "Need more detail on error handling")
+        .restart_stage(&task_id, "Need more detail on error handling")
         .unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -3300,16 +3164,16 @@ fn test_artifact_generation_for_all_output_types() {
     assert_eq!(task.current_stage(), Some("review"));
     assert!(task.is_awaiting_review());
 
-    // Human overrides rejection (should NOT change the artifact)
+    // Human restarts the review stage (should NOT change the artifact)
     ctx.api()
-        .reject(&task_id, "Actually the tests are fine, re-evaluate")
+        .restart_stage(&task_id, "Actually the tests are fine, re-evaluate")
         .unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
         task.artifact("verdict"),
         Some("Missing integration tests"),
-        "Human rejection override should NOT overwrite agent's verdict artifact"
+        "Human stage restart should NOT overwrite agent's verdict artifact"
     );
 
     // =========================================================================
@@ -3654,14 +3518,14 @@ fn test_interrupt_and_resume() {
     // Resume with a message
     let task = ctx
         .api()
-        .resume(&task_id, Some("please focus on error handling".to_string()))
+        .send_message(&task_id, "please focus on error handling")
         .unwrap();
     assert!(
         matches!(task.state, TaskState::Queued { .. }),
         "Task should be Queued after resume"
     );
 
-    // Verify a new iteration was created with ManualResume trigger
+    // Verify a new iteration was created with UserMessage trigger
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     assert_eq!(
         iterations.len(),
@@ -3670,10 +3534,10 @@ fn test_interrupt_and_resume() {
     );
     assert_eq!(
         iterations[1].incoming_context,
-        Some(IterationTrigger::ManualResume {
-            message: Some("please focus on error handling".to_string())
+        Some(IterationTrigger::UserMessage {
+            message: "please focus on error handling".to_string()
         }),
-        "Second iteration should have ManualResume trigger with message"
+        "Second iteration should have UserMessage trigger with message"
     );
 
     // Set output for the resumed agent
@@ -3719,16 +3583,18 @@ fn test_interrupt_and_resume_without_message() {
     ctx.api().interrupt(&task_id).unwrap();
 
     // Resume without message
-    let task = ctx.api().resume(&task_id, None).unwrap();
+    let task = ctx.api().send_message(&task_id, "").unwrap();
     assert!(matches!(task.state, TaskState::Queued { .. }));
 
-    // Verify ManualResume trigger with None message
+    // Verify UserMessage trigger with empty message
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     assert_eq!(iterations.len(), 2);
     assert_eq!(
         iterations[1].incoming_context,
-        Some(IterationTrigger::ManualResume { message: None }),
-        "Second iteration should have ManualResume trigger with no message"
+        Some(IterationTrigger::UserMessage {
+            message: String::new()
+        }),
+        "Second iteration should have UserMessage trigger with empty message"
     );
 }
 
@@ -3756,9 +3622,7 @@ fn test_interrupt_resume_multiple_cycles() {
         TaskState::Interrupted { .. }
     ));
 
-    ctx.api()
-        .resume(&task_id, Some("message 1".to_string()))
-        .unwrap();
+    ctx.api().send_message(&task_id, "message 1").unwrap();
     assert!(matches!(
         ctx.api().get_task(&task_id).unwrap().state,
         TaskState::Queued { .. }
@@ -3777,9 +3641,7 @@ fn test_interrupt_resume_multiple_cycles() {
         TaskState::Interrupted { .. }
     ));
 
-    ctx.api()
-        .resume(&task_id, Some("message 2".to_string()))
-        .unwrap();
+    ctx.api().send_message(&task_id, "message 2").unwrap();
     assert!(matches!(
         ctx.api().get_task(&task_id).unwrap().state,
         TaskState::Queued { .. }
@@ -3862,15 +3724,15 @@ fn test_interrupt_wrong_phase() {
     }
 }
 
-/// Test that resuming a task in the wrong phase returns an error.
+/// Test that sending a message in the wrong phase returns an error.
 #[test]
-fn test_resume_wrong_phase() {
+fn test_send_message_wrong_phase() {
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md")
     ]);
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
-    let task = ctx.create_task("Test resume wrong phase", "Testing error case", None);
+    let task = ctx.create_task("Test send_message wrong phase", "Testing error case", None);
     let task_id = task.id.clone();
 
     // Manually transition to AgentWorking
@@ -3880,11 +3742,11 @@ fn test_resume_wrong_phase() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(matches!(task.state, TaskState::AgentWorking { .. }));
 
-    // Try to resume (should fail - not in Interrupted phase)
-    let result = ctx.api().resume(&task_id, None);
+    // Try to send_message (should fail - not in a resumable phase)
+    let result = ctx.api().send_message(&task_id, "hello");
     assert!(
         result.is_err(),
-        "Should not be able to resume task in AgentWorking phase"
+        "Should not be able to send_message in AgentWorking phase"
     );
     match result {
         Err(e) => assert!(
@@ -4726,7 +4588,7 @@ fn test_untriggered_reentry_spawns_fresh_session() {
 /// Test that interrupt→resume does NOT start a fresh session.
 ///
 /// An interrupt→resume is NOT a stage re-entry — it's the same pass through the
-/// stage being continued after a pause. `ManualResume` is an iterating trigger,
+/// stage being continued after a pause. `UserMessage` is an iterating trigger,
 /// so the existing session is always resumed.
 ///
 /// Bug: Before the fix, if the agent was interrupted before producing structured
@@ -4735,9 +4597,9 @@ fn test_untriggered_reentry_spawns_fresh_session() {
 ///
 /// Flow:
 /// 1. Review stage is simulated as started (`agent_started`) then interrupted
-/// 2. User resumes (creates `ManualResume` iteration)
+/// 2. User resumes (creates `UserMessage` iteration)
 /// 3. Review spawns via orchestrator → must use `is_resume = true`
-/// 4. Untriggered re-entry logic must NOT fire (`trigger = Some(ManualResume)`)
+/// 4. Untriggered re-entry logic must NOT fire (`trigger = Some(UserMessage)`)
 #[test]
 fn test_interrupt_resume_preserves_session() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
@@ -4753,7 +4615,7 @@ fn test_interrupt_resume_preserves_session() {
 
     let task = ctx.create_task(
         "Interrupt resume test",
-        "Test interrupt→resume preserves session (ManualResume is iterating trigger)",
+        "Test interrupt→resume preserves session (UserMessage is iterating trigger)",
         None,
     );
     let task_id = task.id.clone();
@@ -4769,9 +4631,9 @@ fn test_interrupt_resume_preserves_session() {
     ctx.api().interrupt(&task_id).unwrap();
 
     // =========================================================================
-    // Step 2: User resumes → creates ManualResume iteration
+    // Step 2: User resumes → creates UserMessage iteration
     // =========================================================================
-    ctx.api().resume(&task_id, None).unwrap();
+    ctx.api().send_message(&task_id, "").unwrap();
 
     // Set output for the resumed reviewer
     ctx.set_output(
@@ -4787,18 +4649,18 @@ fn test_interrupt_resume_preserves_session() {
     // =========================================================================
     // Step 3: Orchestrator spawns resumed reviewer
     // =========================================================================
-    ctx.advance(); // spawn reviewer with ManualResume trigger
+    ctx.advance(); // spawn reviewer with UserMessage trigger
 
-    // Key assertion: ManualResume trigger must produce is_resume=true.
-    // Before the fix: is_resume=false because has_activity=false and ManualResume
+    // Key assertion: UserMessage trigger must produce is_resume=true.
+    // Before the fix: is_resume=false because has_activity=false and UserMessage
     // wasn't checked. After the fix: is_resume=true.
     let resume_config = ctx.last_run_config();
     assert!(
         resume_config.is_resume,
-        "Resume after interrupt should use is_resume=true (ManualResume trigger)"
+        "Resume after interrupt should use is_resume=true (UserMessage trigger)"
     );
 
-    // No session superseding — ManualResume is iterating, not returning.
+    // No session superseding — UserMessage is iterating, not returning.
     // If untriggered re-entry logic had fired, it would have superseded the session.
     let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
     let review_sessions: Vec<_> = all_sessions
@@ -4811,9 +4673,9 @@ fn test_interrupt_resume_preserves_session() {
         "Should have exactly 1 review session (interrupt→resume is not a re-entry)"
     );
 
-    // Session ID is assigned on spawn and must not be cleared by the ManualResume path.
+    // Session ID is assigned on spawn and must not be cleared by the UserMessage path.
     // (Precise regression coverage for is_resume is in unit test
-    // `test_resume_when_manual_resume_trigger_no_activity` in session.rs.)
+    // `test_resume_when_user_message_trigger_no_activity` in session.rs.)
     let session = review_sessions[0];
     assert!(
         session.claude_session_id.is_some(),
@@ -5102,9 +4964,9 @@ fn test_interrupt_message_in_resume_prompt() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_awaiting_review());
 
-    // Reject to trigger another iteration on the same stage
+    // Restart stage to trigger another iteration
     ctx.api()
-        .reject(&task_id, "Needs validation logic")
+        .restart_stage(&task_id, "Needs validation logic")
         .unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -5126,9 +4988,7 @@ fn test_interrupt_message_in_resume_prompt() {
     assert!(matches!(task.state, TaskState::Interrupted { .. }));
 
     let interrupt_message = "Please focus on the validation logic and add proper error handling";
-    ctx.api()
-        .resume(&task_id, Some(interrupt_message.to_string()))
-        .unwrap();
+    ctx.api().send_message(&task_id, interrupt_message).unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(matches!(task.state, TaskState::Queued { .. }));
@@ -5145,11 +5005,8 @@ fn test_interrupt_message_in_resume_prompt() {
     );
     ctx.advance(); // Spawns resumed agent
 
-    // Verify the resume prompt contains the manual_resume marker and the interrupt message.
-    // The real AgentRunner parses this marker and logs it as a UserMessage with
-    // resume_type="manual_resume". The MockAgentRunner doesn't emit UserMessage log entries,
-    // so we verify the prompt construction instead.
-    ctx.assert_resume_prompt_contains("manual_resume", &[interrupt_message]);
+    // Verify the resume prompt contains the user_message marker and the interrupt message.
+    ctx.assert_resume_prompt_contains("user_message", &[interrupt_message]);
 
     ctx.advance(); // Processes output
 
@@ -6261,126 +6118,6 @@ fn test_stages_with_logs_groups_sessions_correctly() {
     assert_eq!(work_stage.sessions.len(), 1, "work should have 1 session");
     assert_eq!(work_stage.sessions[0].run_number, 1);
     assert!(work_stage.sessions[0].is_current);
-}
-
-/// Test that human rejections preserve the existing session (no supersession).
-///
-/// When a human rejects an artifact, the Feedback trigger resumes the existing
-/// session rather than creating a new one. This ensures the agent continues with
-/// full context from its previous work, rather than starting fresh.
-#[test]
-fn test_human_rejection_preserves_session() {
-    use orkestra_core::testutil::fixtures::test_default_workflow;
-
-    use crate::helpers::enable_auto_merge;
-
-    let ctx = TestEnv::with_git(
-        &enable_auto_merge(test_default_workflow()),
-        &["planner", "breakdown", "worker", "reviewer"],
-    );
-
-    let task = ctx.create_task("Test task", "Test description", None);
-    let task_id = task.id.clone();
-
-    // Get through to work stage - set output BEFORE advancing
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "plan".to_string(),
-            content: "Plan".to_string(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawns planner
-    ctx.advance(); // processes output
-
-    ctx.api().approve(&task_id).unwrap();
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "breakdown".to_string(),
-            content: "No subtasks".to_string(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawns breakdown
-    ctx.advance(); // processes output
-
-    ctx.api().approve(&task_id).unwrap();
-
-    // Work stage - first iteration
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "summary".to_string(),
-            content: "First work attempt".to_string(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.advance(); // spawns worker
-    ctx.advance(); // processes output
-
-    // Get initial state
-    let task_views = ctx.api().list_task_views().unwrap();
-    let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
-
-    let work_stage = task_view
-        .derived
-        .stages_with_logs
-        .iter()
-        .find(|s| s.stage == "work")
-        .expect("work stage should have logs");
-
-    assert_eq!(
-        work_stage.sessions.len(),
-        1,
-        "Should have 1 session initially"
-    );
-    let first_session_id = work_stage.sessions[0].session_id.clone();
-
-    // Reject the work to trigger another iteration - set output BEFORE rejecting
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "summary".to_string(),
-            content: "Second work attempt with error handling".to_string(),
-            activity_log: None,
-            resources: vec![],
-        },
-    );
-    ctx.api()
-        .reject(&task_id, "Please add error handling")
-        .unwrap();
-    ctx.advance(); // spawns worker (resume — feedback trigger)
-    ctx.advance(); // processes output
-
-    // Verify rejection preserved the existing session (no supersession)
-    let task_views = ctx.api().list_task_views().unwrap();
-    let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
-
-    let work_stage = task_view
-        .derived
-        .stages_with_logs
-        .iter()
-        .find(|s| s.stage == "work")
-        .expect("work stage should have logs");
-
-    assert_eq!(
-        work_stage.sessions.len(),
-        1,
-        "Feedback trigger should preserve existing session (no supersession)"
-    );
-    assert_eq!(
-        work_stage.sessions[0].session_id, first_session_id,
-        "Same session should be reused after human rejection"
-    );
-    assert!(
-        work_stage.sessions[0].is_current,
-        "Session should still be current (not superseded)"
-    );
 }
 
 /// Test that stages are ordered chronologically by their first session.
@@ -7791,7 +7528,7 @@ fn test_interrupt_during_gate() {
     );
 
     // Resume to verify task can recover from gate interrupt
-    let task = ctx.api().resume(&task_id, None).unwrap();
+    let task = ctx.api().send_message(&task_id, "").unwrap();
     assert!(
         matches!(task.state, TaskState::Queued { .. }),
         "Task should be Queued after resuming from gate interrupt, got: {:?}",
@@ -7801,12 +7538,12 @@ fn test_interrupt_during_gate() {
     let resume_iter = iter_after_resume.iter().find(|i| {
         matches!(
             &i.incoming_context,
-            Some(IterationTrigger::ManualResume { .. })
+            Some(IterationTrigger::UserMessage { .. })
         )
     });
     assert!(
         resume_iter.is_some(),
-        "Should have a ManualResume iteration after resuming"
+        "Should have a UserMessage iteration after resuming"
     );
 }
 
@@ -9205,7 +8942,8 @@ fn test_restart_stage_from_blocked() {
 /// Verifies that:
 /// - `get_task_logs` with `cursor: None` returns all entries + a cursor
 /// - `get_task_logs` with the returned cursor returns no new entries + `cursor: None`
-/// - A second agent run adds new entries visible when fetching with the previous cursor
+/// - `restart_stage` supersedes the session (new session.id); cursor resets to None for new session
+/// - Within the new session, cursor-based incremental fetching works correctly
 #[test]
 fn test_cursor_based_incremental_log_fetch() {
     let ctx = TestEnv::with_git(
@@ -9263,8 +9001,10 @@ fn test_cursor_based_incremental_log_fetch() {
         "cursor should be None when no entries returned"
     );
 
-    // Reject to trigger a retry — the new iteration writes additional log entries
-    ctx.api().reject(&task_id, "Needs more detail").unwrap();
+    // Restart stage — supersedes the session (new session.id); cursor resets for new session
+    ctx.api()
+        .restart_stage(&task_id, "Needs more detail")
+        .unwrap();
 
     ctx.set_output_with_activity(
         &task_id,
@@ -9278,19 +9018,34 @@ fn test_cursor_based_incremental_log_fetch() {
     ctx.advance(); // spawns agent for retry (emits LogLine before Completed)
     ctx.advance(); // processes artifact output
 
-    // Fetch with the original cursor — should see only entries from the new iteration
-    let (incremental_entries, new_cursor2) = ctx
+    // Fetch with cursor=None for the new session — should return new entries
+    let (session2_entries, cursor2) = ctx
         .api()
-        .get_task_logs(&task_id, Some("planning"), None, cursor)
-        .expect("incremental fetch with old cursor should succeed");
+        .get_task_logs(&task_id, Some("planning"), None, None)
+        .expect("fetch from new session should succeed");
 
     assert!(
-        !incremental_entries.is_empty(),
+        !session2_entries.is_empty(),
         "should return new entries written during the second agent run"
     );
     assert!(
-        new_cursor2 > cursor,
-        "new cursor should advance beyond the previous cursor"
+        cursor2.is_some(),
+        "cursor should be set for new session entries"
+    );
+
+    // Fetch again with session2 cursor — no new entries since last fetch
+    let (incremental_entries, cursor3) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("planning"), None, cursor2)
+        .expect("incremental fetch with session2 cursor should succeed");
+
+    assert!(
+        incremental_entries.is_empty(),
+        "no new entries since session2 cursor was issued"
+    );
+    assert!(
+        cursor3.is_none(),
+        "cursor should be None when no entries returned"
     );
 }
 
@@ -9776,9 +9531,9 @@ fn test_rejection_artifact_persisted() {
 /// 2. Review stage (agentic gate): reviewer rejects back to work with feedback
 /// 3. Work stage: second fresh spawn (Rejection trigger supersedes session) → sections populated
 ///
-/// Note: `api.reject()` creates a `Feedback` trigger (resume), not a `Rejection` trigger (fresh
-/// spawn). Only reviewer-stage rejections create `Rejection` triggers, which supersede the
-/// session and produce a fresh spawn where `dynamic_sections` are extracted.
+/// Note: `api.restart_stage()` creates a `Restart` trigger (supersedes session), while
+/// reviewer-stage rejections create `Rejection` triggers that also supersede the session
+/// and produce a fresh spawn where `dynamic_sections` are extracted.
 #[test]
 fn test_prompt_sections_threaded_to_run_config() {
     // Two stages: work (produces artifact) + review (agentic gate that can reject back to work).

@@ -15,7 +15,7 @@ use crate::highlight::SyntaxHighlighter;
 use crate::interactions::auth::{generate_pairing_code, list_devices, revoke_device};
 use crate::types::{ErrorPayload, Event};
 
-use super::{action, assistant, diff, git, query, stage_chat, task};
+use super::{action, assistant, diff, git, query, task};
 
 // ============================================================================
 // Command Context
@@ -107,12 +107,9 @@ pub async fn execute(
 
         // -- Human actions (synchronous) --
         "approve" => run_sync(ctx, params, action::approve).await,
-        "reject" => run_sync(ctx, params, action::reject).await,
         "answer_questions" => run_sync(ctx, params, action::answer_questions).await,
-        "retry" => run_sync(ctx, params, action::retry).await,
         "set_auto_mode" => run_sync(ctx, params, action::set_auto_mode).await,
         "interrupt" => run_sync(ctx, params, action::interrupt).await,
-        "resume" => run_sync(ctx, params, action::resume).await,
         "archive" => run_sync(ctx, params, action::archive).await,
         "reject_with_comments" => run_sync(ctx, params, action::reject_with_comments).await,
         "address_pr_feedback" => run_sync(ctx, params, action::address_pr_feedback).await,
@@ -122,7 +119,6 @@ pub async fn execute(
         "force_push_pr_changes" => run_sync(ctx, params, action::force_push_pr_changes).await,
         "pull_pr_changes" => run_sync(ctx, params, action::pull_pr_changes).await,
         "retry_pr" => run_sync(ctx, params, action::retry_pr).await,
-        "return_to_work" => run_sync(ctx, params, action::return_to_work).await,
         "skip_stage" => run_sync(ctx, params, action::skip_stage).await,
         "send_to_stage" => run_sync(ctx, params, action::send_to_stage).await,
         "restart_stage" => run_sync(ctx, params, action::restart_stage).await,
@@ -131,10 +127,6 @@ pub async fn execute(
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,
         "open_pr" => action::handle_open_pr(ctx, event_tx, params).await,
-
-        // -- Stage chat --
-        "stage_chat_send" => run_sync(ctx, params, stage_chat::stage_chat_send).await,
-        "stage_chat_stop" => run_sync(ctx, params, stage_chat::stage_chat_stop).await,
 
         // -- Assistant --
         "assistant_send_message" => run_sync(ctx, params, assistant::assistant_send_message).await,

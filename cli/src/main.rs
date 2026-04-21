@@ -540,7 +540,7 @@ fn handle_approve_task(api: &WorkflowApi, id: &str, pretty: bool) {
 }
 
 fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str, pretty: bool) {
-    let task = match api.reject(id, feedback) {
+    let task = match api.restart_stage(id, feedback) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error rejecting trak: {e}");
@@ -1105,7 +1105,8 @@ fn handle_pull_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
 }
 
 fn handle_retry_task(api: &WorkflowApi, id: &str, instructions: Option<&str>, pretty: bool) {
-    let task = match api.retry(id, instructions) {
+    let message = instructions.unwrap_or("please retry");
+    let task = match api.send_message(id, message) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error retrying trak: {e}");
@@ -1344,7 +1345,6 @@ fn format_outcome(outcome: &Outcome) -> String {
 
 fn format_trigger(trigger: &IterationTrigger) -> String {
     match trigger {
-        IterationTrigger::Feedback { feedback } => format!("feedback\n    \"{feedback}\""),
         IterationTrigger::Rejection {
             from_stage,
             feedback,
@@ -1365,27 +1365,6 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
         IterationTrigger::Interrupted => "interrupted (crash recovery)".to_string(),
         IterationTrigger::GateFailure { error } => {
             format!("gate failure\n    {error}")
-        }
-        IterationTrigger::RetryFailed { instructions } => {
-            let mut s = "retry failed".to_string();
-            if let Some(inst) = instructions {
-                write!(s, "\n    Instructions: {inst}").unwrap();
-            }
-            s
-        }
-        IterationTrigger::RetryBlocked { instructions } => {
-            let mut s = "retry blocked".to_string();
-            if let Some(inst) = instructions {
-                write!(s, "\n    Instructions: {inst}").unwrap();
-            }
-            s
-        }
-        IterationTrigger::ManualResume { message } => {
-            let mut s = "manual resume".to_string();
-            if let Some(msg) = message {
-                write!(s, "\n    Message: {msg}").unwrap();
-            }
-            s
         }
         IterationTrigger::PrFeedback {
             comments,
@@ -1420,11 +1399,7 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
         } => {
             format!("redirect from {from_stage}\n    \"{message}\"")
         }
-        IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
         IterationTrigger::Restart { message } => format!("restart stage\n    \"{message}\""),
-        IterationTrigger::ChatCompletion => {
-            "chat completion (structured output detected)".to_string()
-        }
         IterationTrigger::UserMessage { message } => {
             format!("user message\n    \"{message}\"")
         }

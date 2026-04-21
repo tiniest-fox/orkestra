@@ -5,15 +5,8 @@ import { classifyUser } from "./FeedLogList";
 import type { UserMessage } from "./MessageList";
 
 describe("classifyUser", () => {
-  const humanTypes = ["feedback", "answers", "manual_resume", "chat", "return_to_work"] as const;
-  const systemTypes = [
-    "initial",
-    "continue",
-    "recheck",
-    "retry_failed",
-    "retry_blocked",
-    "integration",
-  ] as const;
+  const humanTypes = ["feedback", "answers", "manual_resume", "user_message"] as const;
+  const systemTypes = ["initial", "continue", "integration"] as const;
 
   for (const rt of humanTypes) {
     it(`classifies "${rt}" as You (human)`, () => {

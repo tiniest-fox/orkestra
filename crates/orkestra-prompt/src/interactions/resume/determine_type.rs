@@ -28,8 +28,8 @@ pub fn execute(
                 .collect(),
         }
     } else if let Some(fb) = feedback {
-        ResumeType::Feedback {
-            feedback: fb.to_string(),
+        ResumeType::UserMessage {
+            message: fb.to_string(),
         }
     } else if !question_history.is_empty() {
         ResumeType::Answers {
@@ -71,8 +71,8 @@ mod tests {
         let answers = vec![QuestionAnswer::new("What?", "Something", "now")];
         let result = execute(Some("please fix"), None, &answers);
         match result {
-            ResumeType::Feedback { feedback } => assert_eq!(feedback, "please fix"),
-            _ => panic!("Expected Feedback variant"),
+            ResumeType::UserMessage { message } => assert_eq!(message, "please fix"),
+            _ => panic!("Expected UserMessage variant"),
         }
     }
 

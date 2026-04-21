@@ -61,7 +61,6 @@ export function createDemoTransport(): Transport {
           return resolve({});
         // Action RPCs — resolve successfully to make buttons interactive
         case "approve":
-        case "reject":
         case "answer_questions":
         case "interrupt":
         case "resume":

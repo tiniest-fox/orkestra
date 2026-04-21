@@ -1,17 +1,9 @@
-//! Send a message to the agent — unified API for all human-action states.
+//! Send a message to the agent — creates a new iteration with a `UserMessage` trigger.
 //!
-//! Two execution paths based on task state:
-//!
-//! **Path A — Inline spawn** (`AwaitingApproval`, `AwaitingRejectionConfirmation`):
-//! Delegates to the stage chat infrastructure. No state transition; kills any
-//! existing agent, appends a `UserMessage` log entry, and spawns the agent in
-//! the existing session. The background thread detects structured output and
-//! advances the stage if the agent produces valid output.
-//!
-//! **Path B — Queued** (`AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`):
-//! Creates a new iteration with a `UserMessage` trigger and transitions the task
-//! to `Queued` (or `AwaitingSetup` when no worktree exists). The orchestrator
-//! then picks it up and spawns the agent normally.
+//! Handles tasks in `AwaitingQuestionAnswer`, `Failed`, `Blocked`, or `Interrupted` states.
+//! Creates a new iteration with a `UserMessage` trigger and transitions the task to `Queued`
+//! (or `AwaitingSetup` when no worktree exists). The orchestrator then picks it up and spawns
+//! the agent normally with a `user_message` resume prompt.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -26,43 +18,28 @@ use crate::workflow::runtime::TaskState;
 
 /// Send a message to the agent.
 ///
-/// Routes to Path A (inline spawn) or Path B (Queued) based on task state.
-///
+/// Creates a new iteration with a `UserMessage` trigger and transitions the task to `Queued`.
+/// Valid states: `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
     store: &Arc<dyn WorkflowStore>,
-    registry: &Arc<ProviderRegistry>,
+    _registry: &Arc<ProviderRegistry>,
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
-    project_root: &Path,
+    _project_root: &Path,
     task_id: &str,
     message: &str,
-    log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
+    _log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
 ) -> WorkflowResult<Task> {
     let task = store
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
     match &task.state {
-        // -- Path A: inline spawn (no state transition) --
-        TaskState::AwaitingApproval { .. } | TaskState::AwaitingRejectionConfirmation { .. } => {
-            execute_path_a(
-                store,
-                registry,
-                workflow,
-                project_root,
-                task_id,
-                message,
-                log_notify_tx,
-                task,
-            )
-        }
-
-        // -- Path B: create iteration and queue --
         TaskState::AwaitingQuestionAnswer { .. }
         | TaskState::Failed { .. }
         | TaskState::Blocked { .. }
-        | TaskState::Interrupted { .. } => execute_path_b(
+        | TaskState::Interrupted { .. } => execute_queued(
             store.as_ref(),
             workflow,
             iteration_service,
@@ -73,8 +50,7 @@ pub fn execute(
 
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Cannot send message in state {} \
-             (expected AwaitingApproval, AwaitingRejectionConfirmation, \
-             AwaitingQuestionAnswer, Failed, Blocked, or Interrupted)",
+             (expected AwaitingQuestionAnswer, Failed, Blocked, or Interrupted)",
             task.state
         ))),
     }
@@ -84,53 +60,16 @@ pub fn execute(
 // Helpers
 // ============================================================================
 
-/// Path A: inline agent spawn in the existing stage session.
-///
-/// Delegates to `stage_chat` infrastructure. The task state does not change —
-/// the agent runs conversationally and may produce structured output that
-/// advances the stage, or respond conversationally leaving the task as-is.
-#[allow(clippy::too_many_arguments)]
-fn execute_path_a(
-    store: &Arc<dyn WorkflowStore>,
-    registry: &Arc<ProviderRegistry>,
-    workflow: &WorkflowConfig,
-    project_root: &Path,
-    task_id: &str,
-    message: &str,
-    log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
-    task: Task,
-) -> WorkflowResult<Task> {
-    orkestra_debug!(
-        "action",
-        "send_message {}: path A (inline spawn), state={}",
-        task_id,
-        task.state
-    );
-
-    crate::workflow::stage_chat::interactions::send_message::execute(
-        Arc::clone(store),
-        registry,
-        workflow,
-        project_root,
-        task_id,
-        message,
-        log_notify_tx,
-    )?;
-
-    // Return the current task — state has not changed (no transition in Path A).
-    Ok(task)
-}
-
-/// Path B: create a new iteration with `UserMessage` trigger and queue the task.
+/// Create a new iteration with a `UserMessage` trigger and queue the task.
 ///
 /// For `Failed` and `Blocked`, resolves the last active stage and checks
-/// whether a worktree exists (same logic as `retry.rs`):
+/// whether a worktree exists:
 /// - No worktree → `AwaitingSetup`
 /// - Worktree exists → `Queued`
 ///
 /// For `AwaitingQuestionAnswer` and `Interrupted`, uses the current stage
 /// and transitions directly to `Queued`.
-fn execute_path_b(
+fn execute_queued(
     store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
@@ -140,7 +79,7 @@ fn execute_path_b(
 ) -> WorkflowResult<Task> {
     orkestra_debug!(
         "action",
-        "send_message {}: path B (queued), state={}",
+        "send_message {}: queuing with UserMessage trigger, state={}",
         task_id,
         task.state
     );
@@ -186,7 +125,7 @@ fn execute_path_b(
 
         _ => {
             return Err(WorkflowError::InvalidTransition(format!(
-                "send_message Path B reached unexpected state: {}",
+                "send_message reached unexpected state: {}",
                 task.state
             )))
         }
@@ -248,7 +187,7 @@ mod tests {
         task.state = TaskState::awaiting_question_answer("planning");
         store.save_task(&task).unwrap();
 
-        let result = execute_path_b(
+        let result = execute_queued(
             store.as_ref(),
             &workflow,
             &iter_service,
@@ -287,7 +226,7 @@ mod tests {
         task.state = TaskState::interrupted("work");
         store.save_task(&task).unwrap();
 
-        let result = execute_path_b(
+        let result = execute_queued(
             store.as_ref(),
             &workflow,
             &iter_service,
@@ -328,7 +267,7 @@ mod tests {
             .create_iteration(&task.id, "work", None)
             .unwrap();
 
-        let result = execute_path_b(
+        let result = execute_queued(
             store.as_ref(),
             &workflow,
             &iter_service,
@@ -361,7 +300,7 @@ mod tests {
             .create_iteration(&task.id, "planning", None)
             .unwrap();
 
-        let result = execute_path_b(
+        let result = execute_queued(
             store.as_ref(),
             &workflow,
             &iter_service,
@@ -394,7 +333,7 @@ mod tests {
             .create_iteration(&task.id, "work", None)
             .unwrap();
 
-        let result = execute_path_b(
+        let result = execute_queued(
             store.as_ref(),
             &workflow,
             &iter_service,
@@ -432,6 +371,35 @@ mod tests {
             &iter_service,
             Path::new("/tmp"),
             &bad_task.id,
+            "hello",
+            None,
+        );
+
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_send_message_from_awaiting_approval_returns_error() {
+        let workflow = test_workflow();
+        let (store, iter_service) = make_store_and_service();
+
+        let mut task = crate::workflow::domain::Task::new(
+            "task-7",
+            "Test",
+            "Test",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.state = TaskState::awaiting_approval("work");
+        store.save_task(&task).unwrap();
+
+        let result = execute(
+            &(Arc::clone(&store) as Arc<dyn WorkflowStore>),
+            &Arc::new(crate::workflow::execution::default_test_registry()),
+            &workflow,
+            &iter_service,
+            Path::new("/tmp"),
+            &task.id,
             "hello",
             None,
         );

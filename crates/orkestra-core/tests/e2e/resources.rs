@@ -228,10 +228,10 @@ fn test_resource_upsert_on_rejection_retry() {
         Some("https://example.com/v1")
     );
 
-    // Reject the plan — agent will re-run
+    // Restart planning stage — agent will re-run
     env.api()
-        .reject(&task_id, "Need a better plan")
-        .expect("Should reject");
+        .restart_stage(&task_id, "Need a better plan")
+        .expect("Should restart_stage");
 
     // Planning stage retry: produce plan + register resource v2 (same name)
     env.set_output(

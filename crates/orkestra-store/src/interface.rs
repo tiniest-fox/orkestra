@@ -178,12 +178,12 @@ pub trait WorkflowStore: Send + Sync {
     /// Save a stage session (insert or update).
     fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()>;
 
-    /// Clear `agent_pid` and `chat_active` on a stage session only if `agent_pid` still equals `expected_pid`.
+    /// Clear `agent_pid` on a stage session only if `agent_pid` still equals `expected_pid`.
     ///
     /// Returns `true` if the PID was cleared (the row matched), `false` if the
-    /// PID was already different (another writer such as `exit_chat` got there
-    /// first). This is an atomic compare-and-clear that avoids a read-modify-write
-    /// race in background threads that flush the PID after the agent exits.
+    /// PID was already different. This is an atomic compare-and-clear that avoids
+    /// a read-modify-write race in background threads that flush the PID after
+    /// the agent exits.
     fn clear_agent_pid_for_session(
         &self,
         session_id: &str,

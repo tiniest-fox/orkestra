@@ -44,6 +44,14 @@ pub fn execute(
             error: error.to_string(),
         },
     )?;
+
+    // Clear the session ID so subsequent spawns start fresh rather than
+    // attempting to resume a dead provider session.
+    if let Some(mut session) = store.get_stage_session(task_id, &current_stage)? {
+        session.claude_session_id = None;
+        store.save_stage_session(&session)?;
+    }
+
     task.state = TaskState::failed_at(&current_stage, error);
     task.updated_at = chrono::Utc::now().to_rfc3339();
 

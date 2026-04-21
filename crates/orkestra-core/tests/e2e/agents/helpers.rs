@@ -298,14 +298,14 @@ impl AgentTestEnv {
         );
     }
 
-    /// Reject the current work with feedback, sending the task back to Idle.
+    /// Restart the current stage with feedback (supersedes session for a fresh attempt).
     pub fn reject(&self, task_id: &str, feedback: &str) {
         self.api
             .lock()
             .unwrap()
-            .reject(task_id, feedback)
-            .expect("reject should succeed");
-        println!("Rejected task {task_id} with feedback: {feedback}");
+            .restart_stage(task_id, feedback)
+            .expect("restart_stage should succeed");
+        println!("Restarted stage for task {task_id} with feedback: {feedback}");
     }
 
     /// Clear the `claude_session_id` for a stage session.

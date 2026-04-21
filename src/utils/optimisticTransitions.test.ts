@@ -161,47 +161,6 @@ describe("applyOptimisticTransition — approve", () => {
   });
 });
 
-describe("applyOptimisticTransition — reject", () => {
-  it("sends back to agent_working at same stage", () => {
-    const config = createConfig();
-    const task = createMockWorkflowTaskView({
-      state: { type: "awaiting_approval", stage: "review" },
-    });
-
-    const result = applyOptimisticTransition(task, { type: "reject", feedback: "bad" }, config);
-
-    expect(result).not.toBeNull();
-    expect(result?.state).toEqual({ type: "agent_working", stage: "review" });
-    expect(result?.derived.needs_review).toBe(false);
-    expect(result?.derived.is_working).toBe(true);
-    expect(result?.derived.pending_rejection).toBeNull();
-  });
-
-  it("works from awaiting_rejection_confirmation", () => {
-    const config = createConfig();
-    const task = createMockWorkflowTaskView({
-      state: { type: "awaiting_rejection_confirmation", stage: "review" },
-      derived: {
-        pending_rejection: { from_stage: "review", target: "work", feedback: "fix it" },
-      },
-    });
-
-    const result = applyOptimisticTransition(task, { type: "reject", feedback: "bad" }, config);
-
-    expect(result).not.toBeNull();
-    expect(result?.state).toEqual({ type: "agent_working", stage: "review" });
-  });
-
-  it("returns null when rejecting from an invalid state", () => {
-    const config = createConfig();
-    const task = createMockWorkflowTaskView({
-      state: { type: "agent_working", stage: "work" },
-    });
-
-    expect(applyOptimisticTransition(task, { type: "reject", feedback: "bad" }, config)).toBeNull();
-  });
-});
-
 describe("applyOptimisticTransition — answer_questions", () => {
   it("sends back to agent_working at same stage", () => {
     const config = createConfig();

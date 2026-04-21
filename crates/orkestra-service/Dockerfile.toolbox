@@ -113,10 +113,10 @@ chown 1000:1000 /home/orkestra/.gitconfig
 # Plugin state (subdirectory) is intentionally excluded — it contains
 # host-absolute paths that would be wrong inside the container.
 
-if [ -d "/opt/orkestra/.claude-global" ] && \
+if [ -d "/run/claude-global" ] && \
    [ ! -f "/home/orkestra/.claude/credentials.json" ]; then
     mkdir -p /home/orkestra/.claude
-    find /opt/orkestra/.claude-global -maxdepth 1 -type f \
+    find /run/claude-global -maxdepth 1 -type f \
         -exec cp {} /home/orkestra/.claude/ \;
     chown -R 1000:1000 /home/orkestra/.claude
 fi

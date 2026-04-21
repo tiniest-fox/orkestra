@@ -130,7 +130,7 @@ struct DockerRunConfig {
     /// Named Docker volume for per-project Claude state, mounted at `/home/orkestra/.claude`.
     /// Docker creates it automatically on first use; setup.sh bootstraps auth on first start.
     claude_volume_name: String,
-    /// Read-only bind-mount of the global auth dir at `/opt/orkestra/.claude-global:ro`.
+    /// Read-only bind-mount of the global auth dir at `/run/claude-global:ro`.
     /// Present when `CLAUDE_AUTH_DIR` is set; used by setup.sh to seed credentials.
     claude_global_dir_mount: Option<String>,
     gh_token: Option<String>,
@@ -248,13 +248,13 @@ fn docker_run(
     // first start from the read-only global auth mount below.
     let claude_volume_name = format!("orkestra-claude-{project_id}");
 
-    // Global auth dir: mounted read-only at /opt/orkestra/.claude-global so
+    // Global auth dir: mounted read-only at /run/claude-global so
     // setup.sh can seed the per-project volume with credentials on first start.
     // In DooD, CLAUDE_AUTH_DIR must be the host-side path (bind mounts require
     // host paths; the service-container path is inaccessible to the Docker daemon).
     let claude_global_dir_mount = std::env::var("CLAUDE_AUTH_DIR")
         .ok()
-        .map(|dir| format!("{dir}:/opt/orkestra/.claude-global:ro"));
+        .map(|dir| format!("{dir}:/run/claude-global:ro"));
 
     let workspace_mount = format!("{}:/workspace", repo_path.display());
     let port_bind = format!("127.0.0.1:{port}:{port}");
@@ -484,7 +484,7 @@ fn is_named_volume(mount_spec: &str) -> bool {
 /// `claude_volume_name` — Docker named volume for per-project Claude state.
 ///   Mounted at `/home/orkestra/.claude`; Docker creates it on first use.
 /// `claude_global_dir` — when `Some`, mounts this host path read-only at
-///   `/opt/orkestra/.claude-global` so setup.sh can seed credentials on first start.
+///   `/run/claude-global` so setup.sh can seed credentials on first start.
 fn build_compose_override(
     service: &str,
     port: u16,
@@ -509,7 +509,7 @@ fn build_compose_override(
     );
     let _ = writeln!(volumes, "{I}- {claude_volume_name}:/home/orkestra/.claude");
     if let Some(dir) = claude_global_dir {
-        let _ = writeln!(volumes, "{I}- \"{dir}:/opt/orkestra/.claude-global:ro\"");
+        let _ = writeln!(volumes, "{I}- \"{dir}:/run/claude-global:ro\"");
     }
     for mount in extra_mounts {
         let _ = writeln!(volumes, "{I}- \"{mount}\"");
@@ -1017,14 +1017,12 @@ mod tests {
     #[test]
     fn build_docker_run_args_includes_global_auth_when_set() {
         let config = DockerRunConfig {
-            claude_global_dir_mount: Some(
-                "/host/.claude:/opt/orkestra/.claude-global:ro".to_string(),
-            ),
+            claude_global_dir_mount: Some("/host/.claude:/run/claude-global:ro".to_string()),
             ..default_run_config()
         };
         let args = build_docker_run_args(&config);
         assert!(
-            args.contains(&"/host/.claude:/opt/orkestra/.claude-global:ro".to_string()),
+            args.contains(&"/host/.claude:/run/claude-global:ro".to_string()),
             "global auth mount must be passed through"
         );
     }
@@ -1123,7 +1121,7 @@ mod tests {
             &[],
         );
         assert!(
-            yaml.contains("/data/.claude:/opt/orkestra/.claude-global:ro"),
+            yaml.contains("/data/.claude:/run/claude-global:ro"),
             "global auth mount must appear in service volumes"
         );
     }

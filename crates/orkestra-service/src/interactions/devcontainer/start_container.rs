@@ -59,10 +59,12 @@ pub fn execute(
             override_dir,
             secrets,
             resource_limits,
+            mounts_from_config(config),
         ),
         DevcontainerConfig::Compose {
             compose_file,
             service,
+            mounts,
             ..
         } => {
             let compose_path = repo_path.join(compose_file);
@@ -76,12 +78,23 @@ pub fn execute(
                 force_build,
                 secrets,
                 resource_limits,
+                mounts,
             )
         }
     }
 }
 
 // -- Helpers --
+
+/// Extract the `mounts` field from a non-Default `DevcontainerConfig` variant.
+fn mounts_from_config(config: &DevcontainerConfig) -> &[String] {
+    match config {
+        DevcontainerConfig::Image { mounts, .. }
+        | DevcontainerConfig::Build { mounts, .. }
+        | DevcontainerConfig::Compose { mounts, .. } => mounts,
+        DevcontainerConfig::Default => &[],
+    }
+}
 
 /// Separate git-identity secrets (`GIT_USER_NAME`, `GIT_USER_EMAIL`) from
 /// regular secrets and resolve the final values. Returns `(git_email,
@@ -121,6 +134,7 @@ struct DockerRunConfig {
     image: String,
     cpu_limit: Option<String>,
     memory_limit: Option<String>,
+    extra_mounts: Vec<String>,
 }
 
 /// Build the `docker run` argument list from resolved config values.
@@ -167,6 +181,12 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
     args.push("-v".to_string());
     args.push(toolbox_mount);
 
+    // User-declared mounts from devcontainer.json `mounts` field.
+    for mount in &config.extra_mounts {
+        args.push("-v".to_string());
+        args.push(mount.clone());
+    }
+
     // Ensure the claude CLI finds auth tokens under /home/orkestra/.claude.
     args.push("-e".to_string());
     args.push("HOME=/home/orkestra".to_string());
@@ -198,6 +218,7 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
     args
 }
 
+#[allow(clippy::too_many_arguments)]
 fn docker_run(
     project_id: &str,
     image: &str,
@@ -206,6 +227,7 @@ fn docker_run(
     override_dir: &Path,
     secrets: &[(String, String)],
     resource_limits: &ResourceLimits,
+    extra_mounts: &[String],
 ) -> Result<String, ServiceError> {
     let container_name = format!("orkestra-{project_id}");
 
@@ -261,6 +283,7 @@ fn docker_run(
         image: image.to_string(),
         cpu_limit: resource_limits.cpu_limit.map(|v| format!("{v:.1}")),
         memory_limit: resource_limits.memory_limit_mb.map(|v| format!("{v}m")),
+        extra_mounts: extra_mounts.to_vec(),
     };
     let args = build_docker_run_args(&config);
 
@@ -294,6 +317,7 @@ fn compose_up(
     force_build: bool,
     secrets: &[(String, String)],
     resource_limits: &ResourceLimits,
+    extra_mounts: &[String],
 ) -> Result<String, ServiceError> {
     // 10 minutes is generous for even the heaviest healthcheck chains.
     const TIMEOUT: Duration = Duration::from_secs(600);
@@ -306,8 +330,14 @@ fn compose_up(
     let claude_config_dir = project_claude_dir
         .exists()
         .then_some(project_claude_dir.as_path());
-    let override_content =
-        build_compose_override(service, port, secrets, claude_config_dir, resource_limits);
+    let override_content = build_compose_override(
+        service,
+        port,
+        secrets,
+        claude_config_dir,
+        resource_limits,
+        extra_mounts,
+    );
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
 
@@ -437,6 +467,15 @@ fn resolve_compose_container_id(
     Ok(container_id)
 }
 
+/// Return true when a mount source is a named Docker volume (not a host path).
+fn is_named_volume(mount_spec: &str) -> bool {
+    let source = mount_spec.split(':').next().unwrap_or("");
+    !source.starts_with('/')
+        && !source.starts_with('.')
+        && !source.starts_with('~')
+        && !source.is_empty()
+}
+
 /// Build the Docker Compose override YAML that injects Orkestra's runtime
 /// requirements into the project's app service.
 ///
@@ -453,6 +492,7 @@ fn build_compose_override(
     secrets: &[(String, String)],
     claude_config_dir: Option<&std::path::Path>,
     resource_limits: &ResourceLimits,
+    extra_mounts: &[String],
 ) -> String {
     const I: &str = "      "; // 6-space indent for items under a 4-space key
 
@@ -472,6 +512,9 @@ fn build_compose_override(
     );
     if let Some(ref dir) = claude_auth_dir {
         let _ = writeln!(volumes, "{I}- \"{dir}:/home/orkestra/.claude\"");
+    }
+    for mount in extra_mounts {
+        let _ = writeln!(volumes, "{I}- \"{mount}\"");
     }
 
     let mut environment = String::new();
@@ -503,8 +546,19 @@ fn build_compose_override(
         let _ = writeln!(resource_limits_yaml, "    mem_limit: {mem}m");
     }
 
+    let mut root_volumes = String::new();
+    let _ = writeln!(root_volumes, "volumes:");
+    let _ = writeln!(root_volumes, "  {TOOLBOX_VOLUME_NAME}:");
+    let _ = writeln!(root_volumes, "    external: true");
+    for mount in extra_mounts {
+        if is_named_volume(mount) {
+            let name = mount.split(':').next().unwrap_or("");
+            let _ = writeln!(root_volumes, "  {name}:");
+        }
+    }
+
     format!(
-        "services:\n  {service}:\n{resource_limits_yaml}    ports:\n      - \"127.0.0.1:{port}:{port}\"\n    volumes:\n{volumes}    environment:\n{environment}volumes:\n  {TOOLBOX_VOLUME_NAME}:\n    external: true\n"
+        "services:\n  {service}:\n{resource_limits_yaml}    ports:\n      - \"127.0.0.1:{port}:{port}\"\n    volumes:\n{volumes}    environment:\n{environment}{root_volumes}"
     )
 }
 
@@ -539,7 +593,8 @@ fn pipe_to_log(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_compose_override, build_docker_run_args, extract_git_identity, DockerRunConfig,
+        build_compose_override, build_docker_run_args, extract_git_identity, is_named_volume,
+        DockerRunConfig,
     };
     use crate::types::ResourceLimits;
 
@@ -560,7 +615,7 @@ mod tests {
             ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits());
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
 
         // Plain value is quoted but not escaped.
         assert!(yaml.contains("PLAIN: \"simple_value\""));
@@ -580,7 +635,7 @@ mod tests {
             "PEM_KEY".to_string(),
             "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
         )];
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits());
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
         // Literal newlines must be escaped as \n in the YAML double-quoted string.
         assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
         // The value must NOT contain unescaped literal newlines.
@@ -589,7 +644,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_no_secrets_produces_valid_structure() {
-        let yaml = build_compose_override("myservice", 8080, &[], None, &no_limits());
+        let yaml = build_compose_override("myservice", 8080, &[], None, &no_limits(), &[]);
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("myservice:"));
@@ -664,7 +719,7 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits());
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
 
         // Git identity env vars use the secret values.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -687,7 +742,7 @@ mod tests {
             "project@example.com".to_string(),
         )];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits());
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
 
         // Email uses the secret value.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -716,6 +771,7 @@ mod tests {
             image: "myimage:latest".to_string(),
             cpu_limit: None,
             memory_limit: None,
+            extra_mounts: vec![],
         }
     }
 
@@ -838,6 +894,7 @@ mod tests {
                 cpu_limit: Some(2.0),
                 memory_limit_mb: Some(4096),
             },
+            &[],
         );
         assert!(yaml.contains("cpus: 2.0"), "cpus should be in YAML");
         assert!(
@@ -848,8 +905,103 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_resource_limits_when_none() {
-        let yaml = build_compose_override("app", 3000, &[], None, &no_limits());
+        let yaml = build_compose_override("app", 3000, &[], None, &no_limits(), &[]);
         assert!(!yaml.contains("cpus:"), "cpus should be absent");
         assert!(!yaml.contains("mem_limit:"), "mem_limit should be absent");
+    }
+
+    // -- extra_mounts tests --
+
+    #[test]
+    fn build_docker_run_args_includes_extra_mounts() {
+        let config = DockerRunConfig {
+            extra_mounts: vec![
+                "myvolume:/mnt/cache".to_string(),
+                "/host/path:/container/path:ro".to_string(),
+            ],
+            ..default_run_config()
+        };
+        let args = build_docker_run_args(&config);
+        let v_positions: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-v")
+            .map(|(i, _)| i)
+            .collect();
+        let mounted: Vec<&String> = v_positions.iter().map(|&i| &args[i + 1]).collect();
+        assert!(mounted.contains(&&"myvolume:/mnt/cache".to_string()));
+        assert!(mounted.contains(&&"/host/path:/container/path:ro".to_string()));
+    }
+
+    #[test]
+    fn build_docker_run_args_no_extra_mounts_when_empty() {
+        let config = default_run_config();
+        let args = build_docker_run_args(&config);
+        // Exactly 2 -v flags: workspace + toolbox.
+        let v_count = args.iter().filter(|a| *a == "-v").count();
+        assert_eq!(v_count, 2, "expect exactly workspace and toolbox -v flags");
+    }
+
+    #[test]
+    fn build_compose_override_includes_extra_mounts_in_service_volumes() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            &no_limits(),
+            &[
+                "cache-vol:/root/.cache".to_string(),
+                "/host:/container:ro".to_string(),
+            ],
+        );
+        assert!(yaml.contains("- \"cache-vol:/root/.cache\""));
+        assert!(yaml.contains("- \"/host:/container:ro\""));
+    }
+
+    #[test]
+    fn build_compose_override_declares_named_volumes_at_root() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            &no_limits(),
+            &["cache-vol:/root/.cache".to_string()],
+        );
+        assert!(
+            yaml.contains("  cache-vol:\n"),
+            "named volume should appear in root volumes"
+        );
+        assert!(
+            !yaml.contains("cache-vol:\n    external: true"),
+            "user volumes must not be declared external"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_does_not_declare_host_paths_at_root() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            &no_limits(),
+            &["/host/path:/container/path:ro".to_string()],
+        );
+        // Only the toolbox should appear in the root-level volumes section (last occurrence).
+        let root_section = yaml.rsplit("volumes:\n").next().unwrap_or("");
+        assert!(!root_section.contains("/host/path"));
+    }
+
+    #[test]
+    fn is_named_volume_correctly_classifies() {
+        assert!(is_named_volume("myvolume:/mnt/cache"));
+        assert!(is_named_volume(
+            "rust-analyzer-cache:/home/orkestra/.cache/rust-analyzer"
+        ));
+        assert!(!is_named_volume("/host/path:/container:ro"));
+        assert!(!is_named_volume("./relative:/container"));
+        assert!(!is_named_volume("~/homepath:/container"));
     }
 }

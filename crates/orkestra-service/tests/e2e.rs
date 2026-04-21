@@ -62,6 +62,7 @@ mod detect {
         let DevcontainerConfig::Image {
             image,
             post_create_command,
+            ..
         } = devcontainer_detect(dir.path())
         else {
             panic!("expected Image");
@@ -251,6 +252,7 @@ mod database {
         let DevcontainerConfig::Image {
             image,
             post_create_command,
+            ..
         } = &config
         else {
             panic!("expected Image config");

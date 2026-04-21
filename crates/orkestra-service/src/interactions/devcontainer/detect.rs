@@ -24,6 +24,8 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
         .get("postCreateCommand")
         .and_then(parse_post_create_command);
 
+    let mounts = parse_mounts(&json);
+
     // Compose: dockerComposeFile + service.
     //
     // devcontainer.json paths are relative to the .devcontainer/ directory
@@ -38,6 +40,7 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
             compose_file,
             service: service.to_string(),
             post_create_command,
+            mounts,
         };
     }
 
@@ -57,6 +60,7 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
                 dockerfile,
                 context,
                 post_create_command,
+                mounts,
             };
         }
     }
@@ -66,6 +70,7 @@ pub fn execute(repo_path: &Path) -> DevcontainerConfig {
         return DevcontainerConfig::Image {
             image: image.to_string(),
             post_create_command,
+            mounts,
         };
     }
 
@@ -108,6 +113,18 @@ fn parse_post_create_command(value: &serde_json::Value) -> Option<String> {
 /// Wrap a shell argument in single quotes, escaping any embedded single quotes.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn parse_mounts(json: &serde_json::Value) -> Vec<String> {
+    json.get("mounts")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Strip JSONC-style comments (`//` and `/* */`) from JSON text.
@@ -271,6 +288,47 @@ mod tests {
         assert!(
             matches!(config, DevcontainerConfig::Image { image, .. } if image == "http://registry.example.com/img:v1")
         );
+    }
+
+    // -- mounts parsing tests --
+
+    #[test]
+    fn parses_mounts_for_image() {
+        let dir = TempDir::new().unwrap();
+        write_config(
+            &dir,
+            r#"{"image": "node:20", "mounts": ["myvolume:/mnt/cache", "/host:/container:ro"]}"#,
+        );
+        let config = execute(dir.path());
+        let DevcontainerConfig::Image { mounts, .. } = config else {
+            panic!("expected Image variant")
+        };
+        assert_eq!(mounts, vec!["myvolume:/mnt/cache", "/host:/container:ro"]);
+    }
+
+    #[test]
+    fn mounts_defaults_to_empty_when_absent() {
+        let dir = TempDir::new().unwrap();
+        write_config(&dir, r#"{"image": "node:20"}"#);
+        let config = execute(dir.path());
+        let DevcontainerConfig::Image { mounts, .. } = config else {
+            panic!("expected Image variant")
+        };
+        assert!(mounts.is_empty());
+    }
+
+    #[test]
+    fn parses_mounts_for_compose() {
+        let dir = TempDir::new().unwrap();
+        write_config(
+            &dir,
+            r#"{"dockerComposeFile": "docker-compose.yml", "service": "app", "mounts": ["cache-vol:/root/.cache"]}"#,
+        );
+        let config = execute(dir.path());
+        let DevcontainerConfig::Compose { mounts, .. } = config else {
+            panic!("expected Compose variant")
+        };
+        assert_eq!(mounts, vec!["cache-vol:/root/.cache"]);
     }
 
     // -- strip_json_comments unit tests --

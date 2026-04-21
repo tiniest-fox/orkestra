@@ -64,18 +64,21 @@ pub enum DevcontainerConfig {
     Image {
         image: String,
         post_create_command: Option<String>,
+        mounts: Vec<String>,
     },
     /// A custom Dockerfile declared via `"build.dockerfile"`.
     Build {
         dockerfile: String,
         context: String,
         post_create_command: Option<String>,
+        mounts: Vec<String>,
     },
     /// Docker Compose declared via `"dockerComposeFile"` + `"service"`.
     Compose {
         compose_file: String,
         service: String,
         post_create_command: Option<String>,
+        mounts: Vec<String>,
     },
 }
 

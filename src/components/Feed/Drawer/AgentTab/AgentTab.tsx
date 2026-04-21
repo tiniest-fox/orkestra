@@ -174,15 +174,16 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
   ]);
 
   // Input bar visibility:
-  // Show when working, interrupted, failed, blocked, or awaiting_question_answer.
-  // send_message supports: AwaitingQuestionAnswer, Failed, Blocked, Interrupted.
-  // Hide for awaiting_approval/awaiting_rejection_confirmation — send_message errors there.
+  // Show when working, interrupted, failed, blocked, awaiting_question_answer, or needs_review.
+  // send_message supports: AwaitingQuestionAnswer, AwaitingApproval, AwaitingRejectionConfirmation,
+  // Failed, Blocked, Interrupted.
   const showInputBar =
     derived.is_working ||
     derived.has_questions ||
     derived.is_interrupted ||
     derived.is_failed ||
-    derived.is_blocked;
+    derived.is_blocked ||
+    derived.needs_review;
 
   // Input bar agent active state:
   // Working → treat as agentActive (shows stop, disables textarea)

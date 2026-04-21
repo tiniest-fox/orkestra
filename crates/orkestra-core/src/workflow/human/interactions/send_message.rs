@@ -1,9 +1,9 @@
 //! Send a message to the agent — creates a new iteration with a `UserMessage` trigger.
 //!
-//! Handles tasks in `AwaitingQuestionAnswer`, `Failed`, `Blocked`, or `Interrupted` states.
-//! Creates a new iteration with a `UserMessage` trigger and transitions the task to `Queued`
-//! (or `AwaitingSetup` when no worktree exists). The orchestrator then picks it up and spawns
-//! the agent normally with a `user_message` resume prompt.
+//! Handles tasks in `AwaitingQuestionAnswer`, `AwaitingApproval`, `AwaitingRejectionConfirmation`,
+//! `Failed`, `Blocked`, or `Interrupted` states. Creates a new iteration with a `UserMessage`
+//! trigger and transitions the task to `Queued` (or `AwaitingSetup` when no worktree exists).
+//! The orchestrator then picks it up and spawns the agent normally with a `user_message` resume prompt.
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
@@ -15,8 +15,8 @@ use crate::workflow::runtime::TaskState;
 /// Send a message to the agent.
 ///
 /// Creates a new iteration with a `UserMessage` trigger and transitions the task to `Queued`.
-/// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`. Creates a
-/// `UserMessage` iteration and transitions to `Queued`.
+/// Valid from `AwaitingQuestionAnswer`, `AwaitingApproval`, `AwaitingRejectionConfirmation`,
+/// `Failed`, `Blocked`, `Interrupted`. Creates a `UserMessage` iteration and transitions to `Queued`.
 pub fn execute(
     store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
@@ -30,6 +30,8 @@ pub fn execute(
 
     match &task.state {
         TaskState::AwaitingQuestionAnswer { .. }
+        | TaskState::AwaitingApproval { .. }
+        | TaskState::AwaitingRejectionConfirmation { .. }
         | TaskState::Failed { .. }
         | TaskState::Blocked { .. }
         | TaskState::Interrupted { .. } => {
@@ -38,7 +40,8 @@ pub fn execute(
 
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Cannot send message in state {} \
-             (expected AwaitingQuestionAnswer, Failed, Blocked, or Interrupted)",
+             (expected AwaitingQuestionAnswer, AwaitingApproval, AwaitingRejectionConfirmation, \
+             Failed, Blocked, or Interrupted)",
             task.state
         ))),
     }
@@ -55,8 +58,8 @@ pub fn execute(
 /// - No worktree → `AwaitingSetup`
 /// - Worktree exists → `Queued`
 ///
-/// For `AwaitingQuestionAnswer` and `Interrupted`, uses the current stage
-/// and transitions directly to `Queued`.
+/// For `AwaitingQuestionAnswer`, `AwaitingApproval`, `AwaitingRejectionConfirmation`, and
+/// `Interrupted`, uses the current stage and transitions directly to `Queued`.
 fn execute_queued(
     store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
@@ -78,9 +81,10 @@ fn execute_queued(
     };
 
     let stage_name = match &task.state {
-        TaskState::AwaitingQuestionAnswer { stage } | TaskState::Interrupted { stage } => {
-            stage.clone()
-        }
+        TaskState::AwaitingQuestionAnswer { stage }
+        | TaskState::AwaitingApproval { stage }
+        | TaskState::AwaitingRejectionConfirmation { stage }
+        | TaskState::Interrupted { stage } => stage.clone(),
         TaskState::Failed { .. } | TaskState::Blocked { .. } => {
             super::resolve_current_stage(&task, store, workflow)?
         }
@@ -90,9 +94,10 @@ fn execute_queued(
     iteration_service.create_iteration(&task.id, &stage_name, Some(trigger))?;
 
     task.state = match &task.state {
-        TaskState::AwaitingQuestionAnswer { .. } | TaskState::Interrupted { .. } => {
-            TaskState::queued(&stage_name)
-        }
+        TaskState::AwaitingQuestionAnswer { .. }
+        | TaskState::AwaitingApproval { .. }
+        | TaskState::AwaitingRejectionConfirmation { .. }
+        | TaskState::Interrupted { .. } => TaskState::queued(&stage_name),
         TaskState::Failed { .. } | TaskState::Blocked { .. } => {
             if task.worktree_path.is_none() {
                 TaskState::awaiting_setup(&stage_name)
@@ -345,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn test_send_message_from_awaiting_approval_returns_error() {
+    fn test_send_message_from_awaiting_approval_queues() {
         let workflow = test_workflow();
         let (store, iter_service) = make_store_and_service();
 
@@ -356,11 +361,63 @@ mod tests {
             "work",
             "2025-01-01T00:00:00Z",
         );
+        task.worktree_path = Some("/tmp/fake-worktree".into());
         task.state = TaskState::awaiting_approval("work");
         store.save_task(&task).unwrap();
 
-        let result = execute(store.as_ref(), &workflow, &iter_service, &task.id, "hello");
+        let result = execute(
+            store.as_ref(),
+            &workflow,
+            &iter_service,
+            &task.id,
+            "Actually change the approach",
+        )
+        .unwrap();
 
-        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+        assert_eq!(result.current_stage(), Some("work"));
+
+        let iterations = store.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+        assert!(matches!(
+            &last.incoming_context,
+            Some(IterationTrigger::UserMessage { .. })
+        ));
+    }
+
+    #[test]
+    fn test_send_message_from_awaiting_rejection_confirmation_queues() {
+        let workflow = test_workflow();
+        let (store, iter_service) = make_store_and_service();
+
+        let mut task = crate::workflow::domain::Task::new(
+            "task-8",
+            "Test",
+            "Test",
+            "work",
+            "2025-01-01T00:00:00Z",
+        );
+        task.worktree_path = Some("/tmp/fake-worktree".into());
+        task.state = TaskState::awaiting_rejection_confirmation("work");
+        store.save_task(&task).unwrap();
+
+        let result = execute(
+            store.as_ref(),
+            &workflow,
+            &iter_service,
+            &task.id,
+            "Please fix the issue differently",
+        )
+        .unwrap();
+
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+        assert_eq!(result.current_stage(), Some("work"));
+
+        let iterations = store.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+        assert!(matches!(
+            &last.incoming_context,
+            Some(IterationTrigger::UserMessage { .. })
+        ));
     }
 }

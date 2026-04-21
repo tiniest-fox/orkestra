@@ -42,16 +42,6 @@ export function FeedRowActions({
     return stage?.capabilities.subtasks ? ("outline-teal" as const) : ("outline-violet" as const);
   })();
 
-  if (derived.is_failed) {
-    return (
-      <div className={containerCls}>
-        <Button hotkey="r" variant="outline-destructive" size="sm" className={btnCls}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
   if (derived.has_questions) {
     return (
       <div className={containerCls}>

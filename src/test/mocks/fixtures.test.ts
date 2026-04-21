@@ -15,10 +15,10 @@ beforeEach(() => {
 });
 
 describe("state→derived inference", () => {
-  it("infers is_failed and is_terminal for failed state", () => {
+  it("infers is_failed and is_terminal=false for failed state", () => {
     const task = createMockWorkflowTaskView({ state: { type: "failed" } });
     expect(task.derived.is_failed).toBe(true);
-    expect(task.derived.is_terminal).toBe(true);
+    expect(task.derived.is_terminal).toBe(false);
     expect(task.derived.current_stage).toBeNull();
   });
 
@@ -29,10 +29,10 @@ describe("state→derived inference", () => {
     expect(task.derived.current_stage).toBeNull();
   });
 
-  it("infers is_blocked and is_terminal for blocked state", () => {
+  it("infers is_blocked and is_terminal=false for blocked state", () => {
     const task = createMockWorkflowTaskView({ state: { type: "blocked" } });
     expect(task.derived.is_blocked).toBe(true);
-    expect(task.derived.is_terminal).toBe(true);
+    expect(task.derived.is_terminal).toBe(false);
     expect(task.derived.current_stage).toBeNull();
   });
 

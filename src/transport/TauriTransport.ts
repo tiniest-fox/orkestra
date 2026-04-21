@@ -28,6 +28,7 @@ const METHOD_MAP: Record<string, string> = {
   // -- Human actions --
   approve: "workflow_approve",
   reject: "workflow_reject",
+  send_message: "workflow_send_message",
   answer_questions: "workflow_answer_questions",
   retry: "workflow_retry",
   set_auto_mode: "workflow_set_auto_mode",

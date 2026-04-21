@@ -4,7 +4,6 @@ import type { WorkflowTaskView } from "../../../../types/workflow";
 import type { DrawerTabId } from "../drawerTabs";
 import type { TaskDrawerState } from "../useTaskDrawerState";
 import { DoneFooter } from "./DoneFooter";
-import { FailedFooter } from "./FailedFooter";
 import { LineCommentsFooter } from "./LineCommentsFooter";
 
 // ============================================================================
@@ -22,17 +21,6 @@ interface DrawerFooterProps {
 // ============================================================================
 
 export function DrawerFooter({ task, activeTab, state }: DrawerFooterProps) {
-  if (task.derived.is_failed || task.derived.is_blocked) {
-    return (
-      <FailedFooter
-        retryInstructions={state.retryInstructions}
-        onRetryInstructionsChange={state.setRetryInstructions}
-        retryTextareaRef={state.retryTextareaRef}
-        retrying={state.retrying}
-        onRetry={state.handleRetry}
-      />
-    );
-  }
   if (
     (task.derived.needs_review || task.derived.is_done) &&
     activeTab === "diff" &&

@@ -76,8 +76,6 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     pending_approval: false,
     stages_with_logs: [],
     subtask_progress: null,
-    is_chatting: false,
-    chat_agent_active: false,
     can_bypass: false,
     ...overrides,
   };
@@ -120,12 +118,12 @@ export function createMockWorkflowTaskView(
   }
   if (state.type === "failed") {
     derivedDefaults.is_failed = true;
-    derivedDefaults.is_terminal = true;
+    derivedDefaults.is_terminal = false;
     derivedDefaults.current_stage = null;
   }
   if (state.type === "blocked") {
     derivedDefaults.is_blocked = true;
-    derivedDefaults.is_terminal = true;
+    derivedDefaults.is_terminal = false;
     derivedDefaults.current_stage = null;
   }
 

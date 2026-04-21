@@ -52,7 +52,6 @@ export function canUseRunScript(
 export function defaultTab(task: WorkflowTaskView): DrawerTabId {
   if (task.derived.is_failed) return "error";
   if (task.derived.is_blocked) return "error";
-  if (task.derived.is_chatting) return "agent";
   if (task.derived.has_questions) return "agent";
   if (task.derived.needs_review) return "agent";
   if (task.state.type === "gate_running" || task.state.type === "awaiting_gate") return "agent";

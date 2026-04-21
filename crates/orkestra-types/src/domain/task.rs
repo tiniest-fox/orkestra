@@ -537,11 +537,11 @@ mod tests {
         assert!(task.is_archived());
 
         task.state = TaskState::failed("error");
-        assert!(task.is_terminal());
+        assert!(!task.is_terminal());
         assert!(task.is_failed());
 
         task.state = TaskState::blocked("waiting");
-        assert!(task.is_terminal());
+        assert!(!task.is_terminal());
         assert!(task.is_blocked());
     }
 

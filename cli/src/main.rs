@@ -1425,6 +1425,9 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
         IterationTrigger::ChatCompletion => {
             "chat completion (structured output detected)".to_string()
         }
+        IterationTrigger::UserMessage { message } => {
+            format!("user message\n    \"{message}\"")
+        }
         IterationTrigger::MalformedOutput { error, attempt, .. } => {
             format!("malformed output (attempt {attempt})\n    {error}")
         }

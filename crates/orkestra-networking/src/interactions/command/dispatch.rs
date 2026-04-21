@@ -126,6 +126,7 @@ pub async fn execute(
         "skip_stage" => run_sync(ctx, params, action::skip_stage).await,
         "send_to_stage" => run_sync(ctx, params, action::send_to_stage).await,
         "restart_stage" => run_sync(ctx, params, action::restart_stage).await,
+        "send_message" => run_sync(ctx, params, action::send_message).await,
 
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,

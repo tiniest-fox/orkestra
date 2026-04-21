@@ -246,10 +246,7 @@ impl TaskState {
 
     /// Check if this is a terminal state (task will not progress further).
     pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            Self::Done | Self::Archived | Self::Failed { .. } | Self::Blocked { .. }
-        )
+        matches!(self, Self::Done | Self::Archived)
     }
 
     /// Check if a human action is needed to proceed.
@@ -260,6 +257,8 @@ impl TaskState {
                 | Self::AwaitingQuestionAnswer { .. }
                 | Self::AwaitingRejectionConfirmation { .. }
                 | Self::Interrupted { .. }
+                | Self::Failed { .. }
+                | Self::Blocked { .. }
         )
     }
 
@@ -378,8 +377,9 @@ mod tests {
     fn test_terminal_states() {
         assert!(TaskState::Done.is_terminal());
         assert!(TaskState::Archived.is_terminal());
-        assert!(TaskState::failed("error").is_terminal());
-        assert!(TaskState::blocked("reason").is_terminal());
+        // Failed and Blocked are no longer terminal — they can receive send_message
+        assert!(!TaskState::failed("error").is_terminal());
+        assert!(!TaskState::blocked("reason").is_terminal());
 
         assert!(!TaskState::Done.can_transition());
         assert!(!TaskState::Archived.can_transition());
@@ -518,6 +518,8 @@ mod tests {
         assert!(TaskState::awaiting_question_answer("planning").needs_human_action());
         assert!(TaskState::awaiting_rejection_confirmation("review").needs_human_action());
         assert!(TaskState::interrupted("work").needs_human_action());
+        assert!(TaskState::failed("error").needs_human_action());
+        assert!(TaskState::blocked("reason").needs_human_action());
 
         assert!(!TaskState::agent_working("work").needs_human_action());
         assert!(!TaskState::queued("work").needs_human_action());

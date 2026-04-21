@@ -216,6 +216,8 @@ pub enum ResumeType {
         attempt: u32,
         max_attempts: u32,
     },
+    /// User sent a message directly; agent should address it and continue working.
+    UserMessage { message: String },
 }
 
 /// A failed CI check to address in the resume prompt.

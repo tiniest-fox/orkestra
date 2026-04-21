@@ -512,12 +512,12 @@ mod tests {
         task.state = TaskState::failed("error");
         let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
         assert!(derived.is_failed);
-        assert!(derived.is_terminal);
+        assert!(!derived.is_terminal);
 
         task.state = TaskState::blocked("reason");
         let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
         assert!(derived.is_blocked);
-        assert!(derived.is_terminal);
+        assert!(!derived.is_terminal);
     }
 
     #[test]
@@ -1004,7 +1004,7 @@ mod tests {
         let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
 
         assert!(!derived.is_system_active);
-        assert!(derived.is_terminal);
+        assert!(!derived.is_terminal);
         assert!(derived.is_failed);
     }
 
@@ -1247,7 +1247,7 @@ mod tests {
         let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
 
         assert!(!derived.is_working);
-        assert!(derived.is_terminal);
+        assert!(!derived.is_terminal);
         assert!(derived.is_failed);
     }
 }

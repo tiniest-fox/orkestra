@@ -16,6 +16,7 @@ pub mod restart_stage;
 pub mod resume;
 pub mod retry;
 pub mod return_to_work;
+pub mod send_message;
 pub mod send_to_stage;
 pub mod set_auto_mode;
 pub mod skip_stage;

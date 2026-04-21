@@ -18,8 +18,7 @@ pub struct SessionSpawnContext {
     pub session_id: Option<String>,
     /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
     /// True when the session has a stored ID AND either `has_activity` (agent produced output)
-    /// OR the active iteration has a human-initiated resume trigger (`ManualResume` or
-    /// `ReturnToWork`).
+    /// OR the active iteration has a human-initiated resume trigger (`UserMessage`).
     /// Forced to `false` when `session_id` is `None` (can't resume without a session ID).
     pub is_resume: bool,
     /// The `StageSession.id` for log correlation. Unlike the old `"{task_id}-{stage}"`

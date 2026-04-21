@@ -105,6 +105,7 @@ function renderAgentTab(
     is_failed?: boolean;
     is_blocked?: boolean;
     needs_review?: boolean;
+    has_questions?: boolean;
   },
   stateOverrides?: Partial<TaskDrawerState>,
 ) {
@@ -141,9 +142,14 @@ describe("AgentTab — compose area visibility and behavior", () => {
     expect(screen.getByTestId("chat-compose-area")).toBeDefined();
   });
 
-  it("renders ChatComposeArea when needs_review is true", () => {
-    renderAgentTab({ needs_review: true });
+  it("renders ChatComposeArea when has_questions is true (awaiting_question_answer)", () => {
+    renderAgentTab({ has_questions: true });
     expect(screen.getByTestId("chat-compose-area")).toBeDefined();
+  });
+
+  it("does not render ChatComposeArea when only needs_review is true (awaiting_approval — send_message unsupported)", () => {
+    renderAgentTab({ needs_review: true });
+    expect(screen.queryByTestId("chat-compose-area")).toBeNull();
   });
 
   it("does not render ChatComposeArea when task is queued (not working, reviewing, interrupted, failed, or blocked)", () => {

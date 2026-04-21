@@ -174,11 +174,12 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
   ]);
 
   // Input bar visibility:
-  // Show when working, review, interrupted, failed, or blocked (user can send a message).
-  // Hide when questions (answered inline) or done.
+  // Show when working, interrupted, failed, blocked, or awaiting_question_answer.
+  // send_message supports: AwaitingQuestionAnswer, Failed, Blocked, Interrupted.
+  // Hide for awaiting_approval/awaiting_rejection_confirmation — send_message errors there.
   const showInputBar =
     derived.is_working ||
-    derived.needs_review ||
+    derived.has_questions ||
     derived.is_interrupted ||
     derived.is_failed ||
     derived.is_blocked;
@@ -237,9 +238,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
                 ? "Send instructions to retry\u2026"
                 : derived.is_blocked
                   ? "Send instructions to unblock\u2026"
-                  : derived.needs_review
-                    ? "Ask a question or request changes\u2026"
-                    : "Message the agent\u2026"
+                  : "Message the agent\u2026"
           }
           error={state.messageError}
           onResize={handleComposeResize}

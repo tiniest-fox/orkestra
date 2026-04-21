@@ -172,6 +172,8 @@ function calloutInfo(
       };
     case "gate_failure":
       return { label: "Gate Failed", content: trigger.error, borderColor: "border-status-error" };
+    case "user_message":
+      return { label: "User Message", content: trigger.message, borderColor: "border-status-info" };
     case "interrupted":
       return null;
     default:

@@ -329,7 +329,7 @@ pub fn workflow_restart_stage(
     })
 }
 
-/// Send a message to the agent using the unified send_message API.
+/// Send a message to the agent using the unified `send_message` API.
 ///
 /// Routes to Path A (inline spawn) for tasks awaiting approval or rejection
 /// confirmation, or Path B (queued) for tasks that are awaiting questions,

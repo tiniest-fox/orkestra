@@ -272,7 +272,9 @@ export type IterationTrigger =
       guidance?: string;
     }
   /** Old DB records may use pr_comments as the type — treated the same as pr_feedback. */
-  | { type: "pr_comments"; comments: PrCommentData[]; checks?: PrCheckData[]; guidance?: string };
+  | { type: "pr_comments"; comments: PrCommentData[]; checks?: PrCheckData[]; guidance?: string }
+  /** User sent a message via the unified send_message API. */
+  | { type: "user_message"; message: string };
 
 /**
  * Output from a gate script run, stored on the iteration being validated.

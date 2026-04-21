@@ -18,7 +18,7 @@ interface UseSessionLogsResult {
 /**
  * Manages session log state with connection-gated fetching and event-driven refresh.
  *
- * Encapsulates three concerns shared by AssistantDrawer and InteractiveDrawer:
+ * Encapsulates three concerns shared by AssistantDrawer and task log hooks:
  * 1. Clear logs and skip fetching when sessionId is null or connection is not ready.
  * 2. Re-fetch when session changes or connection is restored.
  * 3. Immediately refresh on `log_entry_appended` events for the active session.

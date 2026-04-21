@@ -17,14 +17,12 @@ export interface NewTaskFormProps {
     autoMode: boolean,
     baseBranch: string,
     flow?: string,
-    interactive?: boolean,
   ) => Promise<void>;
 }
 
 export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
   const [description, setDescription] = useState("");
   const [autoMode, setAutoMode] = useState(false);
-  const [interactive, setInteractive] = useState(false);
   const [baseBranch, setBaseBranch] = useState("");
   const firstFlow = Object.keys(config.flows)[0] ?? "default";
   const [selectedFlow, setSelectedFlow] = useState<string>(firstFlow);
@@ -43,12 +41,12 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await onCreate(description.trim(), autoMode, baseBranch, selectedFlow, interactive);
+      await onCreate(description.trim(), autoMode, baseBranch, selectedFlow);
       onClose();
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, description, autoMode, baseBranch, selectedFlow, interactive, onCreate, onClose]);
+  }, [canSubmit, description, autoMode, baseBranch, selectedFlow, onCreate, onClose]);
 
   const flows = config.flows;
   const flowKeys: string[] = useMemo(() => Object.keys(flows), [flows]);
@@ -62,11 +60,6 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
       if (e.key === "a") {
         e.preventDefault();
         setAutoMode((m) => !m);
-        return;
-      }
-      if (e.key === "i") {
-        e.preventDefault();
-        setInteractive((m) => !m);
         return;
       }
       if (hasFlows && e.key === "ArrowRight") {
@@ -129,30 +122,16 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
             initialBranch={currentBranch}
           />
           <div className="flex items-center gap-3 shrink-0">
-            {!interactive && (
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={autoMode}
-                  onChange={(e) => setAutoMode(e.target.checked)}
-                  className="w-3.5 h-3.5 accent-accent cursor-pointer"
-                />
-                <span className="font-sans text-[12px] text-text-secondary">Auto</span>
-                <kbd className="font-mono text-[10px] text-text-quaternary bg-canvas border border-border rounded px-1 leading-none select-none">
-                  ⌥A
-                </kbd>
-              </label>
-            )}
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={interactive}
-                onChange={(e) => setInteractive(e.target.checked)}
+                checked={autoMode}
+                onChange={(e) => setAutoMode(e.target.checked)}
                 className="w-3.5 h-3.5 accent-accent cursor-pointer"
               />
-              <span className="font-sans text-[12px] text-text-secondary">Interactive</span>
+              <span className="font-sans text-[12px] text-text-secondary">Auto</span>
               <kbd className="font-mono text-[10px] text-text-quaternary bg-canvas border border-border rounded px-1 leading-none select-none">
-                ⌥I
+                ⌥A
               </kbd>
             </label>
           </div>

@@ -69,11 +69,6 @@ describe("state→derived inference", () => {
     expect(task.derived.is_system_active).toBe(false);
   });
 
-  it("infers is_interactive for interactive state", () => {
-    const task = createMockWorkflowTaskView({ state: { type: "interactive", stage: "work" } });
-    expect(task.derived.is_interactive).toBe(true);
-  });
-
   it("infers is_preparing for queued state", () => {
     const task = createMockWorkflowTaskView({ state: { type: "queued", stage: "planning" } });
     expect(task.derived.is_preparing).toBe(true);

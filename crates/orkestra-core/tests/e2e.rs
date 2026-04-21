@@ -24,8 +24,6 @@ mod differential;
 mod git_sync;
 #[path = "e2e/integration.rs"]
 mod integration;
-#[path = "e2e/interactive.rs"]
-mod interactive;
 #[path = "e2e/lock.rs"]
 mod lock;
 #[path = "e2e/multi_project.rs"]

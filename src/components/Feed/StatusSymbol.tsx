@@ -93,13 +93,6 @@ function resolveColors(
       extraClass,
     };
   }
-  if (derived.is_interactive) {
-    return {
-      colors: { bg: "bg-status-purple-bg", icon: "text-status-purple" },
-      symbol: "⟡",
-      extraClass,
-    };
-  }
   if (derived.is_interrupted) {
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "\u2016", extraClass };
   }

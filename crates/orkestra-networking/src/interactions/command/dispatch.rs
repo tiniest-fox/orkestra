@@ -15,7 +15,7 @@ use crate::highlight::SyntaxHighlighter;
 use crate::interactions::auth::{generate_pairing_code, list_devices, revoke_device};
 use crate::types::{ErrorPayload, Event};
 
-use super::{action, assistant, diff, git, interactive, query, stage_chat, task};
+use super::{action, assistant, diff, git, query, stage_chat, task};
 
 // ============================================================================
 // Command Context
@@ -130,11 +130,6 @@ pub async fn execute(
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,
         "open_pr" => action::handle_open_pr(ctx, event_tx, params).await,
-
-        // -- Interactive mode --
-        "interactive_enter" => run_sync(ctx, params, interactive::enter).await,
-        "interactive_send_message" => run_sync(ctx, params, interactive::send_message).await,
-        "interactive_exit" => run_sync(ctx, params, interactive::exit).await,
 
         // -- Stage chat --
         "stage_chat_send" => run_sync(ctx, params, stage_chat::stage_chat_send).await,

@@ -86,11 +86,6 @@ const METHOD_MAP: Record<string, string> = {
   task_sync_status: "workflow_task_sync_status",
   force_push_pr_changes: "workflow_force_push_pr_changes",
 
-  // -- Interactive mode --
-  interactive_enter: "interactive_enter",
-  interactive_send_message: "interactive_send_message",
-  interactive_exit: "interactive_exit",
-
   // -- Same-name commands (no prefix needed) --
   stage_chat_send: "stage_chat_send",
   stage_chat_stop: "stage_chat_stop",

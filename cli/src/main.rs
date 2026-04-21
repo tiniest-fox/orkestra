@@ -1297,7 +1297,6 @@ pub(crate) fn format_state(state: &TaskState) -> String {
             format!("AwaitingRejection({stage})")
         }
         TaskState::Interrupted { stage } => format!("Interrupted({stage})"),
-        TaskState::Interactive { stage } => format!("Interactive({stage})"),
         TaskState::WaitingOnChildren { stage } => format!("WaitingOnChildren({stage})"),
         TaskState::Done => "Done".to_string(),
         TaskState::Archived => "Archived".to_string(),
@@ -1423,7 +1422,6 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
         }
         IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
         IterationTrigger::Restart { message } => format!("restart stage\n    \"{message}\""),
-        IterationTrigger::ReturnFromInteractive => "interactive session completed".to_string(),
         IterationTrigger::ChatCompletion => {
             "chat completion (structured output detected)".to_string()
         }

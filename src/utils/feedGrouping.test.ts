@@ -1,4 +1,4 @@
-// Tests for feedGrouping — chat mode, interactive task, and PR-state classification.
+// Tests for feedGrouping — chat mode and PR-state classification.
 
 import { describe, expect, it } from "vitest";
 import { createMockWorkflowTaskView } from "../test/mocks/fixtures";
@@ -9,16 +9,6 @@ describe("groupTasksForFeed — chat mode classification", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "agent_working", stage: "work" },
       derived: { is_chatting: true, is_working: true },
-    });
-    const result = groupTasksForFeed([task]);
-    const needsReview = result.sections.find((s) => s.name === "needs_review");
-    expect(needsReview?.tasks).toContainEqual(expect.objectContaining({ id: task.id }));
-  });
-
-  it("places interactive tasks in needs_review section", () => {
-    const task = createMockWorkflowTaskView({
-      state: { type: "interactive", stage: "work" },
-      derived: { is_interactive: true },
     });
     const result = groupTasksForFeed([task]);
     const needsReview = result.sections.find((s) => s.name === "needs_review");

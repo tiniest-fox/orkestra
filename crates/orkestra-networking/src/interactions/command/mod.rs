@@ -6,7 +6,6 @@ pub(crate) mod ci_log_parser;
 pub mod diff;
 pub mod dispatch;
 pub mod git;
-pub mod interactive;
 pub mod query;
 pub mod registry;
 pub mod stage_chat;

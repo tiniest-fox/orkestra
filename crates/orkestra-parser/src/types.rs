@@ -343,16 +343,10 @@ pub enum ResumeMarkerType {
     Integration,
     /// Human provided answers to questions.
     Answers,
-    /// Human retried a failed task.
-    RetryFailed,
-    /// Human retried a blocked task.
-    RetryBlocked,
     /// Initial agent prompt (first spawn, not a resume).
     Initial,
     /// User interrupted and resumed with optional guidance.
     ManualResume,
-    /// Agent returned to structured work after a chat session.
-    ReturnToWork,
     /// User sent a message directly to the agent.
     UserMessage,
 }
@@ -365,11 +359,8 @@ impl ResumeMarkerType {
             Self::Feedback => "feedback",
             Self::Integration => "integration",
             Self::Answers => "answers",
-            Self::RetryFailed => "retry_failed",
-            Self::RetryBlocked => "retry_blocked",
             Self::Initial => "initial",
             Self::ManualResume => "manual_resume",
-            Self::ReturnToWork => "return_to_work",
             Self::UserMessage => "user_message",
         }
     }

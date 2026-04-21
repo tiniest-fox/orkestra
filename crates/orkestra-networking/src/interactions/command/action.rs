@@ -23,24 +23,6 @@ pub fn approve(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPaylo
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
-/// Rejects the current stage artifact with feedback.
-///
-/// Expected params: `{ "task_id": "<id>", "feedback": "<feedback>" }`
-pub fn reject(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(params)?;
-    let feedback = params
-        .get("feedback")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ErrorPayload::invalid_params("missing field: feedback"))?
-        .to_string();
-
-    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api
-        .reject(&task_id, &feedback)
-        .map_err(ErrorPayload::from)?;
-    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-}
-
 /// Answers pending questions from the agent.
 ///
 /// Expected params: `{ "task_id": "<id>", "answers": [...] }`
@@ -51,23 +33,6 @@ pub fn answer_questions(ctx: &CommandContext, params: &Value) -> Result<Value, E
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
     let task = api
         .answer_questions(&task_id, answers)
-        .map_err(ErrorPayload::from)?;
-    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-}
-
-/// Retries a failed or blocked task.
-///
-/// Expected params: `{ "task_id": "<id>", "instructions": "<instructions>" }` (instructions optional)
-pub fn retry(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(params)?;
-    let instructions = params
-        .get("instructions")
-        .and_then(|v| v.as_str())
-        .map(ToString::to_string);
-
-    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api
-        .retry(&task_id, instructions.as_deref())
         .map_err(ErrorPayload::from)?;
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
@@ -93,21 +58,6 @@ pub fn interrupt(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPay
     let task_id = super::extract_task_id(params)?;
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
     let task = api.interrupt(&task_id).map_err(ErrorPayload::from)?;
-    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
-}
-
-/// Resumes an interrupted task.
-///
-/// Expected params: `{ "task_id": "<id>", "message": "<message>" }` (message optional)
-pub fn resume(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(params)?;
-    let message = params
-        .get("message")
-        .and_then(|v| v.as_str())
-        .map(ToString::to_string);
-
-    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api.resume(&task_id, message).map_err(ErrorPayload::from)?;
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
@@ -287,23 +237,6 @@ pub(super) async fn handle_open_pr(
     })
     .await
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
-}
-
-/// Resumes an interrupted task with an optional message.
-///
-/// Expected params: `{ "task_id": "<id>", "message": "<message>" }` (message optional)
-pub fn return_to_work(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
-    let task_id = super::extract_task_id(params)?;
-    let message = params
-        .get("message")
-        .and_then(|v| v.as_str())
-        .map(ToString::to_string);
-
-    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api
-        .return_to_work(&task_id, message)
-        .map_err(ErrorPayload::from)?;
-    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
 /// Recovers a PR creation from Failed back to Done+Idle.

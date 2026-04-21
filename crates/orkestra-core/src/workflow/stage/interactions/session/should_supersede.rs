@@ -15,14 +15,13 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 ///   — the old session context is stale (task was Done/integrated), so start fresh.
 /// - Untriggered re-entry: no trigger AND the active iteration has not been
 ///   linked to a session yet, meaning this is a clean re-entry (not a
-///   crash-recovery or `ManualResume`).
+///   crash-recovery or `UserMessage`).
 ///
 /// Triggers that do NOT supersede (agent resumes in the existing session):
-/// - `Feedback`: resume with new context. Sources: human same-stage rejection
-///   (`reject.rs`) or the reviewer-override path in `reject.rs`.
+/// - `UserMessage`: user sent a message to resume an interrupted/failed/blocked task.
 /// - `GateFailure`: gate script failed — agent re-runs in the existing session with
 ///   the gate error as feedback context.
-/// - All other triggers (`RetryFailed`, `RetryBlocked`, `Answers`, etc.) also fall
+/// - All other triggers (`Answers`, `MalformedOutput`, etc.) also fall
 ///   through to `Ok(false)`.
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -109,33 +108,20 @@ mod tests {
     }
 
     #[test]
-    fn test_no_supersede_feedback_trigger() {
+    fn test_no_supersede_user_message_trigger() {
         let store = InMemoryWorkflowStore::new();
         // Set up a session so the untriggered-reentry check would fire if trigger were None.
         let mut session = StageSession::new("sess-1", "task-1", "work", "2024-01-01T00:00:00Z");
         session.spawn_count = 1;
         store.save_stage_session(&session).unwrap();
 
-        let trigger = IterationTrigger::Feedback {
-            feedback: "please revise".to_string(),
+        let trigger = IterationTrigger::UserMessage {
+            message: "please revise".to_string(),
         };
         let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
         assert!(
             !result,
-            "Feedback trigger (same-stage rejection) must NOT supersede — resume the session"
-        );
-    }
-
-    #[test]
-    fn test_no_supersede_retry_failed_trigger() {
-        let store = InMemoryWorkflowStore::new();
-        let trigger = IterationTrigger::RetryFailed {
-            instructions: Some("try again".to_string()),
-        };
-        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
-        assert!(
-            !result,
-            "RetryFailed trigger must NOT supersede — resume so agent can continue where it left off"
+            "UserMessage trigger must NOT supersede — resume the existing session"
         );
     }
 

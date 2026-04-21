@@ -327,7 +327,9 @@ mod tests {
                 },
             )
             .unwrap();
-        let _ = api.reject(&task.id, "Please add more detail").unwrap();
+        let _ = api
+            .restart_stage(&task.id, "Please add more detail")
+            .unwrap();
 
         // Now should have feedback
         let feedback = api.get_rejection_feedback(&task.id).unwrap();

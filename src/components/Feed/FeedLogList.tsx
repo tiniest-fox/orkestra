@@ -19,14 +19,10 @@ export function classifyUser(msg: UserMessage): UserClassification {
     case "feedback":
     case "answers":
     case "manual_resume":
-    case "chat":
-    case "return_to_work":
+    case "user_message":
       return { label: "You", isHuman: true };
     case "initial":
     case "continue":
-    case "recheck":
-    case "retry_failed":
-    case "retry_blocked":
     case "integration":
       return { label: "System", isHuman: false };
     default:
@@ -71,7 +67,7 @@ export function FeedLogList({
   const messages = useMemo(() => {
     const msgs = buildDisplayMessages(logs);
     if (pendingMessage) {
-      msgs.push({ kind: "user", content: pendingMessage, resumeType: "chat" });
+      msgs.push({ kind: "user", content: pendingMessage, resumeType: "user_message" });
     }
     return msgs;
   }, [logs, pendingMessage]);

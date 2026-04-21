@@ -264,8 +264,6 @@ export type IterationTrigger =
   | { type: "answers"; answers: WorkflowQuestionAnswer[] }
   | { type: "interrupted" }
   | { type: "gate_failure"; error: string }
-  | { type: "retry_failed"; instructions?: string }
-  | { type: "retry_blocked"; instructions?: string }
   | { type: "manual_resume"; message?: string }
   | {
       type: "pr_feedback";
@@ -582,12 +580,11 @@ export type ToolInput =
 /**
  * Resume type for session resumption markers.
  * - "continue": Agent was interrupted, continue from where left off
- * - "feedback": Human provided feedback to address
+ * - "feedback": Human provided feedback to address (legacy, from old sessions)
  * - "integration": Integration failed with merge conflict
  * - "answers": Human provided answers to questions
- * - "retry_failed": Human retried a failed task
- * - "retry_blocked": Human retried a blocked task
- * - "manual_resume": User interrupted and resumed with optional message
+ * - "manual_resume": User interrupted and resumed (legacy, from old sessions)
+ * - "user_message": Unified user message (send_message API)
  * - "initial": Initial agent prompt (first spawn)
  */
 export type ResumeType =
@@ -595,14 +592,9 @@ export type ResumeType =
   | "feedback"
   | "integration"
   | "answers"
-  | "recheck"
-  | "retry_failed"
-  | "retry_blocked"
   | "manual_resume"
-  | "initial"
-  | "chat"
-  | "return_to_work"
-  | "correction";
+  | "user_message"
+  | "initial";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).

@@ -503,25 +503,6 @@ mod tests {
     }
 
     #[test]
-    fn test_build_resume_prompt_feedback() {
-        let artifact_names = vec!["summary".to_string()];
-        let prompt = build_resume_prompt(
-            "review",
-            &ResumeType::Feedback {
-                feedback: "Add more error handling".to_string(),
-            },
-            "main",
-            &artifact_names,
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
-        assert!(prompt.contains("Add more error handling"));
-        assert!(prompt.contains("revision"));
-        assert!(!prompt.contains("Updated Input Artifacts"));
-    }
-
-    #[test]
     fn test_build_resume_prompt_integration() {
         let artifact_names = vec!["breakdown".to_string()];
         let prompt = build_resume_prompt(
@@ -580,43 +561,6 @@ mod tests {
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
         assert!(!prompt.contains("Updated Input Artifacts"));
-    }
-
-    #[test]
-    fn test_build_resume_prompt_manual_resume_with_message() {
-        let artifact_names = vec!["plan".to_string()];
-        let prompt = build_resume_prompt(
-            "work",
-            &ResumeType::ManualResume {
-                message: Some("Fix the validation logic".to_string()),
-            },
-            "main",
-            &artifact_names,
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:work:manual_resume>"));
-        assert!(prompt.contains("interrupted by the user"));
-        assert!(prompt.contains("Message from the user"));
-        assert!(prompt.contains("Fix the validation logic"));
-        assert!(prompt.contains("JSON"));
-        assert!(!prompt.contains("Updated Input Artifacts"));
-    }
-
-    #[test]
-    fn test_build_resume_prompt_manual_resume_no_message() {
-        let prompt = build_resume_prompt(
-            "review",
-            &ResumeType::ManualResume { message: None },
-            "main",
-            &[],
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:manual_resume>"));
-        assert!(prompt.contains("interrupted by the user"));
-        assert!(prompt.contains("JSON"));
-        assert!(!prompt.contains("Message from the user"));
     }
 
     #[test]
@@ -706,8 +650,8 @@ mod tests {
         let answers = vec![QuestionAnswer::new("What?", "Something", "now")];
         let result = determine_resume_type(Some("please fix"), None, &answers);
         match result {
-            ResumeType::Feedback { feedback } => assert_eq!(feedback, "please fix"),
-            _ => panic!("Expected Feedback variant"),
+            ResumeType::UserMessage { message } => assert_eq!(message, "please fix"),
+            _ => panic!("Expected UserMessage variant"),
         }
     }
 

@@ -76,11 +76,6 @@ pub struct StageSession {
     #[serde(default)]
     pub has_activity: bool,
 
-    /// Whether chat mode is active on this session.
-    /// Set when the user enters chat mode, cleared on `return_to_work`, approve, reject, or startup.
-    #[serde(default)]
-    pub chat_active: bool,
-
     /// Current state of the session.
     #[serde(default)]
     pub session_state: SessionState,
@@ -113,7 +108,6 @@ impl StageSession {
             agent_pid: None,
             spawn_count: 0,
             has_activity: false,
-            chat_active: false,
             session_state: SessionState::Active,
             created_at: created.clone(),
             updated_at: created,
@@ -141,7 +135,6 @@ impl StageSession {
     pub fn complete(&mut self, updated_at: impl Into<String>) {
         self.session_state = SessionState::Completed;
         self.agent_pid = None;
-        self.chat_active = false;
         self.updated_at = updated_at.into();
     }
 
@@ -149,27 +142,12 @@ impl StageSession {
     pub fn abandon(&mut self, updated_at: impl Into<String>) {
         self.session_state = SessionState::Abandoned;
         self.agent_pid = None;
-        self.chat_active = false;
         self.updated_at = updated_at.into();
     }
 
     /// Mark the session as superseded (replaced by a newer session for the same task+stage).
     pub fn supersede(&mut self, updated_at: impl Into<String>) {
         self.session_state = SessionState::Superseded;
-        self.agent_pid = None;
-        self.chat_active = false;
-        self.updated_at = updated_at.into();
-    }
-
-    /// Enter chat mode on this session.
-    pub fn enter_chat(&mut self, updated_at: impl Into<String>) {
-        self.chat_active = true;
-        self.updated_at = updated_at.into();
-    }
-
-    /// Exit chat mode on this session.
-    pub fn exit_chat(&mut self, updated_at: impl Into<String>) {
-        self.chat_active = false;
         self.agent_pid = None;
         self.updated_at = updated_at.into();
     }
@@ -302,52 +280,6 @@ mod tests {
 
         assert_eq!(session.session_state, SessionState::Abandoned);
         assert!(!session.is_active());
-    }
-
-    #[test]
-    fn test_chat_active_default_false() {
-        let session = StageSession::new("ss-1", "task-1", "review", "now");
-        assert!(!session.chat_active);
-    }
-
-    #[test]
-    fn test_complete_clears_chat_active() {
-        let mut session = StageSession::new("ss-1", "task-1", "review", "now");
-        session.chat_active = true;
-        session.complete("later");
-        assert!(!session.chat_active);
-    }
-
-    #[test]
-    fn test_abandon_clears_chat_active() {
-        let mut session = StageSession::new("ss-1", "task-1", "review", "now");
-        session.chat_active = true;
-        session.abandon("later");
-        assert!(!session.chat_active);
-    }
-
-    #[test]
-    fn test_supersede_clears_chat_active() {
-        let mut session = StageSession::new("ss-1", "task-1", "review", "now");
-        session.chat_active = true;
-        session.supersede("later");
-        assert!(!session.chat_active);
-    }
-
-    #[test]
-    fn test_enter_exit_chat() {
-        let mut session = StageSession::new("ss-1", "task-1", "review", "now");
-        assert!(!session.chat_active);
-
-        session.enter_chat("t1");
-        assert!(session.chat_active);
-        assert_eq!(session.updated_at, "t1");
-
-        session.agent_pid = Some(123);
-        session.exit_chat("t2");
-        assert!(!session.chat_active);
-        assert!(session.agent_pid.is_none());
-        assert_eq!(session.updated_at, "t2");
     }
 
     #[test]

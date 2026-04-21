@@ -27,13 +27,10 @@ const METHOD_MAP: Record<string, string> = {
 
   // -- Human actions --
   approve: "workflow_approve",
-  reject: "workflow_reject",
   send_message: "workflow_send_message",
   answer_questions: "workflow_answer_questions",
-  retry: "workflow_retry",
   set_auto_mode: "workflow_set_auto_mode",
   interrupt: "workflow_interrupt",
-  resume: "workflow_resume",
   archive: "workflow_archive",
   reject_with_comments: "workflow_reject_with_comments",
   address_pr_feedback: "workflow_address_pr_feedback",
@@ -44,7 +41,6 @@ const METHOD_MAP: Record<string, string> = {
   retry_pr: "workflow_retry_pr",
   merge_task: "workflow_merge_task",
   open_pr: "workflow_open_pr",
-  return_to_work: "workflow_return_to_work",
   skip_stage: "workflow_skip_stage",
   send_to_stage: "workflow_send_to_stage",
   restart_stage: "workflow_restart_stage",
@@ -88,8 +84,6 @@ const METHOD_MAP: Record<string, string> = {
   force_push_pr_changes: "workflow_force_push_pr_changes",
 
   // -- Same-name commands (no prefix needed) --
-  stage_chat_send: "stage_chat_send",
-  stage_chat_stop: "stage_chat_stop",
   assistant_send_message: "assistant_send_message",
   assistant_stop: "assistant_stop",
   assistant_list_sessions: "assistant_list_sessions",

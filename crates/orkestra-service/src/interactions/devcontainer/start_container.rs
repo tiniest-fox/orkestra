@@ -56,7 +56,6 @@ pub fn execute(
             image,
             repo_path,
             port,
-            override_dir,
             secrets,
             resource_limits,
             mounts_from_config(config),
@@ -128,7 +127,12 @@ struct DockerRunConfig {
     port_bind: String,
     git_email: String,
     git_name: String,
-    claude_auth_mount: Option<String>,
+    /// Named Docker volume for per-project Claude state, mounted at `/home/orkestra/.claude`.
+    /// Docker creates it automatically on first use; setup.sh bootstraps auth on first start.
+    claude_volume_name: String,
+    /// Read-only bind-mount of the global auth dir at `/opt/orkestra/.claude-global:ro`.
+    /// Present when `CLAUDE_AUTH_DIR` is set; used by setup.sh to seed credentials.
+    claude_global_dir_mount: Option<String>,
     gh_token: Option<String>,
     secret_envs: Vec<String>,
     image: String,
@@ -170,7 +174,17 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
         git_committer_name,
     ];
 
-    if let Some(ref mount) = config.claude_auth_mount {
+    // Per-project named volume — always present, Docker creates it on first use.
+    // setup.sh bootstraps credentials from claude_global_dir on first start.
+    args.push("-v".to_string());
+    args.push(format!(
+        "{}:/home/orkestra/.claude",
+        config.claude_volume_name
+    ));
+
+    // Read-only global auth dir for credential bootstrapping (present in DooD
+    // when CLAUDE_AUTH_DIR is set to a host-side path).
+    if let Some(ref mount) = config.claude_global_dir_mount {
         args.push("-v".to_string());
         args.push(mount.clone());
     }
@@ -218,46 +232,30 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
     args
 }
 
-#[allow(clippy::too_many_arguments)]
 fn docker_run(
     project_id: &str,
     image: &str,
     repo_path: &Path,
     port: u16,
-    override_dir: &Path,
     secrets: &[(String, String)],
     resource_limits: &ResourceLimits,
     extra_mounts: &[String],
 ) -> Result<String, ServiceError> {
     let container_name = format!("orkestra-{project_id}");
 
-    // Prefer a per-project Claude auth directory over the global fallback.
-    //
-    // Per-project: {override_dir}/.claude  — created by the operator via:
-    //   CLAUDE_CONFIG_DIR={override_dir}/.claude claude login
-    //
-    // Global fallback: CLAUDE_AUTH_DIR env var (set to the HOST path in DooD
-    // deployments where the service runs inside its own container, since Docker
-    // bind mounts require host-side paths).
-    //
-    // Note: {override_dir} is the service-container path. In non-DooD deployments
-    // it equals the host path and works as a volume source. In DooD, use the
-    // global CLAUDE_AUTH_DIR instead — per-project auth is not supported there.
-    //
-    // Target is /home/orkestra/.claude because orkd runs as uid 1000 (orkestra)
-    // and claude CLI resolves config from $HOME/.claude.
-    // Mount read-write so claude can refresh tokens and write session state.
-    let project_claude_dir = override_dir.join(".claude");
-    let claude_auth_mount = if project_claude_dir.exists() {
-        Some(format!(
-            "{}:/home/orkestra/.claude",
-            project_claude_dir.display()
-        ))
-    } else {
-        std::env::var("CLAUDE_AUTH_DIR")
-            .ok()
-            .map(|dir| format!("{dir}:/home/orkestra/.claude"))
-    };
+    // Per-project named volume for Claude state — works in both DooD and non-DooD.
+    // Docker creates it automatically on first use; setup.sh bootstraps auth on
+    // first start from the read-only global auth mount below.
+    let claude_volume_name = format!("orkestra-claude-{project_id}");
+
+    // Global auth dir: mounted read-only at /opt/orkestra/.claude-global so
+    // setup.sh can seed the per-project volume with credentials on first start.
+    // In DooD, CLAUDE_AUTH_DIR must be the host-side path (bind mounts require
+    // host paths; the service-container path is inaccessible to the Docker daemon).
+    let claude_global_dir_mount = std::env::var("CLAUDE_AUTH_DIR")
+        .ok()
+        .map(|dir| format!("{dir}:/opt/orkestra/.claude-global:ro"));
+
     let workspace_mount = format!("{}:/workspace", repo_path.display());
     let port_bind = format!("127.0.0.1:{port}:{port}");
 
@@ -277,7 +275,8 @@ fn docker_run(
         port_bind,
         git_email,
         git_name,
-        claude_auth_mount,
+        claude_volume_name,
+        claude_global_dir_mount,
         gh_token,
         secret_envs,
         image: image.to_string(),
@@ -326,15 +325,14 @@ fn compose_up(
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
     let override_path = override_dir.join("orkestra-override.yml");
-    let project_claude_dir = override_dir.join(".claude");
-    let claude_config_dir = project_claude_dir
-        .exists()
-        .then_some(project_claude_dir.as_path());
+    let claude_volume_name = format!("orkestra-claude-{project_id}");
+    let claude_global_dir = std::env::var("CLAUDE_AUTH_DIR").ok();
     let override_content = build_compose_override(
         service,
         port,
         secrets,
-        claude_config_dir,
+        &claude_volume_name,
+        claude_global_dir.as_deref(),
         resource_limits,
         extra_mounts,
     );
@@ -480,17 +478,19 @@ fn is_named_volume(mount_spec: &str) -> bool {
 /// requirements into the project's app service.
 ///
 /// Mirrors the mounts and environment variables that `docker_run` sets for
-/// non-compose containers: toolbox volume, Claude auth directory, git identity,
-/// `HOME`, and `GH_TOKEN`.
+/// non-compose containers: toolbox volume, per-project Claude volume, git
+/// identity, `HOME`, and `GH_TOKEN`.
 ///
-/// `claude_config_dir` — when `Some`, mounts this host path at
-/// `/home/orkestra/.claude` (per-project auth). When `None`, falls back to the
-/// global `CLAUDE_AUTH_DIR` env var.
+/// `claude_volume_name` — Docker named volume for per-project Claude state.
+///   Mounted at `/home/orkestra/.claude`; Docker creates it on first use.
+/// `claude_global_dir` — when `Some`, mounts this host path read-only at
+///   `/opt/orkestra/.claude-global` so setup.sh can seed credentials on first start.
 fn build_compose_override(
     service: &str,
     port: u16,
     secrets: &[(String, String)],
-    claude_config_dir: Option<&std::path::Path>,
+    claude_volume_name: &str,
+    claude_global_dir: Option<&str>,
     resource_limits: &ResourceLimits,
     extra_mounts: &[String],
 ) -> String {
@@ -500,9 +500,6 @@ fn build_compose_override(
     // service-wide env vars. They are removed from the regular secrets list
     // to prevent double-injection as plain env vars.
     let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
-    let claude_auth_dir = claude_config_dir
-        .map(|p| p.display().to_string())
-        .or_else(|| std::env::var("CLAUDE_AUTH_DIR").ok());
     let gh_token = std::env::var("GH_TOKEN").ok();
 
     let mut volumes = String::new();
@@ -510,8 +507,9 @@ fn build_compose_override(
         volumes,
         "{I}- {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro"
     );
-    if let Some(ref dir) = claude_auth_dir {
-        let _ = writeln!(volumes, "{I}- \"{dir}:/home/orkestra/.claude\"");
+    let _ = writeln!(volumes, "{I}- {claude_volume_name}:/home/orkestra/.claude");
+    if let Some(dir) = claude_global_dir {
+        let _ = writeln!(volumes, "{I}- \"{dir}:/opt/orkestra/.claude-global:ro\"");
     }
     for mount in extra_mounts {
         let _ = writeln!(volumes, "{I}- \"{mount}\"");
@@ -550,6 +548,8 @@ fn build_compose_override(
     let _ = writeln!(root_volumes, "volumes:");
     let _ = writeln!(root_volumes, "  {TOOLBOX_VOLUME_NAME}:");
     let _ = writeln!(root_volumes, "    external: true");
+    // Per-project Claude volume — Docker creates it automatically; not external.
+    let _ = writeln!(root_volumes, "  {claude_volume_name}:");
     for mount in extra_mounts {
         if is_named_volume(mount) {
             let name = mount.split(':').next().unwrap_or("");
@@ -615,7 +615,15 @@ mod tests {
             ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            "orkestra-claude-test",
+            None,
+            &no_limits(),
+            &[],
+        );
 
         // Plain value is quoted but not escaped.
         assert!(yaml.contains("PLAIN: \"simple_value\""));
@@ -635,7 +643,15 @@ mod tests {
             "PEM_KEY".to_string(),
             "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
         )];
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            "orkestra-claude-test",
+            None,
+            &no_limits(),
+            &[],
+        );
         // Literal newlines must be escaped as \n in the YAML double-quoted string.
         assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
         // The value must NOT contain unescaped literal newlines.
@@ -644,7 +660,15 @@ mod tests {
 
     #[test]
     fn build_compose_override_no_secrets_produces_valid_structure() {
-        let yaml = build_compose_override("myservice", 8080, &[], None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "myservice",
+            8080,
+            &[],
+            "orkestra-claude-test",
+            None,
+            &no_limits(),
+            &[],
+        );
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("myservice:"));
@@ -719,7 +743,15 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            "orkestra-claude-test",
+            None,
+            &no_limits(),
+            &[],
+        );
 
         // Git identity env vars use the secret values.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -742,7 +774,15 @@ mod tests {
             "project@example.com".to_string(),
         )];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            "orkestra-claude-test",
+            None,
+            &no_limits(),
+            &[],
+        );
 
         // Email uses the secret value.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -765,7 +805,8 @@ mod tests {
             port_bind: "127.0.0.1:9000:9000".to_string(),
             git_email: "agent@orkestra.local".to_string(),
             git_name: "Orkestra Agent".to_string(),
-            claude_auth_mount: None,
+            claude_volume_name: "orkestra-claude-test".to_string(),
+            claude_global_dir_mount: None,
             gh_token: None,
             secret_envs: vec![],
             image: "myimage:latest".to_string(),
@@ -889,6 +930,7 @@ mod tests {
             "app",
             3000,
             &[],
+            "orkestra-claude-test",
             None,
             &ResourceLimits {
                 cpu_limit: Some(2.0),
@@ -905,7 +947,15 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_resource_limits_when_none() {
-        let yaml = build_compose_override("app", 3000, &[], None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            "orkestra-claude-test",
+            None,
+            &no_limits(),
+            &[],
+        );
         assert!(!yaml.contains("cpus:"), "cpus should be absent");
         assert!(!yaml.contains("mem_limit:"), "mem_limit should be absent");
     }
@@ -937,9 +987,46 @@ mod tests {
     fn build_docker_run_args_no_extra_mounts_when_empty() {
         let config = default_run_config();
         let args = build_docker_run_args(&config);
-        // Exactly 2 -v flags: workspace + toolbox.
+        // Exactly 3 -v flags: workspace + claude volume + toolbox.
         let v_count = args.iter().filter(|a| *a == "-v").count();
-        assert_eq!(v_count, 2, "expect exactly workspace and toolbox -v flags");
+        assert_eq!(
+            v_count, 3,
+            "expect workspace, claude volume, and toolbox -v flags"
+        );
+    }
+
+    #[test]
+    fn build_docker_run_args_always_includes_claude_volume() {
+        let config = default_run_config();
+        let args = build_docker_run_args(&config);
+        let v_positions: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-v")
+            .map(|(i, _)| i)
+            .collect();
+        let mounts: Vec<&String> = v_positions.iter().map(|&i| &args[i + 1]).collect();
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.ends_with(":/home/orkestra/.claude")),
+            "claude named volume must always be mounted"
+        );
+    }
+
+    #[test]
+    fn build_docker_run_args_includes_global_auth_when_set() {
+        let config = DockerRunConfig {
+            claude_global_dir_mount: Some(
+                "/host/.claude:/opt/orkestra/.claude-global:ro".to_string(),
+            ),
+            ..default_run_config()
+        };
+        let args = build_docker_run_args(&config);
+        assert!(
+            args.contains(&"/host/.claude:/opt/orkestra/.claude-global:ro".to_string()),
+            "global auth mount must be passed through"
+        );
     }
 
     #[test]
@@ -948,6 +1035,7 @@ mod tests {
             "app",
             3000,
             &[],
+            "orkestra-claude-test",
             None,
             &no_limits(),
             &[
@@ -965,6 +1053,7 @@ mod tests {
             "app",
             3000,
             &[],
+            "orkestra-claude-test",
             None,
             &no_limits(),
             &["cache-vol:/root/.cache".to_string()],
@@ -985,13 +1074,75 @@ mod tests {
             "app",
             3000,
             &[],
+            "orkestra-claude-test",
             None,
             &no_limits(),
             &["/host/path:/container/path:ro".to_string()],
         );
-        // Only the toolbox should appear in the root-level volumes section (last occurrence).
+        // Only toolbox + claude volume should appear in the root-level volumes section.
         let root_section = yaml.rsplit("volumes:\n").next().unwrap_or("");
         assert!(!root_section.contains("/host/path"));
+    }
+
+    #[test]
+    fn build_compose_override_includes_claude_volume_and_declares_at_root() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            "orkestra-claude-proj1",
+            None,
+            &no_limits(),
+            &[],
+        );
+        // Named volume mounted in service.
+        assert!(
+            yaml.contains("orkestra-claude-proj1:/home/orkestra/.claude"),
+            "claude volume must be in service mounts"
+        );
+        // Declared in root volumes section (without external: true).
+        assert!(
+            yaml.contains("  orkestra-claude-proj1:\n"),
+            "claude volume must be declared in root volumes"
+        );
+        assert!(
+            !yaml.contains("orkestra-claude-proj1:\n    external: true"),
+            "claude volume must not be external"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_includes_global_auth_when_provided() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            "orkestra-claude-test",
+            Some("/data/.claude"),
+            &no_limits(),
+            &[],
+        );
+        assert!(
+            yaml.contains("/data/.claude:/opt/orkestra/.claude-global:ro"),
+            "global auth mount must appear in service volumes"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_omits_global_auth_when_absent() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            "orkestra-claude-test",
+            None,
+            &no_limits(),
+            &[],
+        );
+        assert!(
+            !yaml.contains(".claude-global"),
+            "global auth mount must be absent when not provided"
+        );
     }
 
     #[test]

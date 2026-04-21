@@ -32,3 +32,15 @@ if [ -d "$MAIN_REPO/dist" ] && [ ! -e "$WORKTREE_PATH/dist" ]; then
 fi
 
 echo "Worktree setup complete: $WORKTREE_PATH"
+
+# ---------------------------------------------------------------------------
+# Warm the rust-analyzer index in the background
+# ---------------------------------------------------------------------------
+# cargo check populates the compiled metadata that rust-analyzer needs to index
+# quickly. Run in the background so worktree setup doesn't block; by the time
+# the agent invokes its first LSP operation, indexing is typically complete.
+# target/ is shared via symlink above, so subsequent worktrees pay a fraction
+# of the cost of the first run.
+
+(cd "$WORKTREE_PATH" && cargo check --workspace --message-format=json > /dev/null 2>&1) &
+echo "rust-analyzer index warm-up started in background (pid $!)"

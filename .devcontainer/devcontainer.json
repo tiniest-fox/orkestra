@@ -4,6 +4,9 @@
     "context": ".."
   },
   "postCreateCommand": "pnpm install",
+  "mounts": [
+    "orkestra-ra-cache:/home/orkestra/.cache/rust-analyzer"
+  ],
   "customizations": {
     "orkestra": {
       "plugins": ["rust-analyzer-lsp"]

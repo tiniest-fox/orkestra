@@ -65,6 +65,7 @@ export function createDemoTransport(): Transport {
         case "answer_questions":
         case "interrupt":
         case "resume":
+        case "send_message":
           return resolve(null);
         default:
           return new Promise(() => {}); // pause polling chains

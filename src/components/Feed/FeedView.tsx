@@ -134,11 +134,8 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     return groupTasksForFeed(tasks, prStates);
   }, [tasks, getPrStatus]);
 
-  // Derive whether any task has an active assistant agent
-  const anyAssistantActive = useMemo(
-    () => tasks.some((t) => t.derived.chat_agent_active || t.derived.is_chatting),
-    [tasks],
-  );
+  // No task-level chat agent exists anymore — assistant agent activity is tracked within AssistantDrawer.
+  const anyAssistantActive = false;
 
   // Track unread assistant responses
   const [hasUnreadAssistant, setHasUnreadAssistant] = useState(false);
@@ -151,7 +148,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
       setHasUnreadAssistant(true);
     }
     prevAssistantActiveRef.current = anyAssistantActive;
-  }, [anyAssistantActive, assistantDrawerOpen]);
+  }, [assistantDrawerOpen]);
 
   // Clear unread when drawer opens
   useEffect(() => {

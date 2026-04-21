@@ -65,11 +65,6 @@ function makeState(overrides?: Partial<TaskDrawerState>): TaskDrawerState {
     setUpdateNotes: vi.fn(),
     updateNotesRef: createRef(),
     handleRequestUpdate: vi.fn(),
-    retryInstructions: "",
-    setRetryInstructions: vi.fn(),
-    retryTextareaRef: createRef(),
-    retrying: false,
-    handleRetry: vi.fn(),
     loading: false,
     interrupting: false,
     prTabState: { type: "loading" } as TaskDrawerState["prTabState"],
@@ -82,14 +77,12 @@ function makeState(overrides?: Partial<TaskDrawerState>): TaskDrawerState {
     removeDraftComment: vi.fn(),
     clearDraftComments: vi.fn(),
     submitLineComments: vi.fn(),
-    chatMessage: "",
-    setChatMessage: vi.fn(),
-    chatTextareaRef: createRef(),
-    chatSending: false,
-    chatError: null,
-    handleSendChat: vi.fn(),
-    handleChatStop: vi.fn(),
-    handleReturnToWork: vi.fn(),
+    message: "",
+    setMessage: vi.fn(),
+    messageTextareaRef: createRef(),
+    messageSending: false,
+    messageError: null,
+    handleSendMessage: vi.fn(),
     submitRef: createRef(),
     handleApprove: vi.fn(),
     handleInterrupt: vi.fn(),
@@ -106,7 +99,13 @@ function makeState(overrides?: Partial<TaskDrawerState>): TaskDrawerState {
 }
 
 function renderAgentTab(
-  derivedOverrides: { is_interrupted?: boolean; is_working?: boolean; is_chatting?: boolean },
+  derivedOverrides: {
+    is_interrupted?: boolean;
+    is_working?: boolean;
+    is_failed?: boolean;
+    is_blocked?: boolean;
+    needs_review?: boolean;
+  },
   stateOverrides?: Partial<TaskDrawerState>,
 ) {
   const task = createMockWorkflowTaskView({ derived: derivedOverrides });
@@ -121,7 +120,7 @@ function renderAgentTab(
 // Tests
 // ============================================================================
 
-describe("AgentTab — is_interrupted branches", () => {
+describe("AgentTab — compose area visibility and behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetFeedLogListProps();
@@ -132,23 +131,30 @@ describe("AgentTab — is_interrupted branches", () => {
     expect(screen.getByTestId("chat-compose-area")).toBeDefined();
   });
 
-  it("does not render ChatComposeArea when task is queued (not working, chatting, reviewing, or interrupted)", () => {
+  it("renders ChatComposeArea when is_failed is true", () => {
+    renderAgentTab({ is_failed: true });
+    expect(screen.getByTestId("chat-compose-area")).toBeDefined();
+  });
+
+  it("renders ChatComposeArea when is_blocked is true", () => {
+    renderAgentTab({ is_blocked: true });
+    expect(screen.getByTestId("chat-compose-area")).toBeDefined();
+  });
+
+  it("renders ChatComposeArea when needs_review is true", () => {
+    renderAgentTab({ needs_review: true });
+    expect(screen.getByTestId("chat-compose-area")).toBeDefined();
+  });
+
+  it("does not render ChatComposeArea when task is queued (not working, reviewing, interrupted, failed, or blocked)", () => {
     renderAgentTab({});
     expect(screen.queryByTestId("chat-compose-area")).toBeNull();
   });
 
-  it("handleSend calls handleReturnToWork when interrupted", () => {
+  it("handleSend always calls handleSendMessage", () => {
     const state = renderAgentTab({ is_interrupted: true });
     fireEvent.click(screen.getByTestId("send-btn"));
-    expect(state.handleReturnToWork).toHaveBeenCalledTimes(1);
-    expect(state.handleSendChat).not.toHaveBeenCalled();
-  });
-
-  it("handleSend calls handleSendChat when not interrupted", () => {
-    const state = renderAgentTab({ is_chatting: true });
-    fireEvent.click(screen.getByTestId("send-btn"));
-    expect(state.handleSendChat).toHaveBeenCalledTimes(1);
-    expect(state.handleReturnToWork).not.toHaveBeenCalled();
+    expect(state.handleSendMessage).toHaveBeenCalledTimes(1);
   });
 
   it("placeholder is 'Add instructions and resume\u2026' when interrupted", () => {
@@ -156,14 +162,31 @@ describe("AgentTab — is_interrupted branches", () => {
     expect(screen.getByTestId("placeholder").textContent).toBe("Add instructions and resume\u2026");
   });
 
-  it("placeholder is 'Message the agent\u2026' when not interrupted", () => {
-    renderAgentTab({ is_chatting: true });
+  it("placeholder is 'Send instructions to retry\u2026' when failed", () => {
+    renderAgentTab({ is_failed: true });
+    expect(screen.getByTestId("placeholder").textContent).toBe("Send instructions to retry\u2026");
+  });
+
+  it("placeholder is 'Send instructions to unblock\u2026' when blocked", () => {
+    renderAgentTab({ is_blocked: true });
+    expect(screen.getByTestId("placeholder").textContent).toBe(
+      "Send instructions to unblock\u2026",
+    );
+  });
+
+  it("placeholder is 'Message the agent\u2026' when working", () => {
+    renderAgentTab({ is_working: true });
     expect(screen.getByTestId("placeholder").textContent).toBe("Message the agent\u2026");
   });
 
   it("inputAgentActive is false when interrupted", () => {
     renderAgentTab({ is_interrupted: true, is_working: false });
     expect(screen.getByTestId("agent-active").textContent).toBe("false");
+  });
+
+  it("inputAgentActive is true when working", () => {
+    renderAgentTab({ is_working: true });
+    expect(screen.getByTestId("agent-active").textContent).toBe("true");
   });
 });
 
@@ -173,9 +196,9 @@ describe("AgentTab — optimistic message on send", () => {
     resetFeedLogListProps();
   });
 
-  it("passes pendingMessage to FeedLogList when chatMessage is non-empty and send is clicked", () => {
-    const task = createMockWorkflowTaskView({ derived: { is_chatting: true } });
-    const state = makeState({ chatMessage: "hello optimistic" });
+  it("passes pendingMessage to FeedLogList when message is non-empty and send is clicked", () => {
+    const task = createMockWorkflowTaskView({ derived: { is_working: true } });
+    const state = makeState({ message: "hello optimistic" });
     render(
       <AgentTab task={task} logs={[]} logsError={null} state={state} logContainerRef={vi.fn()} />,
     );
@@ -183,9 +206,9 @@ describe("AgentTab — optimistic message on send", () => {
     expect(getFeedLogListProps().pendingMessage).toBe("hello optimistic");
   });
 
-  it("does not pass pendingMessage when chatMessage is empty", () => {
-    const task = createMockWorkflowTaskView({ derived: { is_chatting: true } });
-    const state = makeState({ chatMessage: "  " });
+  it("does not pass pendingMessage when message is empty", () => {
+    const task = createMockWorkflowTaskView({ derived: { is_working: true } });
+    const state = makeState({ message: "  " });
     render(
       <AgentTab task={task} logs={[]} logsError={null} state={state} logContainerRef={vi.fn()} />,
     );

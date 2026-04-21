@@ -460,8 +460,6 @@ export interface DerivedTaskState {
   pending_approval: boolean;
   stages_with_logs: StageLogInfo[];
   subtask_progress: SubtaskProgress | null;
-  is_chatting: boolean;
-  chat_agent_active: boolean;
   /** Whether the task can be bypassed (skip/send-to-stage/restart). */
   can_bypass: boolean;
 }

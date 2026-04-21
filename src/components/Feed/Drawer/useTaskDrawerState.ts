@@ -29,13 +29,6 @@ export interface TaskDrawerState {
   updateNotesRef: React.RefObject<HTMLTextAreaElement>;
   handleRequestUpdate: () => Promise<void>;
 
-  // -- Retry (failed) --
-  retryInstructions: string;
-  setRetryInstructions: (v: string) => void;
-  retryTextareaRef: React.RefObject<HTMLTextAreaElement>;
-  retrying: boolean;
-  handleRetry: () => Promise<void>;
-
   // -- Loading state --
   loading: boolean;
   interrupting: boolean;
@@ -59,15 +52,13 @@ export interface TaskDrawerState {
   clearDraftComments: () => void;
   submitLineComments: () => Promise<void>;
 
-  // -- Chat mode --
-  chatMessage: string;
-  setChatMessage: (v: string) => void;
-  chatTextareaRef: React.RefObject<HTMLTextAreaElement>;
-  chatSending: boolean;
-  chatError: string | null;
-  handleSendChat: () => Promise<void>;
-  handleChatStop: () => Promise<void>;
-  handleReturnToWork: () => Promise<void>;
+  // -- Message compose --
+  message: string;
+  setMessage: (v: string) => void;
+  messageTextareaRef: React.RefObject<HTMLTextAreaElement>;
+  messageSending: boolean;
+  messageError: string | null;
+  handleSendMessage: () => Promise<void>;
 
   // -- Refs --
   submitRef: React.RefObject<HTMLButtonElement>;
@@ -148,20 +139,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   useEffect(() => {
     if (updateMode) updateNotesRef.current?.focus();
   }, [updateMode]);
-
-  // -- Retry instructions --
-  const [retryInstructions, setRetryInstructions] = useState("");
-  const retryTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [retrying, setRetrying] = useState(false);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
-  useEffect(() => {
-    setRetryInstructions("");
-  }, [task.id]);
-
-  useEffect(() => {
-    if (task.derived.is_failed || task.derived.is_blocked) retryTextareaRef.current?.focus();
-  }, [task.derived.is_failed, task.derived.is_blocked]);
 
   // -- Submit button ref for questions --
   const submitRef = useRef<HTMLButtonElement>(null);
@@ -278,58 +255,34 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     ? submitLineCommentsForDoneTask
     : submitLineCommentsForReview;
 
-  // -- Chat mode --
-  const [chatMessage, setChatMessage] = useState("");
-  const [chatSending, setChatSending] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
+  // -- Message compose --
+  const [message, setMessage] = useState("");
+  const [messageSending, setMessageSending] = useState(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
+  const messageTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Reset chat state when task changes
+  // Reset message state when task changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
   useEffect(() => {
-    setChatMessage("");
-    setChatSending(false);
-    setChatError(null);
+    setMessage("");
+    setMessageSending(false);
+    setMessageError(null);
   }, [task.id]);
 
-  const handleSendChat = useCallback(async () => {
-    if (!chatMessage.trim() || chatSending) return;
-    setChatSending(true);
-    setChatError(null);
+  const handleSendMessage = useCallback(async () => {
+    if (!message.trim() || messageSending) return;
+    setMessageSending(true);
+    setMessageError(null);
     try {
-      await transport.call("stage_chat_send", { task_id: task.id, message: chatMessage.trim() });
-      setChatMessage("");
+      await transport.call("send_message", { task_id: task.id, message: message.trim() });
+      setMessage("");
     } catch (err) {
-      const message = extractErrorMessage(err);
-      setChatError(message);
+      const msg = extractErrorMessage(err);
+      setMessageError(msg);
     } finally {
-      setChatSending(false);
+      setMessageSending(false);
     }
-  }, [transport, task.id, chatMessage, chatSending]);
-
-  const handleChatStop = useCallback(async () => {
-    try {
-      await transport.call("stage_chat_stop", { task_id: task.id });
-    } catch (err) {
-      console.error("Failed to stop chat agent:", err);
-    }
-  }, [transport, task.id]);
-
-  const handleReturnToWork = useCallback(async () => {
-    if (chatSending) return;
-    setChatSending(true);
-    setChatError(null);
-    const pendingMessage = chatMessage.trim() || null;
-    try {
-      await transport.call("return_to_work", { task_id: task.id, message: pendingMessage });
-      setChatMessage("");
-    } catch (err) {
-      const message = extractErrorMessage(err);
-      setChatError(message);
-    } finally {
-      setChatSending(false);
-    }
-  }, [transport, task.id, chatMessage, chatSending]);
+  }, [transport, task.id, message, messageSending]);
 
   // -- Action handlers --
 
@@ -434,21 +387,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     [transport, task.id, answers, allAnswered, loading, onClose, applyOptimistic],
   );
 
-  const handleRetry = useCallback(async () => {
-    if (retrying) return;
-    setRetrying(true);
-    try {
-      await transport.call("retry", {
-        task_id: task.id,
-        instructions: retryInstructions.trim() || null,
-      });
-      onClose();
-    } catch (err) {
-      console.error("Failed to retry:", err);
-      setRetrying(false);
-    }
-  }, [transport, task.id, retryInstructions, retrying, onClose]);
-
   const handleRequestUpdate = useCallback(async () => {
     if (loading || !updateNotes.trim()) return;
     setLoading(true);
@@ -496,11 +434,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setUpdateNotes,
     updateNotesRef,
     handleRequestUpdate,
-    retryInstructions,
-    setRetryInstructions,
-    retryTextareaRef,
-    retrying,
-    handleRetry,
     loading,
     interrupting,
     prTabState,
@@ -513,14 +446,12 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     removeDraftComment,
     clearDraftComments,
     submitLineComments,
-    chatMessage,
-    setChatMessage,
-    chatTextareaRef,
-    chatSending,
-    chatError,
-    handleSendChat,
-    handleChatStop,
-    handleReturnToWork,
+    message,
+    setMessage,
+    messageTextareaRef,
+    messageSending,
+    messageError,
+    handleSendMessage,
     submitRef,
     handleApprove,
     handleInterrupt,

@@ -122,6 +122,12 @@ pub enum IterationTrigger {
     /// The agent produced structured output during a chat conversation,
     /// completing the stage without requiring `return_to_work`.
     ChatCompletion,
+    /// User sent a message to the agent (unified `send_message` API).
+    ///
+    /// For AwaitingApproval/AwaitingRejectionConfirmation, triggers an inline agent
+    /// spawn (Path A). For AwaitingQuestionAnswer/Failed/Blocked/Interrupted,
+    /// creates a new iteration and transitions to Queued (Path B).
+    UserMessage { message: String },
     /// Agent produced output that couldn't be parsed as structured JSON.
     MalformedOutput {
         error: String,

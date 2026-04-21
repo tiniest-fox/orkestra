@@ -332,6 +332,7 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
         IterationTrigger::Redirect { message, .. } | IterationTrigger::Restart { message, .. } => {
             Some(message.as_str())
         }
+        IterationTrigger::UserMessage { message } => Some(message.as_str()),
         _ => None,
     })
 }
@@ -455,6 +456,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
             error: error.clone(),
             attempt: *attempt,
             max_attempts: *max_attempts,
+        },
+        Some(IterationTrigger::UserMessage { message }) => ResumeType::UserMessage {
+            message: message.clone(),
         },
     }
 }

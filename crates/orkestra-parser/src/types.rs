@@ -353,6 +353,8 @@ pub enum ResumeMarkerType {
     ManualResume,
     /// Agent returned to structured work after a chat session.
     ReturnToWork,
+    /// User sent a message directly to the agent.
+    UserMessage,
 }
 
 impl ResumeMarkerType {
@@ -368,6 +370,7 @@ impl ResumeMarkerType {
             Self::Initial => "initial",
             Self::ManualResume => "manual_resume",
             Self::ReturnToWork => "return_to_work",
+            Self::UserMessage => "user_message",
         }
     }
 }

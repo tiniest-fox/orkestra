@@ -377,6 +377,27 @@ pub fn send_to_stage(ctx: &CommandContext, params: &Value) -> Result<Value, Erro
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
+/// Sends a message to the agent via the unified `send_message` API.
+///
+/// Routes to Path A (inline spawn) for `AwaitingApproval` / `AwaitingRejectionConfirmation`,
+/// or Path B (queued) for `AwaitingQuestionAnswer` / Failed / Blocked / Interrupted.
+///
+/// Expected params: `{ "task_id": "<id>", "message": "<message>" }`
+pub fn send_message(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
+        .to_string();
+
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .send_message(&task_id, &message)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+}
+
 // -- Helpers --
 
 fn extract_param<T: for<'de> serde::Deserialize<'de>>(

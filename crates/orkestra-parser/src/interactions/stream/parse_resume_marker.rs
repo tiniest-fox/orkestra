@@ -33,6 +33,7 @@ pub fn execute(text: &str) -> Option<ResumeMarker> {
                 "retry_blocked" => ResumeMarkerType::RetryBlocked,
                 "manual_resume" => ResumeMarkerType::ManualResume,
                 "return_to_work" => ResumeMarkerType::ReturnToWork,
+                "user_message" => ResumeMarkerType::UserMessage,
                 _ => return None,
             };
             Some(ResumeMarker {
@@ -102,6 +103,18 @@ mod tests {
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
         assert_eq!(ResumeMarkerType::ManualResume.as_str(), "manual_resume");
         assert_eq!(ResumeMarkerType::ReturnToWork.as_str(), "return_to_work");
+        assert_eq!(ResumeMarkerType::UserMessage.as_str(), "user_message");
+    }
+
+    #[test]
+    fn test_parse_resume_marker_user_message() {
+        let marker = execute(
+            "<!orkestra:resume:work:user_message>\n\nPlease add error handling for this edge case.",
+        );
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::UserMessage);
+        assert!(marker.content.contains("error handling"));
     }
 
     #[test]

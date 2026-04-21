@@ -380,6 +380,25 @@ pub fn workflow_restart_stage(
     })
 }
 
+/// Send a message to the agent using the unified send_message API.
+///
+/// Routes to Path A (inline spawn) for tasks awaiting approval or rejection
+/// confirmation, or Path B (queued) for tasks that are awaiting questions,
+/// failed, blocked, or interrupted.
+#[tauri::command]
+pub fn workflow_send_message(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    message: String,
+) -> Result<Value, TauriError> {
+    orkestra_debug!("tauri", "send_message {task_id}");
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id, "message": message });
+        action::send_message(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
 /// Return to structured work after chatting with the stage agent.
 ///
 /// Clears chat state on the session and creates a new iteration with

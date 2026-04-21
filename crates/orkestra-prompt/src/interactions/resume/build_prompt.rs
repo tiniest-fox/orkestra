@@ -21,6 +21,7 @@ const RESUME_MANUAL_RESUME: &str = include_str!("../../templates/resume/manual_r
 const RESUME_PR_COMMENTS: &str = include_str!("../../templates/resume/pr_comments.md");
 const RESUME_RETURN_TO_WORK: &str = include_str!("../../templates/resume/return_to_work.md");
 const RESUME_MALFORMED_OUTPUT: &str = include_str!("../../templates/resume/malformed_output.md");
+const RESUME_USER_MESSAGE: &str = include_str!("../../templates/resume/user_message.md");
 
 // ============================================================================
 // Interaction
@@ -87,6 +88,10 @@ pub fn execute(
         } => (
             RESUME_MALFORMED_OUTPUT,
             serde_json::json!({ "error": error, "attempt": attempt, "max_attempts": max_attempts }),
+        ),
+        ResumeType::UserMessage { message } => (
+            RESUME_USER_MESSAGE,
+            serde_json::json!({ "message": message }),
         ),
     };
 
@@ -460,6 +465,24 @@ mod tests {
         assert!(prompt.contains("attempt 2 of 4"));
         assert!(prompt.contains("no structured output found"));
         assert!(prompt.contains("```ork"));
+    }
+
+    #[test]
+    fn test_user_message_resume() {
+        let prompt = execute(
+            "work",
+            &ResumeType::UserMessage {
+                message: "Please also add error handling for the edge case".to_string(),
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:user_message>"));
+        assert!(prompt.contains("Please also add error handling for the edge case"));
+        assert!(prompt.contains("Address their request"));
+        assert!(prompt.contains("JSON"));
     }
 
     #[test]

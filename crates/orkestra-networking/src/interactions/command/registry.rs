@@ -34,6 +34,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "skip_stage",
     "send_to_stage",
     "restart_stage",
+    "send_message",
     // Stage chat
     "stage_chat_send",
     "stage_chat_stop",

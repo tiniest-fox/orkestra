@@ -1145,3 +1145,143 @@ fn chat_exit_clears_chat_active_on_exit_without_structured_output() {
         "chat_active should be false after chat agent exits without structured output"
     );
 }
+
+// =============================================================================
+// Test: send_message (unified API) Path B — Failed → Queued with user_message prompt
+// =============================================================================
+
+/// When a task is in `Failed` state and the user calls `send_message`, the task
+/// transitions to `Queued` with a `UserMessage` iteration trigger. On the next
+/// orchestrator advance, the agent receives a `user_message` resume prompt
+/// containing the message text.
+#[test]
+fn test_send_message_from_failed_transitions_to_queued_and_delivers_prompt() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task("Send message from failed", "A task that will fail", None);
+    let task_id = task.id.clone();
+
+    // Agent fails
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Network timeout".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes failure → Failed state
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be Failed, got: {:?}",
+        task.state
+    );
+
+    // Verify iterations: last should have UserMessage trigger after send_message
+    let iters_before = ctx.api().get_iterations(&task_id).unwrap();
+    let iter_count_before = iters_before.len();
+
+    // User sends a message via the unified API
+    let updated = ctx
+        .api()
+        .send_message(&task_id, "Try a different approach")
+        .unwrap();
+    assert!(
+        matches!(updated.state, TaskState::Queued { .. }),
+        "Task should be Queued after send_message from Failed, got: {:?}",
+        updated.state
+    );
+
+    // Verify a new iteration was created with UserMessage trigger
+    let iters_after = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iters_after.len(),
+        iter_count_before + 1,
+        "A new iteration should have been created"
+    );
+    let last_iter = iters_after.last().unwrap();
+    assert!(
+        matches!(
+            &last_iter.incoming_context,
+            Some(IterationTrigger::UserMessage { message }) if message == "Try a different approach"
+        ),
+        "New iteration should have UserMessage trigger. Got: {:?}",
+        last_iter.incoming_context
+    );
+
+    // Set output so the agent can complete
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Done with new approach".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns agent with user_message resume prompt
+
+    // Verify the resume prompt uses the user_message marker and includes the message
+    ctx.assert_resume_prompt_contains("user_message", &["Try a different approach"]);
+}
+
+// =============================================================================
+// Test: send_message (unified API) Path B — Blocked → Queued with user_message prompt
+// =============================================================================
+
+/// When a task is in `Blocked` state and the user calls `send_message`, the task
+/// transitions to `Queued` with a `UserMessage` iteration trigger. On the next
+/// orchestrator advance, the agent receives a `user_message` resume prompt.
+#[test]
+fn test_send_message_from_blocked_transitions_to_queued_and_delivers_prompt() {
+    let workflow = chat_test_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task("Send message from blocked", "A task that will block", None);
+    let task_id = task.id.clone();
+
+    // Agent blocks
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Blocked {
+            reason: "Waiting on external dependency".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes blocked output → Blocked state
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Blocked { .. }),
+        "Task should be Blocked, got: {:?}",
+        task.state
+    );
+
+    // User sends a message to unblock the task
+    let updated = ctx
+        .api()
+        .send_message(&task_id, "The dependency is now available")
+        .unwrap();
+    assert!(
+        matches!(updated.state, TaskState::Queued { .. }),
+        "Task should be Queued after send_message from Blocked, got: {:?}",
+        updated.state
+    );
+
+    // Set output so the agent can complete
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Completed using the dependency".into(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns agent with user_message resume prompt
+
+    // Verify the resume prompt uses the user_message marker and includes the message
+    ctx.assert_resume_prompt_contains("user_message", &["The dependency is now available"]);
+}

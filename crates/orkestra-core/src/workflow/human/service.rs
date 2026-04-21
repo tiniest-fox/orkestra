@@ -52,7 +52,7 @@ impl WorkflowApi {
     /// to `Queued`. Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
     pub fn send_message(&self, task_id: &str, message: &str) -> WorkflowResult<Task> {
         human::send_message::execute(
-            &self.store,
+            self.store.as_ref(),
             &self.workflow,
             &self.iteration_service,
             task_id,

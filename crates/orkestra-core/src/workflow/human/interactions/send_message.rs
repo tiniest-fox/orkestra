@@ -5,8 +5,6 @@
 //! (or `AwaitingSetup` when no worktree exists). The orchestrator then picks it up and spawns
 //! the agent normally with a `user_message` resume prompt.
 
-use std::sync::Arc;
-
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
@@ -20,7 +18,7 @@ use crate::workflow::runtime::TaskState;
 /// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`. Creates a
 /// `UserMessage` iteration and transitions to `Queued`.
 pub fn execute(
-    store: &Arc<dyn WorkflowStore>,
+    store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task_id: &str,
@@ -34,14 +32,9 @@ pub fn execute(
         TaskState::AwaitingQuestionAnswer { .. }
         | TaskState::Failed { .. }
         | TaskState::Blocked { .. }
-        | TaskState::Interrupted { .. } => execute_queued(
-            store.as_ref(),
-            workflow,
-            iteration_service,
-            task_id,
-            message,
-            task,
-        ),
+        | TaskState::Interrupted { .. } => {
+            execute_queued(store, workflow, iteration_service, task_id, message, task)
+        }
 
         _ => Err(WorkflowError::InvalidTransition(format!(
             "Cannot send message in state {} \
@@ -84,34 +77,32 @@ fn execute_queued(
         message: message.to_string(),
     };
 
-    match &task.state.clone() {
+    let stage_name = match &task.state {
         TaskState::AwaitingQuestionAnswer { stage } | TaskState::Interrupted { stage } => {
-            let stage = stage.clone();
-            iteration_service.create_iteration(&task.id, &stage, Some(trigger))?;
-            task.state = TaskState::queued(&stage);
-            task.updated_at = now;
+            stage.clone()
         }
-
         TaskState::Failed { .. } | TaskState::Blocked { .. } => {
-            let last_stage = super::resolve_current_stage(&task, store, workflow)?;
+            super::resolve_current_stage(&task, store, workflow)?
+        }
+        _ => unreachable!("state already validated by execute()"),
+    };
 
-            iteration_service.create_iteration(&task.id, &last_stage, Some(trigger))?;
+    iteration_service.create_iteration(&task.id, &stage_name, Some(trigger))?;
 
+    task.state = match &task.state {
+        TaskState::AwaitingQuestionAnswer { .. } | TaskState::Interrupted { .. } => {
+            TaskState::queued(&stage_name)
+        }
+        TaskState::Failed { .. } | TaskState::Blocked { .. } => {
             if task.worktree_path.is_none() {
-                task.state = TaskState::awaiting_setup(&last_stage);
+                TaskState::awaiting_setup(&stage_name)
             } else {
-                task.state = TaskState::queued(&last_stage);
+                TaskState::queued(&stage_name)
             }
-            task.updated_at = now;
         }
-
-        _ => {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "send_message reached unexpected state: {}",
-                task.state
-            )))
-        }
-    }
+        _ => unreachable!("state already validated by execute()"),
+    };
+    task.updated_at = now;
 
     store.save_task(&task)?;
 
@@ -348,7 +339,7 @@ mod tests {
         store.save_task(&bad_task).unwrap();
 
         let result = execute(
-            &(Arc::clone(&store) as Arc<dyn WorkflowStore>),
+            store.as_ref(),
             &workflow,
             &iter_service,
             &bad_task.id,
@@ -373,13 +364,7 @@ mod tests {
         task.state = TaskState::awaiting_approval("work");
         store.save_task(&task).unwrap();
 
-        let result = execute(
-            &(Arc::clone(&store) as Arc<dyn WorkflowStore>),
-            &workflow,
-            &iter_service,
-            &task.id,
-            "hello",
-        );
+        let result = execute(store.as_ref(), &workflow, &iter_service, &task.id, "hello");
 
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }

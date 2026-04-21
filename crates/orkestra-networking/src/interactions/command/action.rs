@@ -312,8 +312,8 @@ pub fn send_to_stage(ctx: &CommandContext, params: &Value) -> Result<Value, Erro
 
 /// Sends a message to the agent via the unified `send_message` API.
 ///
-/// Routes to Path A (inline spawn) for `AwaitingApproval` / `AwaitingRejectionConfirmation`,
-/// or Path B (queued) for `AwaitingQuestionAnswer` / Failed / Blocked / Interrupted.
+/// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
+/// Creates a `UserMessage` iteration and transitions to `Queued`.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }`
 pub fn send_message(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {

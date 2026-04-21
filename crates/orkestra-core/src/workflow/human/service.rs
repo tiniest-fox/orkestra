@@ -2,7 +2,7 @@
 
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::{PrCheckData, PrCommentData, QuestionAnswer, Task};
-use crate::workflow::ports::{WorkflowError, WorkflowResult};
+use crate::workflow::ports::WorkflowResult;
 
 use super::interactions as human;
 
@@ -49,27 +49,14 @@ impl WorkflowApi {
     /// Send a message to the agent using the unified `send_message` API.
     ///
     /// Creates a new iteration with a `UserMessage` trigger and transitions the task
-    /// to `Queued`. Valid states: `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
-    /// Requires `with_provider_registry()` and `with_project_root()` to be set.
+    /// to `Queued`. Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
     pub fn send_message(&self, task_id: &str, message: &str) -> WorkflowResult<Task> {
-        let registry = self
-            .provider_registry
-            .as_ref()
-            .ok_or_else(|| WorkflowError::InvalidState("No provider registry configured".into()))?;
-        let project_root = self
-            .project_root
-            .as_ref()
-            .ok_or_else(|| WorkflowError::InvalidState("No project root configured".into()))?;
-
         human::send_message::execute(
             &self.store,
-            registry,
             &self.workflow,
             &self.iteration_service,
-            project_root,
             task_id,
             message,
-            self.log_notify_tx.clone(),
         )
     }
 

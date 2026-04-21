@@ -5,13 +5,11 @@
 //! (or `AwaitingSetup` when no worktree exists). The orchestrator then picks it up and spawns
 //! the agent normally with a `user_message` resume prompt.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{IterationTrigger, LogNotification, Task};
-use crate::workflow::execution::ProviderRegistry;
+use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
@@ -19,17 +17,14 @@ use crate::workflow::runtime::TaskState;
 /// Send a message to the agent.
 ///
 /// Creates a new iteration with a `UserMessage` trigger and transitions the task to `Queued`.
-/// Valid states: `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
-#[allow(clippy::too_many_arguments)]
+/// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`. Creates a
+/// `UserMessage` iteration and transitions to `Queued`.
 pub fn execute(
     store: &Arc<dyn WorkflowStore>,
-    _registry: &Arc<ProviderRegistry>,
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
-    _project_root: &Path,
     task_id: &str,
     message: &str,
-    _log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
 ) -> WorkflowResult<Task> {
     let task = store
         .get_task(task_id)?
@@ -98,20 +93,7 @@ fn execute_queued(
         }
 
         TaskState::Failed { .. } | TaskState::Blocked { .. } => {
-            // Resolve stage: last iteration stage, or first stage in flow
-            let iterations = store.get_iterations(&task.id)?;
-            let last_stage = match iterations.last() {
-                Some(i) => i.stage.clone(),
-                None => workflow
-                    .first_stage(&task.flow)
-                    .map(|s| s.name.clone())
-                    .ok_or_else(|| {
-                        WorkflowError::InvalidTransition(format!(
-                            "Flow '{}' not found or has no stages",
-                            task.flow
-                        ))
-                    })?,
-            };
+            let last_stage = super::resolve_current_stage(&task, store, workflow)?;
 
             iteration_service.create_iteration(&task.id, &last_stage, Some(trigger))?;
 
@@ -153,6 +135,7 @@ mod tests {
     use crate::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
     use crate::workflow::domain::IterationTrigger;
     use crate::workflow::iteration::IterationService;
+    use crate::workflow::ports::WorkflowStore;
     use crate::workflow::runtime::TaskState;
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
@@ -366,13 +349,10 @@ mod tests {
 
         let result = execute(
             &(Arc::clone(&store) as Arc<dyn WorkflowStore>),
-            &Arc::new(crate::workflow::execution::default_test_registry()),
             &workflow,
             &iter_service,
-            Path::new("/tmp"),
             &bad_task.id,
             "hello",
-            None,
         );
 
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
@@ -395,13 +375,10 @@ mod tests {
 
         let result = execute(
             &(Arc::clone(&store) as Arc<dyn WorkflowStore>),
-            &Arc::new(crate::workflow::execution::default_test_registry()),
             &workflow,
             &iter_service,
-            Path::new("/tmp"),
             &task.id,
             "hello",
-            None,
         );
 
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));

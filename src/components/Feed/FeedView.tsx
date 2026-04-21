@@ -134,29 +134,6 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     return groupTasksForFeed(tasks, prStates);
   }, [tasks, getPrStatus]);
 
-  // No task-level chat agent exists anymore — assistant agent activity is tracked within AssistantDrawer.
-  const anyAssistantActive = false;
-
-  // Track unread assistant responses
-  const [hasUnreadAssistant, setHasUnreadAssistant] = useState(false);
-  const assistantDrawerOpen = assistantOpen || taskAssistantId !== null;
-  const prevAssistantActiveRef = useRef(false);
-
-  useEffect(() => {
-    // Detect active → inactive transition while drawer is closed
-    if (prevAssistantActiveRef.current && !anyAssistantActive && !assistantDrawerOpen) {
-      setHasUnreadAssistant(true);
-    }
-    prevAssistantActiveRef.current = anyAssistantActive;
-  }, [assistantDrawerOpen]);
-
-  // Clear unread when drawer opens
-  useEffect(() => {
-    if (assistantDrawerOpen) {
-      setHasUnreadAssistant(false);
-    }
-  }, [assistantDrawerOpen]);
-
   // All task IDs for keyboard navigation. Navigation is suppressed while the user
   // is typing in the command bar input, so the unfiltered list is correct here.
   const allOrderedIds = useMemo(() => {
@@ -436,8 +413,6 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
         <MobileTabBar
           gitActive={gitHistoryOpen}
           assistantActive={assistantOpen || taskAssistantId !== null}
-          assistantAgentActive={anyAssistantActive}
-          hasUnreadAssistant={hasUnreadAssistant}
           onGitOpen={() => {
             setGitHistoryOpen((o) => !o);
             setActiveTaskId(null);

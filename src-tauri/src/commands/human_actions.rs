@@ -331,9 +331,8 @@ pub fn workflow_restart_stage(
 
 /// Send a message to the agent using the unified `send_message` API.
 ///
-/// Routes to Path A (inline spawn) for tasks awaiting approval or rejection
-/// confirmation, or Path B (queued) for tasks that are awaiting questions,
-/// failed, blocked, or interrupted.
+/// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
+/// Creates a `UserMessage` iteration and transitions to `Queued`.
 #[tauri::command]
 pub fn workflow_send_message(
     registry: State<ProjectRegistry>,

@@ -10,8 +10,6 @@ import { useGitHistory } from "../../providers/GitHistoryProvider";
 interface MobileTabBarProps {
   gitActive: boolean;
   assistantActive: boolean;
-  assistantAgentActive: boolean;
-  hasUnreadAssistant: boolean;
   onGitOpen: () => void;
   onNewTask: () => void;
   onAssistantOpen: () => void;
@@ -20,8 +18,6 @@ interface MobileTabBarProps {
 export function MobileTabBar({
   gitActive,
   assistantActive,
-  assistantAgentActive,
-  hasUnreadAssistant,
   onGitOpen,
   onNewTask,
   onAssistantOpen,
@@ -65,18 +61,8 @@ export function MobileTabBar({
           className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 h-full transition-colors ${assistantActive ? "text-accent" : "text-text-tertiary"}`}
           aria-label="Assistant"
         >
-          <MessageSquare
-            size={20}
-            className={
-              assistantAgentActive && !assistantActive
-                ? "text-status-cyan animate-[forge-pulse-opacity_2s_ease-in-out_infinite]"
-                : ""
-            }
-          />
+          <MessageSquare size={20} />
           <span className="font-mono text-[10px]">Assistant</span>
-          {hasUnreadAssistant && !assistantActive && (
-            <span className="absolute top-2 right-[calc(50%-12px)] w-1.5 h-1.5 rounded-full bg-status-cyan" />
-          )}
         </button>
       </div>
     </div>

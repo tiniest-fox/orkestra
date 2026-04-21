@@ -257,12 +257,6 @@ api.iteration_service.create_iteration(&task.id, "review", None).unwrap();
 
 Forgetting this used to produce a silent fallback artifact ID. Now it surfaces as an error, exposing the gap.
 
-### Known Test Gaps in `send_message.rs`
-
-One gap in the `buffer_or_persist` state machine coverage (in `workflow/stage_chat/interactions/send_message.rs`):
-
-- **Fenced JSON + trailing prose: unit-tested but no integration test.** The raw JSON + trailing prose variant has an integration test (`integration_trailing_prose_after_json_all_reach_store`), but the fenced JSON variant only has a unit test (`fenced_json_then_trailing_prose_flushes_after_close`). Risk is low — same code path — but worth closing if this area is modified again.
-
 ### Known Test Gaps in `init.rs`
 
 Two gaps exist in `test_checks_script_is_executable` (the `ensure_orkestra_project` test):

@@ -22,6 +22,7 @@ use orkestra_core::{
         TaskCreationMode, TaskState, TaskView, WorkflowApi,
     },
 };
+use orkestra_types::config::workflow::WorkflowConfig;
 
 mod play;
 use orkestra_networking::generate_pairing_code;
@@ -79,7 +80,9 @@ enum Commands {
     },
     /// Generate a pairing code for daemon access
     Pair,
-    /// Run a Trak through all workflow stages non-interactively
+    /// List available workflow flows
+    Flows,
+    /// Create and run a Trak to completion in the foreground (no daemon needed)
     Play {
         /// Trak description
         description: String,
@@ -89,7 +92,7 @@ enum Commands {
         /// Base branch for the Trak worktree
         #[arg(short, long)]
         base_branch: Option<String>,
-        /// Assign Trak to a named flow
+        /// Assign Trak to a named flow (run `ork flows` to list available flows)
         #[arg(long)]
         flow: Option<String>,
         /// Skip merge to base branch after completion
@@ -129,7 +132,7 @@ enum TaskAction {
         #[arg(long)]
         git: bool,
     },
-    /// Create a new Trak
+    /// Create a new Trak (queues it for the desktop app or daemon to run)
     Create {
         /// Trak title
         #[arg(short, long)]
@@ -140,9 +143,12 @@ enum TaskAction {
         /// Base branch for the Trak worktree
         #[arg(short, long)]
         base_branch: Option<String>,
-        /// Assign Trak to a named flow (e.g., "quick", "hotfix")
+        /// Assign Trak to a named flow (run `ork flows` to list available flows)
         #[arg(long)]
         flow: Option<String>,
+        /// Set auto mode — Trak runs through stages without pausing for approval. Use `ork play` to also run it in the foreground.
+        #[arg(long)]
+        auto: bool,
     },
     /// Approve the current stage artifact
     Approve {
@@ -267,6 +273,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Flows => {
+            if let Err(e) = handle_flows(cli.pretty) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Commands::Play {
             description,
             title,
@@ -308,6 +320,53 @@ fn handle_pair() -> Result<(), String> {
     Ok(())
 }
 
+fn handle_flows(pretty: bool) -> Result<(), String> {
+    let project_root =
+        find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
+    let config = load_workflow_for_project(&project_root)
+        .map_err(|e| format!("Failed to load workflow config: {e}"))?;
+
+    if pretty {
+        print_flows_table(&config);
+    } else {
+        output_json(&config.flow_names());
+    }
+    Ok(())
+}
+
+fn print_flows_table(config: &WorkflowConfig) {
+    if config.flows.is_empty() {
+        println!("No flows configured.");
+        return;
+    }
+
+    println!(
+        "{:<20} {:<50} {:<15} {:<10}",
+        "Name", "Stages", "On Failure", "Auto Merge"
+    );
+    println!("{}", "-".repeat(95));
+
+    for (name, flow) in &config.flows {
+        let stages = flow
+            .stages
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" → ");
+        println!(
+            "{:<20} {:<50} {:<15} {:<10}",
+            name,
+            stages,
+            flow.integration.on_failure,
+            if flow.integration.auto_merge {
+                "yes"
+            } else {
+                "no"
+            },
+        );
+    }
+}
+
 fn handle_task_action(action: TaskAction, pretty: bool) {
     let api = match init_workflow_api() {
         Ok(api) => api,
@@ -342,12 +401,14 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             description,
             base_branch,
             flow,
+            auto,
         } => handle_create_task(
             &api,
             &title,
             &description,
             base_branch.as_deref(),
             flow.as_deref(),
+            auto,
             pretty,
         ),
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
@@ -487,15 +548,15 @@ fn handle_create_task(
     description: &str,
     base_branch: Option<&str>,
     flow: Option<&str>,
+    auto: bool,
     pretty: bool,
 ) {
-    let task = match api.create_task_with_options(
-        title,
-        description,
-        base_branch,
-        TaskCreationMode::Normal,
-        flow,
-    ) {
+    let mode = if auto {
+        TaskCreationMode::AutoMode
+    } else {
+        TaskCreationMode::Normal
+    };
+    let task = match api.create_task_with_options(title, description, base_branch, mode, flow) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error creating trak: {e}");

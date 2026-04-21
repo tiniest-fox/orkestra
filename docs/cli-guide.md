@@ -29,11 +29,12 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 - `--git`: Show git state (branch, HEAD, dirty status)
 
 **`ork trak create -t <TITLE> -d <DESCRIPTION> [OPTIONS]`**
-- Creates new Trak
+- Creates new Trak and queues it for the desktop app or daemon to run
 - `-t, --title`: Trak title (required)
 - `-d, --description`: Trak description (required)
 - `-b, --base-branch`: Base branch for worktree (optional)
-- `--flow <NAME>`: Assign Trak to a named flow (e.g., "quick", "hotfix")
+- `--flow <NAME>`: Assign Trak to a named flow (run `ork flows` to list available flows)
+- `--auto`: Set auto mode — Trak runs through stages without pausing for approval. Use `ork play` to also run it in the foreground.
 - Creates worktree at `.orkestra/.worktrees/<task-id>` and branch `task/<task-id>` if git available
 
 **`ork trak approve <ID>`**
@@ -68,6 +69,39 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 - `-m, --message`: Optional message to guide the agent on resume
 - Creates new iteration with `ManualResume` trigger, returns to `Idle` phase
 - Requires Trak in `Interrupted` phase
+
+### Flows
+
+**`ork flows`**
+- Lists all available workflow flows defined in `.orkestra/workflow.yaml`
+- Default output: JSON array of flow names (scriptable)
+- `--pretty`: Table showing name, stages (arrow-joined), on_failure stage, and auto_merge
+
+Example output (default):
+```json
+["default","quick","hotfix"]
+```
+
+Example output (`--pretty`):
+```
+Name                 Stages                                             On Failure      Auto Merge
+-----------------------------------------------------------------------------------------------
+default              planning → work → review                          work            no
+quick                work                                              work            no
+hotfix               work → review                                     work            yes
+```
+
+### Which command to use
+
+| | Creates Trak | Sets Auto Mode | Runs in Foreground |
+|---|---|---|---|
+| `ork trak create` | Yes | No | No |
+| `ork trak create --auto` | Yes | Yes | No |
+| `ork play` | Yes | Yes | Yes |
+
+- **`ork trak create`**: Queues a Trak for the desktop app or daemon to pick up and run.
+- **`ork trak create --auto`**: Same, but the Trak advances through stages without pausing for human approval.
+- **`ork play`**: Creates and runs a Trak to completion in the foreground — no daemon needed.
 
 ### Logs
 

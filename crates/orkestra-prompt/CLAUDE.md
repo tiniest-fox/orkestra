@@ -19,10 +19,11 @@ src/
 │   ├── system_prompt.md
 │   └── resume/         # Resume prompt variants
 │       ├── continue.md
-│       ├── feedback.md
 │       ├── integration.md
 │       ├── answers.md
-│       └── ...
+│       ├── pr_comments.md
+│       ├── malformed_output.md
+│       └── user_message.md
 └── interactions/
     ├── build/          # Initial prompt construction
     │   ├── context.rs      # PromptBuilder
@@ -62,13 +63,11 @@ Enum determining which resume prompt template to use. Priority order when auto-d
 
 Variants:
 - `Continue` — interrupted, continue from last point
-- `Feedback { feedback }` — feedback delivered (from `request_update` or reviewer-override in `reject.rs`)
 - `Integration { message, conflict_files }` — merge conflict
 - `Answers { answers }` — human provided answers
-- `RetryFailed { instructions }` — retry failed task
-- `RetryBlocked { instructions }` — retry blocked task
-- `ManualResume { message }` — user-initiated resume
-- `PrComments { comments, guidance }` — PR review comments
+- `PrComments { comments, checks, guidance }` — PR review comments and failed CI checks
+- `MalformedOutput { error, attempt, max_attempts }` — corrective prompt after malformed agent output
+- `UserMessage { message }` — user sent a message directly; agent should address it and continue
 
 ## Patterns
 

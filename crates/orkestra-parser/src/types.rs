@@ -363,7 +363,7 @@ impl ResumeMarkerType {
 /// Parsed resume marker from a user message.
 #[derive(Debug, Clone)]
 pub struct ResumeMarker {
-    /// Type of resume (continue, feedback, integration).
+    /// Type of resume (continue, integration, answers, initial, user_message).
     pub marker_type: ResumeMarkerType,
     /// Content after the marker.
     pub content: String,

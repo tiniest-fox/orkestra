@@ -147,9 +147,9 @@ describe("AgentTab — compose area visibility and behavior", () => {
     expect(screen.getByTestId("chat-compose-area")).toBeDefined();
   });
 
-  it("does not render ChatComposeArea when only needs_review is true (awaiting_approval — send_message unsupported)", () => {
+  it("renders ChatComposeArea when needs_review is true (awaiting_approval)", () => {
     renderAgentTab({ needs_review: true });
-    expect(screen.queryByTestId("chat-compose-area")).toBeNull();
+    expect(screen.getByTestId("chat-compose-area")).toBeDefined();
   });
 
   it("does not render ChatComposeArea when task is queued (not working, reviewing, interrupted, failed, or blocked)", () => {

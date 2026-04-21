@@ -312,7 +312,8 @@ pub fn send_to_stage(ctx: &CommandContext, params: &Value) -> Result<Value, Erro
 
 /// Sends a message to the agent via the unified `send_message` API.
 ///
-/// Valid from `AwaitingQuestionAnswer`, `Failed`, `Blocked`, `Interrupted`.
+/// Valid from `AwaitingQuestionAnswer`, `AwaitingApproval`, `AwaitingRejectionConfirmation`,
+/// `Failed`, `Blocked`, `Interrupted`.
 /// Creates a `UserMessage` iteration and transitions to `Queued`.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }`

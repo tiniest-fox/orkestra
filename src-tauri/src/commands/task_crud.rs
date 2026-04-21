@@ -27,10 +27,8 @@ pub fn workflow_get_tasks(
 /// If git service is configured, creates a worktree and branch.
 /// `base_branch` specifies which branch to create from (defaults to current).
 /// `auto_mode` enables autonomous execution through all stages.
-/// `interactive` starts the task in interactive mode (user-directed agent session).
 /// `flow` selects an alternate workflow flow (e.g., `"quick_fix"`). Omit for default full pipeline.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn workflow_create_task(
     registry: State<ProjectRegistry>,
     window: Window,
@@ -38,7 +36,6 @@ pub fn workflow_create_task(
     description: String,
     base_branch: Option<String>,
     auto_mode: Option<bool>,
-    interactive: Option<bool>,
     flow: Option<String>,
 ) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
@@ -47,7 +44,6 @@ pub fn workflow_create_task(
             "description": description,
             "base_branch": base_branch,
             "auto_mode": auto_mode,
-            "interactive": interactive,
             "flow": flow,
         });
         task::create_task(state.command_context(), &params).map_err(Into::into)

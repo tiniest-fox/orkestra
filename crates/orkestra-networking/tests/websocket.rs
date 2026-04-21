@@ -861,7 +861,6 @@ async fn test_bootstrap_unavailable_without_token() {
 }
 
 /// `create_task` with `auto_mode: true` threads the flag through to the stored task.
-/// `interactive: true` takes priority over `auto_mode` and sets `created_interactive`.
 /// Passing an unknown `flow` name returns `INVALID_TRANSITION`.
 #[tokio::test]
 async fn test_create_task_with_options() {
@@ -884,55 +883,6 @@ async fn test_create_task_with_options() {
     assert_eq!(
         create["result"]["auto_mode"], true,
         "auto_mode should be true on the created task"
-    );
-
-    // Create with interactive: true — should return a task with created_interactive set.
-    let interactive = request(
-        &mut ws,
-        serde_json::json!({
-            "id": "req-interactive",
-            "method": "create_task",
-            "params": { "title": "Interactive task", "description": "", "interactive": true }
-        }),
-    )
-    .await;
-    assert_eq!(interactive["id"], "req-interactive");
-    assert!(
-        interactive["result"].is_object(),
-        "interactive create_task should return a task object"
-    );
-    assert_eq!(
-        interactive["result"]["interactive"], true,
-        "interactive flag should be set on the created task"
-    );
-
-    // interactive: true takes priority over auto_mode: true when both are passed.
-    let both = request(
-        &mut ws,
-        serde_json::json!({
-            "id": "req-both",
-            "method": "create_task",
-            "params": {
-                "title": "Both flags task",
-                "description": "",
-                "interactive": true,
-                "auto_mode": true
-            }
-        }),
-    )
-    .await;
-    assert_eq!(both["id"], "req-both");
-    assert!(
-        both["result"].is_object(),
-        "create_task with both flags should return a task object"
-    );
-    assert_eq!(
-        both["result"]["interactive"], true,
-        "interactive should be set when both flags are passed"
-    );
-    assert_eq!(
-        both["result"]["auto_mode"], false,
-        "auto_mode should not be set when interactive takes priority"
     );
 
     // Create with an unknown flow — should return INVALID_TRANSITION.

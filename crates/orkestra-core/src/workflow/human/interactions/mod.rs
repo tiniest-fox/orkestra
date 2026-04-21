@@ -8,8 +8,6 @@ pub mod address_pr_feedback;
 pub mod answer_questions;
 pub mod approve;
 pub mod archive;
-pub mod enter_interactive;
-pub mod exit_interactive;
 pub mod interrupt;
 pub mod reject;
 pub mod reject_with_comments;

@@ -34,10 +34,6 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "skip_stage",
     "send_to_stage",
     "restart_stage",
-    // Interactive mode
-    "interactive_enter",
-    "interactive_send_message",
-    "interactive_exit",
     // Stage chat
     "stage_chat_send",
     "stage_chat_stop",

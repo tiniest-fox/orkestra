@@ -42,7 +42,7 @@ pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
             task.short_id,
             task.base_commit,
             task.pr_url,
-            task.created_interactive,
+            false,
             resources_json,
         ],
     )

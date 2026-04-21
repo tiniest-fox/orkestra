@@ -119,10 +119,6 @@ pub enum IterationTrigger {
         /// Human-provided context explaining the restart.
         message: String,
     },
-    /// Task exited interactive mode and is returning to structured work.
-    /// Old DB records with `interactive` type deserialize as this variant.
-    #[serde(alias = "interactive")]
-    ReturnFromInteractive,
     /// The agent produced structured output during a chat conversation,
     /// completing the stage without requiring `return_to_work`.
     ChatCompletion,

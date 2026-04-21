@@ -78,7 +78,6 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     subtask_progress: null,
     is_chatting: false,
     chat_agent_active: false,
-    is_interactive: false,
     can_bypass: false,
     ...overrides,
   };
@@ -178,10 +177,6 @@ export function createMockWorkflowTaskView(
     if (state.type === "gate_running") {
       derivedDefaults.is_system_active = true;
     }
-  }
-  // Interactive state
-  if (state.type === "interactive") {
-    derivedDefaults.is_interactive = true;
   }
   // Setup states also set is_preparing (phase_icon already set above)
   if (state.type === "setting_up" || state.type === "awaiting_setup") {

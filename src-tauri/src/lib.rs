@@ -641,10 +641,6 @@ pub fn run() {
             commands::assistant_get_logs,
             commands::assistant_send_task_message,
             commands::assistant_list_project_sessions,
-            // Interactive mode commands
-            commands::interactive_enter,
-            commands::interactive_send_message,
-            commands::interactive_exit,
             // Stage chat commands
             commands::stage_chat_send,
             commands::stage_chat_stop,

@@ -45,30 +45,6 @@ impl WorkflowApi {
         )
     }
 
-    /// Create a new task in interactive mode.
-    ///
-    /// The task is created with `created_interactive: true` flag. After worktree setup completes,
-    /// the task transitions to `Interactive` state instead of `Queued`.
-    pub fn create_interactive_task(
-        &self,
-        title: &str,
-        description: &str,
-        base_branch: Option<&str>,
-        flow: Option<&str>,
-    ) -> WorkflowResult<Task> {
-        task_interactions::create::execute(
-            self.store.as_ref(),
-            &self.workflow,
-            self.git_service.as_deref(),
-            &self.iteration_service,
-            title,
-            description,
-            base_branch,
-            TaskCreationMode::Interactive,
-            flow,
-        )
-    }
-
     /// Create a new subtask under a parent task.
     pub fn create_subtask(
         &self,

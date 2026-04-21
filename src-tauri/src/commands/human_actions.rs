@@ -3,7 +3,7 @@
 use crate::{error::TauriError, project_registry::ProjectRegistry};
 use orkestra_core::orkestra_debug;
 use orkestra_core::workflow::{spawn_merge_integration, spawn_pr_creation, Task};
-use orkestra_networking::{action, interactive};
+use orkestra_networking::action;
 use serde_json::Value;
 use tauri::{Emitter, State, Window};
 
@@ -377,60 +377,6 @@ pub fn workflow_restart_stage(
     registry.with_project(window.label(), |state| {
         let params = serde_json::json!({ "task_id": task_id, "message": message });
         action::restart_stage(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Enter interactive mode for a task.
-///
-/// Transitions the task to `Interactive` state so the user can direct the agent
-/// via `interactive_send_message`. The task must be in a bypassable state.
-#[tauri::command]
-pub fn interactive_enter(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "interactive_enter {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id });
-        interactive::enter(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Send a message to the interactive session for a task.
-///
-/// Creates a new interactive agent session if none exists, or reuses the existing one.
-/// The agent runs with full editing capabilities in the task's worktree.
-#[tauri::command]
-pub fn interactive_send_message(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-    message: String,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "interactive_send_message {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id, "message": message });
-        interactive::send_message(state.command_context(), &params).map_err(Into::into)
-    })
-}
-
-/// Exit interactive mode, returning the task to the pipeline or marking it Done.
-///
-/// Kills the interactive agent session if running, commits pending changes, and
-/// transitions the task: `target_stage: Some(s)` queues at that stage;
-/// `target_stage: None` marks the task as Done.
-#[tauri::command]
-pub fn interactive_exit(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-    target_stage: Option<String>,
-) -> Result<Value, TauriError> {
-    orkestra_debug!("tauri", "interactive_exit {task_id}");
-    registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "task_id": task_id, "target_stage": target_stage });
-        interactive::exit(state.command_context(), &params).map_err(Into::into)
     })
 }
 

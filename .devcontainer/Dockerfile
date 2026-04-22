@@ -37,7 +37,7 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         > /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
-    npm install -g @anthropic-ai/claude-code pnpm && \
+    npm install -g @anthropic-ai/claude-code pnpm typescript typescript-language-server && \
     rm -rf /var/lib/apt/lists/*
 # Pre-fetch all cargo dependencies (including git deps like fix-path-env from
 # src-tauri) at build time, then open up permissions so any non-root user

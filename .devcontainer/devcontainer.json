@@ -9,7 +9,7 @@
   ],
   "customizations": {
     "orkestra": {
-      "plugins": ["rust-analyzer-lsp"]
+      "plugins": ["rust-analyzer-lsp", "typescript-lsp"]
     }
   }
 }

@@ -161,6 +161,12 @@ cargo test -p orkestra-core          # Fast: single crate
 cargo test --workspace               # Full: before declaring done
 ```
 
+## LSP Tools
+
+This project has LSP support for Rust (rust-analyzer) and TypeScript. Prefer the LSP tool over Grep when navigating by symbol: finding definitions, locating all usages, tracing call hierarchies, or finding trait/interface implementations. Grep is still correct for text and pattern searches (string literals, comments, free-form patterns).
+
+LSP operations are position-based — Read the file first to find the line, then call the LSP tool with that position.
+
 ## CLI Usage During Development
 
 Run `ork` commands during development using the wrapper script:

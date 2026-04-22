@@ -1,6 +1,6 @@
 // Collapsible card for displaying an artifact produced during agent execution.
 
-import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useRichCodeBlocks } from "../../hooks/useRichCodeBlocks";
@@ -75,7 +75,7 @@ export function ArtifactLogCard({
   }
 
   return (
-    <div className={`my-1 ${superseded ? "opacity-50" : ""}`}>
+    <div className={`my-1 ${superseded ? "opacity-60" : ""}`}>
       {isActionable ? (
         // Enhanced header for latest artifact — sticky wrapper with a canvas-colored cap to block
         // content scrolling through the gap above the header.
@@ -124,19 +124,29 @@ export function ArtifactLogCard({
           </div>
         </div>
       ) : (
-        // Simple header for feed/superseded contexts.
+        // Card-style header for feed/superseded contexts — matches actionable path visually but without sticky wrapper or approve button.
         <button
           type="button"
-          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-2 rounded-lg w-full text-left"
+          className={`flex items-center justify-between px-3 py-2 cursor-pointer select-none hover:bg-surface-2 bg-surface border border-border w-full text-left ${expanded ? "rounded-t-lg" : "rounded-lg"}`}
           onClick={toggle}
         >
-          <ChevronRight
-            size={14}
-            className={`text-text-tertiary transition-transform ${expanded ? "rotate-90" : ""}`}
-          />
-          <span className="font-mono text-forge-mono-sm text-text-secondary">
-            Generated {artifact.name}
-          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <ArtifactBadge
+              artifactName={artifact.name}
+              verdict={verdict}
+              rejectionTarget={rejectionTarget}
+            />
+            <span className="text-forge-mono-label text-text-tertiary truncate">
+              Iteration {artifact.iteration} · {formatTimestamp(artifact.created_at)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            {expanded ? (
+              <ChevronUp className="w-4 h-4 text-text-tertiary" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-text-tertiary" />
+            )}
+          </div>
         </button>
       )}
       {expanded && (

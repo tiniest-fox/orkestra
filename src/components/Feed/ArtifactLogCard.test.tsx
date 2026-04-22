@@ -139,6 +139,22 @@ describe("ArtifactLogCard", () => {
     expect(card.className).not.toContain("opacity-60");
   });
 
+  it("body container omits bg-surface when superseded (blends into canvas)", () => {
+    const { container } = render(<ArtifactLogCard artifact={baseArtifact} superseded />);
+    fireEvent.click(screen.getByRole("button"));
+    const bodyDiv = container.querySelector(".rounded-b-lg");
+    expect(bodyDiv).not.toBeNull();
+    expect(bodyDiv?.className).not.toContain("bg-surface");
+  });
+
+  it("body container has bg-surface when not superseded (white card)", () => {
+    const { container } = render(<ArtifactLogCard artifact={baseArtifact} />);
+    fireEvent.click(screen.getByRole("button"));
+    const bodyDiv = container.querySelector(".rounded-b-lg");
+    expect(bodyDiv).not.toBeNull();
+    expect(bodyDiv?.className).toContain("bg-surface");
+  });
+
   it("renders inline gate entries when expanded and gateEntries provided", () => {
     const gateEntries: LogEntry[] = [
       { type: "gate_started", command: "checks.sh" },

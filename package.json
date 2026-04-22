@@ -23,7 +23,7 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "test-storybook": "test-storybook",
-    "screenshot-stories": "storybook build && storycap --serverCmd \"http-server storybook-static -p 6007 --silent\" --puppeteerLaunchConfig '{\"executablePath\":\"/usr/local/ms-playwright/chromium-1217/chrome-linux/chrome\",\"args\":[\"--no-sandbox\",\"--disable-setuid-sandbox\"]}' http://localhost:6007 --outDir .orkestra/.screenshots",
+    "screenshot-stories": "storybook build && storycap --serverCmd \"http-server storybook-static -p 6007 --silent\" --puppeteerLaunchConfig '{\"executablePath\":\"/usr/local/bin/playwright-chromium\",\"args\":[\"--no-sandbox\",\"--disable-setuid-sandbox\"]}' http://localhost:6007 --outDir .orkestra/.screenshots",
     "devtools": "react-devtools",
     "debug": "react-devtools & pnpm tauri dev"
   },

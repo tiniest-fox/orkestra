@@ -647,7 +647,7 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
                     <ShieldX className="w-4 h-4 text-status-error" />
                   ) : (
                     <Shield
-                      className={`w-4 h-4 ${item.artifactContext.isGateRunning ? "text-accent animate-spin-bounce" : ""}`}
+                      className={`w-4 h-4 ${item.artifactContext.isGateRunning ? "text-status-info animate-spin-bounce" : ""}`}
                     />
                   )}
                 </button>
@@ -712,6 +712,12 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
                 }
                 return null;
               })}
+              {item.isGateRunning && (
+                <div className="flex items-center gap-2 py-1.5 text-status-info">
+                  <span className="w-3 h-3 border-2 border-status-info/40 border-t-status-info rounded-full animate-spin shrink-0" />
+                  <span className="font-mono text-forge-mono-sm">Running gate checks…</span>
+                </div>
+              )}
             </div>
           ) : (
             <ArtifactLogCard artifact={item.artifact} bodyOnly />

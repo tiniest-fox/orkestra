@@ -343,8 +343,6 @@ pub enum ResumeMarkerType {
     Answers,
     /// Initial agent prompt (first spawn, not a resume).
     Initial,
-    /// User sent a message directly to the agent.
-    UserMessage,
 }
 
 impl ResumeMarkerType {
@@ -355,7 +353,6 @@ impl ResumeMarkerType {
             Self::Integration => "integration",
             Self::Answers => "answers",
             Self::Initial => "initial",
-            Self::UserMessage => "user_message",
         }
     }
 }

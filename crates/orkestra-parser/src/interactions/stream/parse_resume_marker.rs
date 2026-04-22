@@ -28,7 +28,6 @@ pub fn execute(text: &str) -> Option<ResumeMarker> {
                 "continue" => ResumeMarkerType::Continue,
                 "integration" => ResumeMarkerType::Integration,
                 "answers" => ResumeMarkerType::Answers,
-                "user_message" => ResumeMarkerType::UserMessage,
                 _ => return None,
             };
             Some(ResumeMarker {
@@ -70,6 +69,8 @@ mod tests {
         assert!(execute("").is_none());
         // Removed variants fall through to _ => None
         assert!(execute("<!orkestra:resume:review:feedback>\n\nPlease fix this bug").is_none());
+        // user_message marker is no longer emitted — raw text is used instead
+        assert!(execute("<!orkestra:resume:work:user_message>\n\nFix the bug").is_none());
     }
 
     #[test]
@@ -89,18 +90,6 @@ mod tests {
         assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
         assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
-        assert_eq!(ResumeMarkerType::UserMessage.as_str(), "user_message");
-    }
-
-    #[test]
-    fn test_parse_resume_marker_user_message() {
-        let marker = execute(
-            "<!orkestra:resume:work:user_message>\n\nPlease add error handling for this edge case.",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::UserMessage);
-        assert!(marker.content.contains("error handling"));
     }
 
     #[test]

@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_async_emits_user_message_for_orkestra_prompt() {
+    fn test_run_async_emits_user_message_for_raw_prompt() {
         let runner = MockAgentRunner::new();
         runner.set_output(
             "task-1",
@@ -396,17 +396,16 @@ mod tests {
             },
         );
 
-        let prompt = "<!orkestra:resume:work:user_message>\n\nFix the bug";
+        // Raw user messages have no marker prefix — verify the marker parser returns None.
+        let prompt = "Fix the bug";
         let config = RunConfig::new("/tmp", prompt, TEST_SCHEMA).with_task_id("task-1");
         let (_pid, rx) = runner.run_async(config).unwrap();
 
-        // MockAgentRunner doesn't emit the UserMessage (it's an AgentRunner concern),
-        // so test parse_resume_marker directly to verify the runner logic works.
         let marker = orkestra_parser::interactions::stream::parse_resume_marker::execute(prompt);
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type.as_str(), "user_message");
-        assert_eq!(marker.content, "Fix the bug");
+        assert!(
+            marker.is_none(),
+            "raw user messages must not parse as markers"
+        );
 
         // Verify mock still sends completion
         let mut events = Vec::new();

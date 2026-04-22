@@ -884,20 +884,27 @@ export function MessageList({
   );
 
   // Auto-switch gate view based on gate state transitions.
-  const gateState = useMemo(() => {
-    const body = virtualItems.find((v) => v.kind === "artifact-body");
-    if (body?.kind !== "artifact-body" || !body.gateEntries?.length) return null;
-    return { isRunning: body.isGateRunning, passed: body.gatePassed };
-  }, [virtualItems]);
+  // Extract primitives so the effect only fires when values actually change, not on every
+  // render that produces a new gateState object reference (which would reset manual toggles).
+  const gateBodyItem = useMemo(
+    () =>
+      virtualItems.find(
+        (v): v is Extract<VirtualItem, { kind: "artifact-body" }> => v.kind === "artifact-body",
+      ),
+    [virtualItems],
+  );
+  const gateExists = (gateBodyItem?.gateEntries?.length ?? 0) > 0;
+  const isGateRunning = gateExists && (gateBodyItem?.isGateRunning ?? false);
+  const gatePassed = gateExists && (gateBodyItem?.gatePassed ?? false);
 
   useEffect(() => {
-    if (!gateState) return;
-    if (gateState.isRunning)
+    if (!gateExists) return;
+    if (isGateRunning)
       setGateView(true); // Gate started → show output
-    else if (gateState.passed)
+    else if (gatePassed)
       setGateView(false); // Gate passed → show artifact
     else setGateView(true); // Gate failed → show gate logs
-  }, [gateState?.isRunning, gateState?.passed, gateState]);
+  }, [gateExists, isGateRunning, gatePassed]);
 
   // -- Auto-scroll state (only relevant when isScrollContainer) --
   const internalContainerRef = useRef<HTMLDivElement | null>(null);
@@ -989,28 +996,11 @@ export function MessageList({
       // Latest item is an artifact — scroll to its header so the user sees the top,
       // not the bottom of a potentially long artifact body.
       //
-      // Use getItemOffset + scrollTop (same as the sticky activation logic) rather than
-      // scrollToIndex — scrollToIndex is unreliable before Virtua has measured items and
-      // may be a no-op on early frames.
-      let retries = 0;
-      let prevOffset = -1;
-      let gracesRemaining = 8;
-      const step = () => {
-        const el = internalContainerRef.current;
-        if (!el || retries >= 60 || isUserScrolledUpRef.current) return;
-        retries++;
-        const offset = virtualizerRef.current?.getItemOffset(artifactHeaderIdx) ?? -1;
-        if (offset !== -1) el.scrollTop = offset;
-        if (offset !== prevOffset) {
-          prevOffset = offset;
-          gracesRemaining = 8;
-          rafId = requestAnimationFrame(step);
-        } else if (gracesRemaining-- > 0) {
-          rafId = requestAnimationFrame(step);
-        }
-      };
-      rafId = requestAnimationFrame(step);
-      return () => cancelAnimationFrame(rafId);
+      // scrollToIndex handles unmeasured items natively: it runs an internal async
+      // retry loop, re-scrolling each time ResizeObserver fires with new measurements,
+      // until the offset stabilizes (no update within 150ms).
+      virtualizerRef.current?.scrollToIndex(artifactHeaderIdx, { align: "start" });
+      return;
     }
 
     // No artifact — scroll to bottom and chase Virtua's async measurements.

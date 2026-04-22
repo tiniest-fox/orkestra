@@ -27,5 +27,6 @@ export const PROSE_CLASSES = [
   "prose-pre:bg-canvas prose-pre:text-text-primary prose-pre:font-mono prose-pre:my-2",
   "prose-blockquote:text-text-tertiary prose-blockquote:border-border prose-blockquote:my-1.5",
   "prose-hr:border-border prose-hr:my-2",
+  "prose-th:text-text-primary prose-td:text-text-primary",
   "artifact-prose",
 ].join(" ");

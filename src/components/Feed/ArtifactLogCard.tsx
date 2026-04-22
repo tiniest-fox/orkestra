@@ -4,8 +4,9 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useRichCodeBlocks } from "../../hooks/useRichCodeBlocks";
-import type { WorkflowArtifact } from "../../types/workflow";
+import type { LogEntry, WorkflowArtifact } from "../../types/workflow";
 import { formatTimestamp } from "../../utils";
+import { AnsiText } from "../../utils/ansi";
 import { PROSE_CLASSES } from "../../utils/prose";
 import { Button } from "../ui/Button";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
@@ -19,8 +20,10 @@ interface ArtifactLogCardProps {
   rejectionTarget?: string;
   onApprove?: () => void;
   loading?: boolean;
-  /** When true, dims the card (superseded by a later artifact). */
+  /** When true, renders without white card background so the card blends into the chat canvas. */
   superseded?: boolean;
+  /** Gate log entries to render inline below the artifact body when expanded. */
+  gateEntries?: LogEntry[];
   /** When true, renders only the body — the header is a separate Virtua item above. */
   bodyOnly?: boolean;
 }
@@ -33,6 +36,7 @@ export function ArtifactLogCard({
   onApprove,
   loading,
   superseded,
+  gateEntries,
   bodyOnly,
 }: ArtifactLogCardProps) {
   // Default expanded when latest artifact needs review; collapsed for feed/superseded.
@@ -43,6 +47,8 @@ export function ArtifactLogCard({
   const toggle = () => setExpanded((v) => !v);
 
   const isActionable = onApprove !== undefined;
+  // Superseded cards blend into the chat canvas — no white card background.
+  const cardBg = superseded ? "" : "bg-surface";
 
   const bodyContent = (
     <>
@@ -75,7 +81,7 @@ export function ArtifactLogCard({
   }
 
   return (
-    <div className={`my-1 ${superseded ? "opacity-60" : ""}`}>
+    <div className="my-1">
       {isActionable ? (
         // Enhanced header for latest artifact — sticky wrapper with a canvas-colored cap to block
         // content scrolling through the gap above the header.
@@ -127,7 +133,7 @@ export function ArtifactLogCard({
         // Card-style header for feed/superseded contexts — matches actionable path visually but without sticky wrapper or approve button.
         <button
           type="button"
-          className={`flex items-center justify-between px-3 py-2 cursor-pointer select-none hover:bg-surface-2 bg-surface border border-border w-full text-left ${expanded ? "rounded-t-lg" : "rounded-lg"}`}
+          className={`flex items-center justify-between px-3 py-2 cursor-pointer select-none hover:bg-surface-2 ${cardBg} border border-border w-full text-left ${expanded ? "rounded-t-lg" : "rounded-lg"}`}
           onClick={toggle}
         >
           <div className="flex items-center gap-2 min-w-0">
@@ -150,8 +156,44 @@ export function ArtifactLogCard({
         </button>
       )}
       {expanded && (
-        <div className="relative z-0 border-l border-r border-b border-border rounded-b-lg bg-surface px-3 pt-2 pb-3">
+        <div
+          className={`relative z-0 border-l border-r border-b border-border rounded-b-lg ${cardBg} px-3 pt-2 pb-3`}
+        >
           {bodyContent}
+          {gateEntries && gateEntries.length > 0 && (
+            <div className="border-t border-border mt-2 pt-2">
+              {gateEntries.map((ge, idx) => {
+                if (ge.type === "gate_started") {
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <div key={idx} className="font-mono text-forge-mono-sm text-text-tertiary py-1">
+                      Running: {ge.command}
+                    </div>
+                  );
+                }
+                if (ge.type === "gate_output") {
+                  const outputCls =
+                    "font-mono text-forge-mono-sm whitespace-pre-wrap text-text-secondary py-0.5";
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <pre key={idx} className={outputCls}>
+                      <AnsiText text={ge.content} />
+                    </pre>
+                  );
+                }
+                if (ge.type === "gate_completed") {
+                  const cls = `font-mono text-forge-mono-sm py-1 ${ge.passed ? "text-status-success" : "text-status-error"}`;
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <div key={idx} className={cls}>
+                      {ge.passed ? "Gate passed" : `Gate failed (exit ${ge.exit_code})`}
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -393,6 +393,71 @@ describe("buildVirtualItems", () => {
     expect(hasGateEntry).toBe(true);
   });
 
+  it("collects gate entries following a superseded artifact into gateEntries on the agent-entry item", () => {
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "work",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    const latestArtifact: WorkflowArtifact = { ...artifact, iteration: 2 };
+    const entries: LogEntry[] = [
+      { type: "artifact_produced", name: "plan", artifact_id: "art-1", artifact },
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "output" },
+      { type: "gate_completed", exit_code: 1, passed: false },
+      { type: "artifact_produced", name: "plan", artifact_id: "art-2", artifact: latestArtifact },
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "art-2",
+    });
+    // The superseded artifact agent-entry should carry the gate entries
+    const supersededEntry = items.find(
+      (i) => i.kind === "agent-entry" && i.entry.type === "artifact_produced",
+    );
+    expect(supersededEntry).toBeDefined();
+    if (supersededEntry?.kind === "agent-entry") {
+      expect(supersededEntry.gateEntries).toHaveLength(3);
+      expect(supersededEntry.gateEntries?.[0].type).toBe("gate_started");
+      expect(supersededEntry.gateEntries?.[2].type).toBe("gate_completed");
+    }
+  });
+
+  it("gate entries following a superseded artifact do not appear as standalone agent-entry items", () => {
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "work",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    const latestArtifact: WorkflowArtifact = { ...artifact, iteration: 2 };
+    const entries: LogEntry[] = [
+      { type: "artifact_produced", name: "plan", artifact_id: "art-1", artifact },
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "output" },
+      { type: "gate_completed", exit_code: 1, passed: false },
+      { type: "artifact_produced", name: "plan", artifact_id: "art-2", artifact: latestArtifact },
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "art-2",
+    });
+    // Gate entries must not appear as standalone agent-entry items
+    const standaloneGateItems = items.filter(
+      (i) =>
+        i.kind === "agent-entry" &&
+        (i.entry.type === "gate_started" ||
+          i.entry.type === "gate_output" ||
+          i.entry.type === "gate_completed"),
+    );
+    expect(standaloneGateItems).toHaveLength(0);
+  });
+
   it("passes latestArtifactId so superseded entries can be identified", () => {
     const baseArtifact: WorkflowArtifact = {
       name: "plan",

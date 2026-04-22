@@ -176,6 +176,7 @@ type VirtualItem =
       latestArtifactId?: string;
       taskResources?: Record<string, WorkflowResource>;
       isBlockEnd: boolean;
+      gateEntries?: LogEntry[];
     }
   // The latest actionable artifact is split into two items so the sticky header lives in its
   // own Virtua entry, separate from the body. This lets sticky top-0 on the header apply
@@ -266,6 +267,36 @@ export function buildVirtualItems(
           }
         }
 
+        // Collect gate entries following a superseded artifact so they render
+        // inline inside the artifact card rather than as separate timeline items.
+        let supersededGateEntries: LogEntry[] | undefined;
+        if (
+          entry.type === "artifact_produced" &&
+          entry.artifact &&
+          opts.latestArtifactId !== undefined &&
+          entry.artifact_id !== opts.latestArtifactId
+        ) {
+          const gates: LogEntry[] = [];
+          let k = j + 1;
+          while (k < grouped.length) {
+            const next = grouped[k];
+            if (
+              next.type === "gate_started" ||
+              next.type === "gate_output" ||
+              next.type === "gate_completed"
+            ) {
+              gates.push(next as LogEntry);
+              k++;
+            } else {
+              break;
+            }
+          }
+          if (gates.length > 0) {
+            supersededGateEntries = gates;
+            j = k - 1; // loop will increment to k, skipping collected entries
+          }
+        }
+
         items.push({
           kind: "agent-entry",
           entry,
@@ -273,7 +304,8 @@ export function buildVirtualItems(
           artifactContext: opts.artifactContext,
           latestArtifactId: opts.latestArtifactId,
           taskResources: opts.taskResources,
-          isBlockEnd: isLast,
+          isBlockEnd: j === grouped.length - 1,
+          gateEntries: supersededGateEntries,
         });
       }
       lastAgentBlockEndIndex = items.length - 1;
@@ -328,12 +360,14 @@ export const AgentEntry = memo(function AgentEntry({
   artifactContext,
   latestArtifactId,
   taskResources,
+  gateEntries,
 }: {
   entry: GroupedLogEntry;
   projectRoot?: string;
   artifactContext?: ArtifactContext;
   latestArtifactId?: string;
   taskResources?: Record<string, WorkflowResource>;
+  gateEntries?: LogEntry[];
 }) {
   if (entry.type === "subagent_group") {
     const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
@@ -451,7 +485,11 @@ export const AgentEntry = memo(function AgentEntry({
       }
       return (
         <>
-          <ArtifactLogCard artifact={artifact} superseded={latestArtifactId !== undefined} />
+          <ArtifactLogCard
+            artifact={artifact}
+            superseded={latestArtifactId !== undefined}
+            gateEntries={gateEntries}
+          />
           {resourcesElement}
         </>
       );
@@ -582,6 +620,7 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
             artifactContext={item.artifactContext}
             latestArtifactId={item.latestArtifactId}
             taskResources={item.taskResources}
+            gateEntries={item.gateEntries}
           />
         </div>
       );

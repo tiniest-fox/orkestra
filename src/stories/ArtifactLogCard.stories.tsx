@@ -1,6 +1,7 @@
 // Storybook stories for ArtifactLogCard — superseded, latest (review/approved/rejected), and feed variants.
 import type { Meta, StoryObj } from "@storybook/react";
 import { ArtifactLogCard } from "../components/Feed/ArtifactLogCard";
+import type { LogEntry } from "../types/workflow";
 import { storybookDecorator } from "./storybook-helpers";
 
 const baseArtifact = {
@@ -11,6 +12,26 @@ const baseArtifact = {
   created_at: "2026-01-15T10:30:00Z",
   iteration: 1,
 };
+
+const gatePassedEntries: LogEntry[] = [
+  { type: "gate_started", command: "checks.sh" },
+  {
+    type: "gate_output",
+    content:
+      "cargo fmt -- --check\ncargo clippy -- -D warnings\ncargo test --workspace\n\nAll checks passed.",
+  },
+  { type: "gate_completed", exit_code: 0, passed: true },
+];
+
+const gateFailedEntries: LogEntry[] = [
+  { type: "gate_started", command: "checks.sh" },
+  {
+    type: "gate_output",
+    content:
+      "cargo test --workspace\nFAILED: test_feature_x panicked at src/lib.rs:42\n  assertion failed: result == expected",
+  },
+  { type: "gate_completed", exit_code: 1, passed: false },
+];
 
 const meta = {
   title: "Feed/ArtifactLogCard",
@@ -27,18 +48,42 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Superseded artifact — muted card with badge, iteration, and timestamp. Collapsed by default. */
+/** Superseded artifact — transparent background, blends into chat canvas. Collapsed by default. */
 export const Superseded: Story = {
   args: {
     superseded: true,
   },
 };
 
-/** Superseded artifact expanded to show content. */
+/** Superseded artifact expanded to show content — no white card background. */
 export const SupersededExpanded: Story = {
   args: {
     superseded: true,
     artifact: { ...baseArtifact, iteration: 1 },
+  },
+  play: async ({ canvasElement }) => {
+    const button = canvasElement.querySelector("button");
+    button?.click();
+  },
+};
+
+/** Superseded artifact expanded with gate logs attached inline (gate passed). */
+export const SupersededWithGatePassed: Story = {
+  args: {
+    superseded: true,
+    gateEntries: gatePassedEntries,
+  },
+  play: async ({ canvasElement }) => {
+    const button = canvasElement.querySelector("button");
+    button?.click();
+  },
+};
+
+/** Superseded artifact expanded with gate logs attached inline (gate failed). */
+export const SupersededWithGateFailed: Story = {
+  args: {
+    superseded: true,
+    gateEntries: gateFailedEntries,
   },
   play: async ({ canvasElement }) => {
     const button = canvasElement.querySelector("button");

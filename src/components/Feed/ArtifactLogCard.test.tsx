@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { WorkflowArtifact } from "../../types/workflow";
+import type { LogEntry, WorkflowArtifact } from "../../types/workflow";
 import { ArtifactLogCard } from "./ArtifactLogCard";
 
 vi.mock("../../hooks/useRichCodeBlocks", () => ({
@@ -125,18 +125,46 @@ describe("ArtifactLogCard", () => {
     expect(screen.getByText("Rejected")).toBeInTheDocument();
   });
 
-  // Superseded mode (earlier artifact, dimmed)
+  // Superseded mode (blends into chat canvas background)
 
-  it("applies opacity-60 when superseded", () => {
+  it("does not apply opacity-60 when superseded", () => {
     const { container } = render(<ArtifactLogCard artifact={baseArtifact} superseded />);
     const card = container.firstChild as HTMLElement;
-    expect(card.className).toContain("opacity-60");
+    expect(card.className).not.toContain("opacity-60");
   });
 
   it("does not apply opacity-60 when not superseded", () => {
     const { container } = render(<ArtifactLogCard artifact={baseArtifact} />);
     const card = container.firstChild as HTMLElement;
     expect(card.className).not.toContain("opacity-60");
+  });
+
+  it("renders inline gate entries when expanded and gateEntries provided", () => {
+    const gateEntries: LogEntry[] = [
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "Running tests..." },
+      { type: "gate_completed", exit_code: 0, passed: true },
+    ];
+    render(<ArtifactLogCard artifact={baseArtifact} superseded gateEntries={gateEntries} />);
+    // Expand the card first
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText(/Running: checks.sh/)).toBeInTheDocument();
+    expect(screen.getByText("Running tests...")).toBeInTheDocument();
+    expect(screen.getByText("Gate passed")).toBeInTheDocument();
+  });
+
+  it("renders gate failure message with exit code", () => {
+    const gateEntries: LogEntry[] = [{ type: "gate_completed", exit_code: 1, passed: false }];
+    render(<ArtifactLogCard artifact={baseArtifact} superseded gateEntries={gateEntries} />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("Gate failed (exit 1)")).toBeInTheDocument();
+  });
+
+  it("does not render gate entries when collapsed", () => {
+    const gateEntries: LogEntry[] = [{ type: "gate_started", command: "checks.sh" }];
+    render(<ArtifactLogCard artifact={baseArtifact} superseded gateEntries={gateEntries} />);
+    // Card starts collapsed — gate entries should not be visible
+    expect(screen.queryByText(/Running: checks.sh/)).not.toBeInTheDocument();
   });
 
   it("shows ChevronDown icon when collapsed (not ChevronRight)", () => {

@@ -106,15 +106,15 @@ cat > /home/orkestra/.gitconfig << 'GITCONFIG'
 GITCONFIG
 chown 1000:1000 /home/orkestra/.gitconfig
 
-# -- Bootstrap Claude credentials into the per-project named volume --
+# -- Sync Claude credentials into the per-project named volume --
 # /home/orkestra/.claude is a Docker named volume, isolated per project.
-# On first container start, copy top-level auth files from the read-only global
-# auth dir so the agent can authenticate without manual re-login.
+# On every container start, overwrite top-level auth files from the read-only
+# global auth dir so re-logging in on the host is automatically picked up on
+# the next restart without manual intervention.
 # Plugin state (subdirectory) is intentionally excluded — it contains
 # host-absolute paths that would be wrong inside the container.
 
-if [ -d "/run/claude-global" ] && \
-   [ ! -f "/home/orkestra/.claude/credentials.json" ]; then
+if [ -d "/run/claude-global" ]; then
     mkdir -p /home/orkestra/.claude
     find /run/claude-global -maxdepth 1 -type f \
         -exec cp {} /home/orkestra/.claude/ \;

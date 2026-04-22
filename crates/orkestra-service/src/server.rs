@@ -25,7 +25,9 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
-use crate::interactions::{daemon_token, github, port, project, resource_limits, secret};
+use crate::interactions::{
+    daemon_token, devcontainer, github, port, project, resource_limits, secret,
+};
 use crate::types::{ProjectStatus, ServiceConfig, ServiceError};
 
 // ============================================================================
@@ -648,7 +650,8 @@ async fn remove_project_handler(
     // Remove from DB.
     if let Err(r) = run_blocking({
         let conn = Arc::clone(&state.conn);
-        move || project::remove::execute(&conn, &id)
+        let id_for_remove = id.clone();
+        move || project::remove::execute(&conn, &id_for_remove)
     })
     .await
     {
@@ -663,6 +666,10 @@ async fn remove_project_handler(
             tracing::warn!("Failed to delete project directory {}: {e}", path.display());
         }
     }
+
+    // Best-effort: remove the per-project Claude auth named volume so it
+    // doesn't accumulate after repeated add/remove cycles.
+    devcontainer::remove_volume::execute(id.as_str());
 
     StatusCode::OK.into_response()
 }

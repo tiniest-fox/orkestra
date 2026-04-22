@@ -8,6 +8,7 @@ pub mod find_container;
 pub mod inject_ork;
 pub mod inject_orkd;
 pub mod prepare_image;
+pub mod remove_volume;
 pub mod run_setup;
 pub mod run_toolbox_setup;
 pub mod start_container;

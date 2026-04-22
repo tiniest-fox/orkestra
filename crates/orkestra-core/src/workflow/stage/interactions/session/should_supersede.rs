@@ -5,31 +5,36 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 
 /// Determine whether to supersede the existing stage session before spawning.
 ///
-/// Returns `true` for "returning" scenarios — triggers that indicate the task
-/// is *returning* to this stage for a fresh attempt, not *iterating* within
-/// an existing session:
-/// - `Rejection`: cross-stage rejection (reviewer or agent rejects to an earlier
-///   stage) — start fresh in the target stage.
-/// - `Integration`: merge conflict recovery returned the task here.
-/// - `PrFeedback`: PR comments, failing checks, or guidance submitted for a Done task
-///   — the old session context is stale (task was Done/integrated), so start fresh.
-/// - Untriggered re-entry: no trigger AND the active iteration has not been
-///   linked to a session yet, meaning this is a clean re-entry (not a
-///   crash-recovery or `UserMessage`).
+/// ## Supersession Rules
 ///
-/// Triggers that do NOT supersede (agent resumes in the existing session):
-/// - `UserMessage`: user sent a message to resume an interrupted/failed/blocked task.
-/// - `GateFailure`: gate script failed — agent re-runs in the existing session with
-///   the gate error as feedback context.
-/// - All other triggers (`Answers`, `MalformedOutput`, etc.) also fall
-///   through to `Ok(false)`.
+/// | Trigger           | Condition                   | Supersede? | Net result                                   |
+/// |-------------------|-----------------------------|------------|----------------------------------------------|
+/// | `Rejection`       | —                           | Yes        | Fresh session                                |
+/// | `Integration`     | —                           | Yes        | Fresh session                                |
+/// | `PrFeedback`      | —                           | Yes        | Fresh session (stale after Done)             |
+/// | `Redirect`        | —                           | Yes        | Fresh session                                |
+/// | `Restart`         | —                           | Yes        | Fresh session                                |
+/// | `UserMessage`     | —                           | No         | Resume                                       |
+/// | `GateFailure`     | —                           | No         | Resume (agent retries in same session)       |
+/// | `Answers`         | —                           | No         | Resume                                       |
+/// | `MalformedOutput` | —                           | No         | Resume                                       |
+/// | `Interrupted`     | —                           | No         | Resume                                       |
+/// | `None`            | `spawn_count == 0`                                                         | No  | First spawn — no prior session context     |
+/// | `None`            | `spawn_count > 0`, active iter has `stage_session_id IS NOT NULL`          | No  | Crash recovery — resume existing session   |
+/// | `None`            | `spawn_count > 0`, active iter has `stage_session_id IS NULL` or no iter  | Yes | Clean re-entry — fresh session             |
+///
+/// The distinguishing signal for the `None` trigger is `stage_session_id` on the active
+/// iteration. `finalize_advancement` pre-creates the next stage's iteration with
+/// `stage_session_id = None` before the spawn; `on_spawn_starting` sets it when the agent
+/// actually runs. So a crash-recovery iteration (agent was mid-run) has
+/// `stage_session_id IS NOT NULL`, while a clean re-entry iteration (pre-created, agent
+/// hasn't run yet) has `stage_session_id IS NULL`.
 pub fn execute(
     store: &dyn WorkflowStore,
     trigger: Option<&IterationTrigger>,
     task_id: &str,
     stage: &str,
 ) -> WorkflowResult<bool> {
-    // Returning triggers always create a fresh session.
     if matches!(
         trigger,
         Some(
@@ -43,17 +48,20 @@ pub fn execute(
         return Ok(true);
     }
 
-    // Untriggered re-entry: no trigger AND the stage already has an active session
-    // that was previously spawned (`spawn_count > 0`). This means the stage is being
-    // entered again for a new pass, not for the first time.
-    //
-    // Note: `get_active_iteration` is NOT used here because the new-pass iteration
-    // hasn't been created yet at this point — `on_spawn_starting` creates it lazily.
-    // Instead, we check whether the existing session was already used.
+    // No trigger: distinguish crash recovery from clean re-entry.
+    // `finalize_advancement` pre-creates the next stage's iteration with
+    // `stage_session_id = None` before the spawn. `on_spawn_starting` then links
+    // the iteration to the session by setting `stage_session_id`.
+    // - Crash recovery: active iteration has `stage_session_id IS NOT NULL` → don't supersede
+    // - Clean re-entry: active iteration has `stage_session_id IS NULL` (pre-created) → supersede
     if trigger.is_none() {
         if let Some(session) = store.get_stage_session(task_id, stage)? {
             if session.spawn_count > 0 {
-                return Ok(true);
+                let is_crash_recovery = store
+                    .get_active_iteration(task_id, stage)?
+                    .map(|i| i.stage_session_id.is_some())
+                    .unwrap_or(false);
+                return Ok(!is_crash_recovery);
             }
         }
     }
@@ -68,130 +76,215 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::domain::StageSession;
-    use crate::workflow::InMemoryWorkflowStore;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::{Iteration, StageSession, Task};
+    use orkestra_types::runtime::Outcome;
+    use std::sync::Arc;
+
+    fn make_store_with_session(spawn_count: u32) -> Arc<InMemoryWorkflowStore> {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let task = Task::new("task-1", "Test", "Desc", "work", "2020-01-01T00:00:00Z");
+        store.save_task(&task).unwrap();
+        let mut session = StageSession::new("session-1", "task-1", "work", "2020-01-01T00:00:00Z");
+        for _ in 0..spawn_count {
+            session.agent_spawned(0, "2020-01-01T00:00:00Z");
+        }
+        store.save_stage_session(&session).unwrap();
+        store
+    }
+
+    // -- Triggers that always supersede --
 
     #[test]
     fn test_supersede_rejection_trigger() {
-        let store = InMemoryWorkflowStore::new();
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let trigger = IterationTrigger::Rejection {
             from_stage: "review".to_string(),
             feedback: "needs work".to_string(),
         };
-        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
-        assert!(result, "Rejection trigger must supersede the session");
-    }
-
-    #[test]
-    fn test_supersede_integration_trigger() {
-        let store = InMemoryWorkflowStore::new();
-        let trigger = IterationTrigger::Integration {
-            message: "merge conflict".to_string(),
-            conflict_files: vec!["src/main.rs".to_string()],
-        };
-        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
-        assert!(result, "Integration trigger must supersede the session");
-    }
-
-    #[test]
-    fn test_supersede_untriggered_reentry_with_existing_spawned_session() {
-        let store = InMemoryWorkflowStore::new();
-        let mut session = StageSession::new("sess-1", "task-1", "work", "2024-01-01T00:00:00Z");
-        session.spawn_count = 1;
-        store.save_stage_session(&session).unwrap();
-
-        let result = execute(&store, None, "task-1", "work").unwrap();
         assert!(
-            result,
-            "Untriggered re-entry with an already-spawned session must supersede"
+            execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "Rejection trigger must supersede the session"
         );
     }
 
     #[test]
-    fn test_no_supersede_user_message_trigger() {
-        let store = InMemoryWorkflowStore::new();
-        // Set up a session so the untriggered-reentry check would fire if trigger were None.
-        let mut session = StageSession::new("sess-1", "task-1", "work", "2024-01-01T00:00:00Z");
-        session.spawn_count = 1;
-        store.save_stage_session(&session).unwrap();
-
-        let trigger = IterationTrigger::UserMessage {
-            message: "please revise".to_string(),
+    fn test_supersede_integration_trigger() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let trigger = IterationTrigger::Integration {
+            message: "merge conflict".to_string(),
+            conflict_files: vec!["src/main.rs".to_string()],
         };
-        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
         assert!(
-            !result,
-            "UserMessage trigger must NOT supersede — resume the existing session"
+            execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "Integration trigger must supersede the session"
         );
     }
 
     #[test]
     fn test_supersede_restart_trigger() {
-        let store = InMemoryWorkflowStore::new();
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let trigger = IterationTrigger::Restart {
             message: "redo this stage".to_string(),
         };
-        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
-        assert!(result, "Restart trigger must supersede the session");
+        assert!(
+            execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "Restart trigger must supersede the session"
+        );
     }
 
     #[test]
     fn test_supersede_pr_feedback_trigger() {
-        let store = InMemoryWorkflowStore::new();
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let trigger = IterationTrigger::PrFeedback {
             comments: vec![],
             checks: vec![],
             guidance: Some("Please fix".to_string()),
         };
-        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
         assert!(
-            result,
-            "PrFeedback trigger must supersede — old session context is stale after Done"
+            execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "PrFeedback trigger must supersede — session context is stale after Done"
         );
     }
 
     #[test]
-    fn test_no_supersede_untriggered_first_entry() {
-        // No session exists yet → spawn_count check finds nothing → return false.
-        let store = InMemoryWorkflowStore::new();
-        let result = execute(&store, None, "task-1", "work").unwrap();
+    fn test_supersede_redirect_trigger() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let trigger = IterationTrigger::Redirect {
+            from_stage: "review".to_string(),
+            message: "back to work".to_string(),
+        };
         assert!(
-            !result,
-            "No trigger and no existing session should not supersede (first entry)"
+            execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "Redirect trigger must supersede the session"
+        );
+    }
+
+    // -- Triggers that never supersede --
+
+    #[test]
+    fn test_no_supersede_user_message_trigger() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let trigger = IterationTrigger::UserMessage {
+            message: "please revise".to_string(),
+        };
+        assert!(
+            !execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "UserMessage trigger must NOT supersede — resume the existing session"
         );
     }
 
     #[test]
     fn test_no_supersede_gate_failure_trigger() {
-        let store = InMemoryWorkflowStore::new();
-        // Set up a session so the untriggered-reentry check would fire if trigger were None.
-        let mut session = StageSession::new("sess-1", "task-1", "work", "2024-01-01T00:00:00Z");
-        session.spawn_count = 1;
-        store.save_stage_session(&session).unwrap();
-
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let trigger = IterationTrigger::GateFailure {
             error: "cargo clippy found 2 errors".to_string(),
         };
-        let result = execute(&store, Some(&trigger), "task-1", "work").unwrap();
         assert!(
-            !result,
-            "GateFailure trigger must NOT supersede — agent re-runs in the existing session with gate error as context"
+            !execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "GateFailure trigger must NOT supersede — agent retries in the existing session"
         );
     }
 
     #[test]
-    fn test_no_supersede_untriggered_session_not_yet_spawned() {
-        // Session exists but has never been spawned (spawn_count == 0).
-        // This is still a "first entry" — no agent has run yet — so no supersession.
-        let store = InMemoryWorkflowStore::new();
-        let session = StageSession::new("sess-1", "task-1", "work", "2024-01-01T00:00:00Z");
-        // spawn_count defaults to 0 — do not increment it
-        store.save_stage_session(&session).unwrap();
-
-        let result = execute(&store, None, "task-1", "work").unwrap();
+    fn test_no_supersede_answers_trigger() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let trigger = IterationTrigger::Answers { answers: vec![] };
         assert!(
-            !result,
-            "Existing session with spawn_count == 0 is still first entry; must NOT supersede"
+            !execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "Answers trigger must NOT supersede — resume the existing session"
+        );
+    }
+
+    #[test]
+    fn test_no_supersede_malformed_output_trigger() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let trigger = IterationTrigger::MalformedOutput {
+            error: "invalid JSON".to_string(),
+            attempt: 2,
+            max_attempts: 3,
+        };
+        assert!(
+            !execute(&*store, Some(&trigger), "task-1", "work").unwrap(),
+            "MalformedOutput trigger must NOT supersede — agent retries in the existing session"
+        );
+    }
+
+    #[test]
+    fn test_no_supersede_interrupted_trigger() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        assert!(
+            !execute(
+                &*store,
+                Some(&IterationTrigger::Interrupted),
+                "task-1",
+                "work"
+            )
+            .unwrap(),
+            "Interrupted trigger must NOT supersede — resume the existing session"
+        );
+    }
+
+    // -- No trigger: crash recovery vs clean re-entry --
+
+    #[test]
+    fn test_no_supersede_crash_recovery() {
+        // Crash recovery: session spawned before, active iteration has stage_session_id set
+        // (on_spawn_starting links the iteration to the session when the agent runs).
+        let store = make_store_with_session(1);
+        let iter = Iteration::new("iter-1", "task-1", "work", 1, "2020-01-01T00:00:00Z")
+            .with_stage_session_id("session-1"); // linked → crash recovery
+        store.save_iteration(&iter).unwrap();
+        assert!(
+            !execute(&*store, None, "task-1", "work").unwrap(),
+            "No trigger + session-linked active iteration must NOT supersede — crash recovery"
+        );
+    }
+
+    #[test]
+    fn test_supersede_clean_reentry_prelinked_iteration() {
+        // Clean re-entry: finalize_advancement pre-creates the iteration with stage_session_id=None.
+        // The agent hasn't run yet so on_spawn_starting hasn't linked it.
+        let store = make_store_with_session(1);
+        let iter = Iteration::new("iter-1", "task-1", "work", 1, "2020-01-01T00:00:00Z");
+        // stage_session_id is None by default — pre-created by finalize_advancement
+        store.save_iteration(&iter).unwrap();
+        assert!(
+            execute(&*store, None, "task-1", "work").unwrap(),
+            "No trigger + unlinked active iteration must supersede — clean re-entry"
+        );
+    }
+
+    #[test]
+    fn test_supersede_clean_reentry_no_active_iteration() {
+        // Clean re-entry with no active iteration at all (previous iteration fully ended).
+        let store = make_store_with_session(1);
+        let mut iter = Iteration::new("iter-1", "task-1", "work", 1, "2020-01-01T00:00:00Z");
+        iter.end("2020-01-01T01:00:00Z", Outcome::Approved);
+        store.save_iteration(&iter).unwrap();
+        assert!(
+            execute(&*store, None, "task-1", "work").unwrap(),
+            "No trigger + fully ended iteration must supersede — clean re-entry"
+        );
+    }
+
+    #[test]
+    fn test_no_supersede_first_spawn() {
+        // Session exists but has never spawned (spawn_count=0) — first time through.
+        let store = make_store_with_session(0);
+        assert!(
+            !execute(&*store, None, "task-1", "work").unwrap(),
+            "No trigger + spawn_count=0 must NOT supersede — first spawn, no prior session"
+        );
+    }
+
+    #[test]
+    fn test_no_supersede_no_session() {
+        // No session at all — definitely first time through.
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        assert!(
+            !execute(&*store, None, "task-1", "work").unwrap(),
+            "No trigger + no session must NOT supersede"
         );
     }
 }

@@ -11,6 +11,8 @@ use crate::workflow::domain::{LogNotification, Task};
 use crate::workflow::execution::ProviderRegistry;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
+#[cfg(feature = "testutil")]
+use crate::workflow::runtime::TaskState;
 use crate::workflow::task::setup::TaskSetupService;
 
 /// Trait for killing active agent processes.
@@ -354,6 +356,28 @@ impl WorkflowApi {
                 )
             }
         }
+    }
+}
+
+// ============================================================================
+// Test helpers (testutil feature only)
+// ============================================================================
+
+#[cfg(feature = "testutil")]
+impl WorkflowApi {
+    /// Force a task to `Queued { stage }` regardless of current state.
+    ///
+    /// Used in crash-recovery e2e tests to set up the state that
+    /// `recover_stale_agents` would produce (AgentWorking → Queued, no trigger).
+    pub fn force_queued(&self, task_id: &str, stage: &str) -> WorkflowResult<Task> {
+        let mut task = self
+            .store
+            .get_task(task_id)?
+            .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
+        task.state = TaskState::queued(stage);
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
     }
 }
 

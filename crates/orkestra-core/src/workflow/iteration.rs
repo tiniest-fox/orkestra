@@ -117,6 +117,33 @@ impl IterationService {
         self.store.get_active_iteration(task_id, stage)
     }
 
+    /// Link the active iteration for a task/stage to a specific session.
+    ///
+    /// Sets `stage_session_id` on the active iteration so `should_supersede` can
+    /// distinguish crash recovery (linked iteration → agent was mid-run) from clean
+    /// re-entry (no linked iteration → safe to start fresh).
+    ///
+    /// Returns `InvalidState` if no active iteration exists — callers always expect
+    /// one to be present when writing the crash-recovery signal.
+    pub fn link_to_session(
+        &self,
+        task_id: &str,
+        stage: &str,
+        session_id: &str,
+    ) -> WorkflowResult<()> {
+        let iter = self
+            .store
+            .get_active_iteration(task_id, stage)?
+            .ok_or_else(|| {
+                crate::workflow::ports::WorkflowError::InvalidState(format!(
+                    "link_to_session: no active iteration for {task_id}/{stage}"
+                ))
+            })?;
+        let iter = iter.with_stage_session_id(session_id);
+        self.store.save_iteration(&iter)?;
+        Ok(())
+    }
+
     /// Set the activity log on the active iteration for a task/stage.
     ///
     /// Called before ending the iteration, when the agent output includes
@@ -338,6 +365,64 @@ mod activity_log_tests {
         // Should not error when no iteration exists
         let result = service.set_activity_log("nonexistent", "work", "Some log");
         assert!(result.is_ok());
+    }
+}
+
+// ============================================================================
+// link_to_session tests
+// ============================================================================
+
+#[cfg(test)]
+mod link_to_session_tests {
+    use super::*;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::Task;
+    use crate::workflow::ports::WorkflowStore;
+
+    fn make_service() -> (Arc<InMemoryWorkflowStore>, IterationService) {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        store
+            .save_task(&Task::new(
+                "task-1",
+                "T",
+                "D",
+                "work",
+                "2020-01-01T00:00:00Z",
+            ))
+            .unwrap();
+        let service = IterationService::new(store.clone() as Arc<dyn WorkflowStore>);
+        (store, service)
+    }
+
+    #[test]
+    fn link_to_session_sets_stage_session_id() {
+        let (store, service) = make_service();
+        service.create_initial_iteration("task-1", "work").unwrap();
+
+        service
+            .link_to_session("task-1", "work", "session-abc")
+            .unwrap();
+
+        let iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .expect("active iteration must still exist");
+        assert_eq!(
+            iter.stage_session_id.as_deref(),
+            Some("session-abc"),
+            "link_to_session must write stage_session_id to the store"
+        );
+    }
+
+    #[test]
+    fn link_to_session_errors_when_no_active_iteration() {
+        let (_store, service) = make_service();
+        // No iteration created — should fail, not silently succeed.
+        let result = service.link_to_session("task-1", "work", "session-abc");
+        assert!(
+            result.is_err(),
+            "link_to_session must return an error when no active iteration exists"
+        );
     }
 }
 

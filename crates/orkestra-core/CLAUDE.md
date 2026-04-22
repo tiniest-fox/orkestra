@@ -156,6 +156,27 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 
 `DerivedTaskState::build()` requires `WorkflowConfig` as a parameter for this config lookup. When adding new call sites, ensure the workflow config is available — don't try to detect approval state without it.
 
+### Stage Session Supersession Rules
+
+`should_supersede::execute()` in `stage/interactions/session/` decides whether to wipe the existing session before spawning. The canonical rule table (keep this in sync with the doc comment in that file):
+
+| Trigger           | Condition                            | Supersede? |
+|-------------------|--------------------------------------|------------|
+| `Rejection`       | —                                    | Yes        |
+| `Integration`     | —                                    | Yes        |
+| `PrFeedback`      | —                                    | Yes        |
+| `Redirect`        | —                                    | Yes        |
+| `Restart`         | —                                    | Yes        |
+| `UserMessage`     | —                                    | No         |
+| `GateFailure`     | —                                    | No         |
+| `Answers`         | —                                    | No         |
+| `MalformedOutput` | —                                    | No         |
+| `Interrupted`     | —                                    | No         |
+| `None`            | Active iteration has `stage_session_id` set | No — crash recovery |
+| `None`            | Active iteration has `stage_session_id = None` OR no active iteration | Yes — clean re-entry |
+
+**Why `stage_session_id` and not just `ended_at IS NULL`:** `finalize_advancement` pre-creates the next stage's iteration with `stage_session_id = None` before the spawn. `on_spawn_starting` links it to the session when the agent actually runs. So a crash-recovery iteration (agent was mid-run) has `stage_session_id IS NOT NULL`; a clean re-entry iteration (pre-created, agent hasn't run yet) has `stage_session_id IS NULL`.
+
 ## Lock File E2E Tests
 
 Tests that verify lock contention (e.g., "second orchestrator is blocked") must use a real running process — either a live `OrchestratorLoop` or a subprocess. Writing `current_pid:fresh_ts` into the lock file does **not** work: `acquire()` sees a fresh timestamp + alive PID, enters the backoff loop, but the call returns `Ok(Stopped)` instead of blocking to `TimedOut`. Root cause is unclear, but the workaround is reliable: spin up a real orchestrator A with `build_orchestrator()`, wait for its lock file to appear, then run orchestrator B.

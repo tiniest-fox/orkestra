@@ -4684,6 +4684,344 @@ fn test_interrupt_resume_preserves_session() {
 }
 
 // =============================================================================
+// Crash Recovery E2E Tests
+// =============================================================================
+
+/// Crash recovery with agent activity → `is_resume=true`.
+///
+/// When the app crashes while an agent is mid-run AND the agent had already produced
+/// confirmed output (has_activity=true), the next spawn must resume the existing
+/// session via `--resume <session-id>` rather than starting fresh.
+///
+/// Flow:
+/// 1. Work stage runs to completion (dispatch_completion writes has_activity=true)
+/// 2. Simulate crash: force task back to Queued, create a new linked active iteration
+/// 3. Startup recovery sets trigger=None
+/// 4. Verify spawn uses is_resume=true (session preserved, has_activity=true)
+#[test]
+fn test_crash_recovery_with_activity_resumes_session() {
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Crash recovery test",
+        "Verify crash recovery with activity resumes the session",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Step 1: Run work agent to completion (sets has_activity=true via dispatch_completion)
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work completed".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn → complete → has_activity=true written to session
+
+    // Confirm the session has has_activity set after normal completion.
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .expect("store read should succeed")
+        .expect("session must exist after agent run");
+    assert!(
+        session.has_activity,
+        "dispatch_completion must write has_activity=true after successful run"
+    );
+    let original_session_id = session
+        .claude_session_id
+        .clone()
+        .expect("session must have a claude_session_id");
+
+    // =========================================================================
+    // Step 2: Simulate a crash mid-run for a subsequent pass
+    //   - Force task back to Queued { "work" } (like recover_stale_agents would)
+    //   - Create a new open iteration linked to the session (like the agent was mid-run)
+    // =========================================================================
+    ctx.api()
+        .force_queued(&task_id, "work")
+        .expect("force_queued should succeed");
+
+    let _new_iter = ctx
+        .api()
+        .iteration_service()
+        .create_iteration(&task_id, "work", None)
+        .expect("create_iteration should succeed");
+
+    ctx.api()
+        .iteration_service()
+        .link_to_session(&task_id, "work", &session.id)
+        .expect("link_to_session should succeed");
+
+    // =========================================================================
+    // Step 3: Set mock output for the recovery spawn and advance
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work completed (resumed)".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // recover: spawn with no trigger → should preserve session
+
+    // =========================================================================
+    // Assertions: session preserved, is_resume=true
+    // =========================================================================
+    let recovery_config = ctx.last_run_config();
+    assert!(
+        recovery_config.is_resume,
+        "Crash recovery with has_activity=true must use is_resume=true"
+    );
+    assert_eq!(
+        recovery_config.session_id.as_deref(),
+        Some(original_session_id.as_str()),
+        "Crash recovery must resume the SAME session ID, not a fresh UUID"
+    );
+
+    // Verify no session supersession happened (still only 1 work session).
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let work_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "work").collect();
+    assert_eq!(
+        work_sessions.len(),
+        1,
+        "Crash recovery must not supersede the session (should still have exactly 1 work session)"
+    );
+}
+
+/// Crash recovery without agent activity → fresh spawn (`is_resume=false`).
+///
+/// When the app crashes while an agent was mid-run but the agent had NOT yet produced
+/// confirmed output (has_activity=false — e.g. crashed at startup before the first
+/// ToolUse or second Text entry), the next spawn must start fresh.
+///
+/// Resuming a session that produced no output is unsafe: the provider session
+/// may not exist or may have stale context. A fresh spawn with the full initial
+/// prompt is the correct recovery path.
+///
+/// Flow:
+/// 1. agent_started() → AgentWorking (no session created, simulates crash at process start)
+/// 2. Startup recovery: task → Queued (no trigger)
+/// 3. Verify spawn uses is_resume=false (no session or session.has_activity=false)
+#[test]
+fn test_crash_recovery_without_activity_spawns_fresh() {
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Crash recovery no-activity test",
+        "Verify crash recovery without activity spawns fresh session",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Step 1: Simulate agent process started but immediately crashed
+    //   - agent_started() sets AgentWorking but does NOT create a session
+    //   (on_spawn_starting only runs when the orchestrator spawns the agent)
+    // =========================================================================
+    ctx.api().agent_started(&task_id).unwrap();
+
+    let task_state = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task_state.state, TaskState::AgentWorking { .. }),
+        "Task must be AgentWorking after agent_started"
+    );
+
+    // No session created yet (agent crashed before on_spawn_starting ran)
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .expect("store read should succeed");
+    assert!(
+        session.is_none(),
+        "No session should exist: agent crashed before on_spawn_starting ran"
+    );
+
+    // =========================================================================
+    // Step 2: Startup recovery and re-spawn
+    // =========================================================================
+    // run_startup_recovery() calls recover_stale_agents: AgentWorking → Queued (no trigger)
+    ctx.run_startup_recovery();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work completed after crash recovery".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance();
+
+    // =========================================================================
+    // Assertions: fresh spawn (no resume)
+    // =========================================================================
+    let recovery_config = ctx.last_run_config();
+    assert!(
+        !recovery_config.is_resume,
+        "Crash recovery without activity must NOT resume — spawn fresh session"
+    );
+
+    // A new session was created (spawn_count = 1 from on_spawn_starting)
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .expect("store read should succeed")
+        .expect("session must now exist after recovery spawn");
+    assert!(
+        session.claude_session_id.is_some(),
+        "Fresh session must have a new claude_session_id assigned"
+    );
+}
+
+/// Untriggered clean re-entry → fresh session (no resume).
+///
+/// When a task cycles back through a stage without an explicit restart trigger
+/// (e.g., review rejected work → work ran → review runs again), the review
+/// stage must spawn with a fresh session, not resume the old one.
+///
+/// This is distinct from crash recovery:
+/// - Crash recovery: active iteration exists (stage_session_id IS NOT NULL) → preserve session
+/// - Clean re-entry: no active iteration for this stage → supersede session
+///
+/// This test verifies the should_supersede logic for the no-trigger clean re-entry path.
+/// (The full workflow version is in `test_untriggered_reentry_spawns_fresh_session`.)
+#[test]
+fn test_clean_reentry_supersedes_session() {
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
+
+    // Two-stage workflow: work → review (review has agentic gate)
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_gate(orkestra_core::workflow::config::GateConfig::Agentic),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Clean re-entry test",
+        "Verify re-entering a stage without a trigger supersedes the old session",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Pass 1: work → review (review rejects back to work)
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial work".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn work → complete → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs more work".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // commit → review Queued
+    ctx.advance(); // spawn reviewer → completes (rejection) → AwaitingRejectionConfirmation
+    ctx.api().approve(&task_id).unwrap(); // confirm rejection → work re-queued
+
+    // Record the first review session ID
+    let first_review_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("review session must exist after first review pass");
+    let first_review_session_id = first_review_session.id.clone();
+
+    // =========================================================================
+    // Pass 2: work again → review again (untriggered re-entry)
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Revised work".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn work → complete → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves revised work
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good".to_string(),
+            route_to: None,
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // commit → review Queued
+    ctx.advance(); // spawn reviewer (clean re-entry → fresh session)
+
+    // =========================================================================
+    // Assertions: fresh session (superseded), not a resume
+    // =========================================================================
+    let reentry_config = ctx.last_run_config();
+    assert!(
+        !reentry_config.is_resume,
+        "Clean re-entry must NOT resume — fresh session required"
+    );
+
+    // Two review sessions: original superseded, new active
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let review_sessions: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.stage == "review")
+        .collect();
+    assert_eq!(
+        review_sessions.len(),
+        2,
+        "Clean re-entry must create a new review session (original superseded)"
+    );
+
+    let new_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("active review session must exist after re-entry");
+    assert_ne!(
+        new_session.id, first_review_session_id,
+        "Re-entry must use a NEW session, not the superseded one"
+    );
+}
+
+// =============================================================================
 // Disallowed Tools E2E Tests
 // =============================================================================
 

@@ -58,8 +58,19 @@ struct ActiveAgent {
     iteration_id: String,
     /// When the agent was spawned.
     spawned_at: Instant,
-    /// Whether the agent has ever produced any output.
-    has_activity: bool,
+    /// Whether the agent has ever produced any output (gates startup timeout).
+    has_any_output: bool,
+    /// Whether the agent has shown confirmed work: a `ToolUse` entry or 2+ `Text` entries.
+    ///
+    /// A single `Text` entry alone is not sufficient — it could be an unparsed error
+    /// message (e.g. "You're out of Claude.ai usage"). When true and not yet written,
+    /// `persist_activity_flags` writes `has_activity=true` to the stage session so that
+    /// crash recovery knows to resume rather than spawn fresh.
+    has_confirmed_output: bool,
+    /// Whether `has_confirmed_output` has been written to the stage session in the database.
+    session_activity_written: bool,
+    /// Count of `Text` log entries received (used to detect the 2+ threshold).
+    received_text_entry_count: u32,
     /// Session ID extracted from the stream (for providers like `OpenCode` that
     /// generate their own session IDs). Set once, consumed by `take_extracted_session_id`.
     extracted_session_id: Option<String>,
@@ -72,7 +83,10 @@ impl ActiveAgent {
             stage_session_id,
             iteration_id,
             spawned_at: Instant::now(),
-            has_activity: false,
+            has_any_output: false,
+            has_confirmed_output: false,
+            session_activity_written: false,
+            received_text_entry_count: 0,
             extracted_session_id: None,
         }
     }
@@ -99,18 +113,33 @@ impl ActiveAgent {
         loop {
             match self.handle.events.try_recv() {
                 Ok(RunEvent::LogLine(entry)) => {
-                    self.has_activity = true;
+                    self.has_any_output = true;
+                    // Confirmed output requires stronger evidence than a single text entry,
+                    // which could be an unparsed error (e.g. "You're out of usage").
+                    // ToolUse is unambiguous; 2+ Text entries rule out one-shot errors.
+                    match &entry {
+                        LogEntry::ToolUse { .. } => {
+                            self.has_confirmed_output = true;
+                        }
+                        LogEntry::Text { .. } => {
+                            self.received_text_entry_count += 1;
+                            if self.received_text_entry_count >= 2 {
+                                self.has_confirmed_output = true;
+                            }
+                        }
+                        _ => {}
+                    }
                     log_entries.push(entry);
                 }
                 Ok(RunEvent::SessionId(id)) => {
-                    self.has_activity = true;
+                    self.has_any_output = true;
                     self.extracted_session_id = Some(id);
                 }
                 Ok(RunEvent::Completed(result)) => {
                     return AgentPoll::Completed(result, log_entries);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    if !self.has_activity && self.spawned_at.elapsed() > AGENT_STARTUP_TIMEOUT {
+                    if !self.has_any_output && self.spawned_at.elapsed() > AGENT_STARTUP_TIMEOUT {
                         return AgentPoll::Error(format!(
                             "Agent produced no output after {}s",
                             AGENT_STARTUP_TIMEOUT.as_secs()
@@ -374,9 +403,10 @@ impl StageExecutionService {
             }
         };
 
-        // 1. Pre-supersession: for "returning" triggers (Rejection, Integration) and untriggered
-        //    re-entries, supersede the existing session BEFORE on_spawn_starting so it creates
-        //    a new session automatically.
+        // 1. Pre-supersession: see should_supersede::execute() for the full rule table.
+        //    Returning triggers (Rejection, Integration, etc.) always supersede.
+        //    Resume triggers (UserMessage, GateFailure, etc.) never supersede.
+        //    No trigger: supersede on clean re-entry, preserve on crash recovery.
         if super::interactions::session::should_supersede::execute(
             self.store.as_ref(),
             trigger,
@@ -681,6 +711,8 @@ impl StageExecutionService {
         let mut log_batches: Vec<(String, String, String, Vec<LogEntry>, String)> = Vec::new();
         // Collect extracted session IDs to persist outside the lock.
         let mut session_id_updates: Vec<(String, String, String)> = Vec::new(); // (task_id, stage, session_id)
+                                                                                // Collect (task_id, stage) for agents with newly confirmed activity to persist.
+        let mut activity_to_persist: Vec<(String, String)> = Vec::new(); // (task_id, stage)
 
         if let Ok(mut agents) = self.active_agents.lock() {
             for (task_id, agent) in agents.iter_mut() {
@@ -732,6 +764,12 @@ impl StageExecutionService {
                     }
                 }
 
+                // Mark confirmed output for DB persistence (once, before removal).
+                if agent.has_confirmed_output && !agent.session_activity_written {
+                    agent.session_activity_written = true;
+                    activity_to_persist.push((task_id.clone(), agent.stage().to_string()));
+                }
+
                 // Check for provider-generated session IDs (e.g. OpenCode's ses_...)
                 if let Some(sid) = agent.take_extracted_session_id() {
                     session_id_updates.push((task_id.clone(), agent.stage().to_string(), sid));
@@ -748,11 +786,56 @@ impl StageExecutionService {
             self.persist_log_entries(stage_session_id, task_id, stage, entries, iteration_id);
         }
 
+        // Persist confirmed activity flags so crash recovery knows to resume.
+        self.persist_activity_flags(activity_to_persist);
+
         // Persist provider-generated session IDs (e.g. OpenCode's ses_...) so that
         // future resume attempts use the correct value.
         self.persist_extracted_session_ids(session_id_updates);
 
         completed
+    }
+
+    /// Write `has_activity=true` to stage sessions for agents that have shown confirmed work.
+    ///
+    /// Called once per agent (guarded by `session_activity_written` inside the lock) so that
+    /// crash recovery can see the flag even if the process is killed mid-run.
+    fn persist_activity_flags(&self, updates: Vec<(String, String)>) {
+        for (task_id, stage) in updates {
+            match self.store.get_stage_session(&task_id, &stage) {
+                Ok(Some(mut session)) => {
+                    if !session.has_activity {
+                        session.has_activity = true;
+                        if let Err(e) = self.store.save_stage_session(&session) {
+                            crate::orkestra_debug!(
+                                "stage_execution",
+                                "Failed to persist has_activity for {}/{}: {}",
+                                task_id,
+                                stage,
+                                e
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "No stage session found for {}/{} to persist has_activity",
+                        task_id,
+                        stage
+                    );
+                }
+                Err(e) => {
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "Failed to load stage session for {}/{}: {}",
+                        task_id,
+                        stage,
+                        e
+                    );
+                }
+            }
+        }
     }
 
     /// Save provider-generated session IDs (e.g. `ses_...` from `OpenCode`) to their stage sessions.
@@ -1083,6 +1166,79 @@ mod tests {
         assert!(
             rx.try_recv().is_err(),
             "no notification expected for empty batch"
+        );
+    }
+
+    // -- ActiveAgent confirmed-output threshold tests --
+
+    fn make_agent() -> (ActiveAgent, std::sync::mpsc::Sender<crate::workflow::execution::RunEvent>)
+    {
+        use crate::workflow::stage::agents::ExecutionHandle;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = ExecutionHandle {
+            task_id: "task-1".to_string(),
+            stage: "work".to_string(),
+            pid: 0,
+            events: rx,
+        };
+        let agent = ActiveAgent::new(handle, "session-1".to_string(), "iter-1".to_string());
+        (agent, tx)
+    }
+
+    #[test]
+    fn single_text_entry_does_not_confirm_output() {
+        use crate::workflow::execution::RunEvent;
+        let (mut agent, tx) = make_agent();
+        tx.send(RunEvent::LogLine(LogEntry::Text {
+            content: "You're out of usage".to_string(),
+        }))
+        .unwrap();
+        drop(tx);
+        agent.poll(); // drain
+        assert!(
+            !agent.has_confirmed_output,
+            "one Text entry must NOT set has_confirmed_output (could be a provider error)"
+        );
+    }
+
+    #[test]
+    fn two_text_entries_confirm_output() {
+        use crate::workflow::execution::RunEvent;
+        let (mut agent, tx) = make_agent();
+        tx.send(RunEvent::LogLine(LogEntry::Text {
+            content: "First".to_string(),
+        }))
+        .unwrap();
+        tx.send(RunEvent::LogLine(LogEntry::Text {
+            content: "Second".to_string(),
+        }))
+        .unwrap();
+        drop(tx);
+        agent.poll(); // drain
+        assert!(
+            agent.has_confirmed_output,
+            "two Text entries must set has_confirmed_output"
+        );
+    }
+
+    #[test]
+    fn tool_use_alone_confirms_output() {
+        use crate::workflow::domain::ToolInput;
+        use crate::workflow::execution::RunEvent;
+        let (mut agent, tx) = make_agent();
+        tx.send(RunEvent::LogLine(LogEntry::ToolUse {
+            tool: "bash".to_string(),
+            id: "1".to_string(),
+            input: ToolInput::Bash {
+                command: "cargo test".to_string(),
+            },
+        }))
+        .unwrap();
+        drop(tx);
+        agent.poll(); // drain
+        assert!(
+            agent.has_confirmed_output,
+            "a single ToolUse entry must set has_confirmed_output immediately"
         );
     }
 }

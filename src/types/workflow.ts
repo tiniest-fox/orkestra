@@ -596,7 +596,8 @@ export type ResumeType =
   | "answers"
   | "manual_resume"
   | "user_message"
-  | "initial";
+  | "initial"
+  | "gate_failure";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).

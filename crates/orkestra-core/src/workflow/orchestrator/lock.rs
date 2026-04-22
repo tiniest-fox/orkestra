@@ -500,11 +500,14 @@ mod tests {
         let rival_overwrote = rival_handle.join().unwrap();
 
         if rival_overwrote {
-            // Verify-after-write should have detected the overwrite
-            match result {
-                Err(LockError::AlreadyRunning(_)) | Ok(_) => {} // both valid outcomes
-                Err(e) => panic!("Unexpected error variant: {e}"),
-            }
+            // Verify-after-write should have detected the overwrite — we must NOT return Ok.
+            // AlreadyRunning is the normal case; Io can occur when the rival's write races
+            // with our verify read (truncate+write window produces a temporarily empty/corrupt
+            // file). Both mean we correctly declined ownership.
+            assert!(
+                result.is_err(),
+                "Should not return Ok when rival overwrote our lock"
+            );
         } else {
             // Rival didn't overwrite in time — normal acquire should have succeeded
             assert!(result.is_ok(), "Expected Ok when rival didn't overwrite");

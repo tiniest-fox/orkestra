@@ -47,6 +47,21 @@ describe("buildDisplayMessages", () => {
     }
   });
 
+  it("filters out gate_failure user messages", () => {
+    const logs: LogEntry[] = [
+      { type: "user_message", content: "start", resume_type: "initial" },
+      { type: "text", content: "working..." },
+      { type: "user_message", content: "gate error", resume_type: "gate_failure" },
+    ];
+    const messages = buildDisplayMessages(logs);
+    // gate_failure message should be excluded; only the initial user message remains
+    expect(messages.filter((m) => m.kind === "user")).toHaveLength(1);
+    const userMsg = messages.find((m) => m.kind === "user");
+    if (userMsg?.kind === "user") {
+      expect(userMsg.resumeType).toBe("initial");
+    }
+  });
+
   it("groups consecutive non-user entries into agent messages", () => {
     const logs: LogEntry[] = [
       { type: "user_message", content: "start", resume_type: "initial" },

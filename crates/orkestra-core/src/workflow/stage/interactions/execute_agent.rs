@@ -407,9 +407,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
                 })
                 .collect(),
         },
-        // Gate failure delivers the error as a user message so the agent can fix the issues.
-        Some(IterationTrigger::GateFailure { error }) => ResumeType::UserMessage {
-            message: format!("The gate checks failed:\n\n{error}"),
+        // Gate failure delivers the error via a dedicated resume prompt with an Orkestra marker.
+        Some(IterationTrigger::GateFailure { error }) => ResumeType::GateFailure {
+            error: error.clone(),
         },
         Some(IterationTrigger::PrFeedback { .. }) => unreachable!(
             "PrFeedback triggers always supersede the session; is_resume cannot be true here"
@@ -788,6 +788,15 @@ mod tests {
         assert!(final_user.contains(compact_schema));
         // Should contain enforcement wording
         assert!(final_user.contains("Output ONLY the JSON object"));
+    }
+
+    #[test]
+    fn test_trigger_to_resume_type_gate_failure() {
+        let trigger = IterationTrigger::GateFailure {
+            error: "lint failed".to_string(),
+        };
+        let resume = trigger_to_resume_type(Some(&trigger));
+        assert!(matches!(resume, ResumeType::GateFailure { ref error } if error == "lint failed"));
     }
 
     #[test]

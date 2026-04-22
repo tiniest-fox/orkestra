@@ -343,6 +343,8 @@ pub enum ResumeMarkerType {
     Answers,
     /// Initial agent prompt (first spawn, not a resume).
     Initial,
+    /// Gate script failed.
+    GateFailure,
 }
 
 impl ResumeMarkerType {
@@ -353,6 +355,7 @@ impl ResumeMarkerType {
             Self::Integration => "integration",
             Self::Answers => "answers",
             Self::Initial => "initial",
+            Self::GateFailure => "gate_failure",
         }
     }
 }

@@ -16,6 +16,7 @@ const RESUME_INTEGRATION: &str = include_str!("../../templates/resume/integratio
 const RESUME_ANSWERS: &str = include_str!("../../templates/resume/answers.md");
 const RESUME_PR_COMMENTS: &str = include_str!("../../templates/resume/pr_comments.md");
 const RESUME_MALFORMED_OUTPUT: &str = include_str!("../../templates/resume/malformed_output.md");
+const RESUME_GATE_FAILURE: &str = include_str!("../../templates/resume/gate_failure.md");
 
 // ============================================================================
 // Interaction
@@ -64,6 +65,9 @@ pub fn execute(
             RESUME_MALFORMED_OUTPUT,
             serde_json::json!({ "error": error, "attempt": attempt, "max_attempts": max_attempts }),
         ),
+        ResumeType::GateFailure { error } => {
+            (RESUME_GATE_FAILURE, serde_json::json!({ "error": error }))
+        }
         ResumeType::UserMessage { message } => return Ok(message.clone()),
     };
 
@@ -348,6 +352,23 @@ mod tests {
         assert!(prompt.contains("attempt 2 of 4"));
         assert!(prompt.contains("no structured output found"));
         assert!(prompt.contains("```ork"));
+    }
+
+    #[test]
+    fn test_gate_failure() {
+        let prompt = execute(
+            "work",
+            &ResumeType::GateFailure {
+                error: "lint failed".to_string(),
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:gate_failure>"));
+        assert!(prompt.contains("lint failed"));
+        assert!(prompt.contains("Fix the issues"));
     }
 
     #[test]

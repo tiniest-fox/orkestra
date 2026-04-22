@@ -22,7 +22,8 @@ src/
 │       ├── integration.md
 │       ├── answers.md
 │       ├── pr_comments.md
-│       └── malformed_output.md
+│       ├── malformed_output.md
+│       └── gate_failure.md
 └── interactions/
     ├── build/          # Initial prompt construction
     │   ├── context.rs      # PromptBuilder
@@ -66,6 +67,7 @@ Variants:
 - `Answers { answers }` — human provided answers
 - `PrComments { comments, checks, guidance }` — PR review comments and failed CI checks
 - `MalformedOutput { error, attempt, max_attempts }` — corrective prompt after malformed agent output
+- `GateFailure { error }` — gate script failed; resume prompt rendered from `gate_failure.md` and filtered out of the UI chat feed (shown inline via gate log entries instead)
 - `UserMessage { message }` — user sent a message directly; raw message passed through with no template wrapping
 
 ## Patterns

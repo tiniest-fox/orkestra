@@ -113,6 +113,7 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 
   for (const entry of logs) {
     if (entry.type === "user_message") {
+      if (entry.resume_type === "gate_failure") continue;
       if (agentEntries.length > 0) {
         messages.push({ kind: "agent", entries: agentEntries });
         agentEntries = [];

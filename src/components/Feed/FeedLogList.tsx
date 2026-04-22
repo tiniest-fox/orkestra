@@ -24,6 +24,7 @@ export function classifyUser(msg: UserMessage): UserClassification {
     case "initial":
     case "continue":
     case "integration":
+    case "gate_failure":
       return { label: "System", isHuman: false };
     default:
       return { label: "System", isHuman: false };

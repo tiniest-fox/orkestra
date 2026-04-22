@@ -70,6 +70,8 @@ The trait handles provider differences; `parse_stage_output` is the single sourc
 
 **OpenCode text buffering**: Text events are buffered until the next non-text event because the final structured output arrives as a plain text event. `finalize()` classifies the last buffered text: structured JSON (valid JSON with a `type` field) returns an empty vec — no log entry is emitted, since `ArtifactProduced` already renders the output — while plain text returns a `Text` entry.
 
+**`malformed_output` has no `ResumeMarkerType` variant (pre-existing gap)**: `ResumeType::MalformedOutput` has a template with marker `<!orkestra:resume:STAGE:malformed_output>`, but `parse_resume_marker.rs` has no matching `ResumeMarkerType::MalformedOutput` variant — the marker falls through to `None`. This means the run log records `resume_type: "user_message"` instead of `"malformed_output"`. When adding new resume types that should be tracked, add a parser variant alongside the template (as `gate_failure` does correctly).
+
 **API error detection**: Both parsers check for API errors in the output. Claude embeds them in JSONL; OpenCode may emit error events. Always surface these as descriptive errors rather than generic parse failures.
 
 **Schema is the source of truth**: The JSON schema passed to agents is the same schema used for validation here. Don't add validation logic outside of `parse_stage_output`.

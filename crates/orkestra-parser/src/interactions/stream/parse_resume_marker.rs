@@ -28,6 +28,7 @@ pub fn execute(text: &str) -> Option<ResumeMarker> {
                 "continue" => ResumeMarkerType::Continue,
                 "integration" => ResumeMarkerType::Integration,
                 "answers" => ResumeMarkerType::Answers,
+                "gate_failure" => ResumeMarkerType::GateFailure,
                 _ => return None,
             };
             Some(ResumeMarker {
@@ -85,11 +86,23 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_gate_failure_marker() {
+        let marker = execute(
+            "<!orkestra:resume:work:gate_failure>\n\nThe gate checks failed with the following error:\n\nlint warnings",
+        );
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::GateFailure);
+        assert!(marker.content.contains("gate checks failed"));
+    }
+
+    #[test]
     fn test_resume_marker_type_as_str() {
         assert_eq!(ResumeMarkerType::Continue.as_str(), "continue");
         assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
         assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
+        assert_eq!(ResumeMarkerType::GateFailure.as_str(), "gate_failure");
     }
 
     #[test]

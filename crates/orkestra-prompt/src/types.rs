@@ -203,6 +203,8 @@ pub enum ResumeType {
         attempt: u32,
         max_attempts: u32,
     },
+    /// Gate script failed; agent should fix the issues.
+    GateFailure { error: String },
     /// User sent a message directly; agent should address it and continue working.
     UserMessage { message: String },
 }

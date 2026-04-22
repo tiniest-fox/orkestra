@@ -7289,6 +7289,28 @@ fn test_gate_fail_requeues_with_feedback() {
         gate_completed_failed_count, 1,
         "Expected exactly one GateCompleted entry with exit_code=1 and passed=false"
     );
+
+    // Verify the resume prompt sent to the agent on re-spawn has the gate_failure marker.
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Fixed".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // re-spawns work agent with GateFailure resume prompt
+
+    let resume_prompt = ctx.last_prompt_for(&task_id);
+    assert!(
+        resume_prompt.contains("<!orkestra:resume:work:gate_failure>"),
+        "Resume prompt must contain gate_failure marker, got: {resume_prompt}"
+    );
+    assert!(
+        resume_prompt.contains("Gate failed") || resume_prompt.contains("exit"),
+        "Resume prompt must contain the gate error text, got: {resume_prompt}"
+    );
 }
 
 /// Gate crash recovery: `GateRunning` on startup resets to `AwaitingGate`.

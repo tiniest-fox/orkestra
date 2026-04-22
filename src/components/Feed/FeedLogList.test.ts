@@ -6,7 +6,7 @@ import type { UserMessage } from "./MessageList";
 
 describe("classifyUser", () => {
   const humanTypes = ["feedback", "answers", "manual_resume", "user_message"] as const;
-  const systemTypes = ["initial", "continue", "integration"] as const;
+  const systemTypes = ["initial", "continue", "integration", "gate_failure"] as const;
 
   for (const rt of humanTypes) {
     it(`classifies "${rt}" as You (human)`, () => {

@@ -20,7 +20,8 @@ describe("ArtifactLogCard", () => {
 
   it("renders collapsed state with artifact name", () => {
     render(<ArtifactLogCard artifact={baseArtifact} />);
-    expect(screen.getByText("Generated plan")).toBeInTheDocument();
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText(/Iteration 1/)).toBeInTheDocument();
     expect(screen.queryByText(/My Plan/)).not.toBeInTheDocument();
   });
 
@@ -126,15 +127,23 @@ describe("ArtifactLogCard", () => {
 
   // Superseded mode (earlier artifact, dimmed)
 
-  it("applies opacity-50 when superseded", () => {
+  it("applies opacity-60 when superseded", () => {
     const { container } = render(<ArtifactLogCard artifact={baseArtifact} superseded />);
     const card = container.firstChild as HTMLElement;
-    expect(card.className).toContain("opacity-50");
+    expect(card.className).toContain("opacity-60");
   });
 
-  it("does not apply opacity-50 when not superseded", () => {
+  it("does not apply opacity-60 when not superseded", () => {
     const { container } = render(<ArtifactLogCard artifact={baseArtifact} />);
     const card = container.firstChild as HTMLElement;
-    expect(card.className).not.toContain("opacity-50");
+    expect(card.className).not.toContain("opacity-60");
+  });
+
+  it("shows ChevronDown icon when collapsed (not ChevronRight)", () => {
+    render(<ArtifactLogCard artifact={baseArtifact} />);
+    // ChevronDown renders as an svg with lucide class; ChevronRight should not be present
+    const button = screen.getByRole("button");
+    // The button should not have any rotate-90 transform (which was used with ChevronRight)
+    expect(button.innerHTML).not.toContain("rotate-90");
   });
 });

@@ -22,8 +22,7 @@ src/
 │       ├── integration.md
 │       ├── answers.md
 │       ├── pr_comments.md
-│       ├── malformed_output.md
-│       └── user_message.md
+│       └── malformed_output.md
 └── interactions/
     ├── build/          # Initial prompt construction
     │   ├── context.rs      # PromptBuilder
@@ -67,7 +66,7 @@ Variants:
 - `Answers { answers }` — human provided answers
 - `PrComments { comments, checks, guidance }` — PR review comments and failed CI checks
 - `MalformedOutput { error, attempt, max_attempts }` — corrective prompt after malformed agent output
-- `UserMessage { message }` — user sent a message directly; agent should address it and continue
+- `UserMessage { message }` — user sent a message directly; raw message passed through with no template wrapping
 
 ## Patterns
 

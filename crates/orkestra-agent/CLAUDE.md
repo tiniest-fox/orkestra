@@ -90,6 +90,7 @@ Async execution emits events through a channel:
 - **Provider capabilities affect prompts**: When `supports_json_schema` is false, the JSON schema is injected into the prompt text by `PromptBuilder` in orkestra-prompt.
 - **System prompt fallback**: When `supports_system_prompt` is false, the system prompt is prepended to the user message upstream.
 - **Disallowed tools fallback**: OpenCode doesn't support `--disallowedTools`, so restriction messages are injected into the system prompt only.
+- **Marker parser asymmetry**: `parse_resume_marker` only recognizes `continue`, `integration`, `answers`, and `initial`. Build_prompt emits `malformed_output` and `pr_comments` markers that the parser doesn't recognize, so `run_async.rs`'s else branch will log them as `resume_type: "user_message"` — mislabeled but logging-only. If the mislabeling becomes a problem, guard the else branch with `!prompt.trim_start().starts_with("<!orkestra:")` or extend `parse_resume_marker` with the missing variants.
 
 ## Anti-patterns
 

@@ -343,8 +343,6 @@ pub enum ResumeMarkerType {
     Answers,
     /// Initial agent prompt (first spawn, not a resume).
     Initial,
-    /// User sent a message directly to the agent.
-    UserMessage,
 }
 
 impl ResumeMarkerType {
@@ -355,7 +353,6 @@ impl ResumeMarkerType {
             Self::Integration => "integration",
             Self::Answers => "answers",
             Self::Initial => "initial",
-            Self::UserMessage => "user_message",
         }
     }
 }
@@ -363,7 +360,7 @@ impl ResumeMarkerType {
 /// Parsed resume marker from a user message.
 #[derive(Debug, Clone)]
 pub struct ResumeMarker {
-    /// Type of resume (continue, integration, answers, initial, `user_message`).
+    /// Type of resume (continue, integration, answers, initial).
     pub marker_type: ResumeMarkerType,
     /// Content after the marker.
     pub content: String,

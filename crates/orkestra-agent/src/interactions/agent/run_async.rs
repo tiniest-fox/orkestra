@@ -75,6 +75,13 @@ pub fn execute(
             content: marker.content,
             sections: prompt_sections,
         }));
+    } else {
+        // Raw user message (no marker prefix) — sent directly during workflow stages.
+        let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
+            resume_type: "user_message".to_string(),
+            content: prompt.clone(),
+            sections: prompt_sections,
+        }));
     }
 
     // Spawn background thread to read output and emit log events

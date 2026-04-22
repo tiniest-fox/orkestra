@@ -16,7 +16,6 @@ const RESUME_INTEGRATION: &str = include_str!("../../templates/resume/integratio
 const RESUME_ANSWERS: &str = include_str!("../../templates/resume/answers.md");
 const RESUME_PR_COMMENTS: &str = include_str!("../../templates/resume/pr_comments.md");
 const RESUME_MALFORMED_OUTPUT: &str = include_str!("../../templates/resume/malformed_output.md");
-const RESUME_USER_MESSAGE: &str = include_str!("../../templates/resume/user_message.md");
 
 // ============================================================================
 // Interaction
@@ -65,10 +64,7 @@ pub fn execute(
             RESUME_MALFORMED_OUTPUT,
             serde_json::json!({ "error": error, "attempt": attempt, "max_attempts": max_attempts }),
         ),
-        ResumeType::UserMessage { message } => (
-            RESUME_USER_MESSAGE,
-            serde_json::json!({ "message": message }),
-        ),
+        ResumeType::UserMessage { message } => return Ok(message.clone()),
     };
 
     // All resume templates need the stage name for the marker
@@ -366,10 +362,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:work:user_message>"));
-        assert!(prompt.contains("Please also add error handling for the edge case"));
-        assert!(prompt.contains("Address their request"));
-        assert!(prompt.contains("JSON"));
+        assert_eq!(prompt, "Please also add error handling for the edge case");
     }
 
     #[test]

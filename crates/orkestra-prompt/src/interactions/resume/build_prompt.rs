@@ -61,9 +61,15 @@ pub fn execute(
             error,
             attempt,
             max_attempts,
+            compact_schema,
         } => (
             RESUME_MALFORMED_OUTPUT,
-            serde_json::json!({ "error": error, "attempt": attempt, "max_attempts": max_attempts }),
+            serde_json::json!({
+                "error": error,
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "compact_schema": compact_schema
+            }),
         ),
         ResumeType::GateFailure { error } => {
             (RESUME_GATE_FAILURE, serde_json::json!({ "error": error }))
@@ -342,6 +348,7 @@ mod tests {
                 error: "no structured output found".to_string(),
                 attempt: 2,
                 max_attempts: 4,
+                compact_schema: Some("{\"type\":\"object\"}".to_string()),
             },
             "main",
             &[],
@@ -352,6 +359,28 @@ mod tests {
         assert!(prompt.contains("attempt 2 of 4"));
         assert!(prompt.contains("no structured output found"));
         assert!(prompt.contains("```ork"));
+        assert!(prompt.contains("JSON Schema Reference"));
+        assert!(prompt.contains("{\"type\":\"object\"}"));
+    }
+
+    #[test]
+    fn test_malformed_output_resume_prompt_no_schema() {
+        let prompt = execute(
+            "work",
+            &ResumeType::MalformedOutput {
+                error: "no structured output found".to_string(),
+                attempt: 1,
+                max_attempts: 4,
+                compact_schema: None,
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:malformed_output>"));
+        assert!(prompt.contains("attempt 1 of 4"));
+        assert!(!prompt.contains("JSON Schema Reference"));
     }
 
     #[test]

@@ -202,6 +202,7 @@ pub enum ResumeType {
         error: String,
         attempt: u32,
         max_attempts: u32,
+        compact_schema: Option<String>,
     },
     /// Gate script failed; agent should fix the issues.
     GateFailure { error: String },

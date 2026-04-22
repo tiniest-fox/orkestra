@@ -3,7 +3,17 @@
 Your previous output could not be parsed as valid structured JSON. This is attempt {{attempt}} of {{max_attempts}}.
 
 Error: {{error}}
+{{#if compact_schema}}
 
+## JSON Schema Reference
+
+Your output must match this JSON schema:
+
+```json
+{{{compact_schema}}}
+```
+
+{{/if}}
 You MUST submit your output using one of these methods:
 
 1. **StructuredOutput tool** (preferred) — call the StructuredOutput tool with your JSON properties as direct input fields

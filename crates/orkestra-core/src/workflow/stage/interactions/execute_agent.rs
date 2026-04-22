@@ -117,6 +117,7 @@ pub(crate) fn execute(
         resolved.capabilities.requires_direct_structured_output,
         sibling_tasks,
         parent_resources,
+        &compact_json_schema,
     )?;
 
     // 7. Apply provider fallbacks for system prompt and schema enforcement
@@ -264,9 +265,10 @@ fn build_user_prompt(
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
     parent_resources: Option<&ResourceStore>,
+    compact_schema: &str,
 ) -> Result<(String, Vec<PromptSection>), ExecutionError> {
     if is_resume {
-        let resume_type = trigger_to_resume_type(trigger);
+        let resume_type = trigger_to_resume_type(trigger, compact_schema);
         let prompt = build_resume_prompt(
             stage,
             &resume_type,
@@ -385,7 +387,7 @@ fn format_pr_feedback(trigger: Option<&IterationTrigger>) -> Option<String> {
 }
 
 /// Convert `IterationTrigger` to `ResumeType` for prompt building.
-fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
+fn trigger_to_resume_type(trigger: Option<&IterationTrigger>, compact_schema: &str) -> ResumeType {
     match trigger {
         // First iteration or no special context
         None | Some(IterationTrigger::Interrupted) => ResumeType::Continue,
@@ -431,6 +433,7 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
             error: error.clone(),
             attempt: *attempt,
             max_attempts: *max_attempts,
+            compact_schema: Some(compact_schema.to_string()),
         },
         Some(IterationTrigger::UserMessage { message }) => ResumeType::UserMessage {
             message: message.clone(),
@@ -795,7 +798,7 @@ mod tests {
         let trigger = IterationTrigger::GateFailure {
             error: "lint failed".to_string(),
         };
-        let resume = trigger_to_resume_type(Some(&trigger));
+        let resume = trigger_to_resume_type(Some(&trigger), "");
         assert!(matches!(resume, ResumeType::GateFailure { ref error } if error == "lint failed"));
     }
 
@@ -811,7 +814,7 @@ mod tests {
             checks: vec![],
             guidance: None,
         };
-        trigger_to_resume_type(Some(&trigger));
+        trigger_to_resume_type(Some(&trigger), "");
     }
 
     #[test]
@@ -825,7 +828,7 @@ mod tests {
             from_stage: "review".to_string(),
             feedback: "needs work".to_string(),
         };
-        trigger_to_resume_type(Some(&trigger));
+        trigger_to_resume_type(Some(&trigger), "");
     }
 
     #[test]
@@ -839,7 +842,7 @@ mod tests {
             message: "merge conflict".to_string(),
             conflict_files: vec!["src/lib.rs".to_string()],
         };
-        trigger_to_resume_type(Some(&trigger));
+        trigger_to_resume_type(Some(&trigger), "");
     }
 
     // -------------------------------------------------------------------------

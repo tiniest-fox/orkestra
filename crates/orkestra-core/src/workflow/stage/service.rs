@@ -1171,8 +1171,10 @@ mod tests {
 
     // -- ActiveAgent confirmed-output threshold tests --
 
-    fn make_agent() -> (ActiveAgent, std::sync::mpsc::Sender<crate::workflow::execution::RunEvent>)
-    {
+    fn make_agent() -> (
+        ActiveAgent,
+        std::sync::mpsc::Sender<crate::workflow::execution::RunEvent>,
+    ) {
         use crate::workflow::stage::agents::ExecutionHandle;
         let (tx, rx) = std::sync::mpsc::channel();
         let handle = ExecutionHandle {

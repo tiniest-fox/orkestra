@@ -59,8 +59,7 @@ pub fn execute(
             if session.spawn_count > 0 {
                 let is_crash_recovery = store
                     .get_active_iteration(task_id, stage)?
-                    .map(|i| i.stage_session_id.is_some())
-                    .unwrap_or(false);
+                    .is_some_and(|i| i.stage_session_id.is_some());
                 return Ok(!is_crash_recovery);
             }
         }

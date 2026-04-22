@@ -9285,6 +9285,10 @@ fn test_malformed_output_retry_succeeds_on_second_attempt() {
         retry_prompt.contains("```ork"),
         "Retry prompt must include ork fence instructions, got: {retry_prompt}"
     );
+    assert!(
+        retry_prompt.contains("JSON Schema Reference"),
+        "Retry prompt must include JSON schema for self-correction, got: {retry_prompt}"
+    );
 }
 
 /// Four consecutive malformed outputs exhaust the retry budget and fail the task.

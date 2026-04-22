@@ -803,6 +803,31 @@ mod tests {
     }
 
     #[test]
+    fn test_trigger_to_resume_type_malformed_output_threads_schema() {
+        let trigger = IterationTrigger::MalformedOutput {
+            error: "unexpected token".to_string(),
+            attempt: 2,
+            max_attempts: 3,
+        };
+        let schema = r#"{"type":"object"}"#;
+        let resume = trigger_to_resume_type(Some(&trigger), schema);
+        match resume {
+            ResumeType::MalformedOutput {
+                error,
+                attempt,
+                max_attempts,
+                compact_schema,
+            } => {
+                assert_eq!(error, "unexpected token");
+                assert_eq!(attempt, 2);
+                assert_eq!(max_attempts, 3);
+                assert_eq!(compact_schema, Some(schema.to_string()));
+            }
+            other => panic!("Expected MalformedOutput, got {other:?}"),
+        }
+    }
+
+    #[test]
     #[should_panic(
         expected = "PrFeedback triggers always supersede the session; is_resume cannot be true here"
     )]

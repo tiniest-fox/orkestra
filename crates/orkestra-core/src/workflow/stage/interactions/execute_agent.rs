@@ -119,15 +119,31 @@ pub(crate) fn execute(
         parent_resources,
     )?;
 
-    // 7. Apply provider fallbacks for system prompt and schema enforcement
-    let (user_prompt, system_prompt_for_config) = apply_provider_fallbacks(
+    // 7. Apply provider fallback: prepend system prompt if provider lacks CLI flag support.
+    let (mut user_prompt, system_prompt_for_config) = apply_provider_fallbacks(
         &task.id,
         stage,
         user_prompt,
         system_prompt,
-        &compact_json_schema,
         &resolved.capabilities,
-    )?;
+    );
+
+    // 7b. Inject schema reference/enforcement only when the agent needs to produce
+    // structured output fresh: initial spawn or malformed output correction.
+    let needs_schema = !spawn_context.is_resume
+        || matches!(trigger, Some(IterationTrigger::MalformedOutput { .. }));
+    if needs_schema {
+        user_prompt = append_schema_reference(&user_prompt, &compact_json_schema)?;
+        if !resolved.capabilities.supports_json_schema {
+            orkestra_debug!(
+                "exec",
+                "execute_stage {}/{}: provider lacks native schema support, embedding in prompt",
+                task.id,
+                stage
+            );
+            user_prompt = append_schema_enforcement(&user_prompt)?;
+        }
+    }
 
     orkestra_debug!(
         "exec",
@@ -460,22 +476,20 @@ fn get_stage_schema(
     .ok_or_else(|| ExecutionError::ConfigError(format!("No schema for agent stage: {stage}")))
 }
 
-/// Apply provider-specific fallbacks for system prompt and schema enforcement.
+/// Apply provider-specific fallback for the system prompt.
 ///
-/// Returns `(final_user_prompt, optional_system_prompt_for_config)`.
+/// Returns `(user_prompt, optional_system_prompt_for_config)`.
 ///
-/// Always injects the compact schema reference so every agent sees the schema.
-/// Providers without native JSON schema support additionally receive strict
-/// enforcement wording.
+/// If the provider supports a system prompt CLI flag, the system prompt is
+/// returned as `Some` for the agent config. Otherwise it is prepended to the
+/// user message, since the provider has no other way to receive it.
 pub(crate) fn apply_provider_fallbacks(
     task_id: &str,
     stage: &str,
     mut user_prompt: String,
     system_prompt: String,
-    compact_json_schema: &str,
     capabilities: &ProviderCapabilities,
-) -> Result<(String, Option<String>), ExecutionError> {
-    // System prompt fallback (prepend to user message if provider doesn't support CLI flag)
+) -> (String, Option<String>) {
     let system_prompt_for_config = if capabilities.supports_system_prompt {
         Some(system_prompt)
     } else {
@@ -489,21 +503,7 @@ pub(crate) fn apply_provider_fallbacks(
         None
     };
 
-    // Schema reference — always injected so every agent sees the schema
-    user_prompt = append_schema_reference(&user_prompt, compact_json_schema)?;
-
-    // Schema enforcement — only for providers without native JSON schema support
-    if !capabilities.supports_json_schema {
-        orkestra_debug!(
-            "exec",
-            "execute_stage {}/{}: provider lacks native schema support, embedding in prompt",
-            task_id,
-            stage
-        );
-        user_prompt = append_schema_enforcement(&user_prompt)?;
-    }
-
-    Ok((user_prompt, system_prompt_for_config))
+    (user_prompt, system_prompt_for_config)
 }
 
 // -- Tool Restrictions --
@@ -722,7 +722,6 @@ mod tests {
         let user_prompt = "Do the work".to_string();
         let system_prompt =
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
-        let compact_schema = r#"{"type":"object"}"#;
 
         let claude_caps = ProviderCapabilities {
             supports_json_schema: true,
@@ -735,18 +734,13 @@ mod tests {
         let (final_user, sys_for_config) = apply_provider_fallbacks(
             task_id,
             stage,
-            user_prompt,
+            user_prompt.clone(),
             system_prompt.clone(),
-            compact_schema,
             &claude_caps,
-        )
-        .unwrap();
+        );
 
-        // User message should contain the schema reference (unconditional)
-        assert!(final_user.contains("## JSON Schema Reference"));
-        assert!(final_user.contains(compact_schema));
-        // Should NOT contain enforcement wording (Claude has native support)
-        assert!(!final_user.contains("Output ONLY the JSON object"));
+        // User message should be unchanged
+        assert_eq!(final_user, user_prompt);
         // System prompt should be in config
         assert_eq!(sys_for_config, Some(system_prompt));
     }
@@ -758,7 +752,6 @@ mod tests {
         let user_prompt = "Do the work".to_string();
         let system_prompt =
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
-        let compact_schema = r#"{"type":"object"}"#;
 
         let opencode_caps = ProviderCapabilities {
             supports_json_schema: false,
@@ -773,21 +766,16 @@ mod tests {
             stage,
             user_prompt.clone(),
             system_prompt.clone(),
-            compact_schema,
             &opencode_caps,
-        )
-        .unwrap();
+        );
 
         // System prompt should be prepended to user message with "\n\n" separator
         assert!(final_user.starts_with("You are a worker agent"));
         assert!(final_user.contains("\n\nDo the work"));
         // System prompt should NOT be in config
         assert!(sys_for_config.is_none());
-        // Should contain schema reference
-        assert!(final_user.contains("## JSON Schema Reference"));
-        assert!(final_user.contains(compact_schema));
-        // Should contain enforcement wording
-        assert!(final_user.contains("Output ONLY the JSON object"));
+        // Schema injection is NOT the responsibility of this function
+        assert!(!final_user.contains("## JSON Schema Reference"));
     }
 
     #[test]

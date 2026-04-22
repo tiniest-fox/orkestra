@@ -49,20 +49,22 @@ See `src/stories/Demo/AppShell.stories.tsx` for the custom transport reference p
 
 After writing stories, generate screenshots and register them as resources so they appear in the Trak drawer throughout the workflow.
 
-> **Headless agents:** You cannot run `pnpm storybook` or take screenshots in a headless environment. At minimum, run `pnpm build-storybook` to catch import and bundling errors. Visual verification and screenshots are only possible in interactive/human runs — skip steps 1–3 below and note this limitation in your work summary.
+Run the single command:
 
-1. Run Storybook: `pnpm storybook` (serves at `http://localhost:6006`)
-2. Navigate to the component story and verify every story variant renders correctly
-3. Take screenshots --- either via `pnpm test-storybook` with a snapshot configuration, or manually from the browser
-4. Save screenshots to `.orkestra/screenshots/ComponentName.png`
-5. Register each screenshot as a resource in your structured output:
-
-```json
-{"name": "screenshot:ResourceItem", "url": "/absolute/path/to/.orkestra/screenshots/ResourceItem.png", "description": "ResourceItem --- image and link variants"}
-{"name": "screenshot:FeedRow", "url": "/absolute/path/to/.orkestra/screenshots/FeedRow.png", "description": "FeedRow --- default and selected states"}
+```bash
+pnpm screenshot-stories
 ```
 
-Use `screenshot:ComponentName` as the resource key so multiple screenshots coexist without collision. In Tauri, local image paths render as inline `<img>` tags in the Trak drawer Resources tab.
+This builds Storybook statically, starts a local file server, and uses storycap (headless Chromium via Playwright) to capture every story variant. Screenshots are saved to `.orkestra/.screenshots/` organized by story path (e.g. `Feed/TaskDrawer/Needs Review.png`).
+
+Register each screenshot as a resource in your structured output using the file path as the key:
+
+```json
+{"name": "screenshot:Feed/TaskDrawer/Needs Review", "url": "/absolute/path/to/.orkestra/.screenshots/Feed/TaskDrawer/Needs Review.png", "description": "TaskDrawer — needs review state"}
+{"name": "screenshot:Feed/FeedTaskRow/Default", "url": "/absolute/path/to/.orkestra/.screenshots/Feed/FeedTaskRow/Default.png", "description": "FeedTaskRow — default state"}
+```
+
+Use `screenshot:Story/Path` as the resource key so multiple screenshots coexist without collision. In Tauri, local image paths render as inline `<img>` tags in the Trak drawer Resources tab.
 
 ## Build Limitation
 

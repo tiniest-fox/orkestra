@@ -28,6 +28,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo install sccache cargo-sweep --locked && \
     chmod a+rx /usr/local/cargo/bin/sccache /usr/local/cargo/bin/cargo-sweep
+# Install Playwright's Chromium for headless Storybook screenshots (storycap uses
+# puppeteer-core; Ubuntu 24.04's chromium apt package is a snap stub).
+# PLAYWRIGHT_BROWSERS_PATH puts the install in a system-wide location so non-root
+# users can reach it. The symlink gives puppeteer-core a stable, version-independent path.
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/local/ms-playwright
 # Install Node.js 22 LTS via NodeSource, then Claude Code CLI and pnpm globally.
 # Placed before COPY so this layer is not busted by source or Cargo.lock changes.
 ARG NODE_MAJOR=22
@@ -39,6 +44,12 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g @anthropic-ai/claude-code pnpm typescript typescript-language-server && \
     rm -rf /var/lib/apt/lists/*
+# Install Playwright Chromium after Node is available. The symlink gives
+# puppeteer-core (used by storycap) a stable, version-independent path.
+RUN npx -y playwright install chromium --with-deps && \
+    ln -s $(find /usr/local/ms-playwright -name chrome -type f -executable | head -1) \
+           /usr/local/bin/playwright-chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/playwright-chromium
 # Pre-fetch all cargo dependencies (including git deps like fix-path-env from
 # src-tauri) at build time, then open up permissions so any non-root user
 # (Codespaces, Orkestra, local devcontainer) can write to the cargo cache

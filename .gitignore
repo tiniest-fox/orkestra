@@ -54,6 +54,7 @@ coverage/
 .orkestra/.database/
 .orkestra/.logs/
 .orkestra/.artifacts/
+.orkestra/.screenshots/
 .orkestra/tasks.jsonl
 .orkestra/.worktrees/
 **/.orkestra/.worktrees/

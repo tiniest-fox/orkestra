@@ -158,8 +158,8 @@ Bad examples: "all tests pass", "cargo clippy has no warnings", "cargo fmt produ
 ## UI Subtraks: Storybook Stories
 
 When a Subtrak adds or modifies UI components in `src/components/`, include these in its `detailed_instructions`:
-- Write Storybook stories covering each visual state (default, loading, error, empty). Reference: load the `/storybook` skill for provider setup and file conventions.
-- Register screenshots of the stories as resources (format: `screenshot:ComponentName`).
+- Write Storybook stories covering each visual state (default, loading, error, empty). Reference: load the `/storybook` skill for provider setup, file conventions, and the screenshot workflow.
+- Register screenshots of the stories as resources (format: `screenshot:Story/Path/Variant`).
 - Add story coverage to the Subtrak's acceptance criteria — one story per meaningful visual state.
 
 ## Visual Formatting

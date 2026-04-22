@@ -682,17 +682,22 @@ impl TestEnv {
     /// Note: Checks only the user message (not system prompt). Resume prompts are short
     /// user messages that reference an existing session, while the system prompt is still
     /// passed separately.
+    ///
+    /// Special case: `user_message` resumes pass the raw message through with no marker
+    /// wrapper. For this type, only content assertions are checked.
     pub fn assert_resume_prompt_contains(&self, expected_type: &str, expected_content: &[&str]) {
         let calls = self.runner.calls();
         let call = calls.last().expect("No agent calls recorded");
         let user_message = &call.prompt; // Just the user message, not combined with system
 
-        let type_tag = format!(":{expected_type}>");
-        assert!(
-            user_message.starts_with("<!orkestra:resume:") && user_message.contains(&type_tag),
-            "Expected resume marker with type '{expected_type}', got prompt starting with: {}...",
-            &user_message[..user_message.len().min(100)]
-        );
+        if expected_type != "user_message" {
+            let type_tag = format!(":{expected_type}>");
+            assert!(
+                user_message.starts_with("<!orkestra:resume:") && user_message.contains(&type_tag),
+                "Expected resume marker with type '{expected_type}', got prompt starting with: {}...",
+                &user_message[..user_message.len().min(100)]
+            );
+        }
 
         for content in expected_content {
             assert!(

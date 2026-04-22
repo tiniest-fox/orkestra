@@ -3,7 +3,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git build-essential ca-certificates unzip gnupg \
     pkg-config libssl-dev \
     libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-    librsvg2-dev libxdo-dev && \
+    librsvg2-dev libxdo-dev \
+    chromium && \
     rm -rf /var/lib/apt/lists/*
 # Install GitHub CLI so agents can create PRs and interact with GitHub.
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

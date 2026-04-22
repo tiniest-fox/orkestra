@@ -15,6 +15,12 @@
  *     Exits 2 on failure, which blocks the command entirely.
  *     Non-`gh pr` Bash commands pass through immediately (exit 0).
  *
+ *   PreToolUse (StructuredOutput):
+ *     Checks tool_input.content for invalid mermaid blocks in agent artifacts
+ *     (plans, work summaries, PR descriptions). Exits 2 on failure.
+ *     This covers both main agent stage outputs and the PR description generator
+ *     (UtilityRunner spawns `claude --output-format json` which uses StructuredOutput).
+ *
  *   Stop:
  *     Checks the assistant's final response text for invalid mermaid blocks.
  *     Exits 2 on failure, which blocks the response and forces a retry.
@@ -92,6 +98,9 @@ if (hookEvent === 'Stop') {
 } else if (toolName === 'Edit') {
   content = toolInput.new_string ?? '';
   source = toolInput.file_path ?? '<edit>';
+} else if (toolName === 'StructuredOutput') {
+  content = toolInput.content ?? '';
+  source = '<structured-output>';
 } else if (toolName === 'Bash') {
   const cmd = toolInput.command ?? '';
   if (/gh\s+pr\s+(create|edit|comment|review)\b/.test(cmd)) {

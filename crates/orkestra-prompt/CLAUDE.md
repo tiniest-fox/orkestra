@@ -66,7 +66,7 @@ Variants:
 - `Integration { message, conflict_files }` — merge conflict
 - `Answers { answers }` — human provided answers
 - `PrComments { comments, checks, guidance }` — PR review comments and failed CI checks
-- `MalformedOutput { error, attempt, max_attempts }` — corrective prompt after malformed agent output
+- `MalformedOutput { error, attempt, max_attempts, compact_schema }` — corrective prompt after malformed agent output; `compact_schema` is `Option<String>` (always `Some(...)` in production, `None` for test convenience)
 - `GateFailure { error }` — gate script failed; resume prompt rendered from `gate_failure.md` and filtered out of the UI chat feed (shown inline via gate log entries instead)
 - `UserMessage { message }` — user sent a message directly; raw message passed through with no template wrapping
 
@@ -95,6 +95,8 @@ When resuming a session, the agent already has full context from the original se
 3. **Question history is NOT included in initial prompts** — Initial prompts start with empty question history. Questions and answers flow through resume prompts after the agent asks and human answers.
 
 4. **Template guards use `resources`** — In Handlebars templates, guard the resources block on `{{#if resources}}`. The `resources` array is always fully populated (merged task + parent), so this is the correct signal. The `{{#each resources}}` loop renders each inline resource entry.
+
+6. **Use `{{{triple_braces}}}` for JSON content in templates** — Handlebars double-brace `{{var}}` HTML-escapes output, turning `"` into `&quot;` and breaking JSON. Any template variable that contains raw JSON (e.g., `compact_schema`) must use `{{{var}}}` to bypass escaping.
 
 5. **Populate all context struct fields when templates change** — When adding a new template variable, ensure every context struct that feeds that template includes the new field. Handlebars silently treats missing fields as falsy — a missing `resources` field in `UserMessageContext` will cause the entire `{{#if resources}}` block (including other variables nested inside) to be skipped without any error.
 

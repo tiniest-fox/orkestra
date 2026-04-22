@@ -807,6 +807,8 @@ See `src/stories/Demo/AppShell.stories.tsx` for the reference pattern.
 
 To run the automated test runner against a live instance: `pnpm test-storybook --url http://localhost:6006` (requires the dev server to be running first).
 
+**Playwright Chromium path**: The devcontainer Dockerfile installs Playwright Chromium and creates a stable symlink at `/usr/local/bin/playwright-chromium`. Any script that needs to invoke the Playwright Chromium binary (e.g., `storycap`, puppeteer-based tools) must reference this symlink — not the version-specific path under `/usr/local/ms-playwright/chromium-NNNN/`. The symlink matches the `PUPPETEER_EXECUTABLE_PATH` env var set in the Dockerfile and survives Playwright version bumps.
+
 **Screenshot-as-resource workflow**: When stories are added or modified, generate screenshots and register them as resources so they appear in the Trak drawer throughout the workflow. The expected workflow:
 
 1. Run Storybook: `pnpm storybook` (serves at `http://localhost:6006`)

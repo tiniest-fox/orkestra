@@ -313,6 +313,41 @@ describe("buildVirtualItems", () => {
     }
   });
 
+  it("artifact-body item has isGateRunning=true when gate is in progress", () => {
+    const artifact: WorkflowArtifact = {
+      name: "plan",
+      content: "# Plan",
+      stage: "work",
+      created_at: "2026-01-01T00:00:00Z",
+      iteration: 1,
+    };
+    const gateEntries: LogEntry[] = [
+      { type: "gate_started", command: "checks.sh" },
+      { type: "gate_output", content: "running tests..." },
+    ];
+    const entries: LogEntry[] = [
+      { type: "artifact_produced", name: "plan", artifact_id: "art-1", artifact },
+      ...gateEntries,
+    ];
+    const messages: DisplayMessage[] = [{ kind: "agent", entries }];
+    const artifactContext: ArtifactContext = {
+      gateEntries,
+      isGateRunning: true,
+    };
+    const items = buildVirtualItems(messages, {
+      ...defaultOpts,
+      latestArtifactId: "art-1",
+      artifactContext,
+    });
+    const bodyItem = items.find((i) => i.kind === "artifact-body");
+    expect(bodyItem).toBeDefined();
+    if (bodyItem?.kind === "artifact-body") {
+      expect(bodyItem.gateEntries).toHaveLength(2);
+      expect(bodyItem.isGateRunning).toBe(true);
+      expect(bodyItem.gatePassed).toBeUndefined();
+    }
+  });
+
   it("artifact-body item has gatePassed=false and isGateRunning=false when gate failed", () => {
     const artifact: WorkflowArtifact = {
       name: "plan",

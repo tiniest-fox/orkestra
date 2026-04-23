@@ -245,7 +245,7 @@ fn send_completion(
             full_output.len(),
             full_output
         );
-        AgentCompletionError::MalformedOutput(format!("{e}\n\nRaw output:\n{full_output}"))
+        AgentCompletionError::MalformedOutput(e)
     });
 
     orkestra_debug!("runner", "parse result: {:?}", result.is_ok());

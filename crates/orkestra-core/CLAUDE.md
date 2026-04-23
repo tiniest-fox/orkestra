@@ -179,7 +179,7 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 
 ## Lock File E2E Tests
 
-Tests that verify lock contention (e.g., "second orchestrator is blocked") must use a real running process — either a live `OrchestratorLoop` or a subprocess. Writing `current_pid:fresh_ts` into the lock file does **not** work: `acquire()` sees a fresh timestamp + alive PID, enters the backoff loop, but the call returns `Ok(Stopped)` instead of blocking to `TimedOut`. Root cause is unclear, but the workaround is reliable: spin up a real orchestrator A with `build_orchestrator()`, wait for its lock file to appear, then run orchestrator B.
+Tests that verify lock contention (e.g., "second orchestrator is blocked") must use a real running process — either a live `OrchestratorLoop` or a subprocess. Writing `current_pid:fresh_ts` into the lock file does **not** work: `acquire()` sees a fresh timestamp + alive PID, enters the backoff loop, but the call returns `Ok(Stopped)` instead of blocking to `TimedOut`. The root cause: `std::fs::write` truncates the file to zero before writing, creating a brief window where a concurrent reader sees `LockState::Corrupt` and steals the lock. The lock writes are now atomic (write to `.tmp`, rename over target), but the manual-file-write approach still races because the test's write also truncates. Workaround: spin up a real orchestrator A with `build_orchestrator()`, wait for its lock file to appear, then run orchestrator B.
 
 `ACQUIRE_TIMEOUT_SECS = 2` in test mode, so any test that exercises the blocking path takes ~4s (backoff schedule: 250ms → 500ms → 1s → 2s cap before timeout).
 

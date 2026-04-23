@@ -143,10 +143,10 @@ impl OrchestratorLock {
     /// Refresh the timestamp in the lock file without changing the PID.
     ///
     /// Called each orchestrator tick to signal liveness. Failures are silently ignored
-    /// (same policy as `release()`).
+    /// (same policy as `release()`). Uses atomic rename to prevent concurrent readers
+    /// from seeing a truncated (corrupt) file mid-write.
     pub(super) fn heartbeat(&self) {
-        let timestamp = now_secs();
-        let _ = std::fs::write(&self.lock_path, format!("{}:{}", self.pid, timestamp));
+        let _ = write_lock_atomic(&self.lock_path, self.pid, now_secs());
     }
 
     // -- Helpers --
@@ -243,14 +243,26 @@ fn now_secs() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-/// Write `{our_pid}:{timestamp}` to `lock_path`, then verify we still own it after 10ms.
+/// Write `{pid}:{timestamp}` to `lock_path` via an atomic rename.
+///
+/// Writes to a `.tmp` sibling first, then renames over the target. This prevents
+/// concurrent readers from seeing a zero-byte or partial file during the write —
+/// a `std::fs::write` would truncate the target to zero before writing new content,
+/// creating a window where readers see `LockState::Corrupt` and incorrectly steal.
+fn write_lock_atomic(lock_path: &Path, pid: u32, timestamp: u64) -> std::io::Result<()> {
+    let tmp_path = lock_path.with_extension("tmp");
+    std::fs::write(&tmp_path, format!("{pid}:{timestamp}"))?;
+    std::fs::rename(&tmp_path, lock_path)
+}
+
+/// Write `{our_pid}:{timestamp}` to `lock_path` atomically, then verify we still own it after 10ms.
 ///
 /// The post-write sleep + re-read prevents two processes from both believing they
 /// acquired a stale lock simultaneously: whichever wrote last wins, and the loser
 /// gets `AlreadyRunning`.
 fn steal_lock(lock_path: &Path, our_pid: u32) -> Result<OrchestratorLock, LockError> {
     let timestamp = now_secs();
-    std::fs::write(lock_path, format!("{our_pid}:{timestamp}")).map_err(LockError::Io)?;
+    write_lock_atomic(lock_path, our_pid, timestamp).map_err(LockError::Io)?;
 
     // Verify-after-write: give concurrent stealers time to overwrite us
     std::thread::sleep(Duration::from_millis(10));

@@ -6,14 +6,14 @@ import type { WorkflowIteration } from "../../../types/workflow";
 import { availableTabs, canUseRunScript, defaultTab } from "./drawerTabs";
 
 describe("defaultTab", () => {
-  it("returns 'error' for a failed task", () => {
+  it("returns 'agent' for a failed task", () => {
     const task = createMockWorkflowTaskView({ state: { type: "failed" } });
-    expect(defaultTab(task)).toBe("error");
+    expect(defaultTab(task)).toBe("agent");
   });
 
-  it("returns 'error' for a blocked task", () => {
+  it("returns 'agent' for a blocked task", () => {
     const task = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
-    expect(defaultTab(task)).toBe("error");
+    expect(defaultTab(task)).toBe("agent");
   });
 
   it("returns 'agent' for a generic queued task", () => {
@@ -63,10 +63,10 @@ describe("defaultTab", () => {
 });
 
 describe("availableTabs — blocked task", () => {
-  it("returns Error, Agent, Diff, History tabs for a blocked task", () => {
+  it("returns Agent, Diff, History tabs for a blocked task", () => {
     const task = createMockWorkflowTaskView({ state: { type: "blocked", reason: "stuck" } });
     const tabs = availableTabs(task);
-    expect(tabs.map((t) => t.id)).toEqual(["error", "agent", "diff", "history"]);
+    expect(tabs.map((t) => t.id)).toEqual(["agent", "diff", "history"]);
   });
 
   it("blocked tabs match failed tabs in shape", () => {

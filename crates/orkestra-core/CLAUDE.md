@@ -175,6 +175,8 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 | `None`            | Active iteration has `stage_session_id` set | No — crash recovery |
 | `None`            | Active iteration has `stage_session_id = None` OR no active iteration | Yes — clean re-entry |
 
+**`MalformedOutput` retry path is `run_async`-only.** Only `AgentCompletionError::MalformedOutput` (from `run_async`) feeds into the `IterationTrigger::MalformedOutput` → retry loop. `run_sync`'s `ParseFailed` does not. If `run_sync` is ever wired into the orchestrator, parse failures would need a separate retry path.
+
 **Why `stage_session_id` and not just `ended_at IS NULL`:** `finalize_advancement` pre-creates the next stage's iteration with `stage_session_id = None` before the spawn. `on_spawn_starting` links it to the session when the agent actually runs. So a crash-recovery iteration (agent was mid-run) has `stage_session_id IS NOT NULL`; a clean re-entry iteration (pre-created, agent hasn't run yet) has `stage_session_id IS NULL`.
 
 ## Lock File E2E Tests

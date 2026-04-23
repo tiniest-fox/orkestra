@@ -21,8 +21,8 @@ pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
             parent_id, depends_on, branch_name, worktree_path,
             auto_mode, created_at, updated_at, completed_at,
             base_branch, flow, short_id, base_commit, pr_url, interactive,
-            resources
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            resources, is_chat
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             task.id,
             task.title,
@@ -44,6 +44,7 @@ pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
             task.pr_url,
             false,
             resources_json,
+            task.is_chat,
         ],
     )
     .map_err(|e| WorkflowError::Storage(e.to_string()))?;

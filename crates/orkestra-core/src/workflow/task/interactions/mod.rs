@@ -2,6 +2,7 @@
 
 pub mod cleanup_orphaned_worktrees;
 pub mod create;
+pub mod create_chat;
 pub mod create_subtask;
 pub mod delete;
 pub mod find_spawn_candidates;

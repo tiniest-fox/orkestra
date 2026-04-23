@@ -346,3 +346,22 @@ pub fn workflow_send_message(
         action::send_message(state.command_context(), &params).map_err(Into::into)
     })
 }
+
+/// Promote a chat task to a full workflow flow.
+///
+/// Converts the chat task to a workflow task: sets `is_chat=false`, assigns a flow,
+/// creates a worktree, and queues it for the orchestrator's setup phase.
+/// `flow` is optional; omit to use the project's default flow.
+#[tauri::command]
+pub fn workflow_promote_to_flow(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    flow: Option<String>,
+) -> Result<Value, TauriError> {
+    orkestra_debug!("tauri", "promote_to_flow {task_id}");
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id, "flow": flow });
+        action::promote_to_flow(state.command_context(), &params).map_err(Into::into)
+    })
+}

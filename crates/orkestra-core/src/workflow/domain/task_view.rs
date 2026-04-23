@@ -67,6 +67,9 @@ pub struct DerivedTaskState {
     pub subtask_progress: Option<SubtaskProgress>,
     /// Whether the task can be bypassed (skip/send-to-stage/restart).
     pub can_bypass: bool,
+    /// Whether the assistant agent is actively running for this task (chat tasks only).
+    #[serde(default)]
+    pub assistant_active: bool,
 }
 
 /// A pending rejection from a reviewer agent awaiting human confirmation.
@@ -170,6 +173,7 @@ impl DerivedTaskState {
             stages_with_logs,
             subtask_progress,
             can_bypass: task.can_bypass(),
+            assistant_active: false, // computed by list_active for chat tasks
         }
     }
 }

@@ -45,6 +45,11 @@ impl WorkflowApi {
         )
     }
 
+    /// Create a new chat task (no flow, no worktree, starts in Queued).
+    pub fn create_chat_task(&self, title: &str) -> WorkflowResult<Task> {
+        task_interactions::create_chat::execute(self.store.as_ref(), title)
+    }
+
     /// Create a new subtask under a parent task.
     pub fn create_subtask(
         &self,

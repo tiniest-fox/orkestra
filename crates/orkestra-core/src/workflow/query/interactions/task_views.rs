@@ -8,6 +8,7 @@ use crate::workflow::domain::task_view::DerivedTaskState;
 use crate::workflow::domain::{DifferentialTaskResponse, TaskView};
 use crate::workflow::domain::{Iteration, StageSession, Task};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use orkestra_types::domain::SessionType;
 
 /// List all active top-level tasks with pre-joined data and derived state.
 pub fn list_active(
@@ -67,13 +68,22 @@ pub fn list_active(
 
     let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
     for task in top_level {
-        views.push(build_single_top_level_view(
+        let mut view = build_single_top_level_view(
             task,
             &iterations_by_task,
             &sessions_by_task,
             &subtask_derived_by_parent,
             workflow,
-        ));
+        );
+        // For chat tasks, check if the assistant agent is currently running.
+        if view.task.is_chat {
+            if let Ok(Some(session)) =
+                store.get_assistant_session_for_task(&view.task.id, &SessionType::Assistant)
+            {
+                view.derived.assistant_active = session.agent_pid.is_some();
+            }
+        }
+        views.push(view);
     }
 
     views.extend(subtask_views);

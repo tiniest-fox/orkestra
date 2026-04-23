@@ -4585,20 +4585,16 @@ fn test_untriggered_reentry_spawns_fresh_session() {
     );
 }
 
-/// Test that interrupt→resume does NOT start a fresh session.
+/// Test that interrupt→resume with no prior activity spawns fresh (no resume).
 ///
-/// An interrupt→resume is NOT a stage re-entry — it's the same pass through the
-/// stage being continued after a pause. `UserMessage` is an iterating trigger,
-/// so the existing session is always resumed.
-///
-/// Bug: Before the fix, if the agent was interrupted before producing structured
-/// output (`has_activity = false`), the next spawn would compute `is_resume = false`
-/// and replace the session ID with a fresh UUID, bypassing `--resume`.
+/// `has_activity` is the sole signal for whether a provider session is resumable.
+/// When an agent is interrupted before producing any output, there is nothing in
+/// the provider session worth resuming — spawning fresh is correct.
 ///
 /// Flow:
 /// 1. Review stage is simulated as started (`agent_started`) then interrupted
 /// 2. User resumes (creates `UserMessage` iteration)
-/// 3. Review spawns via orchestrator → must use `is_resume = true`
+/// 3. Review spawns via orchestrator → must use `is_resume = false` (no activity)
 /// 4. Untriggered re-entry logic must NOT fire (`trigger = Some(UserMessage)`)
 #[test]
 fn test_interrupt_resume_preserves_session() {
@@ -4651,13 +4647,13 @@ fn test_interrupt_resume_preserves_session() {
     // =========================================================================
     ctx.advance(); // spawn reviewer with UserMessage trigger
 
-    // Key assertion: UserMessage trigger must produce is_resume=true.
-    // Before the fix: is_resume=false because has_activity=false and UserMessage
-    // wasn't checked. After the fix: is_resume=true.
+    // Key assertion: no activity → is_resume=false, even with UserMessage trigger.
+    // has_activity is the sole resumability signal — if the provider session has no
+    // content (no output produced), resuming serves no purpose.
     let resume_config = ctx.last_run_config();
     assert!(
-        resume_config.is_resume,
-        "Resume after interrupt should use is_resume=true (UserMessage trigger)"
+        !resume_config.is_resume,
+        "Interrupt with no activity should spawn fresh (is_resume=false)"
     );
 
     // No session superseding — UserMessage is iterating, not returning.
@@ -4690,14 +4686,14 @@ fn test_interrupt_resume_preserves_session() {
 /// Crash recovery with agent activity → `is_resume=true`.
 ///
 /// When the app crashes while an agent is mid-run AND the agent had already produced
-/// confirmed output (has_activity=true), the next spawn must resume the existing
+/// confirmed output (`has_activity=true`), the next spawn must resume the existing
 /// session via `--resume <session-id>` rather than starting fresh.
 ///
 /// Flow:
-/// 1. Work stage runs to completion (dispatch_completion writes has_activity=true)
+/// 1. Work stage runs to completion (`dispatch_completion` writes `has_activity=true`)
 /// 2. Simulate crash: force task back to Queued, create a new linked active iteration
 /// 3. Startup recovery sets trigger=None
-/// 4. Verify spawn uses is_resume=true (session preserved, has_activity=true)
+/// 4. Verify spawn uses `is_resume=true` (session preserved, `has_activity=true`)
 #[test]
 fn test_crash_recovery_with_activity_resumes_session() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
@@ -4804,17 +4800,17 @@ fn test_crash_recovery_with_activity_resumes_session() {
 /// Crash recovery without agent activity → fresh spawn (`is_resume=false`).
 ///
 /// When the app crashes while an agent was mid-run but the agent had NOT yet produced
-/// confirmed output (has_activity=false — e.g. crashed at startup before the first
-/// ToolUse or second Text entry), the next spawn must start fresh.
+/// confirmed output (`has_activity=false` — e.g. crashed at startup before the first
+/// `ToolUse` or second Text entry), the next spawn must start fresh.
 ///
 /// Resuming a session that produced no output is unsafe: the provider session
 /// may not exist or may have stale context. A fresh spawn with the full initial
 /// prompt is the correct recovery path.
 ///
 /// Flow:
-/// 1. agent_started() → AgentWorking (no session created, simulates crash at process start)
+/// 1. `agent_started()` → `AgentWorking` (no session created, simulates crash at process start)
 /// 2. Startup recovery: task → Queued (no trigger)
-/// 3. Verify spawn uses is_resume=false (no session or session.has_activity=false)
+/// 3. Verify spawn uses `is_resume=false` (no session or `session.has_activity=false`)
 #[test]
 fn test_crash_recovery_without_activity_spawns_fresh() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
@@ -4899,10 +4895,10 @@ fn test_crash_recovery_without_activity_spawns_fresh() {
 /// stage must spawn with a fresh session, not resume the old one.
 ///
 /// This is distinct from crash recovery:
-/// - Crash recovery: active iteration exists (stage_session_id IS NOT NULL) → preserve session
+/// - Crash recovery: active iteration exists (`stage_session_id` IS NOT NULL) → preserve session
 /// - Clean re-entry: no active iteration for this stage → supersede session
 ///
-/// This test verifies the should_supersede logic for the no-trigger clean re-entry path.
+/// This test verifies the `should_supersede` logic for the no-trigger clean re-entry path.
 /// (The full workflow version is in `test_untriggered_reentry_spawns_fresh_session`.)
 #[test]
 fn test_clean_reentry_supersedes_session() {
@@ -7526,6 +7522,7 @@ fn test_gate_output_emitted_as_log_entries() {
 /// - Gate fails (exit 1).
 /// - Task re-queued to work stage with `GateFailure` context.
 /// - Next agent spawn receives gate error as feedback.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn test_gate_fail_requeues_with_feedback() {
     use orkestra_core::workflow::config::{

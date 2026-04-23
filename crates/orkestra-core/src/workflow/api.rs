@@ -368,7 +368,7 @@ impl WorkflowApi {
     /// Force a task to `Queued { stage }` regardless of current state.
     ///
     /// Used in crash-recovery e2e tests to set up the state that
-    /// `recover_stale_agents` would produce (AgentWorking → Queued, no trigger).
+    /// `recover_stale_agents` would produce (`AgentWorking` → Queued, no trigger).
     pub fn force_queued(&self, task_id: &str, stage: &str) -> WorkflowResult<Task> {
         let mut task = self
             .store

@@ -44,8 +44,7 @@ pub(crate) fn execute(
 
     let stage_session_id = session.id.clone();
 
-    // Fetch the active iteration BEFORE computing is_resume so we can inspect its trigger.
-    // This is read-only — no session state is affected by this fetch.
+    // Fetch or create the active iteration.
     let iteration = if let Some(active_iter) = store.get_active_iteration(task_id, stage)? {
         active_iter
     } else {
@@ -58,30 +57,13 @@ pub(crate) fn execute(
         iteration_service.create_iteration(task_id, stage, trigger)?
     };
 
-    // Compute is_resume BEFORE saving the session or linking the iteration.
-    // is_resume: true if we have a session ID AND either:
-    //   - the agent produced output (has_activity), OR
-    //   - the user explicitly chose to resume (UserMessage trigger).
-    //
-    // UserMessage handles agents interrupted before producing structured output:
-    // has_activity stays false (only set on successful completion), but we still
-    // want to resume the existing session since the user is explicitly continuing work.
-    //
-    // Crash-recovery note: when an agent crashes before producing any output,
-    // has_activity=false and trigger may be a non-superseding type.
-    // In that case is_resume=false, so we spawn fresh. This is correct — resuming
-    // a dead provider session (no output) would fail; fresh spawn with the full
-    // initial prompt is the right recovery path.
-    //
-    // UserMessage is the exception: it is set when a user explicitly resumes an
-    // interrupted task via send_message(). Even if has_activity=false (interrupted
-    // before output), we want to continue the existing session.
-    let is_human_resume = matches!(
-        iteration.incoming_context,
-        Some(IterationTrigger::UserMessage { .. })
-    );
-    let is_resume =
-        session.claude_session_id.is_some() && (session.has_activity || is_human_resume);
+    // is_resume: true only when we have a session ID AND the agent previously produced
+    // output (has_activity=true). has_activity is the canonical signal that the provider
+    // session contains useful context worth resuming. When has_activity=false — whether
+    // due to a crash, kill, or interrupt before any output — spawning fresh is correct:
+    // the provider session has no content, and resuming it would either fail or replay
+    // an empty context.
+    let is_resume = session.claude_session_id.is_some() && session.has_activity;
 
     // When not resuming, replace stale session ID with fresh one (or clear it for
     // own-ID providers). This prevents "Session ID already in use" errors when
@@ -93,14 +75,13 @@ pub(crate) fn execute(
 
     orkestra_debug!(
         "session",
-        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}, is_human_resume={}, is_resume={}",
+        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}, is_resume={}",
         task_id,
         stage,
         session.claude_session_id,
         session.session_state,
         session.spawn_count,
         session.has_activity,
-        is_human_resume,
         is_resume
     );
 

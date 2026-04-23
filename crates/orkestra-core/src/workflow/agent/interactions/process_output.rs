@@ -168,6 +168,13 @@ pub(crate) fn dispatch_output(
             )?;
             task.state = TaskState::failed_at(current_stage, &error);
             task.updated_at = now.to_string();
+            if let Some(session) = store.get_stage_session(&task.id, current_stage)? {
+                store.append_log_entry(
+                    &session.id,
+                    &LogEntry::Error { message: error },
+                    Some(iteration_id),
+                )?;
+            }
             None
         }
         StageOutput::Blocked { reason } => {
@@ -180,6 +187,13 @@ pub(crate) fn dispatch_output(
             )?;
             task.state = TaskState::blocked_at(current_stage, &reason);
             task.updated_at = now.to_string();
+            if let Some(session) = store.get_stage_session(&task.id, current_stage)? {
+                store.append_log_entry(
+                    &session.id,
+                    &LogEntry::Error { message: reason },
+                    Some(iteration_id),
+                )?;
+            }
             None
         }
     };
@@ -441,5 +455,93 @@ mod tests {
         assert_eq!(task.resources.len(), 2);
         assert!(task.resources.get("existing").is_some());
         assert!(task.resources.get("new-doc").is_some());
+    }
+
+    fn setup_agent_working_task_with_session(
+        store: &Arc<InMemoryWorkflowStore>,
+        iteration_service: &IterationService,
+        task_id: &str,
+    ) -> (Task, String, String) {
+        use crate::testutil::fixtures::sessions;
+
+        let mut task =
+            tasks::save_task(store.as_ref(), task_id, "planning", "Test", "Desc").unwrap();
+        task.state = TaskState::agent_working("planning");
+        store.save_task(&task).unwrap();
+
+        let session =
+            sessions::save_session(store.as_ref(), "session-1", task_id, "planning").unwrap();
+        iteration_service
+            .create_initial_iteration(task_id, "planning")
+            .unwrap();
+        let iteration_id = store
+            .get_active_iteration(task_id, "planning")
+            .unwrap()
+            .unwrap()
+            .id;
+
+        (task, session.id, iteration_id)
+    }
+
+    #[test]
+    fn test_failed_output_emits_error_log_entry() {
+        let (store, iteration_service) = make_store_and_service();
+        let workflow = make_workflow();
+        let (mut task, session_id, iteration_id) =
+            setup_agent_working_task_with_session(&store, &iteration_service, "task-1");
+
+        dispatch_output(
+            store.as_ref(),
+            &workflow,
+            &iteration_service,
+            &mut task,
+            StageOutput::Failed {
+                error: "something went wrong".into(),
+            },
+            "planning",
+            FIXTURE_TIMESTAMP,
+            &iteration_id,
+        )
+        .unwrap();
+
+        let entries = store.get_log_entries(&session_id).unwrap();
+        let has_error = entries
+            .iter()
+            .any(|e| matches!(e, LogEntry::Error { message } if message == "something went wrong"));
+        assert!(
+            has_error,
+            "expected LogEntry::Error in session log after Failed output"
+        );
+    }
+
+    #[test]
+    fn test_blocked_output_emits_error_log_entry() {
+        let (store, iteration_service) = make_store_and_service();
+        let workflow = make_workflow();
+        let (mut task, session_id, iteration_id) =
+            setup_agent_working_task_with_session(&store, &iteration_service, "task-2");
+
+        dispatch_output(
+            store.as_ref(),
+            &workflow,
+            &iteration_service,
+            &mut task,
+            StageOutput::Blocked {
+                reason: "waiting on external input".into(),
+            },
+            "planning",
+            FIXTURE_TIMESTAMP,
+            &iteration_id,
+        )
+        .unwrap();
+
+        let entries = store.get_log_entries(&session_id).unwrap();
+        let has_error = entries.iter().any(
+            |e| matches!(e, LogEntry::Error { message } if message == "waiting on external input"),
+        );
+        assert!(
+            has_error,
+            "expected LogEntry::Error in session log after Blocked output"
+        );
     }
 }

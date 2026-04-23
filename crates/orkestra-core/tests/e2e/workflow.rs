@@ -10030,3 +10030,126 @@ fn test_schema_reference_injected_for_default_provider() {
         "Default provider (claudecode) should not get enforcement wording"
     );
 }
+
+// =============================================================================
+// Error Session Preservation Tests
+// =============================================================================
+
+/// Follow-up message after agent error resumes the existing session (`is_resume=true`).
+///
+/// When an agent produces a structured `StageOutput::Failed` (with prior streaming
+/// activity), `dispatch_completion` routes it through `AgentSuccess` →
+/// `persist_activity_flag` → `has_activity=true`. The session ID is not cleared by
+/// `process_output.rs`. A follow-up `send_message` creates a `UserMessage` trigger;
+/// on the next spawn `on_spawn_starting` computes `is_resume=true`.
+///
+/// This is the primary regression test for the Trak "Continue existing Trak sessions
+/// on errors": the old behavior cleared `claude_session_id` in `fail_execution`, so
+/// every follow-up after an error started a fresh session instead of resuming.
+///
+/// Also verifies (MEDIUM finding): `LogEntry::Error` appears in the session log after
+/// the agent fails through the orchestrator, making the error visible in the Agent tab.
+///
+/// Flow:
+/// 1. Agent produces streaming activity then `StageOutput::Failed` → `has_activity=true`
+/// 2. Verify `LogEntry::Error` is present in the session log
+/// 3. User sends follow-up message (`send_message`)
+/// 4. Orchestrator spawns next agent with `is_resume=true` and same session ID
+#[test]
+fn test_error_resume_uses_is_resume() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Error resume test",
+        "Verify follow-up after error resumes the existing session",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Step 1: Agent produces streaming activity then returns StageOutput::Failed.
+    //
+    //   set_output_with_activity sends a LogLine before Completed, which routes
+    //   through dispatch_completion's AgentSuccess arm. process_agent_output
+    //   handles StageOutput::Failed → task enters Failed. dispatch_completion
+    //   then calls persist_activity_flag → has_activity=true. The session ID
+    //   is not touched by process_output.rs's Failed path.
+    // =========================================================================
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "agent could not complete the task".to_string(),
+        },
+    );
+    ctx.advance(); // spawn → log event → StageOutput::Failed → task enters Failed state
+
+    let task_after_fail = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task_after_fail.state, TaskState::Failed { .. }),
+        "Task must be Failed after StageOutput::Failed, got: {:?}",
+        task_after_fail.state
+    );
+
+    // The session must exist with has_activity=true (set by persist_activity_flag).
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .expect("store read should succeed")
+        .expect("session must exist after agent ran");
+    assert!(
+        session.has_activity,
+        "persist_activity_flag must set has_activity=true after StageOutput::Failed"
+    );
+    let original_session_id = session
+        .claude_session_id
+        .clone()
+        .expect("session must have a claude_session_id after spawn");
+
+    // =========================================================================
+    // Step 2: Verify LogEntry::Error appears in the session log (MEDIUM finding).
+    //   process_output.rs::Failed appends LogEntry::Error so the error is visible
+    //   in the Agent tab.
+    // =========================================================================
+    let (log_entries, _cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("work"), None, None)
+        .expect("get_task_logs should succeed");
+    let has_error_entry = log_entries.iter().any(
+        |e| matches!(e, LogEntry::Error { message } if message.contains("agent could not complete")),
+    );
+    assert!(
+        has_error_entry,
+        "LogEntry::Error must appear in the session log after StageOutput::Failed \
+         so the error is visible in the Agent tab"
+    );
+
+    // =========================================================================
+    // Step 3: User sends a follow-up message.
+    //   send_message transitions Failed → Queued with a UserMessage trigger.
+    // =========================================================================
+    ctx.api()
+        .send_message(&task_id, "Please try again with a different approach")
+        .expect("send_message should succeed on Failed task");
+
+    // =========================================================================
+    // Step 4: Orchestrator spawns the next agent.
+    //   on_spawn_starting sees has_activity=true on the preserved session →
+    //   is_resume=true and the same session ID is passed to the agent.
+    // =========================================================================
+    ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Done"));
+    ctx.advance(); // spawn agent with UserMessage trigger
+
+    let resume_config = ctx.last_run_config();
+    assert!(
+        resume_config.is_resume,
+        "Follow-up after StageOutput::Failed with has_activity=true must spawn with is_resume=true"
+    );
+    assert_eq!(
+        resume_config.session_id.as_deref(),
+        Some(original_session_id.as_str()),
+        "Resumed spawn must use the SAME session ID — process_output::Failed must not clear it"
+    );
+}

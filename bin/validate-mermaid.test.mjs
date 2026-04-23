@@ -36,6 +36,10 @@ function editPayload(newString, filePath = 'test.md') {
   return { hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { new_string: newString, file_path: filePath } };
 }
 
+function structuredOutputPayload(content) {
+  return { hook_event_name: 'PreToolUse', tool_name: 'StructuredOutput', tool_input: { type: 'plan', content } };
+}
+
 const VALID_MERMAID = '```mermaid\ngraph TD\n  A --> B\n```';
 const INVALID_MERMAID = '```mermaid\ngraph NOTVALID\n  ??? broken syntax ###\n```';
 
@@ -145,6 +149,32 @@ const INVALID_MERMAID = '```mermaid\ngraph NOTVALID\n  ??? broken syntax ###\n``
   assert.strictEqual(code, 2, 'Edit with invalid mermaid should exit 2');
   assert.ok(stderr.includes('Mermaid validation failed'), 'stderr should mention validation failure');
   console.log('PASS: Edit with invalid mermaid → exit 2');
+}
+
+// ============================================================================
+// StructuredOutput
+// ============================================================================
+
+{
+  // StructuredOutput with valid mermaid → exit 0
+  const { code } = run(structuredOutputPayload(`## Summary\n\n${VALID_MERMAID}\n`));
+  assert.strictEqual(code, 0, 'StructuredOutput with valid mermaid should exit 0');
+  console.log('PASS: StructuredOutput with valid mermaid → exit 0');
+}
+
+{
+  // StructuredOutput with invalid mermaid → exit 2
+  const { code, stderr } = run(structuredOutputPayload(`## Summary\n\n${INVALID_MERMAID}\n`));
+  assert.strictEqual(code, 2, 'StructuredOutput with invalid mermaid should exit 2');
+  assert.ok(stderr.includes('Mermaid validation failed'), 'stderr should mention validation failure');
+  console.log('PASS: StructuredOutput with invalid mermaid → exit 2');
+}
+
+{
+  // StructuredOutput with no mermaid → exit 0
+  const { code } = run(structuredOutputPayload('## Summary\n\nJust text, no diagrams.\n'));
+  assert.strictEqual(code, 0, 'StructuredOutput with no mermaid should exit 0');
+  console.log('PASS: StructuredOutput with no mermaid → exit 0');
 }
 
 console.log('\nAll tests passed.');

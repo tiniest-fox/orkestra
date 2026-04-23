@@ -172,7 +172,8 @@ let env = TestEnv::with_git(&workflows::with_subtasks(), &["planner", "breakdown
 | `env.tick_until(predicate, timeout, context)` | Tick until predicate returns true or timeout. |
 | `env.api()` | Get `MutexGuard<WorkflowApi>` for human actions (approve, reject, answer). |
 | `env.set_output(task_id, output)` | Set mock output for next agent spawn on this task. |
-| `env.set_output_with_activity(task_id, output)` | Same but simulates agent activity (LogLine events). |
+| `env.set_output_with_activity(task_id, output)` | Same but simulates agent activity (LogLine events). Sets `has_activity=true` in the database. Use this when testing session resumption or anything that checks `has_activity`. |
+| `env.set_failure_with_activity(task_id, error)` | Simulates an infrastructure crash with prior streaming output. Routes through `fail_execution` — does **not** call `persist_activity_flag`, so `has_activity` stays `false`. Use only to test crash-recovery scenarios, not structured failure with activity. To test "agent produced output then returned `StageOutput::Failed`", use `set_output_with_activity(task_id, MockAgentOutput::Failed { error: ... })` instead. |
 | `env.last_prompt()` | Get the combined system+user prompt from the last agent call. |
 | `env.last_prompt_for(task_id)` | Get the last prompt sent to a specific task's agent. |
 | `env.last_run_config()` | Get the full `RunConfig` from the last call. |

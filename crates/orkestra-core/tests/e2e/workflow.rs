@@ -4585,20 +4585,16 @@ fn test_untriggered_reentry_spawns_fresh_session() {
     );
 }
 
-/// Test that interrupt→resume does NOT start a fresh session.
+/// Test that interrupt→resume with no prior activity spawns fresh (no resume).
 ///
-/// An interrupt→resume is NOT a stage re-entry — it's the same pass through the
-/// stage being continued after a pause. `UserMessage` is an iterating trigger,
-/// so the existing session is always resumed.
-///
-/// Bug: Before the fix, if the agent was interrupted before producing structured
-/// output (`has_activity = false`), the next spawn would compute `is_resume = false`
-/// and replace the session ID with a fresh UUID, bypassing `--resume`.
+/// `has_activity` is the sole signal for whether a provider session is resumable.
+/// When an agent is interrupted before producing any output, there is nothing in
+/// the provider session worth resuming — spawning fresh is correct.
 ///
 /// Flow:
 /// 1. Review stage is simulated as started (`agent_started`) then interrupted
 /// 2. User resumes (creates `UserMessage` iteration)
-/// 3. Review spawns via orchestrator → must use `is_resume = true`
+/// 3. Review spawns via orchestrator → must use `is_resume = false` (no activity)
 /// 4. Untriggered re-entry logic must NOT fire (`trigger = Some(UserMessage)`)
 #[test]
 fn test_interrupt_resume_preserves_session() {
@@ -4651,13 +4647,13 @@ fn test_interrupt_resume_preserves_session() {
     // =========================================================================
     ctx.advance(); // spawn reviewer with UserMessage trigger
 
-    // Key assertion: UserMessage trigger must produce is_resume=true.
-    // Before the fix: is_resume=false because has_activity=false and UserMessage
-    // wasn't checked. After the fix: is_resume=true.
+    // Key assertion: no activity → is_resume=false, even with UserMessage trigger.
+    // has_activity is the sole resumability signal — if the provider session has no
+    // content (no output produced), resuming serves no purpose.
     let resume_config = ctx.last_run_config();
     assert!(
-        resume_config.is_resume,
-        "Resume after interrupt should use is_resume=true (UserMessage trigger)"
+        !resume_config.is_resume,
+        "Interrupt with no activity should spawn fresh (is_resume=false)"
     );
 
     // No session superseding — UserMessage is iterating, not returning.
@@ -4690,14 +4686,14 @@ fn test_interrupt_resume_preserves_session() {
 /// Crash recovery with agent activity → `is_resume=true`.
 ///
 /// When the app crashes while an agent is mid-run AND the agent had already produced
-/// confirmed output (has_activity=true), the next spawn must resume the existing
+/// confirmed output (`has_activity=true`), the next spawn must resume the existing
 /// session via `--resume <session-id>` rather than starting fresh.
 ///
 /// Flow:
-/// 1. Work stage runs to completion (dispatch_completion writes has_activity=true)
+/// 1. Work stage runs to completion (`dispatch_completion` writes `has_activity=true`)
 /// 2. Simulate crash: force task back to Queued, create a new linked active iteration
 /// 3. Startup recovery sets trigger=None
-/// 4. Verify spawn uses is_resume=true (session preserved, has_activity=true)
+/// 4. Verify spawn uses `is_resume=true` (session preserved, `has_activity=true`)
 #[test]
 fn test_crash_recovery_with_activity_resumes_session() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
@@ -4804,17 +4800,17 @@ fn test_crash_recovery_with_activity_resumes_session() {
 /// Crash recovery without agent activity → fresh spawn (`is_resume=false`).
 ///
 /// When the app crashes while an agent was mid-run but the agent had NOT yet produced
-/// confirmed output (has_activity=false — e.g. crashed at startup before the first
-/// ToolUse or second Text entry), the next spawn must start fresh.
+/// confirmed output (`has_activity=false` — e.g. crashed at startup before the first
+/// `ToolUse` or second Text entry), the next spawn must start fresh.
 ///
 /// Resuming a session that produced no output is unsafe: the provider session
 /// may not exist or may have stale context. A fresh spawn with the full initial
 /// prompt is the correct recovery path.
 ///
 /// Flow:
-/// 1. agent_started() → AgentWorking (no session created, simulates crash at process start)
+/// 1. `agent_started()` → `AgentWorking` (no session created, simulates crash at process start)
 /// 2. Startup recovery: task → Queued (no trigger)
-/// 3. Verify spawn uses is_resume=false (no session or session.has_activity=false)
+/// 3. Verify spawn uses `is_resume=false` (no session or `session.has_activity=false`)
 #[test]
 fn test_crash_recovery_without_activity_spawns_fresh() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
@@ -4899,10 +4895,10 @@ fn test_crash_recovery_without_activity_spawns_fresh() {
 /// stage must spawn with a fresh session, not resume the old one.
 ///
 /// This is distinct from crash recovery:
-/// - Crash recovery: active iteration exists (stage_session_id IS NOT NULL) → preserve session
+/// - Crash recovery: active iteration exists (`stage_session_id` IS NOT NULL) → preserve session
 /// - Clean re-entry: no active iteration for this stage → supersede session
 ///
-/// This test verifies the should_supersede logic for the no-trigger clean re-entry path.
+/// This test verifies the `should_supersede` logic for the no-trigger clean re-entry path.
 /// (The full workflow version is in `test_untriggered_reentry_spawns_fresh_session`.)
 #[test]
 fn test_clean_reentry_supersedes_session() {
@@ -7526,6 +7522,7 @@ fn test_gate_output_emitted_as_log_entries() {
 /// - Gate fails (exit 1).
 /// - Task re-queued to work stage with `GateFailure` context.
 /// - Next agent spawn receives gate error as feedback.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn test_gate_fail_requeues_with_feedback() {
     use orkestra_core::workflow::config::{
@@ -10031,5 +10028,128 @@ fn test_schema_reference_injected_for_default_provider() {
     assert!(
         !run_config.prompt.contains("Output ONLY the JSON object"),
         "Default provider (claudecode) should not get enforcement wording"
+    );
+}
+
+// =============================================================================
+// Error Session Preservation Tests
+// =============================================================================
+
+/// Follow-up message after agent error resumes the existing session (`is_resume=true`).
+///
+/// When an agent produces a structured `StageOutput::Failed` (with prior streaming
+/// activity), `dispatch_completion` routes it through `AgentSuccess` →
+/// `persist_activity_flag` → `has_activity=true`. The session ID is not cleared by
+/// `process_output.rs`. A follow-up `send_message` creates a `UserMessage` trigger;
+/// on the next spawn `on_spawn_starting` computes `is_resume=true`.
+///
+/// This is the primary regression test for the Trak "Continue existing Trak sessions
+/// on errors": the old behavior cleared `claude_session_id` in `fail_execution`, so
+/// every follow-up after an error started a fresh session instead of resuming.
+///
+/// Also verifies (MEDIUM finding): `LogEntry::Error` appears in the session log after
+/// the agent fails through the orchestrator, making the error visible in the Agent tab.
+///
+/// Flow:
+/// 1. Agent produces streaming activity then `StageOutput::Failed` → `has_activity=true`
+/// 2. Verify `LogEntry::Error` is present in the session log
+/// 3. User sends follow-up message (`send_message`)
+/// 4. Orchestrator spawns next agent with `is_resume=true` and same session ID
+#[test]
+fn test_error_resume_uses_is_resume() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Error resume test",
+        "Verify follow-up after error resumes the existing session",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Step 1: Agent produces streaming activity then returns StageOutput::Failed.
+    //
+    //   set_output_with_activity sends a LogLine before Completed, which routes
+    //   through dispatch_completion's AgentSuccess arm. process_agent_output
+    //   handles StageOutput::Failed → task enters Failed. dispatch_completion
+    //   then calls persist_activity_flag → has_activity=true. The session ID
+    //   is not touched by process_output.rs's Failed path.
+    // =========================================================================
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "agent could not complete the task".to_string(),
+        },
+    );
+    ctx.advance(); // spawn → log event → StageOutput::Failed → task enters Failed state
+
+    let task_after_fail = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task_after_fail.state, TaskState::Failed { .. }),
+        "Task must be Failed after StageOutput::Failed, got: {:?}",
+        task_after_fail.state
+    );
+
+    // The session must exist with has_activity=true (set by persist_activity_flag).
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .expect("store read should succeed")
+        .expect("session must exist after agent ran");
+    assert!(
+        session.has_activity,
+        "persist_activity_flag must set has_activity=true after StageOutput::Failed"
+    );
+    let original_session_id = session
+        .claude_session_id
+        .clone()
+        .expect("session must have a claude_session_id after spawn");
+
+    // =========================================================================
+    // Step 2: Verify LogEntry::Error appears in the session log (MEDIUM finding).
+    //   process_output.rs::Failed appends LogEntry::Error so the error is visible
+    //   in the Agent tab.
+    // =========================================================================
+    let (log_entries, _cursor) = ctx
+        .api()
+        .get_task_logs(&task_id, Some("work"), None, None)
+        .expect("get_task_logs should succeed");
+    let has_error_entry = log_entries.iter().any(
+        |e| matches!(e, LogEntry::Error { message } if message.contains("agent could not complete")),
+    );
+    assert!(
+        has_error_entry,
+        "LogEntry::Error must appear in the session log after StageOutput::Failed \
+         so the error is visible in the Agent tab"
+    );
+
+    // =========================================================================
+    // Step 3: User sends a follow-up message.
+    //   send_message transitions Failed → Queued with a UserMessage trigger.
+    // =========================================================================
+    ctx.api()
+        .send_message(&task_id, "Please try again with a different approach")
+        .expect("send_message should succeed on Failed task");
+
+    // =========================================================================
+    // Step 4: Orchestrator spawns the next agent.
+    //   on_spawn_starting sees has_activity=true on the preserved session →
+    //   is_resume=true and the same session ID is passed to the agent.
+    // =========================================================================
+    ctx.set_output(&task_id, MockAgentOutput::artifact("summary", "Done"));
+    ctx.advance(); // spawn agent with UserMessage trigger
+
+    let resume_config = ctx.last_run_config();
+    assert!(
+        resume_config.is_resume,
+        "Follow-up after StageOutput::Failed with has_activity=true must spawn with is_resume=true"
+    );
+    assert_eq!(
+        resume_config.session_id.as_deref(),
+        Some(original_session_id.as_str()),
+        "Resumed spawn must use the SAME session ID — process_output::Failed must not clear it"
     );
 }

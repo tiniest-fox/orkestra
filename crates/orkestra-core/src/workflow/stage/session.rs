@@ -17,8 +17,9 @@ pub struct SessionSpawnContext {
     /// The session ID, if available. `None` for providers that generate their own.
     pub session_id: Option<String>,
     /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
-    /// True when the session has a stored ID AND either `has_activity` (agent produced output)
-    /// OR the active iteration has a human-initiated resume trigger (`UserMessage`).
+    /// True only when the session has a stored ID AND `has_activity=true` (agent produced output).
+    /// `has_activity` is the sole resumability signal — no output means nothing to resume,
+    /// regardless of the trigger type.
     /// Forced to `false` when `session_id` is `None` (can't resume without a session ID).
     pub is_resume: bool,
     /// The `StageSession.id` for log correlation. Unlike the old `"{task_id}-{stage}"`
@@ -558,14 +559,15 @@ mod tests {
     }
 
     #[test]
-    fn test_resume_when_user_message_trigger_no_activity() {
+    fn test_no_resume_when_user_message_trigger_but_no_activity() {
         // Interrupt→send_message: agent exits without producing output (has_activity = false),
-        // then user sends a message. Should resume the existing session, not start fresh.
+        // then user sends a message. has_activity is the sole signal for resumability —
+        // no output means nothing useful to resume, so spawn fresh.
         use crate::workflow::domain::IterationTrigger;
         let (store, iter_svc) = create_deps();
 
         // First spawn
-        let first_ctx = session::on_spawn_starting::execute(
+        session::on_spawn_starting::execute(
             store.as_ref(),
             &iter_svc,
             "task-1",
@@ -595,7 +597,8 @@ mod tests {
             )
             .unwrap();
 
-        // Next spawn: should resume the existing session (UserMessage overrides missing activity)
+        // Next spawn: no resume — has_activity=false means the provider session has
+        // no content worth resuming. on_spawn_starting will replace the stale ID with fresh.
         let ctx = session::on_spawn_starting::execute(
             store.as_ref(),
             &iter_svc,
@@ -606,10 +609,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(ctx.is_resume, "UserMessage trigger should cause resume");
-        assert_eq!(
-            ctx.session_id, first_ctx.session_id,
-            "original session ID must be preserved"
+        assert!(
+            !ctx.is_resume,
+            "no activity means no resume, even with UserMessage trigger"
         );
     }
 

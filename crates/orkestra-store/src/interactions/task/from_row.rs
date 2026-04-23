@@ -3,12 +3,12 @@
 use orkestra_types::domain::{Task, TaskHeader};
 use orkestra_types::runtime::TaskState;
 
-/// Convert a full task row (20 columns) to a `Task`.
+/// Convert a full task row (21 columns) to a `Task`.
 ///
 /// Column order: id, title, description, state, artifacts,
 /// `parent_id`, `depends_on`, `branch_name`, `worktree_path`, `auto_mode`,
 /// `created_at`, `updated_at`, `completed_at`, `base_branch`, flow, `short_id`,
-/// `base_commit`, `pr_url`, interactive, resources
+/// `base_commit`, `pr_url`, interactive, resources, `is_chat`
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let state_json: String = row.get(3)?;
     let artifacts_json: String = row.get(4)?;
@@ -19,6 +19,7 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         .unwrap_or_else(|| "default".to_string());
     let pr_url: Option<String> = row.get(17).unwrap_or(None);
     let resources_json: String = row.get(19)?;
+    let is_chat: bool = row.get::<_, i32>(20).unwrap_or(0) != 0;
 
     Ok(Task {
         id: row.get(0)?,
@@ -37,18 +38,19 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         pr_url,
         auto_mode,
         flow,
+        is_chat,
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
         completed_at: row.get(12)?,
     })
 }
 
-/// Convert a header row (18 columns, no artifacts) to a `TaskHeader`.
+/// Convert a header row (19 columns, no artifacts/resources) to a `TaskHeader`.
 ///
 /// Column order: id, title, description, state,
 /// `parent_id`, `depends_on`, `branch_name`, `worktree_path`,
 /// `auto_mode`, `created_at`, `updated_at`, `completed_at`,
-/// `base_branch`, flow, `short_id`, `base_commit`, `pr_url`, interactive
+/// `base_branch`, flow, `short_id`, `base_commit`, `pr_url`, interactive, `is_chat`
 pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
     let state_json: String = row.get(3)?;
     let depends_json: String = row.get(5)?;
@@ -57,6 +59,7 @@ pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
         .get::<_, Option<String>>(13)?
         .unwrap_or_else(|| "default".to_string());
     let pr_url: Option<String> = row.get(16).unwrap_or(None);
+    let is_chat: bool = row.get::<_, i32>(18).unwrap_or(0) != 0;
 
     Ok(TaskHeader {
         id: row.get(0)?,
@@ -73,6 +76,7 @@ pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
         pr_url,
         auto_mode,
         flow,
+        is_chat,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
         completed_at: row.get(11)?,

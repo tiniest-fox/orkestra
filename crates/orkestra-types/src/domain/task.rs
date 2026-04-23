@@ -95,6 +95,10 @@ pub struct Task {
     #[serde(default = "default_flow_name")]
     pub flow: String,
 
+    /// Whether this is a lightweight chat task (no workflow, no worktree).
+    #[serde(default)]
+    pub is_chat: bool,
+
     // === Tracking ===
     /// When the task was created (RFC3339).
     pub created_at: String,
@@ -138,6 +142,7 @@ impl Task {
             pr_url: None,
             auto_mode: false,
             flow: "default".to_string(),
+            is_chat: false,
             created_at: created.clone(),
             updated_at: created,
             completed_at: None,
@@ -315,6 +320,7 @@ pub struct TaskHeader {
     pub pr_url: Option<String>,
     pub auto_mode: bool,
     pub flow: String,
+    pub is_chat: bool,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -345,6 +351,11 @@ impl TaskHeader {
     pub fn has_open_pr(&self) -> bool {
         self.pr_url.is_some()
     }
+
+    /// Whether this is a lightweight chat task.
+    pub fn is_chat(&self) -> bool {
+        self.is_chat
+    }
 }
 
 impl From<&Task> for TaskHeader {
@@ -364,6 +375,7 @@ impl From<&Task> for TaskHeader {
             pr_url: task.pr_url.clone(),
             auto_mode: task.auto_mode,
             flow: task.flow.clone(),
+            is_chat: task.is_chat,
             created_at: task.created_at.clone(),
             updated_at: task.updated_at.clone(),
             completed_at: task.completed_at.clone(),
@@ -692,6 +704,7 @@ mod tests {
             pr_url: None,
             auto_mode: false,
             flow: "default".to_string(),
+            is_chat: false,
             created_at: String::new(),
             updated_at: String::new(),
             completed_at: None,
@@ -730,6 +743,7 @@ mod tests {
             pr_url: None,
             auto_mode: false,
             flow: "default".to_string(),
+            is_chat: false,
             created_at: String::new(),
             updated_at: String::new(),
             completed_at: None,

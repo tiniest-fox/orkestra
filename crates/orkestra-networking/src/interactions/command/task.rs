@@ -158,3 +158,17 @@ pub fn get_archived_tasks(ctx: &CommandContext, _params: &Value) -> Result<Value
     let tasks = api.list_archived_task_views().map_err(ErrorPayload::from)?;
     Ok(serde_json::to_value(tasks).unwrap_or(Value::Array(vec![])))
 }
+
+/// Creates a new chat task (no workflow, no worktree).
+///
+/// Expected params: `{ "title": "<title>" }`
+pub fn create_chat_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let title = params
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("New Chat")
+        .to_string();
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.create_chat_task(&title).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+}

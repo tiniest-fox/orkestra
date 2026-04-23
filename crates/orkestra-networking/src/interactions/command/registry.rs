@@ -14,6 +14,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "delete_task",
     "list_subtasks",
     "get_archived_tasks",
+    "create_chat_task",
     // Human actions
     "approve",
     "answer_questions",
@@ -31,6 +32,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "send_to_stage",
     "restart_stage",
     "send_message",
+    "promote_to_flow",
     // Assistant
     "assistant_send_message",
     "assistant_stop",

@@ -251,7 +251,8 @@ impl AssistantService {
             &new_session,
         )?;
 
-        // Validate worktree exists
+        // Resolve working directory: use worktree if available, fall back to project root for
+        // chat tasks, or return error if worktree is unavailable for a non-chat task.
         let worktree_path = task.worktree_path.as_deref().and_then(|p| {
             let path = std::path::Path::new(p);
             if path.exists() {
@@ -261,22 +262,26 @@ impl AssistantService {
             }
         });
 
-        let Some(worktree) = worktree_path else {
-            self.store.append_assistant_log_entry(
-                &session.id,
-                &LogEntry::UserMessage {
-                    resume_type: "message".to_string(),
-                    content: message.to_string(),
-                    sections: Vec::new(),
-                },
-            )?;
-            self.store.append_assistant_log_entry(
-                &session.id,
-                &LogEntry::Error {
-                    message: "Task worktree not available — the task may have been integrated or cleaned up".to_string(),
-                },
-            )?;
-            return Ok(session);
+        let working_dir = match worktree_path {
+            Some(path) => path,
+            None if task.is_chat => self.project_root.clone(),
+            None => {
+                self.store.append_assistant_log_entry(
+                    &session.id,
+                    &LogEntry::UserMessage {
+                        resume_type: "message".to_string(),
+                        content: message.to_string(),
+                        sections: Vec::new(),
+                    },
+                )?;
+                self.store.append_assistant_log_entry(
+                    &session.id,
+                    &LogEntry::Error {
+                        message: "Task worktree not available — the task may have been integrated or cleaned up".to_string(),
+                    },
+                )?;
+                return Ok(session);
+            }
         };
 
         // Kill any running agent before spawning a new one
@@ -304,7 +309,7 @@ impl AssistantService {
         let spawn_result = self.spawn_agent_in(
             &session,
             message,
-            &worktree,
+            &working_dir,
             &system_prompt,
             disallowed_tools,
         );

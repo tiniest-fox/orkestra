@@ -25,5 +25,6 @@ pub fn execute<'a, S: ::std::hash::BuildHasher, S2: ::std::hash::BuildHasher>(
         })
         .filter(|h| !defer_spawn_ids.contains(&h.id))
         .filter(|h| !active_task_ids.contains(&h.id))
+        .filter(|h| !h.is_chat())
         .collect()
 }

@@ -121,9 +121,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
                 full_output.len(),
                 full_output
             );
-            return Err(RunError::ParseFailed(format!(
-                "{e}\n\nRaw output:\n{full_output}"
-            )));
+            return Err(RunError::ParseFailed(e));
         }
     };
 

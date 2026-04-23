@@ -175,11 +175,13 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 | `None`            | Active iteration has `stage_session_id` set | No — crash recovery |
 | `None`            | Active iteration has `stage_session_id = None` OR no active iteration | Yes — clean re-entry |
 
+**`MalformedOutput` retry path is `run_async`-only.** Only `AgentCompletionError::MalformedOutput` (from `run_async`) feeds into the `IterationTrigger::MalformedOutput` → retry loop. `run_sync`'s `ParseFailed` does not. If `run_sync` is ever wired into the orchestrator, parse failures would need a separate retry path.
+
 **Why `stage_session_id` and not just `ended_at IS NULL`:** `finalize_advancement` pre-creates the next stage's iteration with `stage_session_id = None` before the spawn. `on_spawn_starting` links it to the session when the agent actually runs. So a crash-recovery iteration (agent was mid-run) has `stage_session_id IS NOT NULL`; a clean re-entry iteration (pre-created, agent hasn't run yet) has `stage_session_id IS NULL`.
 
 ## Lock File E2E Tests
 
-Tests that verify lock contention (e.g., "second orchestrator is blocked") must use a real running process — either a live `OrchestratorLoop` or a subprocess. Writing `current_pid:fresh_ts` into the lock file does **not** work: `acquire()` sees a fresh timestamp + alive PID, enters the backoff loop, but the call returns `Ok(Stopped)` instead of blocking to `TimedOut`. Root cause is unclear, but the workaround is reliable: spin up a real orchestrator A with `build_orchestrator()`, wait for its lock file to appear, then run orchestrator B.
+Tests that verify lock contention (e.g., "second orchestrator is blocked") must use a real running process — either a live `OrchestratorLoop` or a subprocess. Writing `current_pid:fresh_ts` into the lock file does **not** work: `acquire()` sees a fresh timestamp + alive PID, enters the backoff loop, but the call returns `Ok(Stopped)` instead of blocking to `TimedOut`. The root cause: `std::fs::write` truncates the file to zero before writing, creating a brief window where a concurrent reader sees `LockState::Corrupt` and steals the lock. The lock writes are now atomic (write to `.tmp`, rename over target), but the manual-file-write approach still races because the test's write also truncates. Workaround: spin up a real orchestrator A with `build_orchestrator()`, wait for its lock file to appear, then run orchestrator B.
 
 `ACQUIRE_TIMEOUT_SECS = 2` in test mode, so any test that exercises the blocking path takes ~4s (backoff schedule: 250ms → 500ms → 1s → 2s cap before timeout).
 

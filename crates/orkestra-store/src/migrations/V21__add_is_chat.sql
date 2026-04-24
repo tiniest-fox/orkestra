@@ -1,0 +1,1 @@
+ALTER TABLE workflow_tasks ADD COLUMN is_chat BOOLEAN NOT NULL DEFAULT 0;

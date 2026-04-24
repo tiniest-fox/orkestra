@@ -145,6 +145,16 @@ Read these before modifying cross-cutting flows:
 | Task integration | `docs/flows/task-integration.md` | `orchestrator.rs`, `integration.rs`, `orkestra-git` |
 | Subtask lifecycle | `docs/flows/subtask-lifecycle.md` | `workflow/agent/interactions/handle_subtasks.rs`, `workflow/stage/interactions/create_subtasks.rs`, `workflow/stage/interactions/check_parent_completions.rs` |
 
+### Chat Task Domain Invariants
+
+Chat tasks are a distinct task type that live outside the normal workflow pipeline. Key invariants:
+
+- **Quiescent state**: `flow = ""` and `state = Queued { stage: "chat" }`. A chat task sitting idle is not queued for agent execution — it's waiting for the human to chat or promote it.
+- **Orchestrator filtering**: `find_spawn_candidates` filters out chat tasks via `.filter(|h| !h.is_chat())`. Chat tasks are never spawned into the stage pipeline while they remain chat tasks.
+- **Promotion**: `promote_to_flow` transitions a chat task to `AwaitingSetup` with `flow` set to the target flow, killing any active assistant sessions. After promotion it behaves identically to a normal task.
+- **`is_chat` on `TaskHeader`**: This flag enables cheap filtering in `find_spawn_candidates` without loading full task artifacts. When adding new orchestrator filters, `TaskHeader` (not `Task`) is the right type to check.
+- **Working directory**: Chat tasks have no worktree. `AssistantService::send_task_scoped_message` falls back to `project_root` when `task.is_chat` — don't add worktree assumptions to assistant message paths.
+
 ### `DerivedTaskState::build()` — Approval vs. Rejection Detection
 
 `DerivedTaskState` detects two pending-human states asymmetrically:
@@ -155,6 +165,8 @@ Read these before modifying cross-cutting flows:
 The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. All agent output paths (approval, artifact, gate success, subtasks) route through `auto_advance_or_review`, which either advances immediately (when `auto_mode=true`) or pauses at `AwaitingApproval` (when `auto_mode=false`). When a human then confirms via the approve endpoint, `enter_commit_pipeline` is called and atomically sets both `Outcome::Approved` and `Finishing` state — so `AwaitingApproval + Outcome::Approved` never coexists in a stable poll cycle.
 
 `DerivedTaskState::build()` requires `WorkflowConfig` as a parameter for this config lookup. When adding new call sites, ensure the workflow config is available — don't try to detect approval state without it.
+
+**`build()` signature evolution**: The function takes individual primitive params for values that require external computation (process liveness, network state) and can't be derived from `Task` alone. Currently only `assistant_active: bool` fits this category. If a second such field is needed, replace the accumulating bools with a single `DerivedTaskContext` struct to keep the signature stable.
 
 ### Stage Session Supersession Rules
 

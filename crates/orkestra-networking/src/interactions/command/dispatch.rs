@@ -104,6 +104,7 @@ pub async fn execute(
         "delete_task" => run_sync(ctx, params, task::delete_task).await,
         "list_subtasks" => run_sync(ctx, params, task::list_subtasks).await,
         "get_archived_tasks" => run_sync(ctx, params, task::get_archived_tasks).await,
+        "create_chat_task" => run_sync(ctx, params, task::create_chat_task).await,
 
         // -- Human actions (synchronous) --
         "approve" => run_sync(ctx, params, action::approve).await,
@@ -123,6 +124,7 @@ pub async fn execute(
         "send_to_stage" => run_sync(ctx, params, action::send_to_stage).await,
         "restart_stage" => run_sync(ctx, params, action::restart_stage).await,
         "send_message" => run_sync(ctx, params, action::send_message).await,
+        "promote_to_flow" => run_sync(ctx, params, action::promote_to_flow).await,
 
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,

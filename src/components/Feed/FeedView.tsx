@@ -10,7 +10,7 @@ import { usePrStatus } from "../../providers/PrStatusProvider";
 import { useTasks } from "../../providers/TasksProvider";
 import { useToast } from "../../providers/ToastProvider";
 import { useConnectionState, useTransport } from "../../transport";
-import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
+import type { WorkflowConfig, WorkflowTask, WorkflowTaskView } from "../../types/workflow";
 import { confirmAction } from "../../utils/confirmAction";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { isDisconnectError } from "../../utils/transportErrors";
@@ -168,6 +168,19 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     setFileViewerPath(null);
   }, []);
 
+  const openNewChat = useCallback(async () => {
+    try {
+      const task = await transport.call<WorkflowTask>("create_chat_task", { title: "New Chat" });
+      setTaskAssistantId(task.id);
+      setActiveTaskId(null);
+      setAssistantOpen(false);
+      setGitHistoryOpen(false);
+      setFileViewerPath(null);
+    } catch (err) {
+      if (!isDisconnectError(err)) showError(String(err));
+    }
+  }, [transport, showError]);
+
   const openTaskAssistant = useCallback((taskId: string) => {
     setTaskAssistantId(taskId);
     setActiveTaskId(null);
@@ -188,13 +201,25 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     }
   }, [taskAssistantId]);
 
-  const onStripRowClick = useCallback((taskId: string) => {
-    setGitHistoryOpen(false);
-    setAssistantOpen(false);
-    setTaskAssistantId(null);
-    setFileViewerPath(null);
-    setActiveTaskId(taskId);
-  }, []);
+  const onStripRowClick = useCallback(
+    (taskId: string) => {
+      const task = tasks.find((t) => t.id === taskId);
+      if (task?.is_chat) {
+        setTaskAssistantId(taskId);
+        setActiveTaskId(null);
+        setAssistantOpen(false);
+        setGitHistoryOpen(false);
+        setFileViewerPath(null);
+      } else {
+        setGitHistoryOpen(false);
+        setAssistantOpen(false);
+        setTaskAssistantId(null);
+        setFileViewerPath(null);
+        setActiveTaskId(taskId);
+      }
+    },
+    [tasks],
+  );
 
   // Disable feed navigation while the drawer is open; suppress focusedId so row scopes deactivate.
   const {
@@ -296,36 +321,27 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [clearFilter, isMobile]);
 
-  // Shift+A toggles the assistant panel.
+  // Shift+A creates a new chat task and opens AssistantDrawer for it.
   useEffect(() => {
     if (isMobile) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "A" && e.shiftKey && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        setAssistantOpen((prev) => {
-          if (!prev) {
-            setActiveTaskId(null);
-            setGitHistoryOpen(false);
-            setTaskAssistantId(null);
-            setFileViewerPath(null);
-          }
-          return !prev;
-        });
+        openNewChat();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isMobile]);
+  }, [isMobile, openNewChat]);
 
   return (
     <div className="h-full flex flex-col rounded-panel overflow-hidden relative bg-canvas">
       <FeedHeader
         tasks={tasks}
         onNewTask={openNewTask}
-        onAssistant={openAssistant}
+        onNewChat={openNewChat}
         hotkeyActive={!drawerOpen}
-        assistantActive={assistantOpen}
         serviceProjectName={serviceProjectName}
         showHomeLink={showHomeLink}
       />
@@ -406,6 +422,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           setGitHistoryOpen((o) => !o);
           setActiveTaskId(null);
           setAssistantOpen(false);
+          setTaskAssistantId(null);
           setFileViewerPath(null);
         }}
       />

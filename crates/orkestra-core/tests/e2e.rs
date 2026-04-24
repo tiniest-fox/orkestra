@@ -16,6 +16,8 @@ mod artifact_history;
 
 #[path = "e2e/assistant.rs"]
 mod assistant;
+#[path = "e2e/chat.rs"]
+mod chat;
 #[path = "e2e/cleanup.rs"]
 mod cleanup;
 #[path = "e2e/differential.rs"]

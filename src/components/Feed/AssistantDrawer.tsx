@@ -7,10 +7,11 @@ import { usePolling } from "../../hooks/usePolling";
 import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast } from "../../providers/ToastProvider";
 import { useConnectionState, useTransport } from "../../transport";
-import type { AssistantSession, WorkflowQuestion } from "../../types/workflow";
+import type { AssistantSession, WorkflowQuestion, WorkflowTask } from "../../types/workflow";
 import { parseAssistantQuestions } from "../../utils/assistantQuestions";
 import { relativeTime } from "../../utils/relativeTime";
 import { isDisconnectError } from "../../utils/transportErrors";
+import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
@@ -44,6 +45,8 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
   const [inputValue, setInputValue] = useState("");
   const [sending, setSending] = useState(false);
   const [answers, setAnswers] = useState<string[]>([]);
+
+  const [chatTask, setChatTask] = useState<WorkflowTask | null>(null);
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -97,6 +100,30 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
         .catch(console.error);
     }
   }, [transport, taskId]);
+
+  // -- Load chat task info when in task mode --
+  useEffect(() => {
+    if (!taskId) {
+      setChatTask(null);
+      return;
+    }
+    transport
+      .call<WorkflowTask>("get_task", { task_id: taskId })
+      .then((task) => setChatTask(task.is_chat ? task : null))
+      .catch(() => setChatTask(null));
+  }, [taskId, transport]);
+
+  // -- Promote chat task to full workflow --
+  const handlePromote = useCallback(async () => {
+    if (!taskId) return;
+    try {
+      await transport.call("promote_to_flow", { task_id: taskId });
+      setChatTask(null);
+      onClose();
+    } catch (err) {
+      if (!isDisconnectError(err)) showError(String(err));
+    }
+  }, [taskId, transport, onClose, showError]);
 
   // -- Fetch the active task session by session ID (task mode only) --
   const fetchTaskSession = useCallback(async (): Promise<AssistantSession | undefined> => {
@@ -361,6 +388,18 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
             onBack={onBack}
             actions={headerActions}
           />
+
+          {/* Promote to Trak — chat tasks only */}
+          {chatTask && (
+            <div className="shrink-0 flex items-center justify-between px-6 py-2 border-b border-border bg-surface">
+              <span className="font-sans text-forge-body text-text-secondary">
+                Promote this chat to a full Trak?
+              </span>
+              <Button variant="primary" size="sm" onClick={handlePromote}>
+                Promote to Trak
+              </Button>
+            </div>
+          )}
 
           {/* Message List */}
           <MessageList

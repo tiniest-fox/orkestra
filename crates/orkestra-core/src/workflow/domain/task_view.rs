@@ -67,6 +67,9 @@ pub struct DerivedTaskState {
     pub subtask_progress: Option<SubtaskProgress>,
     /// Whether the task can be bypassed (skip/send-to-stage/restart).
     pub can_bypass: bool,
+    /// Whether the assistant agent is actively running for this task (chat tasks only).
+    #[serde(default)]
+    pub assistant_active: bool,
 }
 
 /// A pending rejection from a reviewer agent awaiting human confirmation.
@@ -129,12 +132,15 @@ impl DerivedTaskState {
     ///
     /// Delegates to Task/Status/Phase predicates — one canonical definition per predicate.
     /// `subtask_states` should be the pre-computed derived states of child tasks (if any).
+    /// `assistant_active` should be pre-computed by the caller for chat tasks (requires a
+    /// process-liveness check that cannot run inside a pure build step).
     pub fn build(
         task: &Task,
         iterations: &[Iteration],
         sessions: &[StageSession],
         subtask_states: &[DerivedTaskState],
         workflow: &WorkflowConfig,
+        assistant_active: bool,
     ) -> Self {
         let pending_questions = extract_pending_questions(task, iterations);
         let rejection_feedback = extract_rejection_feedback(task, iterations);
@@ -170,6 +176,7 @@ impl DerivedTaskState {
             stages_with_logs,
             subtask_progress,
             can_bypass: task.can_bypass(),
+            assistant_active,
         }
     }
 }
@@ -423,7 +430,8 @@ mod tests {
     #[test]
     fn test_derived_state_active_task() {
         let task = make_task("planning");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.current_stage, Some("planning".to_string()));
         assert!(!derived.is_working);
@@ -442,7 +450,8 @@ mod tests {
     fn test_derived_state_working() {
         let mut task = make_task("planning");
         task.state = TaskState::agent_working("planning");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.is_working);
         assert!(!derived.needs_review);
@@ -452,7 +461,8 @@ mod tests {
     fn test_derived_state_needs_review() {
         let mut task = make_task("planning");
         task.state = TaskState::awaiting_approval("planning");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.needs_review);
         assert!(!derived.is_working);
@@ -462,7 +472,8 @@ mod tests {
     fn test_derived_state_done_not_needs_review() {
         let mut task = make_task("planning");
         task.state = TaskState::Done;
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         // Done tasks should not count as needs_review
         assert!(!derived.needs_review);
@@ -473,18 +484,21 @@ mod tests {
         let mut task = make_task("planning");
 
         task.state = TaskState::Done;
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(derived.is_done);
         assert!(derived.is_terminal);
         assert!(derived.current_stage.is_none());
 
         task.state = TaskState::failed("error");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(derived.is_failed);
         assert!(!derived.is_terminal);
 
         task.state = TaskState::blocked("reason");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(derived.is_blocked);
         assert!(!derived.is_terminal);
     }
@@ -499,7 +513,8 @@ mod tests {
         ));
         iter.ended_at = Some("now".to_string());
 
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.has_questions);
         assert_eq!(derived.pending_questions.len(), 1);
@@ -513,7 +528,8 @@ mod tests {
         iter.outcome = Some(Outcome::rejected("planning", "Needs more detail"));
         iter.ended_at = Some("now".to_string());
 
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(
             derived.rejection_feedback,
@@ -537,6 +553,7 @@ mod tests {
             &[session1, session2],
             &[],
             &test_default_workflow(),
+            false,
         );
 
         // All sessions produce tabs, including Spawning
@@ -570,6 +587,7 @@ mod tests {
             &[session1, session2, session3],
             &[],
             &test_default_workflow(),
+            false,
         );
 
         // Should have 2 stages: work (first by created_at), then review
@@ -605,7 +623,8 @@ mod tests {
         ));
         iter.ended_at = Some("now".to_string());
 
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow(), false);
 
         assert!(!derived.has_questions);
         assert!(derived.pending_questions.is_empty());
@@ -614,7 +633,8 @@ mod tests {
     #[test]
     fn test_derived_state_no_subtasks() {
         let task = make_task("planning");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.subtask_progress.is_none());
         assert!(!derived.is_waiting_on_children);
@@ -628,14 +648,17 @@ mod tests {
         // Build derived states for subtasks
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
         sub1.state = TaskState::Done;
-        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow());
+        let sub1_derived =
+            DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow(), false);
 
         let sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
-        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow());
+        let sub2_derived =
+            DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow(), false);
 
         let mut sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
         sub3.state = TaskState::failed("error");
-        let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow());
+        let sub3_derived =
+            DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow(), false);
 
         let derived = DerivedTaskState::build(
             &parent,
@@ -643,6 +666,7 @@ mod tests {
             &[],
             &[sub1_derived, sub2_derived, sub3_derived],
             &test_default_workflow(),
+            false,
         );
 
         assert!(derived.is_waiting_on_children);
@@ -671,19 +695,19 @@ mod tests {
         ));
         iter_q.ended_at = Some("now".to_string());
         let derived_questions =
-            DerivedTaskState::build(&sub_q, &[iter_q], &[], &[], &test_default_workflow());
+            DerivedTaskState::build(&sub_q, &[iter_q], &[], &[], &test_default_workflow(), false);
 
         // Subtask awaiting review
         let mut sub_r = Task::new("sub-r", "R", "Desc", "work", "now");
         sub_r.state = TaskState::awaiting_approval("work");
         let derived_review =
-            DerivedTaskState::build(&sub_r, &[], &[], &[], &test_default_workflow());
+            DerivedTaskState::build(&sub_r, &[], &[], &[], &test_default_workflow(), false);
 
         // Subtask working
         let mut sub_w = Task::new("sub-w", "W", "Desc", "work", "now");
         sub_w.state = TaskState::agent_working("work");
         let derived_working =
-            DerivedTaskState::build(&sub_w, &[], &[], &[], &test_default_workflow());
+            DerivedTaskState::build(&sub_w, &[], &[], &[], &test_default_workflow(), false);
 
         let derived = DerivedTaskState::build(
             &parent,
@@ -691,6 +715,7 @@ mod tests {
             &[],
             &[derived_questions, derived_review, derived_working],
             &test_default_workflow(),
+            false,
         );
 
         let progress = derived.subtask_progress.unwrap();
@@ -707,16 +732,19 @@ mod tests {
         // Done subtask
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
         sub1.state = TaskState::Done;
-        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow());
+        let sub1_derived =
+            DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow(), false);
 
         // Archived subtask (completed and integrated)
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
         sub2.state = TaskState::Archived;
-        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow());
+        let sub2_derived =
+            DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow(), false);
 
         // Active subtask
         let sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
-        let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow());
+        let sub3_derived =
+            DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow(), false);
 
         let derived = DerivedTaskState::build(
             &parent,
@@ -724,6 +752,7 @@ mod tests {
             &[],
             &[sub1_derived, sub2_derived, sub3_derived],
             &test_default_workflow(),
+            false,
         );
 
         assert!(derived.is_waiting_on_children);
@@ -741,7 +770,8 @@ mod tests {
     fn test_derived_state_archived() {
         let mut task = make_task("work");
         task.state = TaskState::Archived;
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.is_archived);
         assert!(derived.is_terminal);
@@ -763,7 +793,8 @@ mod tests {
         ));
         iter.ended_at = Some("now".to_string());
 
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.needs_review);
         let rejection = derived.pending_rejection.unwrap();
@@ -779,7 +810,8 @@ mod tests {
 
         // Standard approval — no pending rejection
         let iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[iter], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.pending_rejection.is_none());
     }
@@ -792,7 +824,7 @@ mod tests {
 
         // No iteration outcome needed — config lookup handles it
         let iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &workflow);
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &workflow, false);
 
         assert!(derived.pending_approval);
     }
@@ -811,7 +843,7 @@ mod tests {
         task.state = TaskState::awaiting_approval("planning");
 
         let iter = Iteration::new("iter-1", "task-1", "planning", 1, "now");
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &workflow);
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &workflow, false);
 
         assert!(!derived.pending_approval);
     }
@@ -823,7 +855,7 @@ mod tests {
         task.state = TaskState::agent_working("review");
 
         let iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
-        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &workflow);
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[], &workflow, false);
 
         assert!(!derived.pending_approval);
     }
@@ -835,7 +867,7 @@ mod tests {
             task: task.clone(),
             iterations: vec![],
             stage_sessions: vec![],
-            derived: DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow()),
+            derived: DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false),
         };
 
         let json = serde_json::to_string(&view).unwrap();
@@ -851,7 +883,8 @@ mod tests {
     fn test_derived_state_interrupted() {
         let mut task = make_task("work");
         task.state = TaskState::interrupted("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.is_interrupted);
         assert!(!derived.is_working);
@@ -869,17 +902,20 @@ mod tests {
         // One interrupted subtask
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
         sub1.state = TaskState::interrupted("work");
-        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow());
+        let sub1_derived =
+            DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow(), false);
 
         // One working subtask
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
         sub2.state = TaskState::agent_working("work");
-        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow());
+        let sub2_derived =
+            DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow(), false);
 
         // One blocked subtask
         let mut sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
         sub3.state = TaskState::blocked("waiting");
-        let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow());
+        let sub3_derived =
+            DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow(), false);
 
         let derived = DerivedTaskState::build(
             &parent,
@@ -887,6 +923,7 @@ mod tests {
             &[],
             &[sub1_derived, sub2_derived, sub3_derived],
             &test_default_workflow(),
+            false,
         );
 
         let progress = derived.subtask_progress.unwrap();
@@ -905,7 +942,8 @@ mod tests {
     fn test_derived_state_system_active_committing() {
         let mut task = make_task("work");
         task.state = TaskState::committing("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.is_system_active);
         assert!(!derived.is_working);
@@ -916,7 +954,8 @@ mod tests {
     fn test_derived_state_system_active_integrating() {
         let mut task = make_task("work");
         task.state = TaskState::Integrating;
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.is_system_active);
         assert!(!derived.is_working);
@@ -927,7 +966,8 @@ mod tests {
     fn test_derived_state_system_active_finishing() {
         let mut task = make_task("work");
         task.state = TaskState::finishing("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(derived.is_system_active);
         assert!(!derived.is_working);
@@ -939,27 +979,33 @@ mod tests {
         let mut task = make_task("work");
 
         task.state = TaskState::queued("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(!derived.is_system_active);
 
         task.state = TaskState::agent_working("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(!derived.is_system_active);
 
         task.state = TaskState::awaiting_approval("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(!derived.is_system_active);
 
         task.state = TaskState::interrupted("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(!derived.is_system_active);
 
         task.state = TaskState::awaiting_setup("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(!derived.is_system_active);
 
         task.state = TaskState::setting_up("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
         assert!(!derived.is_system_active);
     }
 
@@ -970,7 +1016,8 @@ mod tests {
         // This test verifies that a Failed task is not marked as system_active.
         task.state = TaskState::failed("test error");
 
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(!derived.is_system_active);
         assert!(!derived.is_terminal);
@@ -985,16 +1032,19 @@ mod tests {
         // One system-active subtask (committing)
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
         sub1.state = TaskState::committing("work");
-        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow());
+        let sub1_derived =
+            DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow(), false);
 
         // One working subtask
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
         sub2.state = TaskState::agent_working("work");
-        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow());
+        let sub2_derived =
+            DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow(), false);
 
         // One waiting subtask
         let sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
-        let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow());
+        let sub3_derived =
+            DerivedTaskState::build(&sub3, &[], &[], &[], &test_default_workflow(), false);
 
         let derived = DerivedTaskState::build(
             &parent,
@@ -1002,6 +1052,7 @@ mod tests {
             &[],
             &[sub1_derived, sub2_derived, sub3_derived],
             &test_default_workflow(),
+            false,
         );
 
         let progress = derived.subtask_progress.unwrap();
@@ -1020,12 +1071,14 @@ mod tests {
         // One failed subtask (in unified model, Failed is a single state)
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
         sub1.state = TaskState::failed("crash during commit");
-        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow());
+        let sub1_derived =
+            DerivedTaskState::build(&sub1, &[], &[], &[], &test_default_workflow(), false);
 
         // One normal working subtask
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
         sub2.state = TaskState::agent_working("work");
-        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow());
+        let sub2_derived =
+            DerivedTaskState::build(&sub2, &[], &[], &[], &test_default_workflow(), false);
 
         let derived = DerivedTaskState::build(
             &parent,
@@ -1033,6 +1086,7 @@ mod tests {
             &[],
             &[sub1_derived, sub2_derived],
             &test_default_workflow(),
+            false,
         );
 
         let progress = derived.subtask_progress.unwrap();
@@ -1046,7 +1100,8 @@ mod tests {
     fn test_phase_icon_committing() {
         let mut task = make_task("work");
         task.state = TaskState::committing("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
@@ -1055,7 +1110,8 @@ mod tests {
     fn test_phase_icon_integrating() {
         let mut task = make_task("work");
         task.state = TaskState::Integrating;
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
@@ -1064,7 +1120,8 @@ mod tests {
     fn test_phase_icon_finishing() {
         let mut task = make_task("work");
         task.state = TaskState::finishing("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
@@ -1073,7 +1130,8 @@ mod tests {
     fn test_phase_icon_committed() {
         let mut task = make_task("work");
         task.state = TaskState::committed("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
@@ -1082,7 +1140,8 @@ mod tests {
     fn test_phase_icon_setting_up() {
         let mut task = make_task("work");
         task.state = TaskState::setting_up("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
@@ -1091,7 +1150,8 @@ mod tests {
     fn test_phase_icon_awaiting_setup() {
         let mut task = make_task("work");
         task.state = TaskState::awaiting_setup("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
@@ -1100,7 +1160,8 @@ mod tests {
     fn test_phase_icon_idle_waiting() {
         let task = make_task("work");
         // Task is idle with an active status
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, Some("queued".to_string()));
     }
@@ -1109,7 +1170,8 @@ mod tests {
     fn test_phase_icon_waiting_on_children() {
         let mut task = make_task("work");
         task.state = TaskState::waiting_on_children("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         // WaitingOnChildren shows no phase icon
         assert_eq!(derived.phase_icon, None);
@@ -1119,7 +1181,8 @@ mod tests {
     fn test_phase_icon_awaiting_question_answer() {
         let mut task = make_task("work");
         task.state = TaskState::awaiting_question_answer("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         // Human-facing states show no phase icon
         assert_eq!(derived.phase_icon, None);
@@ -1129,7 +1192,8 @@ mod tests {
     fn test_phase_icon_terminal() {
         let mut task = make_task("work");
         task.state = TaskState::failed("err");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         // Terminal tasks don't show phase icons
         assert_eq!(derived.phase_icon, None);
@@ -1139,7 +1203,8 @@ mod tests {
     fn test_phase_icon_agent_working() {
         let mut task = make_task("work");
         task.state = TaskState::agent_working("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, None);
     }
@@ -1148,7 +1213,8 @@ mod tests {
     fn test_phase_icon_awaiting_review() {
         let mut task = make_task("work");
         task.state = TaskState::awaiting_approval("work");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert_eq!(derived.phase_icon, None);
     }
@@ -1159,7 +1225,8 @@ mod tests {
         // In the unified model, a task is either AgentWorking or Failed, not both.
         // This test verifies that a Failed task is not marked as working.
         task.state = TaskState::failed("err");
-        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow());
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
 
         assert!(!derived.is_working);
         assert!(!derived.is_terminal);

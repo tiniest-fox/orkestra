@@ -145,6 +145,21 @@ impl WorkflowApi {
         )
     }
 
+    /// Promote a chat task to a full workflow flow.
+    ///
+    /// Stops any active assistant agent, sets `is_chat=false`, assigns the flow,
+    /// resolves `base_branch`, enters `AwaitingSetup`, and creates the initial iteration.
+    pub fn promote_to_flow(&self, task_id: &str, flow: Option<&str>) -> WorkflowResult<Task> {
+        human::promote_to_flow::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            self.git_service.as_deref(),
+            &self.iteration_service,
+            task_id,
+            flow,
+        )
+    }
+
     /// Send a task to a specific stage in its pipeline with a message.
     pub fn send_to_stage(
         &self,

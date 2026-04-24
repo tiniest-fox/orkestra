@@ -9,6 +9,7 @@ pub mod answer_questions;
 pub mod approve;
 pub mod archive;
 pub mod interrupt;
+pub mod promote_to_flow;
 pub mod reject_with_comments;
 pub mod request_update;
 pub mod restart_stage;

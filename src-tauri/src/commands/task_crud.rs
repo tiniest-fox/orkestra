@@ -124,3 +124,16 @@ pub fn workflow_get_archived_tasks(
         task::get_archived_tasks(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }
+
+/// Create a new chat task (no workflow, no worktree).
+#[tauri::command]
+pub fn workflow_create_chat_task(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    title: Option<String>,
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "title": title });
+        task::create_chat_task(state.command_context(), &params).map_err(Into::into)
+    })
+}

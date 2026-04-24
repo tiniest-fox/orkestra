@@ -37,6 +37,8 @@ export function FeedRowActions({
   const containerCls = fullWidth ? "flex gap-1.5 w-full" : "flex items-center gap-1.5";
   const btnCls = fullWidth ? "flex-1 justify-center" : undefined;
 
+  if (task.is_chat) return null;
+
   const approveVariant = (() => {
     const stage = config.flows[task.flow]?.stages.find((s) => s.name === derived.current_stage);
     return stage?.capabilities.subtasks ? ("outline-teal" as const) : ("outline-violet" as const);

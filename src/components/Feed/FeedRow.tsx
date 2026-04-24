@@ -183,7 +183,7 @@ export function FeedRow({
         <div className="font-mono text-[10px] font-medium text-text-tertiary">{subtitle}</div>
       </div>
       <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-text-quaternary text-right truncate">
-        {task.derived.current_stage ?? ""}
+        {task.is_chat ? "" : (task.derived.current_stage ?? "")}
       </div>
       <PipelineBar segments={segments} />
       <div>

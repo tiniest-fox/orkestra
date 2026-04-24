@@ -16,7 +16,7 @@ pub fn execute(conn: &Connection, parent_ids: &[&str]) -> WorkflowResult<Vec<Tas
                 parent_id, depends_on, branch_name, worktree_path,
                 auto_mode, created_at, updated_at, completed_at,
                 base_branch, flow, short_id, base_commit, pr_url, interactive,
-                resources
+                resources, is_chat
          FROM workflow_tasks
          WHERE parent_id IN ({placeholders}) AND state LIKE '%archived%'
          ORDER BY created_at"

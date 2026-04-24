@@ -43,18 +43,6 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     [logContainerRef],
   );
 
-  // When the compose area textarea resizes, scroll to bottom so content stays above the
-  // input bar — but only if the user wasn't already scrolled up reading history.
-  const handleComposeResize = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // Threshold of 120px — the max textarea height — so we snap if we were near the bottom.
-    if (distFromBottom < 120) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, []);
-
   // The latest artifact in the log — only this one gets approve/questions actions.
   const latestArtifactId = useMemo(() => {
     for (let i = logs.length - 1; i >= 0; i--) {
@@ -242,7 +230,6 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
                   : "Message the agent\u2026"
           }
           error={state.messageError}
-          onResize={handleComposeResize}
           className={`shrink-0 ${isMobile ? "px-2" : "px-6"} pb-4 bg-canvas`}
         />
       )}

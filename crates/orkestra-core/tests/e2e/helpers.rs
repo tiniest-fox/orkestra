@@ -601,6 +601,12 @@ impl TestEnv {
         self.runner.set_malformed_output(task_id, error);
     }
 
+    /// Queue a plain-text output for the next agent spawn.
+    /// The mock sends a `LogLine` then `PlainText` completion, parking the task at `AwaitingApproval`.
+    pub fn set_plain_text(&self, task_id: &str, text: impl Into<String>) {
+        self.runner.set_plain_text(task_id, text);
+    }
+
     /// Get the number of calls made to the mock runner.
     pub fn call_count(&self) -> usize {
         self.runner.calls().len()

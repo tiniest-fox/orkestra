@@ -10153,3 +10153,119 @@ fn test_error_resume_uses_is_resume() {
         "Resumed spawn must use the SAME session ID — process_output::Failed must not clear it"
     );
 }
+
+/// Agent produces plain text → task parks at `AwaitingApproval` with iteration left open.
+///
+/// The iteration must remain open (no outcome, no `ended_at`) so the human can approve
+/// and enter the commit pipeline. The task must not be failed or re-queued.
+#[test]
+fn test_plain_text_parks_at_awaiting_approval_with_open_iteration() {
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task("Plain text test", "Agent will produce prose", None);
+    let task_id = task.id.clone();
+
+    ctx.set_plain_text(
+        &task_id,
+        "Here is some prose output with no structured content.",
+    );
+
+    ctx.advance(); // spawn agent (picks up plain text)
+    ctx.advance(); // process plain text → AwaitingApproval
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { ref stage } if stage == "work"),
+        "Task should be AwaitingApproval after plain text output, got: {:?}",
+        task.state
+    );
+
+    // Iteration must still be open — no outcome set.
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(iterations.len(), 1, "Should have exactly one iteration");
+    assert!(
+        iterations[0].outcome.is_none(),
+        "Iteration must remain open (no outcome) after plain text park, got: {:?}",
+        iterations[0].outcome
+    );
+    assert!(
+        iterations[0].ended_at.is_none(),
+        "Iteration must not be ended after plain text park"
+    );
+}
+
+/// Plain text → `AwaitingApproval` → human approves → task advances to Committed.
+#[test]
+fn test_plain_text_approve_advances_task() {
+    use orkestra_core::workflow::runtime::Outcome;
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task(
+        "Plain text approval test",
+        "Agent produces prose then human approves",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    ctx.set_plain_text(&task_id, "I did some work and here is a prose description.");
+
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process plain text → AwaitingApproval
+
+    // Human approves — should enter commit pipeline.
+    ctx.api().approve(&task_id).expect("approve should succeed");
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(
+            task.state,
+            TaskState::Committing { .. }
+                | TaskState::Committed { .. }
+                | TaskState::Finishing { .. }
+        ),
+        "Task should be in commit pipeline after approval, got: {:?}",
+        task.state
+    );
+
+    // The iteration should now have Approved outcome.
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(iterations.len(), 1, "Should still have one iteration");
+    assert!(
+        matches!(iterations[0].outcome, Some(Outcome::Approved)),
+        "Iteration should have Approved outcome after human approval, got: {:?}",
+        iterations[0].outcome
+    );
+}
+
+/// Plain text preserves the activity flag so any future respawn resumes the session.
+#[test]
+fn test_plain_text_sets_activity_flag() {
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+    let ctx = TestEnv::with_workflow(workflow);
+
+    let task = ctx.create_task(
+        "Activity flag test",
+        "Verify has_activity is set on plain text",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    ctx.set_plain_text(&task_id, "Some prose output.");
+
+    ctx.advance(); // spawn agent
+    ctx.advance(); // process plain text → AwaitingApproval
+
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .expect("get_stage_session should succeed")
+        .expect("session should exist");
+
+    assert!(
+        session.has_activity,
+        "has_activity must be true after plain text so future respawns resume the session"
+    );
+}

@@ -747,10 +747,8 @@ impl StageExecutionService {
                             Err(AgentCompletionError::MalformedOutput(error)) => {
                                 ExecutionResult::AgentMalformedOutput(error)
                             }
-                            // Placeholder: sibling subtask (wildfowl) will replace this
-                            // with ExecutionResult::AgentPlainText once that variant exists.
                             Err(AgentCompletionError::PlainText(text)) => {
-                                ExecutionResult::AgentFailed(text)
+                                ExecutionResult::AgentPlainText(text)
                             }
                         };
                         completed.push(ExecutionComplete {
@@ -1031,6 +1029,8 @@ pub enum ExecutionResult {
     AgentFailed(String),
     /// Agent produced output but it couldn't be parsed as structured output.
     AgentMalformedOutput(String),
+    /// Agent produced plain text with no structured output.
+    AgentPlainText(String),
     /// Gate script passed.
     GateSuccess,
     /// Gate script failed.

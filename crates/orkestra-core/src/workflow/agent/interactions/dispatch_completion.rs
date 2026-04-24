@@ -153,6 +153,43 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
                 }
             }
         }
+        ExecutionResult::AgentPlainText(_text) => {
+            // Agent produced prose with no structured output — not retryable. Persist activity
+            // so any future respawn resumes the existing session, then park for human review.
+            if let Err(e) = persist_activity_flag(api.store.as_ref(), &exec.task_id, &exec.stage) {
+                orkestra_debug!(
+                    "orchestrator",
+                    "Failed to persist activity flag for plain text {}/{}: {}",
+                    exec.task_id,
+                    exec.stage,
+                    e
+                );
+            }
+            match api.park_plain_text(&exec.task_id) {
+                Ok(_) => Ok(OrchestratorEvent::OutputProcessed {
+                    task_id: exec.task_id,
+                    stage: exec.stage,
+                    output_type: "plain_text".to_string(),
+                }),
+                Err(e) => {
+                    if let Err(fe) = api.fail_agent_execution(
+                        &exec.task_id,
+                        &format!("Plain text park failed: {e}"),
+                    ) {
+                        orkestra_debug!(
+                            "orchestrator",
+                            "Failed to record park failure for {}: {}",
+                            exec.task_id,
+                            fe
+                        );
+                    }
+                    Ok(OrchestratorEvent::Error {
+                        task_id: Some(exec.task_id),
+                        error: e.to_string(),
+                    })
+                }
+            }
+        }
         ExecutionResult::GateSuccess => match api.process_gate_success(&exec.task_id) {
             Ok(_) => Ok(OrchestratorEvent::GatePassed {
                 task_id: exec.task_id,

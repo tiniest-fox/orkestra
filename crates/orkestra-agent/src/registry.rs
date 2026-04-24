@@ -1,11 +1,11 @@
 //! Provider registry for resolving model specs to process spawner implementations.
 //!
-//! The registry maps provider names (e.g., "claudecode", "opencode") to their
-//! `ProcessSpawner` implementations and handles model alias resolution.
-//!
-//! Model spec format: `provider/model` (e.g., "claudecode/sonnet", "opencode/kimi-k2").
-//! Shorthand without provider prefix is supported — the registry checks all providers'
-//! alias tables for a match, defaulting to "claudecode" if none match.
+//! The registry uses prefix-based routing to dispatch model specs to providers:
+//! - `"claude/X"` or `"claudecode/X"` → Claude Code provider with model X (prefix stripped)
+//! - `"codex/X"` → error (not yet implemented)
+//! - `"prefix/model"` (any other prefix) → `OpenCode` with full spec as model ID
+//! - `"alias"` (bare name, no `/`) → search alias tables; error on miss
+//! - `None` → default provider's default model
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -93,12 +93,29 @@ impl std::fmt::Debug for ResolvedProvider {
 pub enum RegistryError {
     /// The provider name in the model spec is not registered.
     UnknownProvider(String),
+    /// The `codex/` prefix is reserved but the provider isn't implemented yet.
+    ProviderNotImplemented(String),
+    /// A bare alias (no `/` prefix) had no match in any provider's alias table.
+    UnknownAlias {
+        alias: String,
+        available: Vec<String>,
+    },
 }
 
 impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnknownProvider(name) => write!(f, "Unknown provider: \"{name}\""),
+            Self::ProviderNotImplemented(name) => {
+                write!(f, "Provider \"{name}\" is not yet implemented")
+            }
+            Self::UnknownAlias { alias, available } => {
+                write!(
+                    f,
+                    "Unknown model alias \"{alias}\". Available aliases: {}",
+                    available.join(", ")
+                )
+            }
         }
     }
 }
@@ -111,9 +128,12 @@ impl std::error::Error for RegistryError {}
 
 /// Registry that maps provider names to `ProcessSpawner` implementations.
 ///
-/// Handles parsing model specs (e.g., "claudecode/sonnet") into a provider
-/// and resolved model ID. Supports alias resolution within each provider
-/// and shorthand specs without a provider prefix.
+/// Resolves model specs using prefix-based routing:
+/// - `"claude/X"` or `"claudecode/X"` → Claude Code with model X (prefix stripped)
+/// - `"codex/X"` → error (not yet implemented)
+/// - `"prefix/model"` → `OpenCode` with full spec as model ID
+/// - `"alias"` → search alias tables; error on miss
+/// - `None` → default provider's default model
 pub struct ProviderRegistry {
     providers: HashMap<String, RegisteredProvider>,
     default_provider: String,
@@ -122,8 +142,7 @@ pub struct ProviderRegistry {
 impl ProviderRegistry {
     /// Create an empty registry with the given default provider name.
     ///
-    /// The default provider is used when a model spec has no provider prefix
-    /// and no provider's alias table matches the spec.
+    /// The default provider is used when `resolve()` is called with `None`.
     pub fn new(default_provider: impl Into<String>) -> Self {
         Self {
             providers: HashMap::new(),
@@ -151,13 +170,12 @@ impl ProviderRegistry {
 
     /// Resolve a model spec into a provider and model ID.
     ///
-    /// Model spec formats:
-    /// - `"provider/alias"` — Look up provider, resolve alias (e.g., "claudecode/sonnet")
-    /// - `"provider/raw-id"` — Look up provider, pass raw ID through (e.g., "claudecode/claude-sonnet-4-5-20250929")
-    /// - `"alias"` — Search all providers' alias tables; first match wins.
-    ///   If no match, use default provider with the spec as a passthrough model ID.
-    ///
-    /// Returns `None` for `model_id` only when the spec is `None` (use provider default).
+    /// Routing rules (in priority order):
+    /// - `"claude/X"` or `"claudecode/X"` → Claude Code provider with model X
+    /// - `"codex/X"` → error (`ProviderNotImplemented`)
+    /// - `"prefix/model"` (any other prefix) → `OpenCode` with full spec as model ID
+    /// - `"alias"` (bare name) → search alias tables; `UnknownAlias` error on miss
+    /// - `None` → default provider with no model ID
     pub fn resolve(&self, model_spec: Option<&str>) -> Result<ResolvedProvider, RegistryError> {
         match model_spec {
             None => self.resolve_default(),
@@ -215,45 +233,44 @@ impl ProviderRegistry {
         })
     }
 
-    /// Resolve a non-empty model spec string.
+    /// Resolve a non-empty model spec string using prefix-based routing.
     fn resolve_spec(&self, spec: &str) -> Result<ResolvedProvider, RegistryError> {
-        if let Some((provider_name, model_part)) = spec.split_once('/') {
-            // Explicit provider: "claudecode/sonnet"
-            self.resolve_explicit(provider_name, model_part)
+        if let Some(model) = spec.strip_prefix("claude/") {
+            self.resolve_with_provider("claudecode", Some(model.to_string()))
+        } else if let Some(model) = spec.strip_prefix("claudecode/") {
+            self.resolve_with_provider("claudecode", Some(model.to_string()))
+        } else if spec.starts_with("codex/") {
+            Err(RegistryError::ProviderNotImplemented("codex".to_string()))
+        } else if spec.contains('/') {
+            self.resolve_with_provider("opencode", Some(spec.to_string()))
         } else {
-            // No provider prefix: "sonnet" — search alias tables
-            self.resolve_shorthand(spec)
+            self.resolve_alias(spec)
         }
     }
 
-    /// Resolve an explicit `provider/model` spec.
-    fn resolve_explicit(
+    /// Resolve to a specific provider with the given model ID (no alias resolution).
+    fn resolve_with_provider(
         &self,
         provider_name: &str,
-        model_part: &str,
+        model_id: Option<String>,
     ) -> Result<ResolvedProvider, RegistryError> {
         let provider = self
             .providers
             .get(provider_name)
             .ok_or_else(|| RegistryError::UnknownProvider(provider_name.to_string()))?;
 
-        let model_id = provider
-            .aliases
-            .get(model_part)
-            .cloned()
-            .unwrap_or_else(|| model_part.to_string());
-
         Ok(ResolvedProvider {
             spawner: Arc::clone(&provider.spawner),
-            model_id: Some(model_id),
+            model_id,
             capabilities: provider.capabilities.clone(),
             provider_name: provider_name.to_string(),
         })
     }
 
-    /// Resolve a shorthand spec (no provider prefix) by searching alias tables.
-    fn resolve_shorthand(&self, alias: &str) -> Result<ResolvedProvider, RegistryError> {
-        // Search all providers' alias tables for a match
+    /// Resolve a bare alias by searching all providers' alias tables.
+    ///
+    /// Returns `UnknownAlias` with the sorted list of available aliases on miss.
+    fn resolve_alias(&self, alias: &str) -> Result<ResolvedProvider, RegistryError> {
         for (provider_name, provider) in &self.providers {
             if let Some(resolved) = provider.aliases.get(alias) {
                 return Ok(ResolvedProvider {
@@ -263,29 +280,17 @@ impl ProviderRegistry {
                     provider_name: provider_name.clone(),
                 });
             }
-            // Also check if the alias matches a provider name itself
-            // (e.g., "claudecode" with no model → default for that provider)
-            if provider_name == alias {
-                return Ok(ResolvedProvider {
-                    spawner: Arc::clone(&provider.spawner),
-                    model_id: None,
-                    capabilities: provider.capabilities.clone(),
-                    provider_name: provider_name.clone(),
-                });
-            }
         }
 
-        // No alias match — use default provider with passthrough model ID
-        let provider = self
+        let mut available: Vec<String> = self
             .providers
-            .get(&self.default_provider)
-            .ok_or_else(|| RegistryError::UnknownProvider(self.default_provider.clone()))?;
-
-        Ok(ResolvedProvider {
-            spawner: Arc::clone(&provider.spawner),
-            model_id: Some(alias.to_string()),
-            capabilities: provider.capabilities.clone(),
-            provider_name: self.default_provider.clone(),
+            .values()
+            .flat_map(|p| p.aliases.keys().cloned())
+            .collect();
+        available.sort();
+        Err(RegistryError::UnknownAlias {
+            alias: alias.to_string(),
+            available,
         })
     }
 }
@@ -433,67 +438,82 @@ mod tests {
         registry
     }
 
-    // -- Explicit provider/model resolution --
+    // -- Prefix-based routing: claude/ and claudecode/ --
 
     #[test]
-    fn resolve_claudecode_sonnet_alias() {
+    fn resolve_claude_prefix_strips_and_routes_to_claudecode() {
         let registry = test_registry();
-        let resolved = registry.resolve(Some("claudecode/sonnet")).unwrap();
-        assert_eq!(resolved.model_id, Some("claude-sonnet-4-6".to_string()));
+        let resolved = registry.resolve(Some("claude/sonnet")).unwrap();
+        assert_eq!(resolved.provider_name, "claudecode");
+        assert_eq!(resolved.model_id, Some("sonnet".to_string()));
         assert!(resolved.capabilities.supports_json_schema);
-        assert!(resolved.capabilities.supports_sessions);
-        assert!(resolved.capabilities.supports_system_prompt);
     }
 
     #[test]
-    fn resolve_claudecode_opus_alias() {
+    fn resolve_claudecode_prefix_strips_and_routes_to_claudecode() {
         let registry = test_registry();
         let resolved = registry.resolve(Some("claudecode/opus")).unwrap();
-        assert_eq!(resolved.model_id, Some("claude-opus-4-6".to_string()));
+        assert_eq!(resolved.provider_name, "claudecode");
+        assert_eq!(resolved.model_id, Some("opus".to_string()));
     }
 
     #[test]
-    fn resolve_claudecode_haiku_alias() {
+    fn resolve_claude_prefix_with_raw_model_id() {
         let registry = test_registry();
-        let resolved = registry.resolve(Some("claudecode/haiku")).unwrap();
-        assert_eq!(
-            resolved.model_id,
-            Some("claude-haiku-4-5-20251001".to_string())
-        );
+        let resolved = registry.resolve(Some("claude/claude-opus-4-6")).unwrap();
+        assert_eq!(resolved.model_id, Some("claude-opus-4-6".to_string()));
+        assert_eq!(resolved.provider_name, "claudecode");
+    }
+
+    // -- Prefix-based routing: opencode (unknown prefix passes full spec) --
+
+    #[test]
+    fn resolve_prefixed_opencode_passes_full_spec() {
+        let registry = test_registry();
+        let resolved = registry.resolve(Some("opencode/kimi-k2.6")).unwrap();
+        assert_eq!(resolved.provider_name, "opencode");
+        assert_eq!(resolved.model_id, Some("opencode/kimi-k2.6".to_string()));
+        assert!(!resolved.capabilities.supports_json_schema);
     }
 
     #[test]
-    fn resolve_claudecode_raw_passthrough() {
+    fn resolve_unknown_prefix_routes_to_opencode() {
         let registry = test_registry();
         let resolved = registry
-            .resolve(Some("claudecode/claude-sonnet-4-5-20250929"))
+            .resolve(Some("moonshot/kimi-k2-0711-preview"))
             .unwrap();
-        assert_eq!(
-            resolved.model_id,
-            Some("claude-sonnet-4-5-20250929".to_string())
-        );
-    }
-
-    #[test]
-    fn resolve_opencode_kimi_alias() {
-        let registry = test_registry();
-        let resolved = registry.resolve(Some("opencode/kimi-k2")).unwrap();
+        assert_eq!(resolved.provider_name, "opencode");
         assert_eq!(
             resolved.model_id,
             Some("moonshot/kimi-k2-0711-preview".to_string())
         );
-        assert!(!resolved.capabilities.supports_json_schema);
-        assert!(resolved.capabilities.supports_sessions);
-        assert!(!resolved.capabilities.supports_system_prompt);
     }
 
     #[test]
-    fn resolve_opencode_raw_passthrough() {
+    fn resolve_anthropic_prefix_routes_to_opencode() {
         let registry = test_registry();
         let resolved = registry
-            .resolve(Some("opencode/some-custom-model"))
+            .resolve(Some("anthropic/claude-3-5-sonnet"))
             .unwrap();
-        assert_eq!(resolved.model_id, Some("some-custom-model".to_string()));
+        assert_eq!(resolved.provider_name, "opencode");
+        assert_eq!(
+            resolved.model_id,
+            Some("anthropic/claude-3-5-sonnet".to_string())
+        );
+        assert!(!resolved.capabilities.supports_json_schema);
+    }
+
+    // -- Prefix-based routing: codex/ error --
+
+    #[test]
+    fn resolve_codex_prefix_returns_not_implemented() {
+        let registry = test_registry();
+        let result = registry.resolve(Some("codex/anything"));
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            RegistryError::ProviderNotImplemented(ref name) if name == "codex"
+        ));
     }
 
     // -- Shorthand resolution (no provider prefix) --
@@ -503,7 +523,6 @@ mod tests {
         let registry = test_registry();
         let resolved = registry.resolve(Some("sonnet")).unwrap();
         assert_eq!(resolved.model_id, Some("claude-sonnet-4-6".to_string()));
-        // Should resolve to claudecode provider
         assert!(resolved.capabilities.supports_json_schema);
     }
 
@@ -515,17 +534,48 @@ mod tests {
             resolved.model_id,
             Some("moonshot/kimi-k2-0711-preview".to_string())
         );
-        // Should resolve to opencode provider
         assert!(!resolved.capabilities.supports_json_schema);
     }
 
     #[test]
-    fn resolve_shorthand_unknown_falls_back_to_default() {
+    fn resolve_shorthand_unknown_returns_error() {
         let registry = test_registry();
-        let resolved = registry.resolve(Some("some-unknown-model")).unwrap();
-        // Should fall back to claudecode with passthrough
-        assert_eq!(resolved.model_id, Some("some-unknown-model".to_string()));
-        assert!(resolved.capabilities.supports_json_schema);
+        let result = registry.resolve(Some("some-unknown-model"));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RegistryError::UnknownAlias { alias, available } => {
+                assert_eq!(alias, "some-unknown-model");
+                assert!(available.contains(&"haiku".to_string()));
+                assert!(available.contains(&"sonnet".to_string()));
+                assert!(available.contains(&"opus".to_string()));
+                assert!(available.contains(&"kimi-k2".to_string()));
+                assert!(available.contains(&"kimi-k2.5".to_string()));
+                assert!(available.contains(&"kimi-k2.6".to_string()));
+            }
+            other => panic!("expected UnknownAlias, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_unknown_alias_error_lists_available() {
+        let registry = test_registry();
+        let result = registry.resolve(Some("nonexistent"));
+        let err = result.unwrap_err();
+        match &err {
+            RegistryError::UnknownAlias { alias, available } => {
+                assert_eq!(alias, "nonexistent");
+                // Available list should be sorted
+                let mut sorted = available.clone();
+                sorted.sort();
+                assert_eq!(available, &sorted);
+            }
+            other => panic!("expected UnknownAlias, got {other:?}"),
+        }
+        // Display message should be well-formed
+        let msg = err.to_string();
+        assert!(msg.contains("nonexistent"));
+        assert!(msg.contains("Available aliases:"));
+        assert!(msg.contains("sonnet"));
     }
 
     // -- No model spec (None) --
@@ -535,7 +585,6 @@ mod tests {
         let registry = test_registry();
         let resolved = registry.resolve(None).unwrap();
         assert_eq!(resolved.model_id, None);
-        // Default is claudecode
         assert!(resolved.capabilities.supports_json_schema);
         assert!(resolved.capabilities.supports_sessions);
     }
@@ -543,21 +592,8 @@ mod tests {
     // -- Error cases --
 
     #[test]
-    fn resolve_unknown_provider_returns_error() {
-        let registry = test_registry();
-        let result = registry.resolve(Some("unknownprovider/model"));
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, RegistryError::UnknownProvider(ref name) if name == "unknownprovider")
-        );
-        assert!(err.to_string().contains("unknownprovider"));
-    }
-
-    #[test]
     fn resolve_empty_registry_default_fails() {
         let registry = ProviderRegistry::new("claudecode");
-        // No providers registered — default lookup fails
         let result = registry.resolve(None);
         assert!(result.is_err());
     }

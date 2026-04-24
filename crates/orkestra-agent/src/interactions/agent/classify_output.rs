@@ -1,15 +1,17 @@
-//! Classify agent output into success, extraction failure, or parse failure.
+//! Classify agent output into success, extraction failure, plain text, or parse failure.
 
 use orkestra_parser::interactions::output::parse_stage_output;
-use orkestra_parser::{AgentParser, StageOutput};
+use orkestra_parser::{AgentParser, ExtractionResult, StageOutput};
 
-/// Three-way classification of agent output.
+/// Four-way classification of agent output.
 #[derive(Debug, Clone)]
 pub enum OutputClassification {
     /// Agent produced valid structured output.
     Success(StageOutput),
-    /// No structured output could be extracted (agent crashed, produced prose, or errored).
+    /// Extraction encountered an error (API error, empty output, etc.). No retry.
     ExtractionFailed(String),
+    /// Agent produced plain text with no structured output.
+    PlainText(String),
     /// Structured output was extracted but failed schema validation or parsing.
     ParseFailed(String),
 }
@@ -21,8 +23,11 @@ pub fn execute(
 ) -> OutputClassification {
     // Step 1: extract structured output from raw stream
     let json_str = match parser.extract_output(full_output) {
-        Ok(s) => s,
-        Err(e) => return OutputClassification::ExtractionFailed(e),
+        ExtractionResult::Found(s) => s,
+        ExtractionResult::NotFound => {
+            return OutputClassification::PlainText(full_output.to_string())
+        }
+        ExtractionResult::Error(e) => return OutputClassification::ExtractionFailed(e),
     };
 
     // Step 2: parse and validate the extracted JSON
@@ -44,12 +49,13 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use orkestra_parser::types::ParsedUpdate;
+    use orkestra_parser::ExtractionResult;
     use orkestra_types::domain::LogEntry;
 
     use super::*;
 
     struct MockParser {
-        extract_result: Result<String, String>,
+        extract_result: ExtractionResult,
     }
 
     impl AgentParser for MockParser {
@@ -62,15 +68,15 @@ mod tests {
         fn finalize(&mut self) -> Vec<LogEntry> {
             Vec::new()
         }
-        fn extract_output(&self, _full_output: &str) -> Result<String, String> {
+        fn extract_output(&self, _full_output: &str) -> ExtractionResult {
             self.extract_result.clone()
         }
     }
 
     #[test]
-    fn extraction_failure_returns_extraction_failed() {
+    fn extraction_error_returns_extraction_failed() {
         let parser = MockParser {
-            extract_result: Err("no structured output found".to_string()),
+            extract_result: ExtractionResult::Error("API error: rate limit".to_string()),
         };
         let schema = serde_json::json!({"type": "object"});
 
@@ -83,9 +89,26 @@ mod tests {
     }
 
     #[test]
+    fn extraction_not_found_returns_plain_text() {
+        let parser = MockParser {
+            extract_result: ExtractionResult::NotFound,
+        };
+        let schema = serde_json::json!({"type": "object"});
+
+        let result = execute(&parser, "just prose output", Some(&schema));
+
+        assert!(
+            matches!(result, OutputClassification::PlainText(_)),
+            "expected PlainText, got: {result:?}"
+        );
+    }
+
+    #[test]
     fn parse_failure_after_extraction_returns_parse_failed() {
         let parser = MockParser {
-            extract_result: Ok(r#"{"type": "unknown_type_not_in_schema"}"#.to_string()),
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "unknown_type_not_in_schema"}"#.to_string(),
+            ),
         };
         let schema = serde_json::json!({
             "type": "object",
@@ -106,7 +129,9 @@ mod tests {
     #[test]
     fn valid_output_with_schema_returns_success() {
         let parser = MockParser {
-            extract_result: Ok(r#"{"type": "summary", "content": "done"}"#.to_string()),
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "summary", "content": "done"}"#.to_string(),
+            ),
         };
         let schema = serde_json::json!({
             "type": "object",
@@ -128,7 +153,9 @@ mod tests {
     #[test]
     fn valid_output_without_schema_returns_success() {
         let parser = MockParser {
-            extract_result: Ok(r#"{"type": "summary", "content": "done"}"#.to_string()),
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "summary", "content": "done"}"#.to_string(),
+            ),
         };
 
         let result = execute(&parser, "some output", None);
@@ -142,7 +169,7 @@ mod tests {
     #[test]
     fn invalid_json_without_schema_returns_parse_failed() {
         let parser = MockParser {
-            extract_result: Ok("not valid json at all".to_string()),
+            extract_result: ExtractionResult::Found("not valid json at all".to_string()),
         };
 
         let result = execute(&parser, "some output", None);

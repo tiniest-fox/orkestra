@@ -747,6 +747,11 @@ impl StageExecutionService {
                             Err(AgentCompletionError::MalformedOutput(error)) => {
                                 ExecutionResult::AgentMalformedOutput(error)
                             }
+                            // Placeholder: sibling subtask (wildfowl) will replace this
+                            // with ExecutionResult::AgentPlainText once that variant exists.
+                            Err(AgentCompletionError::PlainText(text)) => {
+                                ExecutionResult::AgentFailed(text)
+                            }
                         };
                         completed.push(ExecutionComplete {
                             task_id: task_id.clone(),

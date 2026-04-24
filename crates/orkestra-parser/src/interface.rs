@@ -1,6 +1,6 @@
 //! Agent parser trait defining the API contract.
 
-use crate::types::ParsedUpdate;
+use crate::types::{ExtractionResult, ParsedUpdate};
 use orkestra_types::domain::LogEntry;
 
 /// Provider-specific agent output parser.
@@ -23,7 +23,9 @@ pub trait AgentParser: Send {
 
     /// Extract the structured output JSON string from the provider's raw output.
     ///
-    /// Returns the raw JSON string (e.g., `{"type":"questions","questions":[...]}`).
+    /// Returns `Found(json_str)` when structured output is located, `NotFound` when
+    /// the agent produced plain text with no structured output, or `Error(msg)` for
+    /// API errors and other extraction failures.
     /// Does NOT interpret the type — that's `parse_stage_output::execute()`'s job.
-    fn extract_output(&self, full_output: &str) -> Result<String, String>;
+    fn extract_output(&self, full_output: &str) -> ExtractionResult;
 }

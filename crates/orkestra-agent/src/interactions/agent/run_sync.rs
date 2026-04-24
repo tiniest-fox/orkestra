@@ -116,6 +116,13 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
             );
             return Err(RunError::ExtractionFailed(e));
         }
+        OutputClassification::PlainText(text) => {
+            orkestra_debug!(
+                "runner",
+                "plain text output — no structured output attempted"
+            );
+            return Err(RunError::PlainText(text));
+        }
         OutputClassification::ParseFailed(e) => {
             orkestra_debug!(
                 "runner",

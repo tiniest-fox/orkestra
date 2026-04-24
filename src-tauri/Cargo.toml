@@ -25,7 +25,7 @@ orkestra-agent = { path = "../crates/orkestra-agent" }
 orkestra-core = { path = "../crates/orkestra-core" }
 orkestra-networking = { path = "../crates/orkestra-networking" }
 orkestra-types = { path = "../crates/orkestra-types" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-shell = "2"

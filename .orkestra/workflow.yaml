@@ -243,3 +243,20 @@ flows:
 
     integration:
       on_failure: build
+
+  opencode:
+    stages:
+      - name: think
+        description: Thinks about the user's query, asks questions and returns thoughts on what to do
+        artifact: thoughts
+        prompt: thinking.md
+        model: moonshot/kimi-k2.6
+
+      - name: execute
+        description: Executes on the pre-generated thoughts and produce an executive summary
+        artifact: executive_summary
+        prompt: execute.md
+        model: moonshit/kimi-k2.6
+
+    integration:
+      on_failure: think

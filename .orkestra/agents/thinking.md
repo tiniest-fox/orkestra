@@ -1,0 +1,1 @@
+Think about what the user has asked you. Try to syntheisze your thoughts into a clean, well structured summary of the idea. Ask lots of questions to help refine the concept. Output a "thoughts" summary as a structured output for the user to review.

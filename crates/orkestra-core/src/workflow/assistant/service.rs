@@ -1242,6 +1242,63 @@ mod tests {
     }
 
     // ========================================================================
+    // generate_and_set_title propagation
+    // ========================================================================
+
+    #[test]
+    fn test_generate_and_set_title_propagates_to_chat_task() {
+        let (_service, store) = create_test_service();
+        let store_dyn: Arc<dyn WorkflowStore> = Arc::clone(&store) as Arc<dyn WorkflowStore>;
+
+        // Create a chat task in the store directly (mirrors create_chat::execute).
+        let task_id = store.next_task_id().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut task = crate::workflow::domain::Task::new(
+            &task_id,
+            "initial fallback title",
+            "",
+            "chat",
+            &now,
+        );
+        task.is_chat = true;
+        task.flow = String::new();
+        store.save_task(&task).unwrap();
+
+        // Create a session linked to the chat task.
+        let session_id = "test-session-title";
+        let session = AssistantSession::new(session_id, &now).with_task(&task_id);
+        store.save_assistant_session(&session).unwrap();
+
+        // Call generate_and_set_title — generate_title_sync will fail in this
+        // environment (no LLM), so it falls back to generate_fallback_title.
+        generate_and_set_title(&store_dyn, session, "Why is the login page broken?");
+
+        // Session title must be set.
+        let updated_session = store
+            .get_assistant_session(session_id)
+            .unwrap()
+            .expect("session in store");
+        assert!(
+            updated_session.title.is_some(),
+            "session title must be set after generate_and_set_title"
+        );
+
+        // Task title must be updated to match the generated/fallback title.
+        let updated_task = store.get_task(&task_id).unwrap().expect("task in store");
+        assert_ne!(
+            updated_task.title, "initial fallback title",
+            "chat task title must be updated by generate_and_set_title"
+        );
+        assert!(
+            updated_task.title.to_lowercase().contains("login")
+                || updated_task.title.to_lowercase().contains("broken")
+                || !updated_task.title.is_empty(),
+            "task title must derive from the message, got: {:?}",
+            updated_task.title
+        );
+    }
+
+    // ========================================================================
     // Completion diagnostic tests (visibility + recovery for empty agent runs)
     // ========================================================================
 

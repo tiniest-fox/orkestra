@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
+use orkestra_core::title::generate_fallback_title;
 use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
 use orkestra_core::workflow::domain::{LogEntry, TaskCreationMode};
 use orkestra_core::workflow::execution::{
@@ -41,23 +42,62 @@ fn chat_provider_registry() -> Arc<ProviderRegistry> {
 }
 
 /// Create a `WorkflowApi` with `project_root` and `provider_registry` configured,
-/// plus a shared store for assertions. Both the API and the store use the same
-/// underlying `SQLite` connection.
-fn create_chat_api() -> (WorkflowApi, Arc<dyn WorkflowStore>, TempDir) {
+/// plus a shared store and `AssistantService` for assertions.
+fn create_chat_api() -> (
+    WorkflowApi,
+    Arc<dyn WorkflowStore>,
+    AssistantService,
+    TempDir,
+) {
     let temp_dir = TempDir::new().expect("temp dir");
     let db_path = temp_dir.path().join("test.db");
     let conn = DatabaseConnection::open(&db_path).expect("open db");
 
     let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+    let registry = chat_provider_registry();
 
     let api = WorkflowApi::new(
         one_stage_workflow(),
         Arc::new(SqliteWorkflowStore::new(conn.shared())),
     )
-    .with_provider_registry(chat_provider_registry())
+    .with_provider_registry(Arc::clone(&registry))
     .with_project_root(temp_dir.path().to_path_buf());
 
-    (api, store, temp_dir)
+    let service = AssistantService::new(
+        Arc::clone(&store),
+        Arc::clone(&registry),
+        temp_dir.path().to_path_buf(),
+    );
+
+    (api, store, service, temp_dir)
+}
+
+/// Compose task creation + send into a single call for tests.
+///
+/// Mirrors the decomposed pattern in the command handler: create task with the
+/// API (no lock held across spawn), then send via `AssistantService`.
+fn create_and_send(
+    api: &WorkflowApi,
+    service: &AssistantService,
+    message: &str,
+) -> Result<
+    (
+        orkestra_core::workflow::domain::Task,
+        orkestra_core::workflow::domain::AssistantSession,
+    ),
+    orkestra_core::workflow::ports::WorkflowError,
+> {
+    use orkestra_core::workflow::ports::WorkflowError;
+
+    if message.trim().is_empty() {
+        return Err(WorkflowError::InvalidState(
+            "Message cannot be empty".to_string(),
+        ));
+    }
+
+    let task = api.create_chat_task(&generate_fallback_title(message))?;
+    let session = service.send_task_message(&task.id, message)?;
+    Ok((task, session))
 }
 
 // =============================================================================
@@ -235,11 +275,9 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
 
 #[test]
 fn test_create_and_send_creates_task_with_message_title() {
-    let (api, store, _temp_dir) = create_chat_api();
+    let (api, store, service, _temp_dir) = create_chat_api();
 
-    let (task, session) = api
-        .create_chat_and_send_message("Fix the login page auth error")
-        .unwrap();
+    let (task, session) = create_and_send(&api, &service, "Fix the login page auth error").unwrap();
 
     // Task must exist in the store and be a chat task.
     let fetched = store.get_task(&task.id).unwrap().expect("task in store");
@@ -267,12 +305,12 @@ fn test_create_and_send_creates_task_with_message_title() {
 
 #[test]
 fn test_create_and_send_rejects_empty_message() {
-    let (api, _store, _temp_dir) = create_chat_api();
+    let (api, _store, service, _temp_dir) = create_chat_api();
 
-    let result = api.create_chat_and_send_message("");
+    let result = create_and_send(&api, &service, "");
     assert!(result.is_err(), "empty message must be rejected");
 
-    let result_ws = api.create_chat_and_send_message("   ");
+    let result_ws = create_and_send(&api, &service, "   ");
     assert!(
         result_ws.is_err(),
         "whitespace-only message must be rejected"
@@ -281,18 +319,10 @@ fn test_create_and_send_rejects_empty_message() {
 
 #[test]
 fn test_subsequent_messages_reuse_task_session() {
-    let (api, store, temp_dir) = create_chat_api();
+    let (api, _store, service, _temp_dir) = create_chat_api();
 
-    let (task, session1) = api
-        .create_chat_and_send_message("First message to the chat")
-        .unwrap();
+    let (task, session1) = create_and_send(&api, &service, "First message to the chat").unwrap();
 
-    // Send a follow-up message to the same task via AssistantService (same underlying store).
-    let service = AssistantService::new(
-        Arc::clone(&store),
-        chat_provider_registry(),
-        temp_dir.path().to_path_buf(),
-    );
     let session2 = service
         .send_task_message(&task.id, "Follow-up question")
         .unwrap();

@@ -88,18 +88,41 @@ fn test_chat_task_not_spawned_by_orchestrator() {
 fn test_normal_task_is_not_affected_by_chat_task_filter() {
     let env = TestEnv::with_workflow(one_stage_workflow());
 
-    let _chat = env.api().create_chat_task("Chat task").unwrap();
+    // Create one chat task (stays filtered) and one normal task (should advance).
+    // create_task advances once internally for setup, so after this call the normal task
+    // has completed setup and is a spawn candidate.
+    let chat = env.api().create_chat_task("Chat task").unwrap();
+    let normal = env.create_task("Normal task", "desc", None);
 
-    // Normal task goes through setup (sync) then becomes spawn candidate.
+    // One more advance: orchestrator spawns an agent for the normal task.
     env.advance();
 
-    // With a normal Queued task present, the orchestrator spawns an agent.
-    // We can verify by checking that the regular task's state advanced from
-    // Queued — call_count must still be 0 since no output was provided.
-    assert_eq!(
-        env.call_count(),
-        0,
-        "chat task should not count as an agent call"
+    // The normal task must have left Queued/AwaitingSetup — orchestrator picked it up.
+    let fetched_normal = env.api().get_task(&normal.id).unwrap();
+    assert!(
+        !matches!(
+            fetched_normal.state,
+            TaskState::Queued { .. } | TaskState::AwaitingSetup { .. }
+        ),
+        "normal task must advance past Queued/AwaitingSetup, got: {:?}",
+        fetched_normal.state
+    );
+
+    // At least one agent call was made for the normal task.
+    assert!(
+        env.call_count() >= 1,
+        "orchestrator must spawn an agent for the normal task"
+    );
+
+    // Chat task stays filtered — still in Queued{chat}.
+    let fetched_chat = env.api().get_task(&chat.id).unwrap();
+    assert!(
+        matches!(
+            fetched_chat.state,
+            TaskState::Queued { ref stage } if stage == "chat"
+        ),
+        "chat task must remain Queued{{chat}}, got: {:?}",
+        fetched_chat.state
     );
 }
 

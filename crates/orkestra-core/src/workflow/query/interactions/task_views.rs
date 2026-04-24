@@ -8,6 +8,7 @@ use crate::workflow::domain::task_view::DerivedTaskState;
 use crate::workflow::domain::{DifferentialTaskResponse, TaskView};
 use crate::workflow::domain::{Iteration, StageSession, Task};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use orkestra_process::is_process_running;
 use orkestra_types::domain::SessionType;
 
 /// List all active top-level tasks with pre-joined data and derived state.
@@ -66,23 +67,37 @@ pub fn list_active(
         subtask_views.extend(views);
     }
 
+    // Batch-load assistant sessions for all chat tasks in one pass, then derive
+    // assistant_active (with liveness check) before building views.
+    let chat_task_ids: Vec<&str> = top_level
+        .iter()
+        .filter(|t| t.is_chat)
+        .map(|t| t.id.as_str())
+        .collect();
+    let mut chat_assistant_active: HashMap<String, bool> = HashMap::new();
+    for task_id in chat_task_ids {
+        if let Ok(Some(session)) =
+            store.get_assistant_session_for_task(task_id, &SessionType::Assistant)
+        {
+            let active = session.agent_pid.is_some_and(is_process_running);
+            chat_assistant_active.insert(task_id.to_string(), active);
+        }
+    }
+
     let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
     for task in top_level {
-        let mut view = build_single_top_level_view(
+        let assistant_active = chat_assistant_active
+            .get(&task.id)
+            .copied()
+            .unwrap_or(false);
+        let view = build_single_top_level_view(
             task,
             &iterations_by_task,
             &sessions_by_task,
             &subtask_derived_by_parent,
             workflow,
+            assistant_active,
         );
-        // For chat tasks, check if the assistant agent is currently running.
-        if view.task.is_chat {
-            if let Ok(Some(session)) =
-                store.get_assistant_session_for_task(&view.task.id, &SessionType::Assistant)
-            {
-                view.derived.assistant_active = session.agent_pid.is_some();
-            }
-        }
         views.push(view);
     }
 
@@ -165,7 +180,8 @@ pub fn list_subtasks(
     for task in sorted {
         let iterations = store.get_iterations(&task.id)?;
         let stage_sessions = store.get_stage_sessions(&task.id)?;
-        let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
+        let derived =
+            DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow, false);
         views.push(TaskView {
             task,
             iterations,
@@ -238,6 +254,7 @@ pub fn list_archived(
             &sessions_by_task,
             &subtask_derived_by_parent,
             workflow,
+            false, // archived tasks never have an active assistant agent
         ));
     }
 
@@ -291,7 +308,8 @@ fn build_subtask_derived_data(
             .cloned()
             .unwrap_or_default();
         let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-        let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow);
+        let derived =
+            DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow, false);
         derived_states.push(derived.clone());
 
         if include_view(&task.id) {
@@ -314,6 +332,7 @@ fn build_single_top_level_view(
     sessions_by_task: &HashMap<String, Vec<StageSession>>,
     subtask_derived_by_parent: &HashMap<String, Vec<DerivedTaskState>>,
     workflow: &WorkflowConfig,
+    assistant_active: bool,
 ) -> TaskView {
     let iterations = iterations_by_task
         .get(&task.id)
@@ -329,6 +348,7 @@ fn build_single_top_level_view(
         &stage_sessions,
         subtask_states,
         workflow,
+        assistant_active,
     );
     TaskView {
         task,

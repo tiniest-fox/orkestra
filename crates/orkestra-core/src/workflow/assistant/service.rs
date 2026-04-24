@@ -129,7 +129,7 @@ impl AssistantService {
         let spawn_result = self.spawn_agent_in(
             &session,
             message,
-            &self.project_root.clone(),
+            &self.project_root,
             &system_prompt,
             ASSISTANT_DISALLOWED_TOOLS,
         );
@@ -701,6 +701,15 @@ fn read_assistant_output(
     if let Ok(Some(mut session)) = store.get_assistant_session(session_id) {
         session.agent_finished(&now);
         let _ = store.save_assistant_session(&session);
+
+        // Bump task.updated_at so differential polling re-fetches the chat task's
+        // assistant_active field (which just transitioned from true → false).
+        if let Some(ref task_id) = session.task_id {
+            if let Ok(Some(mut task)) = store.get_task(task_id) {
+                task.updated_at = now.clone();
+                let _ = store.save_task(&task);
+            }
+        }
 
         // Trigger title generation if this was the first spawn and session has no title
         if spawn_count_before_spawn == 0 && session.title.is_none() {

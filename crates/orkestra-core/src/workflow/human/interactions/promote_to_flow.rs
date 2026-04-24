@@ -44,7 +44,9 @@ pub fn execute(
 
     // Resolve base_branch
     let base_branch = match git_service {
-        Some(git) => git.current_branch().unwrap_or_default(),
+        Some(git) => git.current_branch().map_err(|e| {
+            WorkflowError::InvalidTransition(format!("Cannot determine base branch: {e}"))
+        })?,
         None => String::new(),
     };
 

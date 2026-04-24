@@ -177,9 +177,9 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
       setGitHistoryOpen(false);
       setFileViewerPath(null);
     } catch (err) {
-      if (!isDisconnectError(err)) console.error("Failed to create chat task:", err);
+      if (!isDisconnectError(err)) showError(String(err));
     }
-  }, [transport]);
+  }, [transport, showError]);
 
   const openTaskAssistant = useCallback((taskId: string) => {
     setTaskAssistantId(taskId);
@@ -422,6 +422,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           setGitHistoryOpen((o) => !o);
           setActiveTaskId(null);
           setAssistantOpen(false);
+          setTaskAssistantId(null);
           setFileViewerPath(null);
         }}
       />

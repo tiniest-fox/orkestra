@@ -25,6 +25,10 @@ const METHOD_MAP: Record<string, string> = {
   list_subtasks: "workflow_list_subtasks",
   get_archived_tasks: "workflow_get_archived_tasks",
 
+  // -- Chat tasks --
+  create_chat_task: "workflow_create_chat_task",
+  promote_to_flow: "workflow_promote_to_flow",
+
   // -- Human actions --
   approve: "workflow_approve",
   send_message: "workflow_send_message",

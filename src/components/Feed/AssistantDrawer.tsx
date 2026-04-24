@@ -121,9 +121,9 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
       setChatTask(null);
       onClose();
     } catch (err) {
-      if (!isDisconnectError(err)) console.error("Failed to promote:", err);
+      if (!isDisconnectError(err)) showError(String(err));
     }
-  }, [taskId, transport, onClose]);
+  }, [taskId, transport, onClose, showError]);
 
   // -- Fetch the active task session by session ID (task mode only) --
   const fetchTaskSession = useCallback(async (): Promise<AssistantSession | undefined> => {

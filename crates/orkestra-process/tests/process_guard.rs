@@ -64,8 +64,10 @@ mod unix {
             !process_exists(parent_pid),
             "parent should be dead after disarmed guard drop"
         );
+        // Grandchild may be a zombie (killed but not yet reaped by init) — both
+        // states mean SIGTERM was delivered successfully.
         assert!(
-            !process_exists(grandchild_pid),
+            !process_exists(grandchild_pid) || orkestra_process::is_zombie(grandchild_pid),
             "grandchild should be dead after disarmed guard drop"
         );
     }

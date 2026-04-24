@@ -28,14 +28,18 @@ src/
 
 ### Provider Registry
 
-Model specs are resolved through the registry:
+Model specs are resolved via prefix-based routing in `resolve_spec()`:
 
 | Format | Example | Resolution |
 |--------|---------|------------|
 | `None` | - | Default provider's default model |
-| Alias only | `"sonnet"` | Search all providers' alias tables |
-| Explicit | `"claudecode/opus"` | Look up provider, resolve alias |
-| Passthrough | `"claudecode/claude-opus-4-5-20251101"` | Look up provider, use raw ID |
+| `claude/X` | `"claude/sonnet-4.6"` | Claude Code — prefix stripped, `X` passed raw |
+| `claudecode/X` | `"claudecode/opus"` | Claude Code — prefix stripped, `X` passed raw |
+| `codex/X` | `"codex/o4-mini"` | Error: not yet implemented |
+| Other prefixed | `"opencode/kimi-k2.6"`, `"moonshot/..."` | OpenCode — full spec passed as `--model` |
+| Bare alias | `"sonnet"`, `"kimi"` | Alias table lookup; error on miss |
+
+No alias resolution happens on the model part of prefixed specs — Claude Code handles its own model shortcuts. Unknown prefixes route to OpenCode automatically, so new OpenCode models need no registry entry.
 
 The registry also creates provider-specific parsers via `create_parser()`.
 

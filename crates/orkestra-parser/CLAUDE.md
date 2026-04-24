@@ -38,17 +38,19 @@ src/
 **Two-phase completion parsing:**
 
 ```
-parse_completion(parser, output, schema)
+classify_output::execute(parser, output, schema)   ← in orkestra-agent
     │
     ├── parser.extract_output(output)    ← Provider-specific JSON extraction
     │   └── Claude: scan JSONL for structured_output → fallback: extract_from_text_content(last_text)
     │   └── OpenCode: scan JSONL → fallback: extract_from_text_content(last_text)
+    │   Err → ExtractionFailed (agent produced no structured output; no retry)
     │
     └── parse_stage_output::execute()    ← Centralized schema validation + typing
         └── Same for both providers
+        Err → ParseFailed (agent tried but format was invalid; corrective retry eligible)
 ```
 
-The trait handles provider differences; `parse_stage_output` is the single source of truth for what output types exist.
+The trait handles provider differences; `parse_stage_output` is the single source of truth for what output types exist. `parse_completion` was a removed convenience wrapper — callers now use `classify_output::execute()` in `orkestra-agent` to coordinate the two phases and get a typed `OutputClassification` result.
 
 **Extraction pipeline principle:** Both parsers share `extract_from_text_content` as the single text-based extraction cascade. Never add a second extraction path — any new strategy belongs there. The cascade requires a `"type"` field on all strategies except ork fences (which are explicit opt-in markers validated downstream by `parse_stage_output`). Chat-mode detection (`try_complete_from_output`) also delegates to this same function and must pass only trailing buffer content — never all accumulated text — to prevent mid-response false positives.
 

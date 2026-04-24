@@ -5,14 +5,16 @@ Agent output parsing for Orkestra. Parses and validates structured output from C
 ## Usage
 
 ```rust
-use orkestra_parser::{parse_completion, ClaudeParserService, OpenCodeParserService, AgentParser};
+use orkestra_parser::{ClaudeParserService, OpenCodeParserService, AgentParser};
+use orkestra_parser::interactions::output::{parse_stage_output};
 
 // Create a provider-specific parser
 let parser = ClaudeParserService::new();
 // or: let parser = OpenCodeParserService::new();
 
-// Parse completed agent output into StageOutput
-let output = parse_completion(&parser, &full_output, &schema)?;
+// Two-phase parsing: extract then validate
+let json_str = parser.extract_output(&full_output)?;
+let output = parse_stage_output::execute(&json_str, &schema)?;
 
 match output {
     StageOutput::Artifact { content, .. } => println!("Got artifact: {}", content),
@@ -24,14 +26,14 @@ match output {
 }
 ```
 
-## Key Function
+## Key Pattern
 
-**`parse_completion(parser, full_output, schema)`** is the main entry point:
+Output classification is a two-phase process:
 
-1. Calls `parser.extract_output()` — provider-specific JSON extraction from raw stdout
-2. Calls `parse_stage_output::execute()` — centralized type interpretation with schema validation
+1. `parser.extract_output()` — provider-specific JSON extraction from raw stdout
+2. `parse_stage_output::execute()` — centralized type interpretation with schema validation
 
-The schema (same one sent to agents via `--json-schema`) serves as the single source of truth for what output is valid.
+The schema (same one sent to agents via `--json-schema`) serves as the single source of truth for what output is valid. Callers that need the full three-way classification (success / extraction-failed / parse-failed) should use `orkestra_agent::interactions::agent::classify_output::execute()`.
 
 ## Trait
 

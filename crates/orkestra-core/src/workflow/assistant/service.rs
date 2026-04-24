@@ -706,7 +706,7 @@ fn read_assistant_output(
         // assistant_active field (which just transitioned from true → false).
         if let Some(ref task_id) = session.task_id {
             if let Ok(Some(mut task)) = store.get_task(task_id) {
-                task.updated_at = now.clone();
+                task.updated_at.clone_from(&now);
                 let _ = store.save_task(&task);
             }
         }

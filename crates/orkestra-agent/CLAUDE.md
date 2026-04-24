@@ -16,6 +16,7 @@ src/
 └── interactions/
     ├── agent/
     │   ├── build_process_config.rs  # Convert RunConfig → ProcessConfig
+    │   ├── classify_output.rs       # Two-phase output classification (ExtractionFailed / ParseFailed / Success)
     │   ├── run_sync.rs              # Blocking execution
     │   └── run_async.rs             # Async execution with event streaming
     └── spawner/

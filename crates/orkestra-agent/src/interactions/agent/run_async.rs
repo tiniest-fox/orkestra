@@ -5,9 +5,8 @@ use std::sync::Arc;
 use std::thread;
 
 use orkestra_parser::interactions::output::check_api_error;
-use orkestra_parser::interactions::output::parse_stage_output;
 use orkestra_parser::interactions::stream::parse_resume_marker;
-use orkestra_parser::{AgentParser, StageOutput};
+use orkestra_parser::AgentParser;
 use orkestra_process::ProcessHandle;
 use orkestra_types::domain::LogEntry;
 
@@ -15,6 +14,7 @@ use crate::orkestra_debug;
 use crate::registry::ProviderRegistry;
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
 
+use super::classify_output::{self, OutputClassification};
 use super::run_sync::{collect_stderr, stderr_error_message};
 
 /// Run an agent asynchronously with events.
@@ -232,39 +232,27 @@ fn send_completion(
         return;
     }
 
-    // Step 1: extract structured output from raw stream. Failure means the agent
-    // produced no structured output at all — treat as a crash, not malformed output.
-    let json_str = match parser.extract_output(full_output) {
-        Ok(s) => s,
-        Err(e) => {
+    let result = match classify_output::execute(parser, full_output, schema) {
+        OutputClassification::Success(output) => Ok(output),
+        OutputClassification::ExtractionFailed(e) => {
             orkestra_debug!(
                 "runner",
                 "extraction failed — raw output ({} bytes):\n{}",
                 full_output.len(),
                 full_output
             );
-            let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(e))));
-            return;
+            Err(AgentCompletionError::Crash(e))
+        }
+        OutputClassification::ParseFailed(e) => {
+            orkestra_debug!(
+                "runner",
+                "parse failed — raw output ({} bytes):\n{}",
+                full_output.len(),
+                full_output
+            );
+            Err(AgentCompletionError::MalformedOutput(e))
         }
     };
-
-    // Step 2: parse the extracted JSON. Failure means the agent tried to produce
-    // structured output but got the format wrong — MalformedOutput triggers the
-    // corrective retry loop.
-    let result = match schema {
-        Some(s) => parse_stage_output::execute(&json_str, s).map_err(|e| e.to_string()),
-        None => StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string()),
-    };
-
-    let result = result.map_err(|e| {
-        orkestra_debug!(
-            "runner",
-            "parse failed — raw output ({} bytes):\n{}",
-            full_output.len(),
-            full_output
-        );
-        AgentCompletionError::MalformedOutput(e)
-    });
 
     orkestra_debug!("runner", "parse result: {:?}", result.is_ok());
 

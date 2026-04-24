@@ -4,12 +4,12 @@ use std::sync::Arc;
 use std::thread;
 
 use orkestra_parser::interactions::output::check_api_error;
-use orkestra_parser::interactions::output::parse_stage_output;
-use orkestra_parser::StageOutput;
 
 use crate::orkestra_debug;
 use crate::registry::ProviderRegistry;
 use crate::types::{RunConfig, RunError, RunResult};
+
+use super::classify_output::{self, OutputClassification};
 
 /// Run an agent synchronously (blocking).
 pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<RunResult, RunError> {
@@ -77,7 +77,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
                 }
                 line_count += 1;
                 if let Some(error_msg) = extract_stream_error(&line) {
-                    return Err(RunError::ParseFailed(error_msg));
+                    return Err(RunError::ExtractionFailed(error_msg));
                 }
                 parser.parse_line(&line);
                 full_output.push_str(&line);
@@ -102,13 +102,12 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
     // If stdout produced nothing, the agent likely crashed. Use stderr for the error.
     if line_count == 0 {
         let error_msg = stderr_error_message(&stderr_lines);
-        return Err(RunError::ParseFailed(error_msg));
+        return Err(RunError::ExtractionFailed(error_msg));
     }
 
-    // Step 1: extract structured output. Failure means no structured output was produced.
-    let json_str = match parser.extract_output(&full_output) {
-        Ok(s) => s,
-        Err(e) => {
+    let parsed_output = match classify_output::execute(&*parser, &full_output, schema.as_ref()) {
+        OutputClassification::Success(output) => output,
+        OutputClassification::ExtractionFailed(e) => {
             orkestra_debug!(
                 "runner",
                 "extraction failed — raw output ({} bytes):\n{}",
@@ -117,17 +116,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
             );
             return Err(RunError::ExtractionFailed(e));
         }
-    };
-
-    // Step 2: parse the extracted JSON. Failure means malformed structured output.
-    let parsed_output = match schema {
-        Some(ref s) => parse_stage_output::execute(&json_str, s).map_err(|e| e.to_string()),
-        None => StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string()),
-    };
-
-    let parsed_output = match parsed_output {
-        Ok(output) => output,
-        Err(e) => {
+        OutputClassification::ParseFailed(e) => {
             orkestra_debug!(
                 "runner",
                 "parse failed — raw output ({} bytes):\n{}",

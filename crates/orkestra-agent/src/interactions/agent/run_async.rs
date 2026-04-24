@@ -243,6 +243,13 @@ fn send_completion(
             );
             Err(AgentCompletionError::Crash(e))
         }
+        OutputClassification::PlainText(text) => {
+            orkestra_debug!(
+                "runner",
+                "plain text output — no structured output attempted"
+            );
+            Err(AgentCompletionError::PlainText(text))
+        }
         OutputClassification::ParseFailed(e) => {
             orkestra_debug!(
                 "runner",
@@ -270,12 +277,13 @@ mod tests {
     use std::sync::mpsc;
 
     use orkestra_parser::types::ParsedUpdate;
+    use orkestra_parser::ExtractionResult;
     use orkestra_types::domain::LogEntry;
 
     use super::*;
 
     struct MockParser {
-        extract_result: Result<String, String>,
+        extract_result: ExtractionResult,
     }
 
     impl AgentParser for MockParser {
@@ -288,16 +296,16 @@ mod tests {
         fn finalize(&mut self) -> Vec<LogEntry> {
             Vec::new()
         }
-        fn extract_output(&self, _full_output: &str) -> Result<String, String> {
+        fn extract_output(&self, _full_output: &str) -> ExtractionResult {
             self.extract_result.clone()
         }
     }
 
     #[test]
-    fn extraction_failure_produces_crash_not_malformed_output() {
+    fn extraction_error_produces_crash_not_malformed_output() {
         let (tx, rx) = mpsc::channel();
         let parser = MockParser {
-            extract_result: Err("no structured output found".to_string()),
+            extract_result: ExtractionResult::Error("API error: rate limit".to_string()),
         };
         let schema = serde_json::json!({"type": "object", "properties": {"type": {"type": "string"}}, "required": ["type"]});
 
@@ -311,11 +319,29 @@ mod tests {
     }
 
     #[test]
+    fn plain_text_output_produces_plain_text_error() {
+        let (tx, rx) = mpsc::channel();
+        let parser = MockParser {
+            extract_result: ExtractionResult::NotFound,
+        };
+        let schema = serde_json::json!({"type": "object"});
+
+        send_completion(&tx, &parser, Some(&schema), "Here is my analysis.", 5, None);
+
+        let event = rx.recv().unwrap();
+        match event {
+            RunEvent::Completed(Err(AgentCompletionError::PlainText(_))) => {}
+            other => panic!("expected PlainText, got: {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_failure_after_extraction_produces_malformed_output() {
         let (tx, rx) = mpsc::channel();
-        // extract_output succeeds but returns invalid JSON for the schema
         let parser = MockParser {
-            extract_result: Ok(r#"{"type": "unknown_type_not_in_schema"}"#.to_string()),
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "unknown_type_not_in_schema"}"#.to_string(),
+            ),
         };
         let schema = serde_json::json!({
             "type": "object",
@@ -338,7 +364,9 @@ mod tests {
     fn successful_extraction_and_parse_produces_completed_ok() {
         let (tx, rx) = mpsc::channel();
         let parser = MockParser {
-            extract_result: Ok(r#"{"type": "summary", "content": "done"}"#.to_string()),
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "summary", "content": "done"}"#.to_string(),
+            ),
         };
         let schema = serde_json::json!({
             "type": "object",

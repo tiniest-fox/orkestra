@@ -13,6 +13,6 @@ pub use claude::ClaudeParserService;
 pub use interface::AgentParser;
 pub use opencode::OpenCodeParserService;
 pub use types::{
-    ParsedUpdate, ResourceOutput, ResumeMarker, ResumeMarkerType, StageOutput, StageOutputError,
-    SubtaskOutput,
+    ExtractionResult, ParsedUpdate, ResourceOutput, ResumeMarker, ResumeMarkerType, StageOutput,
+    StageOutputError, SubtaskOutput,
 };

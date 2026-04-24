@@ -64,6 +64,12 @@ pub fn opencode_model_entries() -> &'static [ModelEntry] {
             display_name: "Kimi K2.5",
             provider: "opencode",
         },
+        ModelEntry {
+            alias: "kimi-k2.6",
+            model_id: "moonshot/kimi-k2.6",
+            display_name: "Kimi K2.6",
+            provider: "opencode",
+        },
     ]
 }
 
@@ -139,6 +145,7 @@ mod tests {
         assert_eq!(friendly_model_name(Some("haiku")), "Claude Haiku 4.5");
         assert_eq!(friendly_model_name(Some("kimi-k2")), "Kimi K2");
         assert_eq!(friendly_model_name(Some("kimi-k2.5")), "Kimi K2.5");
+        assert_eq!(friendly_model_name(Some("kimi-k2.6")), "Kimi K2.6");
     }
 
     #[test]
@@ -157,6 +164,7 @@ mod tests {
         );
         assert_eq!(friendly_model_name(Some("opencode/kimi-k2")), "Kimi K2");
         assert_eq!(friendly_model_name(Some("opencode/kimi-k2.5")), "Kimi K2.5");
+        assert_eq!(friendly_model_name(Some("opencode/kimi-k2.6")), "Kimi K2.6");
     }
 
     #[test]
@@ -181,6 +189,7 @@ mod tests {
             friendly_model_name(Some("opencode/kimi-k2.5-free")),
             "Kimi K2.5"
         );
+        assert_eq!(friendly_model_name(Some("moonshot/kimi-k2.6")), "Kimi K2.6");
     }
 
     #[test]
@@ -230,7 +239,7 @@ mod tests {
     #[test]
     fn opencode_entries_are_correct() {
         let entries = opencode_model_entries();
-        assert_eq!(entries.len(), 2);
+        assert_eq!(entries.len(), 3);
 
         let k2 = entries.iter().find(|e| e.alias == "kimi-k2").unwrap();
         assert_eq!(k2.model_id, "moonshot/kimi-k2-0711-preview");
@@ -240,5 +249,10 @@ mod tests {
         let k25 = entries.iter().find(|e| e.alias == "kimi-k2.5").unwrap();
         assert_eq!(k25.model_id, "opencode/kimi-k2.5-free");
         assert_eq!(k25.display_name, "Kimi K2.5");
+
+        let k26 = entries.iter().find(|e| e.alias == "kimi-k2.6").unwrap();
+        assert_eq!(k26.model_id, "moonshot/kimi-k2.6");
+        assert_eq!(k26.display_name, "Kimi K2.6");
+        assert_eq!(k26.provider, "opencode");
     }
 }

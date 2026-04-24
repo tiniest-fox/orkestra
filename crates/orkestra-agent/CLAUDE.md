@@ -86,6 +86,8 @@ Async execution emits events through a channel:
 
 ## Gotchas
 
+- **Alias count assertions are mirrored**: `registry.rs` has `opencode_aliases_are_correct` and `claude_aliases_are_correct` tests that assert both individual alias mappings *and* `aliases.len()`. When you add a model in `orkestra-types/src/config/models.rs`, the gate will fail until you also add the corresponding alias assertion and bump the `len()` in that test.
+
 - **OpenCode session IDs**: OpenCode generates `ses_...` IDs internally. Don't pre-generate UUIDs for OpenCode — the session ID is extracted from the output stream.
 - **Provider capabilities affect prompts**: When `supports_json_schema` is false, the JSON schema is injected into the prompt text by `PromptBuilder` in orkestra-prompt.
 - **System prompt fallback**: When `supports_system_prompt` is false, the system prompt is prepended to the user message upstream.

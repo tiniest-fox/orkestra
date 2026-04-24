@@ -261,12 +261,12 @@ export function AssistantDrawer({
     try {
       await sendAndRefresh(msg);
     } catch (err) {
-      console.error("Failed to send message:", err);
+      if (!isDisconnectError(err)) showError(String(err));
       setOptimisticMessage(null);
     } finally {
       setSending(false);
     }
-  }, [inputValue, sending, sendAndRefresh, setOptimisticMessage, triggerScroll]);
+  }, [inputValue, sending, sendAndRefresh, setOptimisticMessage, triggerScroll, showError]);
 
   // -- Send question answers --
   const handleSendAnswers = useCallback(async () => {

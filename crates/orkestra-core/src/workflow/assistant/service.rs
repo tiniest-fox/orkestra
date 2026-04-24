@@ -1418,4 +1418,115 @@ mod tests {
         // Should not error even though the session doesn't exist.
         reset_lost_session(&store, "nonexistent", "2026-04-15T20:30:00Z").unwrap();
     }
+
+    // ========================================================================
+    // touch_task tests — spawn and finish transitions
+    // ========================================================================
+
+    /// Verify `handle_spawn_result` calls `touch_task` on the agent-spawn transition
+    /// (`assistant_active` becomes true). Tests the Ok path without requiring `claude`.
+    #[test]
+    fn handle_spawn_result_touches_task_on_spawn() {
+        use std::process::{Command, Stdio};
+
+        let (service, store) = create_test_service();
+
+        let old_ts = "2020-01-01T00:00:00Z";
+        let task_id = "spawn-touch-task";
+
+        // Chat task with a past timestamp
+        let mut task = Task::new(task_id, "Spawn touch test", "", "chat", old_ts);
+        task.is_chat = true;
+        task.flow = String::new();
+        store.save_task(&task).unwrap();
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut session = AssistantSession::new("spawn-touch-session", old_ts).with_task(task_id);
+        session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
+        store.save_assistant_session(&session).unwrap();
+
+        // Spawn `cat` with piped stdio; drop stdin so cat exits immediately on EOF
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("cat must be available on this platform");
+        let pid = child.id();
+        drop(child.stdin.take()); // close stdin → cat sees EOF and exits
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        // handle_spawn_result takes the Ok branch and calls touch_task synchronously
+        // before spawning the output-reader thread
+        service
+            .handle_spawn_result(&mut session, Ok((pid, stdout, stderr)), &now)
+            .unwrap();
+
+        let fetched = store.get_task(task_id).unwrap().expect("task in store");
+        assert_ne!(
+            fetched.updated_at, old_ts,
+            "handle_spawn_result must call touch_task when session.task_id is Some"
+        );
+    }
+
+    /// Verify `read_assistant_output` calls `touch_task` on the agent-finish transition
+    /// (`assistant_active` becomes false). Calls the free function directly to avoid
+    /// spawning a background thread that the test would have to join.
+    #[test]
+    fn read_assistant_output_touches_task_on_agent_finish() {
+        use std::process::{Command, Stdio};
+
+        let store: Arc<dyn crate::workflow::ports::WorkflowStore> =
+            Arc::new(InMemoryWorkflowStore::new());
+
+        let old_ts = "2020-01-01T00:00:00Z";
+        let task_id = "finish-touch-task";
+        let session_id = "finish-touch-session";
+
+        // Chat task with a past timestamp
+        let mut task = Task::new(task_id, "Finish touch test", "", "chat", old_ts);
+        task.is_chat = true;
+        task.flow = String::new();
+        store.save_task(&task).unwrap();
+
+        // Session with task_id; spawn_count = 1 to skip LLM title generation
+        let mut session = AssistantSession::new(session_id, old_ts).with_task(task_id);
+        session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
+        session.spawn_count = 1;
+        store.save_assistant_session(&session).unwrap();
+
+        // Create a parser via the test registry (same setup as create_test_service)
+        let mut registry = ProviderRegistry::new("claudecode");
+        registry.register(
+            "claudecode",
+            Arc::new(MockProcessSpawner::new()) as Arc<dyn crate::workflow::ports::ProcessSpawner>,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+        let parser = registry
+            .create_parser("claudecode")
+            .expect("parser created");
+
+        // Spawn `cat /dev/null` — exits immediately with no stdout content
+        let mut child = Command::new("cat")
+            .arg("/dev/null")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("cat must be available on this platform");
+        let pid = child.id();
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        // Run synchronously in the test thread; cat exits immediately so this returns quickly
+        read_assistant_output(pid, &store, session_id, 1, parser, stdout, stderr);
+
+        let fetched = store.get_task(task_id).unwrap().expect("task in store");
+        assert_ne!(
+            fetched.updated_at, old_ts,
+            "read_assistant_output must call touch_task after the agent finishes"
+        );
+    }
 }

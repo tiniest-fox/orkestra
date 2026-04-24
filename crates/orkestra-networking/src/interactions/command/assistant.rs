@@ -97,7 +97,7 @@ pub fn assistant_send_task_message(
     Ok(serde_json::to_value(session).unwrap_or(Value::Null))
 }
 
-/// Atomically creates a chat task and sends the first message.
+/// Creates a chat task via `WorkflowApi` then sends the first message via `AssistantService`.
 ///
 /// Expected params: `{ "message": "<message>" }`
 ///
@@ -109,10 +109,23 @@ pub fn create_chat_and_send(ctx: &CommandContext, params: &Value) -> Result<Valu
         .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
         .to_string();
 
-    let service = ctx.create_assistant_service();
-    let (task, session) = service
-        .create_and_send_chat_message(&message)
+    // Derive the title from the message before locking the API
+    let title = orkestra_core::title::generate_fallback_title(&message);
+
+    // Create the task through WorkflowApi (respects "all ops go through WorkflowApi" rule)
+    let task = ctx
+        .api
+        .lock()
+        .map_err(|_| ErrorPayload::lock_error())?
+        .create_chat_task(&title)
         .map_err(ErrorPayload::from)?;
+
+    // Send the first message through AssistantService (lock released above)
+    let service = ctx.create_assistant_service();
+    let session = service
+        .send_task_message(&task.id, &message)
+        .map_err(ErrorPayload::from)?;
+
     Ok(serde_json::json!({ "task": task, "session": session }))
 }
 

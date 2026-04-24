@@ -4,7 +4,7 @@
 //! and the atomic create-and-send command.
 
 use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
-use orkestra_core::workflow::domain::{LogEntry, Task, TaskCreationMode};
+use orkestra_core::workflow::domain::{LogEntry, TaskCreationMode};
 use orkestra_core::workflow::ports::WorkflowError;
 use orkestra_core::workflow::runtime::TaskState;
 
@@ -204,8 +204,9 @@ fn test_create_and_send_creates_task_with_message_title() {
     let fetched = store.get_task(&task.id).unwrap().expect("task in store");
     assert!(fetched.is_chat, "task must be a chat task");
     assert!(
-        !fetched.title.is_empty(),
-        "task must have a non-empty title derived from the message"
+        fetched.title.contains("login") || fetched.title.contains("Login"),
+        "task title must be derived from the message content, got: {:?}",
+        fetched.title
     );
 
     // Session must be task-scoped.
@@ -258,42 +259,5 @@ fn test_subsequent_messages_reuse_task_session() {
     assert_eq!(
         session1.id, session2.id,
         "follow-up message must reuse the existing session"
-    );
-}
-
-#[test]
-fn test_touch_task_on_agent_spawn() {
-    let (service, store, _temp_dir) = create_assistant_service();
-
-    // Create a chat task with a fixed past timestamp so any touch_task call
-    // (which uses chrono::Utc::now()) produces a strictly newer updated_at.
-    let mut task = Task::new(
-        "chat-touch-test",
-        "Touch test",
-        "",
-        "chat",
-        "2020-01-01T00:00:00Z",
-    );
-    task.is_chat = true;
-    task.flow = String::new();
-    store.save_task(&task).unwrap();
-    let original_updated_at = task.updated_at.clone();
-
-    // send_task_message spawns the agent; handle_spawn_result takes the Ok path
-    // (MockProcessSpawner spawns a real `cat` process) and calls touch_task.
-    service
-        .send_task_message("chat-touch-test", "Hello assistant")
-        .unwrap();
-
-    let fetched = store
-        .get_task("chat-touch-test")
-        .unwrap()
-        .expect("task in store");
-    assert_ne!(
-        fetched.updated_at,
-        original_updated_at,
-        "touch_task must advance updated_at beyond the creation timestamp; \
-         was {original_updated_at}, still {fetched_at}",
-        fetched_at = fetched.updated_at,
     );
 }

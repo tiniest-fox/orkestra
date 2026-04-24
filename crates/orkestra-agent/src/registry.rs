@@ -622,6 +622,7 @@ mod tests {
         let aliases = opencode_aliases();
         assert_eq!(aliases["kimi-k2"], "moonshot/kimi-k2-0711-preview");
         assert_eq!(aliases["kimi-k2.5"], "opencode/kimi-k2.5-free");
-        assert_eq!(aliases.len(), 2);
+        assert_eq!(aliases["kimi-k2.6"], "moonshot/kimi-k2.6");
+        assert_eq!(aliases.len(), 3);
     }
 }

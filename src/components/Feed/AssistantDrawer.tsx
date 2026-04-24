@@ -32,9 +32,19 @@ interface AssistantDrawerProps {
   onBack?: () => void;
   /** When set, operates in task mode — scoped to this task's assistant session. */
   taskId?: string;
+  /** When true, operates in draft mode — no task created yet; first message triggers creation. */
+  draftChat?: boolean;
+  /** Called with the new task ID after the first message creates the task. */
+  onTaskCreated?: (taskId: string) => void;
 }
 
-export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProps) {
+export function AssistantDrawer({
+  onClose,
+  onBack,
+  taskId,
+  draftChat,
+  onTaskCreated,
+}: AssistantDrawerProps) {
   const transport = useTransport();
   const connectionState = useConnectionState();
   const { showError } = useToast();
@@ -74,6 +84,12 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
 
   // -- Fetch sessions on mount and auto-select --
   useEffect(() => {
+    if (draftChat && !taskId) {
+      // Draft mode — no sessions to fetch yet.
+      setSessions([]);
+      setActiveSessionId(null);
+      return;
+    }
     if (taskId) {
       // Task mode: find the existing session for this task, if any.
       transport
@@ -99,7 +115,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
         })
         .catch(console.error);
     }
-  }, [transport, taskId]);
+  }, [transport, taskId, draftChat]);
 
   // -- Load chat task info when in task mode --
   useEffect(() => {
@@ -198,7 +214,18 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
   const sendAndRefresh = useCallback(
     async (message: string) => {
       let session: AssistantSession;
-      if (taskId) {
+      if (draftChat && !taskId) {
+        // First message in a new chat — create task and session atomically.
+        const result = await transport.call<{ task: WorkflowTask; session: AssistantSession }>(
+          "create_chat_and_send",
+          { message },
+        );
+        session = result.session;
+        setActiveSessionId(session.id);
+        setSessions([session]);
+        setChatTask(result.task);
+        onTaskCreated?.(result.task.id);
+      } else if (taskId) {
         session = await transport.call<AssistantSession>("assistant_send_task_message", {
           task_id: taskId,
           message,
@@ -220,7 +247,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
         // Logs refresh via the hook's effect (session ID change) or event listener.
       }
     },
-    [transport, activeSessionId, taskId],
+    [transport, activeSessionId, taskId, draftChat, onTaskCreated],
   );
 
   // -- Send message --
@@ -320,7 +347,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
   const titleNode = useMemo(
     () => (
       <span className="flex items-center gap-2.5">
-        <span>{taskId ? "Trak Assistant" : "Assistant"}</span>
+        <span>{draftChat && !taskId ? "New Chat" : taskId ? "Trak Assistant" : "Assistant"}</span>
         {sessionTitle && (
           <>
             <span className="text-border select-none">/</span>
@@ -331,7 +358,7 @@ export function AssistantDrawer({ onClose, onBack, taskId }: AssistantDrawerProp
         )}
       </span>
     ),
-    [taskId, sessionTitle],
+    [taskId, draftChat, sessionTitle],
   );
 
   const answerChangeHandlers = useMemo(

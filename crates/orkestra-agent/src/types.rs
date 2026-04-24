@@ -185,6 +185,8 @@ pub enum RunError {
     PromptWriteFailed(String),
     /// Failed to read from stdout.
     OutputReadFailed(String),
+    /// Agent produced output but no structured output could be extracted.
+    ExtractionFailed(String),
     /// Failed to parse the output.
     ParseFailed(String),
 }
@@ -195,6 +197,7 @@ impl std::fmt::Display for RunError {
             Self::SpawnFailed(msg) => write!(f, "Failed to spawn agent: {msg}"),
             Self::PromptWriteFailed(msg) => write!(f, "Failed to write prompt: {msg}"),
             Self::OutputReadFailed(msg) => write!(f, "Failed to read output: {msg}"),
+            Self::ExtractionFailed(msg) => write!(f, "No structured output found: {msg}"),
             Self::ParseFailed(msg) => write!(f, "Failed to parse output: {msg}"),
         }
     }
@@ -253,6 +256,9 @@ mod tests {
 
         let err = RunError::PromptWriteFailed("test".into());
         assert!(err.to_string().contains("prompt"));
+
+        let err = RunError::ExtractionFailed("test".into());
+        assert!(err.to_string().contains("structured output"));
 
         let err = RunError::ParseFailed("test".into());
         assert!(err.to_string().contains("parse"));

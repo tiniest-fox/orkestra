@@ -76,6 +76,17 @@ export function createDemoTransport(): Transport {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
+        case "create_chat_and_send":
+          return resolve({
+            task: {
+              id: "demo-chat-1",
+              title: "Demo Chat",
+              is_chat: true,
+              flow: "",
+              state: { type: "queued", stage: "chat" },
+            },
+            session: { id: "demo-session-1", task_id: "demo-chat-1", session_state: "active" },
+          });
         case "promote_to_flow":
           return resolve(null);
         case "get_task":

@@ -27,6 +27,7 @@ const METHOD_MAP: Record<string, string> = {
 
   // -- Chat tasks --
   create_chat_task: "workflow_create_chat_task",
+  create_chat_and_send: "workflow_create_chat_and_send",
   promote_to_flow: "workflow_promote_to_flow",
 
   // -- Human actions --

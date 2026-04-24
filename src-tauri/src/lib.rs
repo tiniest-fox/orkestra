@@ -641,6 +641,7 @@ pub fn run() {
             commands::assistant_get_logs,
             commands::assistant_send_task_message,
             commands::assistant_list_project_sessions,
+            commands::workflow_create_chat_and_send,
             // Run script commands
             commands::start_run_script,
             commands::stop_run_script,

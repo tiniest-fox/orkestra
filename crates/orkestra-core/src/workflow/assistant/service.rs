@@ -403,6 +403,13 @@ impl AssistantService {
                 session.agent_spawned(pid, now);
                 self.store.save_assistant_session(session)?;
 
+                // Bump task.updated_at so differential sync picks up assistant_active=true.
+                if let Some(ref task_id) = session.task_id {
+                    if let Err(e) = self.store.touch_task(task_id) {
+                        orkestra_debug!("assistant", "Failed to touch task after spawn: {}", e);
+                    }
+                }
+
                 // Spawn background thread to read agent output
                 self.spawn_output_reader(session, spawn_count_before, pid, stdout, stderr);
             }
@@ -705,9 +712,12 @@ fn read_assistant_output(
         // Bump task.updated_at so differential polling re-fetches the chat task's
         // assistant_active field (which just transitioned from true → false).
         if let Some(ref task_id) = session.task_id {
-            if let Ok(Some(mut task)) = store.get_task(task_id) {
-                task.updated_at.clone_from(&now);
-                let _ = store.save_task(&task);
+            if let Err(e) = store.touch_task(task_id) {
+                orkestra_debug!(
+                    "assistant",
+                    "Failed to touch task after agent finish: {}",
+                    e
+                );
             }
         }
 
@@ -748,8 +758,31 @@ fn generate_and_set_title(
     };
 
     let now = chrono::Utc::now().to_rfc3339();
-    session.set_title(title, &now);
-    let _ = store.save_assistant_session(&session);
+    session.set_title(title.clone(), &now);
+    if let Err(e) = store.save_assistant_session(&session) {
+        orkestra_debug!(
+            "assistant",
+            "Failed to save session after title generation: {}",
+            e
+        );
+    }
+
+    // Also update the chat task title so the feed shows the refined title.
+    if let Some(ref task_id) = session.task_id {
+        if let Ok(Some(mut task)) = store.get_task(task_id) {
+            if task.is_chat {
+                task.title = title;
+                task.updated_at = now;
+                if let Err(e) = store.save_task(&task) {
+                    orkestra_debug!(
+                        "assistant",
+                        "Failed to save task title after title generation: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -1209,6 +1242,63 @@ mod tests {
     }
 
     // ========================================================================
+    // generate_and_set_title propagation
+    // ========================================================================
+
+    #[test]
+    fn test_generate_and_set_title_propagates_to_chat_task() {
+        let (_service, store) = create_test_service();
+        let store_dyn: Arc<dyn WorkflowStore> = Arc::clone(&store) as Arc<dyn WorkflowStore>;
+
+        // Create a chat task in the store directly (mirrors create_chat::execute).
+        let task_id = store.next_task_id().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut task = crate::workflow::domain::Task::new(
+            &task_id,
+            "initial fallback title",
+            "",
+            "chat",
+            &now,
+        );
+        task.is_chat = true;
+        task.flow = String::new();
+        store.save_task(&task).unwrap();
+
+        // Create a session linked to the chat task.
+        let session_id = "test-session-title";
+        let session = AssistantSession::new(session_id, &now).with_task(&task_id);
+        store.save_assistant_session(&session).unwrap();
+
+        // Call generate_and_set_title — generate_title_sync will fail in this
+        // environment (no LLM), so it falls back to generate_fallback_title.
+        generate_and_set_title(&store_dyn, session, "Why is the login page broken?");
+
+        // Session title must be set.
+        let updated_session = store
+            .get_assistant_session(session_id)
+            .unwrap()
+            .expect("session in store");
+        assert!(
+            updated_session.title.is_some(),
+            "session title must be set after generate_and_set_title"
+        );
+
+        // Task title must be updated to match the generated/fallback title.
+        let updated_task = store.get_task(&task_id).unwrap().expect("task in store");
+        assert_ne!(
+            updated_task.title, "initial fallback title",
+            "chat task title must be updated by generate_and_set_title"
+        );
+        assert!(
+            updated_task.title.to_lowercase().contains("login")
+                || updated_task.title.to_lowercase().contains("broken")
+                || !updated_task.title.is_empty(),
+            "task title must derive from the message, got: {:?}",
+            updated_task.title
+        );
+    }
+
+    // ========================================================================
     // Completion diagnostic tests (visibility + recovery for empty agent runs)
     // ========================================================================
 
@@ -1361,5 +1451,116 @@ mod tests {
             Arc::new(InMemoryWorkflowStore::new());
         // Should not error even though the session doesn't exist.
         reset_lost_session(&store, "nonexistent", "2026-04-15T20:30:00Z").unwrap();
+    }
+
+    // ========================================================================
+    // touch_task tests — spawn and finish transitions
+    // ========================================================================
+
+    /// Verify `handle_spawn_result` calls `touch_task` on the agent-spawn transition
+    /// (`assistant_active` becomes true). Tests the Ok path without requiring `claude`.
+    #[test]
+    fn handle_spawn_result_touches_task_on_spawn() {
+        use std::process::{Command, Stdio};
+
+        let (service, store) = create_test_service();
+
+        let old_ts = "2020-01-01T00:00:00Z";
+        let task_id = "spawn-touch-task";
+
+        // Chat task with a past timestamp
+        let mut task = Task::new(task_id, "Spawn touch test", "", "chat", old_ts);
+        task.is_chat = true;
+        task.flow = String::new();
+        store.save_task(&task).unwrap();
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut session = AssistantSession::new("spawn-touch-session", old_ts).with_task(task_id);
+        session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
+        store.save_assistant_session(&session).unwrap();
+
+        // Spawn `cat` with piped stdio; drop stdin so cat exits immediately on EOF
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("cat must be available on this platform");
+        let pid = child.id();
+        drop(child.stdin.take()); // close stdin → cat sees EOF and exits
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        // handle_spawn_result takes the Ok branch and calls touch_task synchronously
+        // before spawning the output-reader thread
+        service
+            .handle_spawn_result(&mut session, Ok((pid, stdout, stderr)), &now)
+            .unwrap();
+
+        let fetched = store.get_task(task_id).unwrap().expect("task in store");
+        assert_ne!(
+            fetched.updated_at, old_ts,
+            "handle_spawn_result must call touch_task when session.task_id is Some"
+        );
+    }
+
+    /// Verify `read_assistant_output` calls `touch_task` on the agent-finish transition
+    /// (`assistant_active` becomes false). Calls the free function directly to avoid
+    /// spawning a background thread that the test would have to join.
+    #[test]
+    fn read_assistant_output_touches_task_on_agent_finish() {
+        use std::process::{Command, Stdio};
+
+        let store: Arc<dyn crate::workflow::ports::WorkflowStore> =
+            Arc::new(InMemoryWorkflowStore::new());
+
+        let old_ts = "2020-01-01T00:00:00Z";
+        let task_id = "finish-touch-task";
+        let session_id = "finish-touch-session";
+
+        // Chat task with a past timestamp
+        let mut task = Task::new(task_id, "Finish touch test", "", "chat", old_ts);
+        task.is_chat = true;
+        task.flow = String::new();
+        store.save_task(&task).unwrap();
+
+        // Session with task_id; spawn_count = 1 to skip LLM title generation
+        let mut session = AssistantSession::new(session_id, old_ts).with_task(task_id);
+        session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
+        session.spawn_count = 1;
+        store.save_assistant_session(&session).unwrap();
+
+        // Create a parser via the test registry (same setup as create_test_service)
+        let mut registry = ProviderRegistry::new("claudecode");
+        registry.register(
+            "claudecode",
+            Arc::new(MockProcessSpawner::new()) as Arc<dyn crate::workflow::ports::ProcessSpawner>,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+        let parser = registry
+            .create_parser("claudecode")
+            .expect("parser created");
+
+        // Spawn `cat /dev/null` — exits immediately with no stdout content
+        let mut child = Command::new("cat")
+            .arg("/dev/null")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("cat must be available on this platform");
+        let pid = child.id();
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        // Run synchronously in the test thread; cat exits immediately so this returns quickly
+        read_assistant_output(pid, &store, session_id, 1, parser, stdout, stderr);
+
+        let fetched = store.get_task(task_id).unwrap().expect("task in store");
+        assert_ne!(
+            fetched.updated_at, old_ts,
+            "read_assistant_output must call touch_task after the agent finishes"
+        );
     }
 }

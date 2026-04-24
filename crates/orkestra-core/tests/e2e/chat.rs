@@ -1,11 +1,23 @@
 //! E2E tests for chat task infrastructure.
 //!
-//! Tests chat task creation, spawn filtering, and promotion to workflow flow.
+//! Tests chat task creation, spawn filtering, promotion to workflow flow,
+//! and the atomic create-and-send command.
 
+use std::sync::Arc;
+
+use orkestra_core::adapters::sqlite::DatabaseConnection;
+use orkestra_core::title::generate_fallback_title;
 use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
-use orkestra_core::workflow::domain::TaskCreationMode;
-use orkestra_core::workflow::ports::WorkflowError;
+use orkestra_core::workflow::domain::{LogEntry, TaskCreationMode};
+use orkestra_core::workflow::execution::{
+    claudecode_aliases, claudecode_capabilities, ProviderRegistry,
+};
+use orkestra_core::workflow::ports::{
+    MockProcessSpawner, ProcessSpawner, WorkflowError, WorkflowStore,
+};
 use orkestra_core::workflow::runtime::TaskState;
+use orkestra_core::workflow::{AssistantService, SqliteWorkflowStore, WorkflowApi};
+use tempfile::TempDir;
 
 use crate::helpers::TestEnv;
 
@@ -16,6 +28,76 @@ use crate::helpers::TestEnv;
 fn one_stage_workflow() -> WorkflowConfig {
     WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
         .with_integration(IntegrationConfig::new("work"))
+}
+
+fn chat_provider_registry() -> Arc<ProviderRegistry> {
+    let mut registry = ProviderRegistry::new("claudecode");
+    registry.register(
+        "claudecode",
+        Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        claudecode_capabilities(),
+        claudecode_aliases(),
+    );
+    Arc::new(registry)
+}
+
+/// Create a `WorkflowApi` with `project_root` and `provider_registry` configured,
+/// plus a shared store and `AssistantService` for assertions.
+fn create_chat_api() -> (
+    WorkflowApi,
+    Arc<dyn WorkflowStore>,
+    AssistantService,
+    TempDir,
+) {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join("test.db");
+    let conn = DatabaseConnection::open(&db_path).expect("open db");
+
+    let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+    let registry = chat_provider_registry();
+
+    let api = WorkflowApi::new(
+        one_stage_workflow(),
+        Arc::new(SqliteWorkflowStore::new(conn.shared())),
+    )
+    .with_provider_registry(Arc::clone(&registry))
+    .with_project_root(temp_dir.path().to_path_buf());
+
+    let service = AssistantService::new(
+        Arc::clone(&store),
+        Arc::clone(&registry),
+        temp_dir.path().to_path_buf(),
+    );
+
+    (api, store, service, temp_dir)
+}
+
+/// Compose task creation + send into a single call for tests.
+///
+/// Mirrors the decomposed pattern in the command handler: create task with the
+/// API (no lock held across spawn), then send via `AssistantService`.
+fn create_and_send(
+    api: &WorkflowApi,
+    service: &AssistantService,
+    message: &str,
+) -> Result<
+    (
+        orkestra_core::workflow::domain::Task,
+        orkestra_core::workflow::domain::AssistantSession,
+    ),
+    orkestra_core::workflow::ports::WorkflowError,
+> {
+    use orkestra_core::workflow::ports::WorkflowError;
+
+    if message.trim().is_empty() {
+        return Err(WorkflowError::InvalidState(
+            "Message cannot be empty".to_string(),
+        ));
+    }
+
+    let task = api.create_chat_task(&generate_fallback_title(message))?;
+    let session = service.send_task_message(&task.id, message)?;
+    Ok((task, session))
 }
 
 // =============================================================================
@@ -184,5 +266,69 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
         ),
         "promoted task should have completed setup after one tick, got: {:?}",
         task.state
+    );
+}
+
+// =============================================================================
+// create_and_send_chat_message
+// =============================================================================
+
+#[test]
+fn test_create_and_send_creates_task_with_message_title() {
+    let (api, store, service, _temp_dir) = create_chat_api();
+
+    let (task, session) = create_and_send(&api, &service, "Fix the login page auth error").unwrap();
+
+    // Task must exist in the store and be a chat task.
+    let fetched = store.get_task(&task.id).unwrap().expect("task in store");
+    assert!(fetched.is_chat, "task must be a chat task");
+    assert!(
+        fetched.title.contains("login") || fetched.title.contains("Login"),
+        "task title must be derived from the message content, got: {:?}",
+        fetched.title
+    );
+
+    // Session must be task-scoped.
+    assert_eq!(
+        session.task_id.as_deref(),
+        Some(task.id.as_str()),
+        "session must reference the created task"
+    );
+
+    // User message must be in the session logs.
+    let logs = store.get_assistant_log_entries(&session.id).unwrap();
+    let has_user_msg = logs.iter().any(|e| {
+        matches!(e, LogEntry::UserMessage { content, .. } if content == "Fix the login page auth error")
+    });
+    assert!(has_user_msg, "user message must be stored in session logs");
+}
+
+#[test]
+fn test_create_and_send_rejects_empty_message() {
+    let (api, _store, service, _temp_dir) = create_chat_api();
+
+    let result = create_and_send(&api, &service, "");
+    assert!(result.is_err(), "empty message must be rejected");
+
+    let result_ws = create_and_send(&api, &service, "   ");
+    assert!(
+        result_ws.is_err(),
+        "whitespace-only message must be rejected"
+    );
+}
+
+#[test]
+fn test_subsequent_messages_reuse_task_session() {
+    let (api, _store, service, _temp_dir) = create_chat_api();
+
+    let (task, session1) = create_and_send(&api, &service, "First message to the chat").unwrap();
+
+    let session2 = service
+        .send_task_message(&task.id, "Follow-up question")
+        .unwrap();
+
+    assert_eq!(
+        session1.id, session2.id,
+        "follow-up message must reuse the existing session"
     );
 }

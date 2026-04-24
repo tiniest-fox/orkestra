@@ -1,5 +1,6 @@
 //! Assistant command handlers for the project-level chat panel.
 
+use orkestra_core::title::generate_fallback_title;
 use serde_json::Value;
 
 use crate::types::ErrorPayload;
@@ -95,6 +96,47 @@ pub fn assistant_send_task_message(
         .send_task_message(&task_id, &message)
         .map_err(ErrorPayload::from)?;
     Ok(serde_json::to_value(session).unwrap_or(Value::Null))
+}
+
+/// Creates a chat task and sends the first message.
+///
+/// Expected params: `{ "message": "<message>" }`
+///
+/// Returns `{ "task": WorkflowTask, "session": AssistantSession }`.
+///
+/// The API lock is held only for task creation, then released before spawning
+/// the agent process — following the narrow-mutex-scope pattern in CLAUDE.md.
+pub fn create_chat_and_send(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
+        .to_string();
+
+    if message.trim().is_empty() {
+        return Err(ErrorPayload::invalid_params("message cannot be empty"));
+    }
+
+    // Lock briefly for task creation only.
+    let task = ctx
+        .api
+        .lock()
+        .map_err(|_| ErrorPayload::lock_error())?
+        .create_chat_task(&generate_fallback_title(&message))
+        .map_err(ErrorPayload::from)?;
+
+    // Send message without holding the API lock — agent spawning happens here.
+    let service = ctx.create_assistant_service();
+    let session = match service.send_task_message(&task.id, &message) {
+        Ok(s) => s,
+        Err(e) => {
+            // Compensate: remove the just-created task to avoid an orphan.
+            let _ = ctx.api.lock().map(|api| api.delete_task(&task.id));
+            return Err(ErrorPayload::from(e));
+        }
+    };
+
+    Ok(serde_json::json!({ "task": task, "session": session }))
 }
 
 /// Returns project-level sessions only.

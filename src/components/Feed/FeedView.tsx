@@ -10,7 +10,7 @@ import { usePrStatus } from "../../providers/PrStatusProvider";
 import { useTasks } from "../../providers/TasksProvider";
 import { useToast } from "../../providers/ToastProvider";
 import { useConnectionState, useTransport } from "../../transport";
-import type { WorkflowConfig, WorkflowTask, WorkflowTaskView } from "../../types/workflow";
+import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { confirmAction } from "../../utils/confirmAction";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { isDisconnectError } from "../../utils/transportErrors";
@@ -52,11 +52,12 @@ function deriveDrawerMode(
   gitHistoryOpen: boolean,
   assistantOpen: boolean,
   taskAssistantOpen: boolean,
+  draftChatOpen: boolean,
   fileViewerOpen: boolean,
   activeTask: WorkflowTaskView | null,
 ): DrawerMode {
   if (isNewTaskOpen) return "new-task";
-  if (assistantOpen || taskAssistantOpen) return "assistant";
+  if (assistantOpen || taskAssistantOpen || draftChatOpen) return "assistant";
   if (gitHistoryOpen) return "git-history";
   if (fileViewerOpen) return "file-viewer";
   if (!activeTask) return null;
@@ -84,6 +85,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
   const [gitHistoryOpen, setGitHistoryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [taskAssistantId, setTaskAssistantId] = useState<string | null>(null);
+  const [draftChatOpen, setDraftChatOpen] = useState(false);
   const [fileViewerPath, setFileViewerPath] = useState<string | null>(null);
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
   const commandBarInputRef = useRef<HTMLInputElement>(null);
@@ -93,6 +95,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     gitHistoryOpen ||
     assistantOpen ||
     taskAssistantId !== null ||
+    draftChatOpen ||
     fileViewerPath !== null;
   const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
@@ -106,6 +109,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     setGitHistoryOpen(false);
     setAssistantOpen(false);
     setTaskAssistantId(null);
+    setDraftChatOpen(false);
     setFileViewerPath(null);
     closeNewTask();
   }, [closeNewTask]);
@@ -117,6 +121,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     gitHistoryOpen,
     assistantOpen,
     taskAssistantId !== null,
+    draftChatOpen,
     fileViewerPath !== null,
     activeTask,
   );
@@ -168,18 +173,19 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     setFileViewerPath(null);
   }, []);
 
-  const openNewChat = useCallback(async () => {
-    try {
-      const task = await transport.call<WorkflowTask>("create_chat_task", { title: "New Chat" });
-      setTaskAssistantId(task.id);
-      setActiveTaskId(null);
-      setAssistantOpen(false);
-      setGitHistoryOpen(false);
-      setFileViewerPath(null);
-    } catch (err) {
-      if (!isDisconnectError(err)) showError(String(err));
-    }
-  }, [transport, showError]);
+  const openNewChat = useCallback(() => {
+    setDraftChatOpen(true);
+    setTaskAssistantId(null);
+    setActiveTaskId(null);
+    setAssistantOpen(false);
+    setGitHistoryOpen(false);
+    setFileViewerPath(null);
+  }, []);
+
+  const handleChatTaskCreated = useCallback((taskId: string) => {
+    setTaskAssistantId(taskId);
+    setDraftChatOpen(false);
+  }, []);
 
   const openTaskAssistant = useCallback((taskId: string) => {
     setTaskAssistantId(taskId);
@@ -192,6 +198,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
   const handleAssistantClose = useCallback(() => {
     setAssistantOpen(false);
     setTaskAssistantId(null);
+    setDraftChatOpen(false);
   }, []);
 
   const handleAssistantBack = useCallback(() => {
@@ -429,7 +436,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
       {isMobile && (
         <MobileTabBar
           gitActive={gitHistoryOpen}
-          assistantActive={assistantOpen || taskAssistantId !== null}
+          assistantActive={assistantOpen || taskAssistantId !== null || draftChatOpen}
           onGitOpen={() => {
             setGitHistoryOpen((o) => !o);
             setActiveTaskId(null);
@@ -496,11 +503,13 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           )}
         </ModalPanel>
       )}
-      {(assistantOpen || taskAssistantId) && (
+      {(assistantOpen || taskAssistantId || draftChatOpen) && (
         <AssistantDrawer
           onClose={handleAssistantClose}
           onBack={taskAssistantId ? handleAssistantBack : undefined}
           taskId={taskAssistantId ?? undefined}
+          draftChat={draftChatOpen && !taskAssistantId}
+          onTaskCreated={handleChatTaskCreated}
         />
       )}
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}

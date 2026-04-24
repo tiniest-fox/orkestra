@@ -23,6 +23,12 @@ Business logic (field validation, git operations, error mapping) belongs in an i
 
 To add a new command: create an interaction in `orkestra-core`, add a `WorkflowApi` method that delegates to it, then write a one-liner handler in `interactions/command/`. Follow the existing siblings in `git.rs` as the template.
 
+### Exception: Narrow-Mutex-Scope Overrides Thin-Delegate
+
+`create_chat_and_send` (`interactions/command/assistant.rs`) is a deliberate exception. It contains two sequential API calls plus a compensating delete — more than a thin delegate normally holds. This is intentional: the alternative would be a single `WorkflowApi` method that holds the API mutex across `send_task_message`, which spawns a child process. Holding the mutex through a spawn blocks the entire orchestrator (see root CLAUDE.md "Narrow mutex scopes").
+
+The pattern: acquire lock → create task → drop lock → call service method that spawns. The compensating delete (task cleanup on send failure) re-acquires the lock cleanly in the error path. Do not "fix" this back to a single API call — the reviewers already rejected that shape.
+
 ### Canonical Command Names
 
 When calling backend commands from the frontend, always use `transport.call("canonical-name", ...)` where the name matches the key in `METHOD_MAP` (e.g. `"archive"`, `"approve"`). Never use the raw Tauri command string (e.g. `"workflow_archive"`) — it bypasses the transport abstraction and breaks WebSocket clients. The `METHOD_MAP` in `TauriTransport.ts` is the single source of truth for command names.

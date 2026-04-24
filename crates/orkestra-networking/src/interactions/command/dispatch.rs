@@ -131,6 +131,7 @@ pub async fn execute(
         "open_pr" => action::handle_open_pr(ctx, event_tx, params).await,
 
         // -- Assistant --
+        "create_chat_and_send" => run_sync(ctx, params, assistant::create_chat_and_send).await,
         "assistant_send_message" => run_sync(ctx, params, assistant::assistant_send_message).await,
         "assistant_stop" => run_sync(ctx, params, assistant::assistant_stop).await,
         "assistant_list_sessions" => {

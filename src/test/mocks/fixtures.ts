@@ -48,6 +48,7 @@ export function createMockWorkflowTask(overrides?: Partial<WorkflowTask>): Workf
     base_commit: "",
     auto_mode: false,
     flow: "default",
+    is_chat: false,
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
     ...overrides,
@@ -77,6 +78,7 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     stages_with_logs: [],
     subtask_progress: null,
     can_bypass: false,
+    assistant_active: false,
     ...overrides,
   };
 }

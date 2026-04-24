@@ -362,6 +362,8 @@ export interface WorkflowTask {
   auto_mode: boolean;
   /** Named flow for this task (e.g., "quick", "hotfix"). Always set — "default" for the main pipeline. */
   flow: string;
+  /** Whether this task is a lightweight chat session (not a full workflow task). */
+  is_chat: boolean;
   /** When the task was created. */
   created_at: string;
   /** When the task was last updated. */
@@ -462,6 +464,8 @@ export interface DerivedTaskState {
   subtask_progress: SubtaskProgress | null;
   /** Whether the task can be bypassed (skip/send-to-stage/restart). */
   can_bypass: boolean;
+  /** Whether the assistant agent is currently active for this task (chat tasks only). */
+  assistant_active: boolean;
 }
 
 /**

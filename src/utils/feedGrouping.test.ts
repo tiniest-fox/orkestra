@@ -92,3 +92,25 @@ describe("groupTasksForFeed — PR-state classification for done tasks", () => {
     ]);
   });
 });
+
+describe("groupTasksForFeed — chat task classification", () => {
+  it("places chat task with assistant_active=true in in_progress", () => {
+    const task = createMockWorkflowTaskView({
+      is_chat: true,
+      derived: { assistant_active: true },
+    });
+    const result = groupTasksForFeed([task]);
+    const section = result.sections.find((s) => s.name === "in_progress");
+    expect(section?.tasks).toContainEqual(expect.objectContaining({ id: task.id }));
+  });
+
+  it("places chat task with assistant_active=false in needs_review", () => {
+    const task = createMockWorkflowTaskView({
+      is_chat: true,
+      derived: { assistant_active: false },
+    });
+    const result = groupTasksForFeed([task]);
+    const section = result.sections.find((s) => s.name === "needs_review");
+    expect(section?.tasks).toContainEqual(expect.objectContaining({ id: task.id }));
+  });
+});

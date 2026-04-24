@@ -16,9 +16,8 @@ import { ProjectSwitcher } from "./ProjectSwitcher";
 interface FeedHeaderProps {
   tasks: WorkflowTaskView[];
   onNewTask: () => void;
-  onAssistant: () => void;
+  onNewChat: () => void;
   hotkeyActive: boolean;
-  assistantActive: boolean;
   serviceProjectName?: string;
   showHomeLink?: boolean;
 }
@@ -32,9 +31,8 @@ interface Metric {
 export function FeedHeader({
   tasks,
   onNewTask,
-  onAssistant,
+  onNewChat,
   hotkeyActive,
-  assistantActive,
   serviceProjectName,
   showHomeLink = false,
 }: FeedHeaderProps) {
@@ -124,19 +122,8 @@ export function FeedHeader({
                   Notifications
                 </Button>
               )}
-              <Button
-                hotkey="shift+a"
-                variant="secondary"
-                size="sm"
-                onClick={onAssistant}
-                onAccent={assistantActive}
-                className={
-                  assistantActive
-                    ? "bg-accent/8 border-accent/35 text-accent hover:bg-accent/12"
-                    : ""
-                }
-              >
-                Assistant
+              <Button hotkey="shift+a" variant="secondary" size="sm" onClick={onNewChat}>
+                New Chat
               </Button>
             </HotkeyScope>
             <kbd className="font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 select-none">

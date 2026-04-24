@@ -28,6 +28,21 @@ function resolveColors(
   const { derived, state } = task;
   let extraClass = "";
 
+  if (task.is_chat) {
+    if (derived.assistant_active) {
+      return {
+        colors: { bg: "bg-accent/12", icon: "text-accent" },
+        symbol: "◉",
+        extraClass: "animate-[forge-pulse-opacity_2s_ease-in-out_infinite]",
+      };
+    }
+    return {
+      colors: { bg: "bg-transparent", icon: "text-text-tertiary" },
+      symbol: "◉",
+      extraClass: "",
+    };
+  }
+
   if (derived.is_waiting_on_children && derived.subtask_progress) {
     const p = derived.subtask_progress;
     if (p.failed > 0 || p.blocked > 0) {

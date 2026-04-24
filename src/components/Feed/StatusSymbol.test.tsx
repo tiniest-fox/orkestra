@@ -19,6 +19,32 @@ function makePrStatus(state: PrStatus["state"]): PrStatus {
   };
 }
 
+describe("StatusSymbol — chat task", () => {
+  it("renders ◉ with accent colors and pulse when is_chat and assistant_active", () => {
+    const task = createMockWorkflowTaskView({
+      is_chat: true,
+      derived: { assistant_active: true },
+    });
+    render(<StatusSymbol task={task} />);
+    const symbol = screen.getByText("◉");
+    expect(symbol).toBeInTheDocument();
+    expect(symbol).toHaveClass("text-accent");
+    expect(symbol.className).toContain("forge-pulse-opacity");
+  });
+
+  it("renders ◉ with tertiary colors and no pulse when is_chat and assistant not active", () => {
+    const task = createMockWorkflowTaskView({
+      is_chat: true,
+      derived: { assistant_active: false },
+    });
+    render(<StatusSymbol task={task} />);
+    const symbol = screen.getByText("◉");
+    expect(symbol).toBeInTheDocument();
+    expect(symbol).toHaveClass("text-text-tertiary");
+    expect(symbol.className).not.toContain("forge-pulse-opacity");
+  });
+});
+
 describe("StatusSymbol — done task", () => {
   it("renders ○ when task is done and has no pr_url", () => {
     const task = createMockWorkflowTaskView({

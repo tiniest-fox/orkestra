@@ -79,6 +79,16 @@ describe("FeedRowActions — Approve button", () => {
   });
 });
 
+describe("FeedRowActions — chat task", () => {
+  it("renders no buttons when task is_chat", () => {
+    const props = makeProps({
+      task: createMockWorkflowTaskView({ is_chat: true, derived: { needs_review: true } }),
+    });
+    render(<FeedRowActions {...props} />);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
 describe("FeedRowActions — Archive button (merged PR)", () => {
   it("renders Archive button when task is done with merged PR", () => {
     const props = makeProps({

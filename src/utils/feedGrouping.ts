@@ -81,6 +81,14 @@ export function groupTasksForFeed(
   const completed: WorkflowTaskView[] = [];
 
   for (const task of topLevel) {
+    if (task.is_chat) {
+      if (task.derived.assistant_active) {
+        inProgress.push(task);
+      } else {
+        needsReview.push(task);
+      }
+      continue;
+    }
     if (
       task.derived.needs_review ||
       task.derived.has_questions ||

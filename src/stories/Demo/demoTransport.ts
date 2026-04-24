@@ -59,6 +59,27 @@ export function createDemoTransport(): Transport {
           return resolve({ files: [] });
         case "get_batch_file_counts":
           return resolve({});
+        case "create_chat_task":
+          return resolve({
+            id: "chat-demo-1",
+            title: (params?.title as string) || "New Chat",
+            description: "",
+            is_chat: true,
+            flow: "",
+            state: { type: "queued", stage: "chat" },
+            artifacts: {},
+            resources: {},
+            depends_on: [],
+            base_branch: "main",
+            base_commit: "",
+            auto_mode: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        case "promote_to_flow":
+          return resolve(null);
+        case "get_task":
+          return resolve(demoTasks.find((t) => t.id === params?.task_id) ?? demoTasks[0]);
         // Action RPCs — resolve successfully to make buttons interactive
         case "approve":
         case "answer_questions":

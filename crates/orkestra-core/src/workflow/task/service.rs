@@ -1,7 +1,11 @@
 //! Task CRUD operations.
 
+use std::sync::Arc;
+
+use crate::title::generate_fallback_title;
 use crate::workflow::api::WorkflowApi;
-use crate::workflow::domain::{Task, TaskCreationMode};
+use crate::workflow::assistant::service::AssistantService;
+use crate::workflow::domain::{AssistantSession, Task, TaskCreationMode};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 
 use super::interactions as task_interactions;
@@ -48,6 +52,38 @@ impl WorkflowApi {
     /// Create a new chat task (no flow, no worktree, starts in Queued).
     pub fn create_chat_task(&self, title: &str) -> WorkflowResult<Task> {
         task_interactions::create_chat::execute(self.store.as_ref(), title)
+    }
+
+    /// Atomically create a chat task and send the first message.
+    ///
+    /// Derives a title from `message` via `generate_fallback_title`, creates the chat task
+    /// through `WorkflowApi` (single source of truth), then sends the message via
+    /// `AssistantService`. Requires `project_root` and `provider_registry` to be configured.
+    pub fn create_chat_and_send_message(
+        &self,
+        message: &str,
+    ) -> WorkflowResult<(Task, AssistantSession)> {
+        if message.trim().is_empty() {
+            return Err(WorkflowError::InvalidState(
+                "Message cannot be empty".to_string(),
+            ));
+        }
+
+        let project_root = self
+            .project_root
+            .clone()
+            .ok_or_else(|| WorkflowError::InvalidState("project_root not configured".into()))?;
+        let registry = self.provider_registry.clone().ok_or_else(|| {
+            WorkflowError::InvalidState("provider_registry not configured".into())
+        })?;
+
+        let title = generate_fallback_title(message);
+        let task = self.create_chat_task(&title)?;
+
+        let service = AssistantService::new(Arc::clone(&self.store), registry, project_root);
+        let session = service.send_task_message(&task.id, message)?;
+
+        Ok((task, session))
     }
 
     /// Create a new subtask under a parent task.

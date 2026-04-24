@@ -3,12 +3,22 @@
 //! Tests chat task creation, spawn filtering, promotion to workflow flow,
 //! and the atomic create-and-send command.
 
+use std::sync::Arc;
+
+use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
 use orkestra_core::workflow::domain::{LogEntry, TaskCreationMode};
-use orkestra_core::workflow::ports::WorkflowError;
+use orkestra_core::workflow::execution::{
+    claudecode_aliases, claudecode_capabilities, ProviderRegistry,
+};
+use orkestra_core::workflow::ports::{
+    MockProcessSpawner, ProcessSpawner, WorkflowError, WorkflowStore,
+};
 use orkestra_core::workflow::runtime::TaskState;
+use orkestra_core::workflow::{AssistantService, SqliteWorkflowStore, WorkflowApi};
+use tempfile::TempDir;
 
-use crate::helpers::{create_assistant_service, TestEnv};
+use crate::helpers::TestEnv;
 
 // =============================================================================
 // Helpers
@@ -17,6 +27,37 @@ use crate::helpers::{create_assistant_service, TestEnv};
 fn one_stage_workflow() -> WorkflowConfig {
     WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
         .with_integration(IntegrationConfig::new("work"))
+}
+
+fn chat_provider_registry() -> Arc<ProviderRegistry> {
+    let mut registry = ProviderRegistry::new("claudecode");
+    registry.register(
+        "claudecode",
+        Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        claudecode_capabilities(),
+        claudecode_aliases(),
+    );
+    Arc::new(registry)
+}
+
+/// Create a `WorkflowApi` with `project_root` and `provider_registry` configured,
+/// plus a shared store for assertions. Both the API and the store use the same
+/// underlying `SQLite` connection.
+fn create_chat_api() -> (WorkflowApi, Arc<dyn WorkflowStore>, TempDir) {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join("test.db");
+    let conn = DatabaseConnection::open(&db_path).expect("open db");
+
+    let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+
+    let api = WorkflowApi::new(
+        one_stage_workflow(),
+        Arc::new(SqliteWorkflowStore::new(conn.shared())),
+    )
+    .with_provider_registry(chat_provider_registry())
+    .with_project_root(temp_dir.path().to_path_buf());
+
+    (api, store, temp_dir)
 }
 
 // =============================================================================
@@ -194,10 +235,10 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
 
 #[test]
 fn test_create_and_send_creates_task_with_message_title() {
-    let (service, store, _temp_dir) = create_assistant_service();
+    let (api, store, _temp_dir) = create_chat_api();
 
-    let (task, session) = service
-        .create_and_send_chat_message("Fix the login page auth error")
+    let (task, session) = api
+        .create_chat_and_send_message("Fix the login page auth error")
         .unwrap();
 
     // Task must exist in the store and be a chat task.
@@ -226,32 +267,32 @@ fn test_create_and_send_creates_task_with_message_title() {
 
 #[test]
 fn test_create_and_send_rejects_empty_message() {
-    let (service, store, _temp_dir) = create_assistant_service();
+    let (api, _store, _temp_dir) = create_chat_api();
 
-    let result = service.create_and_send_chat_message("");
+    let result = api.create_chat_and_send_message("");
     assert!(result.is_err(), "empty message must be rejected");
 
-    let result_ws = service.create_and_send_chat_message("   ");
+    let result_ws = api.create_chat_and_send_message("   ");
     assert!(
         result_ws.is_err(),
         "whitespace-only message must be rejected"
     );
-
-    // No tasks should have been created.
-    // The assistant store doesn't expose a task list directly; verify via the
-    // known-empty state — no error means no tasks leaked before the validation check.
-    let _ = store; // store is real SQLite; not checking tasks list directly is fine here
 }
 
 #[test]
 fn test_subsequent_messages_reuse_task_session() {
-    let (service, _store, _temp_dir) = create_assistant_service();
+    let (api, store, temp_dir) = create_chat_api();
 
-    let (task, session1) = service
-        .create_and_send_chat_message("First message to the chat")
+    let (task, session1) = api
+        .create_chat_and_send_message("First message to the chat")
         .unwrap();
 
-    // Send a follow-up message to the same task.
+    // Send a follow-up message to the same task via AssistantService (same underlying store).
+    let service = AssistantService::new(
+        Arc::clone(&store),
+        chat_provider_registry(),
+        temp_dir.path().to_path_buf(),
+    );
     let session2 = service
         .send_task_message(&task.id, "Follow-up question")
         .unwrap();

@@ -957,6 +957,13 @@ export function MessageList({
   const isUserScrolledUpRef = useRef(false);
   // Tracks last scrollTop to detect direction (decrease = user scrolled up).
   const lastScrollTopRef = useRef(0);
+  // Set true on mount so the first content arrival triggers initial positioning
+  // (scroll to artifact/questions header or bottom) rather than plain auto-scroll.
+  const isInitialScrollRef = useRef(false);
+  // Always-current snapshot of displayVirtualItems, read by the scroll effect
+  // without adding it to the dep array (avoids spurious re-fires on layout thrash).
+  const displayVirtualItemsRef = useRef(displayVirtualItems);
+  displayVirtualItemsRef.current = displayVirtualItems;
 
   // Merge our internal ref with the external containerRef (for hotkey scroll control).
   const mergedContainerRef = useCallback(
@@ -966,6 +973,7 @@ export function MessageList({
       if (node) {
         isUserScrolledUpRef.current = false;
         lastScrollTopRef.current = 0;
+        isInitialScrollRef.current = true;
       }
       if (typeof containerRef === "function") {
         containerRef(node);
@@ -1014,48 +1022,50 @@ export function MessageList({
     if (el) el.scrollTop = el.scrollHeight;
   }, [scrollToBottomTrigger]);
 
-  // RAF retry loop: set scrollTop = scrollHeight on each frame until scrollHeight stabilizes.
+  // Scroll effect — fires when new items arrive (virtualItems.length changes) or on mount.
   //
-  // Why retries are needed: Virtua measures item heights asynchronously via ResizeObserver.
-  // On first render, all item heights are estimated (often 0). scrollHeight starts small, so
-  // a single scroll lands at the wrong offset. As ResizeObserver fires between frames,
-  // scrollHeight grows. We keep scrolling to the new bottom on each frame until scrollHeight
-  // stops growing — that's when Virtua has finished measuring and we're truly at the bottom.
+  // Two distinct behaviors depending on whether this is the initial open or ongoing auto-scroll:
   //
-  // Note: `el.scrollTop = el.scrollHeight` is always clamped to `scrollHeight - clientHeight`
-  // by the browser, so distFromBottom is always 0 after the assignment. We cannot use
-  // distFromBottom as the retry condition — we use scrollHeight growth instead.
+  // Initial open (isInitialScrollRef = true, set by mergedContainerRef on mount):
+  //   Scroll to the primary interactive element — the artifact-header virtual item, which
+  //   renders either the artifact card or the inline questions/answer card when questions are
+  //   pending. If no artifact is present, fall through to scroll to bottom.
+  //   Uses scrollToIndex so Virtua handles unmeasured-item retries natively.
+  //
+  // Auto-scroll for new content (isInitialScrollRef = false):
+  //   If the user hasn't scrolled up (isUserScrolledUpRef = false), keep them pinned at the
+  //   bottom as new log lines arrive. Uses a RAF retry loop to chase Virtua's async height
+  //   measurements — scrollHeight keeps growing as ResizeObserver fires, so we retry each
+  //   frame until it stabilises (tracked via gracesRemaining).
+  //
+  // displayVirtualItems is intentionally NOT in the dep array — reading it via
+  // displayVirtualItemsRef avoids re-firing on layout thrash (e.g. textarea resize
+  // briefly changing the container height and causing Virtua to reshuffle its visible window).
   useEffect(() => {
     if (!isScrollContainer || virtualItems.length === 0 || isUserScrolledUpRef.current) return;
-    let rafId: number;
 
-    const artifactHeaderIdx = artifactHeaderIndexRef.current;
-    // Only scroll to the artifact header when it's the last meaningful content — if there
-    // are agent entries or user messages after it, scroll to the bottom instead.
-    const artifactIsTerminal =
-      artifactHeaderIdx !== -1 &&
-      displayVirtualItems
-        .slice(artifactHeaderIdx + 1)
-        .every((v) => v.kind === "artifact-body" || v.kind === "spinner" || v.kind === "extra");
-    if (artifactIsTerminal) {
-      // Latest item is an artifact — scroll to its header so the user sees the top,
-      // not the bottom of a potentially long artifact body.
-      //
-      // scrollToIndex handles unmeasured items natively: it runs an internal async
-      // retry loop, re-scrolling each time ResizeObserver fires with new measurements,
-      // until the offset stabilizes (no update within 150ms).
-      virtualizerRef.current?.scrollToIndex(artifactHeaderIdx, { align: "start" });
-      return;
+    // -- Initial positioning --
+    if (isInitialScrollRef.current) {
+      isInitialScrollRef.current = false;
+      const artifactHeaderIdx = artifactHeaderIndexRef.current;
+      // Scroll to the artifact/questions header when it is the last meaningful content.
+      // Items after the header may only be: artifact body, spinner, or extra decorations.
+      const interactiveIsTerminal =
+        artifactHeaderIdx !== -1 &&
+        displayVirtualItemsRef.current
+          .slice(artifactHeaderIdx + 1)
+          .every((v) => v.kind === "artifact-body" || v.kind === "spinner" || v.kind === "extra");
+      if (interactiveIsTerminal) {
+        virtualizerRef.current?.scrollToIndex(artifactHeaderIdx, { align: "start" });
+        return;
+      }
+      // No terminal artifact/questions — fall through to scroll to bottom.
     }
 
-    // No artifact — scroll to bottom and chase Virtua's async measurements.
+    // -- Auto-scroll to bottom --
+    let rafId: number;
     let retries = 0;
     let prevScrollHeight = 0;
-    // Frames to keep retrying after scrollHeight appears stable. Virtua measures item
-    // heights in batches via ResizeObserver — there can be multiple frames between batches
-    // (e.g. the superseded artifact card is measured, then items below it a few frames
-    // later). Without this grace period the loop exits between batches and the final
-    // scroll lands partway through the list instead of at the true bottom.
     let gracesRemaining = 8;
     const step = () => {
       const el = internalContainerRef.current;
@@ -1073,7 +1083,7 @@ export function MessageList({
     };
     rafId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafId);
-  }, [virtualItems.length, isScrollContainer, displayVirtualItems]);
+  }, [virtualItems.length, isScrollContainer]);
 
   const emptyState = (
     <div className="flex items-center justify-center h-full">

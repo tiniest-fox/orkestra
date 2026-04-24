@@ -166,6 +166,41 @@ impl AssistantService {
         Ok(())
     }
 
+    /// Atomically create a chat task and send the first message.
+    ///
+    /// Derives a title from `message` via `generate_fallback_title`, creates the chat task,
+    /// then sends the message to the new task's session. If the message send fails after
+    /// task creation, the error propagates — the task remains in the store.
+    ///
+    /// Returns `(task, session)` on success.
+    pub fn create_and_send_chat_message(
+        &self,
+        message: &str,
+    ) -> crate::workflow::ports::WorkflowResult<(
+        crate::workflow::domain::Task,
+        crate::workflow::domain::AssistantSession,
+    )> {
+        if message.trim().is_empty() {
+            return Err(crate::workflow::ports::WorkflowError::InvalidState(
+                "Message cannot be empty".to_string(),
+            ));
+        }
+
+        let title = generate_fallback_title(message);
+        let task =
+            crate::workflow::task::interactions::create_chat::execute(self.store.as_ref(), &title)?;
+
+        let session = self.send_task_scoped_message(
+            &task.id,
+            message,
+            SessionType::Assistant,
+            Self::build_task_system_prompt,
+            ASSISTANT_DISALLOWED_TOOLS,
+        )?;
+
+        Ok((task, session))
+    }
+
     /// Send a message to the task-scoped assistant session for `task_id`.
     ///
     /// Creates a new session if none exists for this task, or reuses the existing one.
@@ -402,6 +437,13 @@ impl AssistantService {
                 // Update session state
                 session.agent_spawned(pid, now);
                 self.store.save_assistant_session(session)?;
+
+                // Bump task.updated_at so differential sync picks up assistant_active=true.
+                if let Some(ref task_id) = session.task_id {
+                    if let Err(e) = self.store.touch_task(task_id) {
+                        orkestra_debug!("assistant", "Failed to touch task after spawn: {}", e);
+                    }
+                }
 
                 // Spawn background thread to read agent output
                 self.spawn_output_reader(session, spawn_count_before, pid, stdout, stderr);
@@ -705,9 +747,12 @@ fn read_assistant_output(
         // Bump task.updated_at so differential polling re-fetches the chat task's
         // assistant_active field (which just transitioned from true → false).
         if let Some(ref task_id) = session.task_id {
-            if let Ok(Some(mut task)) = store.get_task(task_id) {
-                task.updated_at.clone_from(&now);
-                let _ = store.save_task(&task);
+            if let Err(e) = store.touch_task(task_id) {
+                orkestra_debug!(
+                    "assistant",
+                    "Failed to touch task after agent finish: {}",
+                    e
+                );
             }
         }
 
@@ -748,8 +793,19 @@ fn generate_and_set_title(
     };
 
     let now = chrono::Utc::now().to_rfc3339();
-    session.set_title(title, &now);
+    session.set_title(title.clone(), &now);
     let _ = store.save_assistant_session(&session);
+
+    // Also update the chat task title so the feed shows the refined title.
+    if let Some(ref task_id) = session.task_id {
+        if let Ok(Some(mut task)) = store.get_task(task_id) {
+            if task.is_chat {
+                task.title = title;
+                task.updated_at = now;
+                let _ = store.save_task(&task);
+            }
+        }
+    }
 }
 
 // ============================================================================

@@ -97,6 +97,25 @@ pub fn assistant_send_task_message(
     Ok(serde_json::to_value(session).unwrap_or(Value::Null))
 }
 
+/// Atomically creates a chat task and sends the first message.
+///
+/// Expected params: `{ "message": "<message>" }`
+///
+/// Returns `{ "task": WorkflowTask, "session": AssistantSession }`.
+pub fn create_chat_and_send(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("missing field: message"))?
+        .to_string();
+
+    let service = ctx.create_assistant_service();
+    let (task, session) = service
+        .create_and_send_chat_message(&message)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::json!({ "task": task, "session": session }))
+}
+
 /// Returns project-level sessions only.
 pub fn assistant_list_project_sessions(
     ctx: &CommandContext,

@@ -93,6 +93,22 @@ pub fn assistant_send_task_message(
     })
 }
 
+/// Atomically create a chat task and send the first message.
+///
+/// Derives a title from `message`, creates the chat task, sends the first message,
+/// and returns `{ task, session }` so the frontend can transition to task-scoped mode.
+#[tauri::command]
+pub fn workflow_create_chat_and_send(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    message: String,
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "message": message });
+        assistant::create_chat_and_send(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
 /// List project-level assistant sessions (excludes task-scoped sessions).
 ///
 /// Returns sessions ordered by creation time (most recent first).

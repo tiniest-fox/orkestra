@@ -130,13 +130,10 @@ impl OpenCodeParserService {
                 if let Some(flushed) = self.flush_pending_text() {
                     entries.push(flushed);
                 }
-                let message = v
-                    .get("message")
-                    .or_else(|| v.get("error"))
-                    .or_else(|| v.get("content"))
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("Unknown error")
-                    .to_string();
+                let message =
+                    crate::interactions::output::check_api_error::extract_flexible_error_message(
+                        &v,
+                    );
                 entries.push(LogEntry::Error { message });
                 entries
             }
@@ -559,6 +556,24 @@ mod tests {
             update.log_entries[0],
             LogEntry::Error {
                 message: "Another failure".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parses_nested_error_message() {
+        let mut parser = OpenCodeParserService::new();
+        let line = serde_json::json!({
+            "type": "error",
+            "error": {"data": {"message": "Model not found: moonshot/kimi-k2.6"}}
+        })
+        .to_string();
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
+        assert_eq!(
+            update.log_entries[0],
+            LogEntry::Error {
+                message: "Model not found: moonshot/kimi-k2.6".to_string()
             }
         );
     }

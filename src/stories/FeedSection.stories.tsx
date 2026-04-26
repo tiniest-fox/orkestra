@@ -51,3 +51,42 @@ export const Mobile: Story = {
     viewport: { defaultViewport: "mobile1" },
   },
 };
+
+const chatSection = {
+  name: "in_progress" as const,
+  label: "IN PROGRESS",
+  tasks: [
+    createMockWorkflowTaskView({
+      title: "How do I set up rate limiting?",
+      is_chat: true,
+      state: { type: "queued", stage: "planning" },
+    }),
+    createMockWorkflowTaskView({
+      title: "Explain the auth flow",
+      is_chat: true,
+      state: { type: "queued", stage: "planning" },
+    }),
+  ],
+};
+
+export const ChatTraks: Story = {
+  args: {
+    section: chatSection,
+    onArchive: () => {},
+    onDelete: () => {},
+  },
+  parameters: {
+    viewport: { defaultViewport: "desktop" },
+  },
+};
+
+export const ChatTraksMobile: Story = {
+  args: {
+    section: chatSection,
+    onArchive: () => {},
+    onDelete: () => {},
+  },
+  parameters: {
+    viewport: { defaultViewport: "mobile1" },
+  },
+};

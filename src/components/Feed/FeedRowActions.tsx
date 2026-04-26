@@ -17,6 +17,7 @@ interface FeedRowActionsProps {
   onMerge: () => void;
   onOpenPr: () => void;
   onArchive: () => void;
+  onDelete: () => void;
   fullWidth?: boolean;
   prStatus?: PrStatus;
 }
@@ -29,6 +30,7 @@ export function FeedRowActions({
   onMerge,
   onOpenPr,
   onArchive,
+  onDelete,
   fullWidth = false,
   prStatus,
 }: FeedRowActionsProps) {
@@ -37,7 +39,36 @@ export function FeedRowActions({
   const containerCls = fullWidth ? "flex gap-1.5 w-full" : "flex items-center gap-1.5";
   const btnCls = fullWidth ? "flex-1 justify-center" : undefined;
 
-  if (task.is_chat) return null;
+  if (task.is_chat) {
+    return (
+      <div className={containerCls}>
+        <Button
+          hotkey="x"
+          variant="secondary"
+          size="sm"
+          className={btnCls}
+          onClick={(e) => {
+            e.stopPropagation();
+            onArchive();
+          }}
+        >
+          Archive
+        </Button>
+        <Button
+          hotkey="d"
+          variant="secondary"
+          size="sm"
+          className={btnCls}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          Delete
+        </Button>
+      </div>
+    );
+  }
 
   const approveVariant = (() => {
     const stage = config.flows[task.flow]?.stages.find((s) => s.name === derived.current_stage);

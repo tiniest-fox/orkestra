@@ -19,6 +19,7 @@ interface FeedTaskRowProps {
   onMerge?: () => void;
   onOpenPr?: () => void;
   onArchive?: () => void;
+  onDelete?: () => void;
   onClick?: () => void;
   actionsSlot?: React.ReactNode;
 }
@@ -36,6 +37,7 @@ function FeedTaskRowInner({
   onMerge,
   onOpenPr,
   onArchive,
+  onDelete,
   onClick,
   actionsSlot,
 }: FeedTaskRowProps) {
@@ -57,6 +59,7 @@ function FeedTaskRowInner({
       onMerge={onMerge}
       onOpenPr={onOpenPr}
       onArchive={onArchive}
+      onDelete={onDelete}
       onClick={onClick}
       actionsSlot={actionsSlot}
     />

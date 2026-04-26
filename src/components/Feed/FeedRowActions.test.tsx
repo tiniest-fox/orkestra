@@ -35,6 +35,7 @@ function makeProps(overrides?: Partial<Parameters<typeof FeedRowActions>[0]>) {
     onMerge: vi.fn(),
     onOpenPr: vi.fn(),
     onArchive: vi.fn(),
+    onDelete: vi.fn(),
     ...overrides,
   };
 }
@@ -80,12 +81,31 @@ describe("FeedRowActions — Approve button", () => {
 });
 
 describe("FeedRowActions — chat task", () => {
-  it("renders no buttons when task is_chat", () => {
+  it("renders Archive and Delete buttons for chat tasks", () => {
     const props = makeProps({
       task: createMockWorkflowTaskView({ is_chat: true, derived: { needs_review: true } }),
     });
     render(<FeedRowActions {...props} />);
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("Archive")).toBeInTheDocument();
+    expect(screen.getByText("Delete")).toBeInTheDocument();
+  });
+
+  it("calls onArchive when Archive is clicked on a chat task", () => {
+    const props = makeProps({
+      task: createMockWorkflowTaskView({ is_chat: true }),
+    });
+    render(<FeedRowActions {...props} />);
+    fireEvent.click(screen.getByText("Archive"));
+    expect(props.onArchive).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onDelete when Delete is clicked on a chat task", () => {
+    const props = makeProps({
+      task: createMockWorkflowTaskView({ is_chat: true }),
+    });
+    render(<FeedRowActions {...props} />);
+    fireEvent.click(screen.getByText("Delete"));
+    expect(props.onDelete).toHaveBeenCalledTimes(1);
   });
 });
 

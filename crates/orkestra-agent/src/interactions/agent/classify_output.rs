@@ -48,30 +48,10 @@ pub fn execute(
 
 #[cfg(test)]
 mod tests {
-    use orkestra_parser::types::ParsedUpdate;
     use orkestra_parser::ExtractionResult;
-    use orkestra_types::domain::LogEntry;
 
+    use super::super::test_support::MockParser;
     use super::*;
-
-    struct MockParser {
-        extract_result: ExtractionResult,
-    }
-
-    impl AgentParser for MockParser {
-        fn parse_line(&mut self, _line: &str) -> ParsedUpdate {
-            ParsedUpdate {
-                log_entries: Vec::new(),
-                session_id: None,
-            }
-        }
-        fn finalize(&mut self) -> Vec<LogEntry> {
-            Vec::new()
-        }
-        fn extract_output(&self, _full_output: &str) -> ExtractionResult {
-            self.extract_result.clone()
-        }
-    }
 
     #[test]
     fn extraction_error_returns_extraction_failed() {

@@ -88,6 +88,8 @@ export const ChatTrak: Story = {
     onReview: () => {},
     onAnswer: () => {},
     onApprove: () => {},
+    onArchive: () => {},
+    onDelete: () => {},
   },
 };
 
@@ -104,5 +106,7 @@ export const ChatTrakFocused: Story = {
     onReview: () => {},
     onAnswer: () => {},
     onApprove: () => {},
+    onArchive: () => {},
+    onDelete: () => {},
   },
 };

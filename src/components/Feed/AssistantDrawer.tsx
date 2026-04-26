@@ -338,7 +338,7 @@ export function AssistantDrawer({
 
   const headerActions = useMemo<DrawerAction[]>(
     () =>
-      taskId
+      chatTask
         ? [
             {
               icon: ARCHIVE_ICON,
@@ -372,7 +372,7 @@ export function AssistantDrawer({
               onClick: () => setShowSessionList(true),
             },
           ],
-    [taskId, activeSessionId, handleNewSession, handleArchive],
+    [chatTask, activeSessionId, handleNewSession, handleArchive],
   );
 
   const titleNode = useMemo(
@@ -437,7 +437,7 @@ export function AssistantDrawer({
   );
 
   return (
-    <Drawer onClose={onClose} disableEscape={showSessionList}>
+    <Drawer onClose={onClose} disableEscape={showSessionList || showDeleteConfirm}>
       <HotkeyScope active>
         <div className="flex flex-col h-full relative overflow-hidden">
           <DrawerHeader

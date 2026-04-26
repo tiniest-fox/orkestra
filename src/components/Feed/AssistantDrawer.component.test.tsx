@@ -25,6 +25,16 @@ vi.mock("framer-motion", () => ({
         {children as React.ReactNode}
       </span>
     ),
+    div: ({
+      children,
+      initial: _i,
+      animate: _a,
+      exit: _e,
+      transition: _t,
+      ...rest
+    }: Record<string, unknown>) => (
+      <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children as React.ReactNode}</div>
+    ),
   },
 }));
 
@@ -147,5 +157,65 @@ describe("AssistantDrawer — draft chat mode", () => {
       expect(mockCall).toHaveBeenCalledWith("create_chat_and_send", { message: "hello world" });
     });
     expect(onTaskCreated).toHaveBeenCalledWith("task-123");
+  });
+});
+
+// ============================================================================
+// Chat task header actions
+// ============================================================================
+
+describe("AssistantDrawer — chat task header actions", () => {
+  beforeEach(() => {
+    mockCall.mockReset();
+  });
+
+  it("shows Archive and Delete Trak buttons when taskId refers to a chat task", async () => {
+    mockCall.mockImplementation((method: string) => {
+      if (method === "get_task")
+        return Promise.resolve({ id: "chat-task-1", is_chat: true, title: "My Chat" });
+      if (method === "assistant_list_sessions") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    render(<AssistantDrawer taskId="chat-task-1" onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Delete Trak" })).toBeInTheDocument();
+  });
+
+  it("does not show Archive or Delete Trak buttons when taskId refers to a regular workflow task", async () => {
+    mockCall.mockImplementation((method: string) => {
+      if (method === "get_task")
+        return Promise.resolve({ id: "wf-task-1", is_chat: false, title: "Feature work" });
+      if (method === "assistant_list_sessions") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    render(<AssistantDrawer taskId="wf-task-1" onClose={vi.fn()} />);
+
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Trak" })).not.toBeInTheDocument();
+  });
+
+  it("opens delete confirmation modal when Delete Trak button is clicked", async () => {
+    mockCall.mockImplementation((method: string) => {
+      if (method === "get_task")
+        return Promise.resolve({ id: "chat-task-1", is_chat: true, title: "My Chat" });
+      if (method === "assistant_list_sessions") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    render(<AssistantDrawer taskId="chat-task-1" onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete Trak" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Trak" }));
+
+    expect(screen.getByText("Delete Trak?")).toBeInTheDocument();
   });
 });

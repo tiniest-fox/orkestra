@@ -56,6 +56,19 @@ pub struct ProviderCapabilities {
 
 When `supports_json_schema` is false, the JSON schema is embedded in the prompt text upstream (in `orkestra-prompt`).
 
+### Output Classification
+
+`classify_output::execute()` is the single source of truth for agent output classification. Both `run_async` and `run_sync` delegate to it. It returns a four-way `OutputClassification` enum:
+
+| Variant | Trigger | Downstream action |
+|---------|---------|-------------------|
+| `Success(StageOutput)` | Extraction found structured output + parse succeeded | Normal stage processing |
+| `ExtractionFailed(String)` | `ExtractionResult::Error` (API error, crash, etc.) | `AgentCompletionError::Crash` — no retry |
+| `PlainText(String)` | `ExtractionResult::NotFound` — agent produced no structured output | `ExecutionResult::AgentPlainText` → `park_plain_text` in orkestra-core |
+| `ParseFailed(String)` | Extraction succeeded but schema validation failed | `AgentCompletionError::MalformedOutput` — retry with corrective prompt |
+
+The key invariant: only `ParseFailed` maps to `MalformedOutput`. Plain text (agent wrote prose but no JSON/fenced block) and extraction errors never trigger the malformed-output retry loop.
+
 ### RunEvent Streaming
 
 Async execution emits events through a channel:
@@ -114,3 +127,13 @@ runner.set_output_with_activity("task-id", output);  // Emits LogLine before Com
 ```
 
 Use `default_test_registry()` when testing code that needs to check provider capabilities without spawning real processes.
+
+When writing unit tests for `classify_output` or `run_async`, use the shared `MockParser` in `interactions/agent/mod.rs`:
+
+```rust
+use super::super::test_support::MockParser;
+
+let parser = MockParser { extract_result: ExtractionResult::NotFound };
+```
+
+The `test_support` module is `#[cfg(test)] pub(crate)` — only visible in test builds within the crate.

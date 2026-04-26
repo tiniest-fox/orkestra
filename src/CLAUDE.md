@@ -757,6 +757,8 @@ vi.mock("react-dom/client", () => ({ createRoot: mockCreateRoot }));
 
 <!-- compound: prominently-restful-ratel -->
 - **`vi.useFakeTimers()` / `vi.useRealTimers()` cleanup**: Always restore real timers in `afterEach(() => vi.useRealTimers())` at file scope, not inline at the end of each test. If an assertion throws before the inline `vi.useRealTimers()` call, fake timers leak and affect subsequent tests. This follows the same pattern as `vi.unstubAllEnvs()` cleanup.
+- **CSS-only visibility hiding is not testable in jsdom**: Elements hidden with `translate-x-full`, `opacity-0`, or similar CSS transforms remain in the DOM and are found by `getByText`/`queryByText` as if visible. When a conditional mount/unmount is part of the behavior under test, use conditional rendering (`{condition && <Component />}`) to unmount the element rather than CSS-only hiding. CSS-only hiding is fine for pure animation transitions — just don't write tests that assert the hidden element is absent.
+- **framer-motion mocks must cover all `motion.*` elements used in the component tree**: When mocking framer-motion with `vi.mock("framer-motion", ...)`, include passthrough mocks for every `motion.X` element rendered by the full component tree — not just the top-level component. For example, `ModalPanel` uses `motion.div`; any test that renders `ModalPanel` needs `motion.div` in the mock factory. A missing element surfaces as a runtime error ("X is not a function") at gate time, not during component authoring.
 
 ## Storybook Stories
 

@@ -198,6 +198,8 @@ describe("AssistantDrawer — chat task header actions", () => {
     await act(async () => {});
     expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete Trak" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New session" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument();
   });
 
   it("opens delete confirmation modal when Delete Trak button is clicked", async () => {

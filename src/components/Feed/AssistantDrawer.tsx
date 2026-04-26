@@ -354,25 +354,27 @@ export function AssistantDrawer({
               destructive: true,
             },
           ]
-        : [
-            ...(activeSessionId !== null
-              ? [
-                  {
-                    icon: PLUS_ICON,
-                    label: "New session",
-                    shortLabel: "New",
-                    onClick: handleNewSession,
-                  },
-                ]
-              : []),
-            {
-              icon: HISTORY_ICON,
-              label: "Sessions",
-              shortLabel: "Sessions",
-              onClick: () => setShowSessionList(true),
-            },
-          ],
-    [chatTask, activeSessionId, handleNewSession, handleArchive],
+        : taskId
+          ? []
+          : [
+              ...(activeSessionId !== null
+                ? [
+                    {
+                      icon: PLUS_ICON,
+                      label: "New session",
+                      shortLabel: "New",
+                      onClick: handleNewSession,
+                    },
+                  ]
+                : []),
+              {
+                icon: HISTORY_ICON,
+                label: "Sessions",
+                shortLabel: "Sessions",
+                onClick: () => setShowSessionList(true),
+              },
+            ],
+    [chatTask, taskId, activeSessionId, handleNewSession, handleArchive],
   );
 
   const titleNode = useMemo(
@@ -504,14 +506,15 @@ export function AssistantDrawer({
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() =>
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
                     transport
                       .call("delete_task", { task_id: taskId })
                       .then(onClose)
                       .catch((err) => {
                         if (!isDisconnectError(err)) showError(String(err));
-                      })
-                  }
+                      });
+                  }}
                 >
                   Delete
                 </Button>
@@ -520,54 +523,56 @@ export function AssistantDrawer({
           </ModalPanel>
 
           {/* Session List Overlay — slides in from right (project mode only) */}
-          <div
-            className={[
-              "absolute inset-0 bg-surface z-20 flex flex-col transition-transform duration-[160ms] ease-out",
-              !taskId && showSessionList ? "translate-x-0" : "translate-x-full",
-            ].join(" ")}
-          >
-            <DrawerHeader
-              title="Sessions"
-              onClose={onClose}
-              onBack={() => setShowSessionList(false)}
-              actions={[
-                {
-                  icon: <Plus />,
-                  label: "New session",
-                  shortLabel: "New",
-                  onClick: handleNewSession,
-                },
-              ]}
-            />
-            <div className="flex-1 overflow-y-auto">
-              {sessions.length === 0 && (
-                <div className="p-4 font-mono text-[11px] text-text-quaternary">
-                  No sessions yet.
-                </div>
-              )}
-              {sessions.map((session) => (
-                <button
-                  type="button"
-                  key={session.id}
-                  onClick={() => handleSwitchSession(session.id)}
-                  onKeyDown={() => {}}
-                  className={[
-                    "w-full text-left px-4 py-2.5 border-b border-border border-l-2 transition-colors",
-                    session.id === activeSessionId
-                      ? "border-l-accent bg-accent-soft"
-                      : "border-l-transparent hover:bg-canvas",
-                  ].join(" ")}
-                >
-                  <div className="font-sans text-[12px] font-medium text-text-primary truncate">
-                    {session.title ?? "Untitled session"}
+          {!taskId && (
+            <div
+              className={[
+                "absolute inset-0 bg-surface z-20 flex flex-col transition-transform duration-[160ms] ease-out",
+                showSessionList ? "translate-x-0" : "translate-x-full",
+              ].join(" ")}
+            >
+              <DrawerHeader
+                title="Sessions"
+                onClose={onClose}
+                onBack={() => setShowSessionList(false)}
+                actions={[
+                  {
+                    icon: <Plus />,
+                    label: "New session",
+                    shortLabel: "New",
+                    onClick: handleNewSession,
+                  },
+                ]}
+              />
+              <div className="flex-1 overflow-y-auto">
+                {sessions.length === 0 && (
+                  <div className="p-4 font-mono text-[11px] text-text-quaternary">
+                    No sessions yet.
                   </div>
-                  <div className="font-mono text-[10px] text-text-tertiary mt-0.5">
-                    {relativeTime(session.updated_at)}
-                  </div>
-                </button>
-              ))}
+                )}
+                {sessions.map((session) => (
+                  <button
+                    type="button"
+                    key={session.id}
+                    onClick={() => handleSwitchSession(session.id)}
+                    onKeyDown={() => {}}
+                    className={[
+                      "w-full text-left px-4 py-2.5 border-b border-border border-l-2 transition-colors",
+                      session.id === activeSessionId
+                        ? "border-l-accent bg-accent-soft"
+                        : "border-l-transparent hover:bg-canvas",
+                    ].join(" ")}
+                  >
+                    <div className="font-sans text-[12px] font-medium text-text-primary truncate">
+                      {session.title ?? "Untitled session"}
+                    </div>
+                    <div className="font-mono text-[10px] text-text-tertiary mt-0.5">
+                      {relativeTime(session.updated_at)}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </HotkeyScope>
     </Drawer>

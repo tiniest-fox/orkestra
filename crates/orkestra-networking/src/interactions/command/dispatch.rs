@@ -56,12 +56,19 @@ impl CommandContext {
         }
     }
 
-    /// Construct an `AssistantService` bound to this context's store, registry, and project root.
+    /// Construct an `AssistantService` bound to this context's store, registry, project root, and workflow config.
     pub(crate) fn create_assistant_service(&self) -> AssistantService {
+        let workflow = self
+            .api
+            .lock()
+            .expect("WorkflowApi mutex poisoned")
+            .workflow()
+            .clone();
         AssistantService::new(
             Arc::clone(&self.store),
             Arc::clone(&self.provider_registry),
             (*self.project_root).clone(),
+            workflow,
         )
     }
 }

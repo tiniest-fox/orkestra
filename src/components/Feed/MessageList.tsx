@@ -21,8 +21,8 @@ import type {
 } from "../../types/workflow";
 import { formatTimestamp } from "../../utils";
 import { AnsiText } from "../../utils/ansi";
-import { stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
+import { stripOrkBlocks } from "../../utils/orkBlocks";
 import { PROSE_CLASSES } from "../../utils/prose";
 import { compactGroupSummary, toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
@@ -330,7 +330,7 @@ export function buildVirtualItems(
 // ============================================================================
 
 const AssistantTextLine = memo(function AssistantTextLine({ content }: { content: string }) {
-  const cleaned = stripQuestionBlocks(stripParameterBlocks(content));
+  const cleaned = stripOrkBlocks(stripParameterBlocks(content));
   if (!cleaned) return null;
 
   // Mermaid/wireframe blocks need React lifecycle — fall back to ReactMarkdown.

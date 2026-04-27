@@ -67,6 +67,7 @@ fn create_chat_api() -> (
         Arc::clone(&store),
         Arc::clone(&registry),
         temp_dir.path().to_path_buf(),
+        one_stage_workflow(),
     );
 
     (api, store, service, temp_dir)
@@ -219,7 +220,10 @@ fn test_promote_to_flow_converts_chat_task() {
     let chat = env.api().create_chat_task("Ready to promote").unwrap();
     assert!(chat.is_chat);
 
-    let promoted = env.api().promote_to_flow(&chat.id, None).unwrap();
+    let promoted = env
+        .api()
+        .promote_to_flow(&chat.id, None, None, None, None)
+        .unwrap();
 
     assert!(!promoted.is_chat, "promoted task must have is_chat=false");
     assert!(!promoted.flow.is_empty(), "promoted task must have a flow");
@@ -240,7 +244,9 @@ fn test_promote_to_flow_rejected_for_non_chat_task() {
         .create_task_with_options("Normal", "desc", None, TaskCreationMode::Normal, None)
         .unwrap();
 
-    let result = env.api().promote_to_flow(&normal_task.id, None);
+    let result = env
+        .api()
+        .promote_to_flow(&normal_task.id, None, None, None, None);
 
     assert!(
         matches!(result, Err(WorkflowError::InvalidTransition(_))),
@@ -253,7 +259,9 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
     let env = TestEnv::with_workflow(one_stage_workflow());
 
     let chat = env.api().create_chat_task("Will be promoted").unwrap();
-    env.api().promote_to_flow(&chat.id, None).unwrap();
+    env.api()
+        .promote_to_flow(&chat.id, None, None, None, None)
+        .unwrap();
 
     // Advance to trigger setup (sync setup enabled).
     env.advance();

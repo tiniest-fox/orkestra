@@ -8,7 +8,9 @@ use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, Workflow
 use crate::workflow::runtime::TaskState;
 use orkestra_process::kill_process_tree;
 use orkestra_types::domain::SessionType;
+use orkestra_types::runtime::Artifact;
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
@@ -16,6 +18,9 @@ pub fn execute(
     iteration_service: &IterationService,
     task_id: &str,
     flow: Option<&str>,
+    starting_stage: Option<&str>,
+    title: Option<&str>,
+    artifact_content: Option<&str>,
 ) -> WorkflowResult<Task> {
     let mut task = store
         .get_task(task_id)?
@@ -38,9 +43,18 @@ pub fn execute(
         )));
     }
 
-    let first_stage = workflow
-        .first_stage(flow_name)
-        .ok_or_else(|| WorkflowError::InvalidTransition("No stages in flow".into()))?;
+    // Resolve target stage: starting_stage (validated) or first stage
+    let target_stage = if let Some(stage_name) = starting_stage {
+        workflow.stage(flow_name, stage_name).ok_or_else(|| {
+            WorkflowError::InvalidTransition(format!(
+                "Stage \"{stage_name}\" not found in flow \"{flow_name}\""
+            ))
+        })?
+    } else {
+        workflow
+            .first_stage(flow_name)
+            .ok_or_else(|| WorkflowError::InvalidTransition("No stages in flow".into()))?
+    };
 
     // Resolve base_branch
     let base_branch = match git_service {
@@ -71,11 +85,30 @@ pub fn execute(
     task.is_chat = false;
     task.flow = flow_name.to_string();
     task.base_branch = base_branch;
-    task.state = TaskState::awaiting_setup(&first_stage.name);
-    task.updated_at = now;
+    task.state = TaskState::awaiting_setup(&target_stage.name);
+    task.updated_at.clone_from(&now);
 
-    // Create initial iteration for the first stage
-    iteration_service.create_initial_iteration(&task.id, &first_stage.name)?;
+    // Update title if provided and non-empty
+    if let Some(new_title) = title {
+        let trimmed = new_title.trim();
+        if !trimmed.is_empty() {
+            task.title = trimmed.to_string();
+        }
+    }
+
+    // Store initial artifact if content provided
+    if let Some(content) = artifact_content {
+        let artifact = Artifact::new(
+            target_stage.artifact_name(),
+            content,
+            &target_stage.name,
+            &now,
+        );
+        task.artifacts.set(artifact);
+    }
+
+    // Create initial iteration for the target stage
+    iteration_service.create_initial_iteration(&task.id, &target_stage.name)?;
 
     store.save_task(&task)?;
 
@@ -84,7 +117,7 @@ pub fn execute(
         "Promoted chat task {} to flow '{}', stage '{}'",
         task.id,
         flow_name,
-        first_stage.name
+        target_stage.name
     );
 
     Ok(task)

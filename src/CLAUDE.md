@@ -539,6 +539,18 @@ const summary = toolSummary(entry, projectRoot);
 <div role="status" aria-label="Loading...">
 ```
 
+## Knip: Dead Export Removal
+
+**When you remove all production callers of a function, delete the function too — don't leave it with only test consumers.** Knip runs `--fix` on every gate cycle and strips the `export` keyword from any function with no production callers (test-only usage doesn't count). On the next gate run, the test file's import fails because the symbol is no longer exported.
+
+Working-tree-only fixes don't survive: Knip re-runs each gate cycle and re-strips the export. The fix must be committed — delete the dead function, its test file, and its `index.ts` re-export.
+
+```ts
+// If you refactor away all production callers of parseAssistantQuestions,
+// delete assistantQuestions.ts + assistantQuestions.test.ts + the re-export in index.ts.
+// Leaving it with test-only consumers causes Knip to strip `export` every gate run.
+```
+
 ## Loading State Patterns
 
 <!-- compound: lengthily-enchanted-fieldfare -->

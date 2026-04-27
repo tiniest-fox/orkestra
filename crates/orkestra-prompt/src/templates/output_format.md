@@ -14,15 +14,19 @@ Produce your output as valid JSON with a `type` field. Your output artifact is: 
 ```json
 {"content": "{\"type\": \"{{artifact_name}}\", ...}"}
 ```
-{{/if}}
 
 **If you cannot use the StructuredOutput tool**, you MUST wrap your JSON output in a fenced code block labeled `ork`:
+{{else}}
+You MUST wrap your JSON output in a fenced code block labeled `ork`:
+{{/if}}
 
 ```ork
 {"type": "{{artifact_name}}", "content": "Your content here"}
 ```
 
-Do NOT output raw JSON without either the StructuredOutput tool or an `ork` fence — it will be automatically rejected.
+Do NOT output raw JSON without {{#if show_direct_structured_output_hint}}either the StructuredOutput tool or {{/if}}an `ork` fence — it will be automatically rejected.
+
+**Output EXACTLY ONE block per response.** Do not include multiple fenced code blocks containing JSON with a `type` field. Your single output block must contain all required fields for your chosen output type.
 
 {{#if has_approval}}
 ### Approve or reject

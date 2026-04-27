@@ -8,8 +8,8 @@ import { useSessionLogs } from "../../hooks/useSessionLogs";
 import { useToast } from "../../providers/ToastProvider";
 import { useConnectionState, useTransport } from "../../transport";
 import type { AssistantSession, WorkflowQuestion, WorkflowTask } from "../../types/workflow";
-import { parseAssistantQuestions } from "../../utils/assistantQuestions";
 import { confirmAction } from "../../utils/confirmAction";
+import { type OrkBlock, parseOrkBlocks } from "../../utils/orkBlocks";
 import { relativeTime } from "../../utils/relativeTime";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { Button } from "../ui/Button";
@@ -19,6 +19,7 @@ import { HotkeyScope } from "../ui/HotkeyScope";
 import { ModalPanel } from "../ui/ModalPanel";
 import { ChatComposeArea } from "./ChatComposeArea";
 import { buildDisplayMessages, MessageList } from "./MessageList";
+import { ProposalCard } from "./ProposalCard";
 import { QuestionCard } from "./QuestionCard";
 
 // ============================================================================
@@ -62,6 +63,7 @@ export function AssistantDrawer({
 
   const [chatTask, setChatTask] = useState<WorkflowTask | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [acceptLoading, setAcceptLoading] = useState(false);
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -79,7 +81,28 @@ export function AssistantDrawer({
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
   const isAgentRunning = activeSession?.agent_pid != null;
 
-  const questions: WorkflowQuestion[] = useMemo(() => parseAssistantQuestions(logs), [logs]);
+  const orkBlocks = useMemo(() => parseOrkBlocks(logs), [logs]);
+
+  // Proposal takes precedence — suppress questions when a proposal is present.
+  const proposal = useMemo(
+    () =>
+      (orkBlocks.filter((b) => b.type === "proposal").pop() as
+        | Extract<OrkBlock, { type: "proposal" }>
+        | undefined) ?? null,
+    [orkBlocks],
+  );
+
+  const questions: WorkflowQuestion[] = useMemo(
+    () =>
+      proposal
+        ? []
+        : ((
+            orkBlocks.filter((b) => b.type === "questions").pop() as
+              | Extract<OrkBlock, { type: "questions" }>
+              | undefined
+          )?.questions ?? []),
+    [orkBlocks, proposal],
+  );
 
   // Reset answers when question count changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on question count change
@@ -145,6 +168,27 @@ export function AssistantDrawer({
       if (!isDisconnectError(err)) showError(String(err));
     }
   }, [taskId, transport, onClose, showError]);
+
+  // -- Accept agent proposal and promote to flow --
+  const handleAcceptProposal = useCallback(async () => {
+    if (!taskId || !proposal) return;
+    setAcceptLoading(true);
+    try {
+      await transport.call("promote_to_flow", {
+        task_id: taskId,
+        flow: proposal.flow || undefined,
+        starting_stage: proposal.stage || undefined,
+        title: proposal.title || undefined,
+        artifact_content: proposal.content || undefined,
+      });
+      setChatTask(null);
+      onClose();
+    } catch (err) {
+      if (!isDisconnectError(err)) showError(String(err));
+    } finally {
+      setAcceptLoading(false);
+    }
+  }, [taskId, proposal, transport, onClose, showError]);
 
   // -- Archive chat task --
   const handleArchive = useCallback(async () => {
@@ -407,9 +451,20 @@ export function AssistantDrawer({
     [questions],
   );
 
-  const lastAgentExtra = useMemo(
-    () =>
-      questions.length > 0 ? (
+  const lastAgentExtra = useMemo(() => {
+    if (proposal) {
+      return (
+        <div className="mt-4 pt-4 border-t border-border -mx-6 px-6">
+          <ProposalCard
+            proposal={proposal}
+            onAccept={handleAcceptProposal}
+            loading={acceptLoading}
+          />
+        </div>
+      );
+    }
+    if (questions.length > 0) {
+      return (
         <div className="mt-4 pt-4 border-t border-border -mx-6 px-6">
           {questions.map((q, qi) => (
             <QuestionCard
@@ -434,9 +489,19 @@ export function AssistantDrawer({
             </button>
           </div>
         </div>
-      ) : undefined,
-    [questions, answers, answerChangeHandlers, sending, handleSendAnswers],
-  );
+      );
+    }
+    return undefined;
+  }, [
+    proposal,
+    questions,
+    answers,
+    answerChangeHandlers,
+    sending,
+    handleSendAnswers,
+    handleAcceptProposal,
+    acceptLoading,
+  ]);
 
   return (
     <Drawer onClose={onClose} disableEscape={showSessionList || showDeleteConfirm}>

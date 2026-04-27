@@ -1001,6 +1001,7 @@ pub fn create_assistant_service() -> (
         Arc::clone(&store),
         test_provider_registry(),
         temp_dir.path().to_path_buf(),
+        orkestra_core::workflow::config::WorkflowConfig::new(vec![]),
     );
 
     (service, store, temp_dir)

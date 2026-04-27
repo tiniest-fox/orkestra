@@ -149,7 +149,17 @@ impl WorkflowApi {
     ///
     /// Stops any active assistant agent, sets `is_chat=false`, assigns the flow,
     /// resolves `base_branch`, enters `AwaitingSetup`, and creates the initial iteration.
-    pub fn promote_to_flow(&self, task_id: &str, flow: Option<&str>) -> WorkflowResult<Task> {
+    /// Optional `starting_stage` selects the initial stage (defaults to first stage).
+    /// Optional `title` overrides the task title if non-empty.
+    /// Optional `artifact_content` pre-populates the target stage's artifact.
+    pub fn promote_to_flow(
+        &self,
+        task_id: &str,
+        flow: Option<&str>,
+        starting_stage: Option<&str>,
+        title: Option<&str>,
+        artifact_content: Option<&str>,
+    ) -> WorkflowResult<Task> {
         human::promote_to_flow::execute(
             self.store.as_ref(),
             &self.workflow,
@@ -157,6 +167,9 @@ impl WorkflowApi {
             &self.iteration_service,
             task_id,
             flow,
+            starting_stage,
+            title,
+            artifact_content,
         )
     }
 
@@ -948,5 +961,112 @@ mod tests {
             }
             other => panic!("Expected Redirect trigger, got {other:?}"),
         }
+    }
+
+    // ========================================================================
+    // promote_to_flow tests
+    // ========================================================================
+
+    fn chat_workflow() -> WorkflowConfig {
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+    }
+
+    fn api_with_chat_task() -> (WorkflowApi, Task) {
+        let workflow = chat_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+        let task = api.create_chat_task("Chat task").unwrap();
+        (api, task)
+    }
+
+    #[test]
+    fn test_promote_to_flow_starting_stage_skips_first_stage() {
+        let (api, task) = api_with_chat_task();
+
+        let promoted = api
+            .promote_to_flow(&task.id, None, Some("work"), None, None)
+            .unwrap();
+
+        // Should enter AwaitingSetup at "work", not "planning"
+        assert!(matches!(promoted.state, TaskState::AwaitingSetup { stage } if stage == "work"));
+        assert!(!promoted.is_chat);
+    }
+
+    #[test]
+    fn test_promote_to_flow_invalid_starting_stage_returns_error() {
+        let (api, task) = api_with_chat_task();
+
+        let result = api.promote_to_flow(&task.id, None, Some("nonexistent"), None, None);
+
+        assert!(
+            matches!(result, Err(WorkflowError::InvalidTransition(_))),
+            "invalid starting_stage must return InvalidTransition, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_promote_to_flow_title_overrides_task_title() {
+        let (api, task) = api_with_chat_task();
+
+        let promoted = api
+            .promote_to_flow(&task.id, None, None, Some("New Title"), None)
+            .unwrap();
+
+        assert_eq!(promoted.title, "New Title");
+    }
+
+    #[test]
+    fn test_promote_to_flow_empty_title_does_not_override() {
+        let (api, task) = api_with_chat_task();
+        let original_title = task.title.clone();
+
+        let promoted = api
+            .promote_to_flow(&task.id, None, None, Some("   "), None)
+            .unwrap();
+
+        assert_eq!(promoted.title, original_title);
+    }
+
+    #[test]
+    fn test_promote_to_flow_artifact_content_stored_at_target_stage() {
+        let (api, task) = api_with_chat_task();
+
+        let promoted = api
+            .promote_to_flow(
+                &task.id,
+                None,
+                Some("work"),
+                None,
+                Some("## Summary\n\nContent"),
+            )
+            .unwrap();
+
+        // "work" stage artifact is named "summary"
+        let artifact = promoted.artifacts.get("summary");
+        assert!(artifact.is_some(), "artifact 'summary' should be set");
+        let artifact = artifact.unwrap();
+        assert_eq!(artifact.content, "## Summary\n\nContent");
+        assert_eq!(artifact.stage, "work");
+        assert_eq!(artifact.iteration, 1);
+    }
+
+    #[test]
+    fn test_promote_to_flow_no_new_params_is_unchanged() {
+        let (api, task) = api_with_chat_task();
+        let original_title = task.title.clone();
+
+        let promoted = api
+            .promote_to_flow(&task.id, None, None, None, None)
+            .unwrap();
+
+        // Defaults: first stage, title unchanged, no artifact
+        assert!(
+            matches!(promoted.state, TaskState::AwaitingSetup { stage } if stage == "planning")
+        );
+        assert_eq!(promoted.title, original_title);
+        assert!(promoted.artifacts.get("plan").is_none());
     }
 }

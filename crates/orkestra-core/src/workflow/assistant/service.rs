@@ -17,6 +17,7 @@ use std::thread;
 
 use crate::orkestra_debug;
 use crate::title::{generate_fallback_title, generate_title_sync};
+use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{AssistantSession, LogEntry, Task};
 use crate::workflow::execution::{AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -52,6 +53,7 @@ pub struct AssistantService {
     store: Arc<dyn WorkflowStore>,
     registry: Arc<ProviderRegistry>,
     project_root: PathBuf,
+    workflow: WorkflowConfig,
 }
 
 impl AssistantService {
@@ -60,11 +62,13 @@ impl AssistantService {
         store: Arc<dyn WorkflowStore>,
         registry: Arc<ProviderRegistry>,
         project_root: PathBuf,
+        workflow: WorkflowConfig,
     ) -> Self {
         Self {
             store,
             registry,
             project_root,
+            workflow,
         }
     }
 
@@ -125,7 +129,7 @@ impl AssistantService {
         }
 
         // Spawn the agent (or resume the session)
-        let system_prompt = Self::load_system_prompt();
+        let system_prompt = self.load_system_prompt();
         let spawn_result = self.spawn_agent_in(
             &session,
             message,
@@ -455,9 +459,19 @@ impl AssistantService {
             .replace("{task_description}", &task.description)
     }
 
-    /// Load the assistant system prompt template.
-    fn load_system_prompt() -> String {
-        crate::prompts::ASSISTANT_SYSTEM_PROMPT.to_string()
+    /// Load the assistant system prompt template with flow/stage names injected.
+    fn load_system_prompt(&self) -> String {
+        crate::prompts::ASSISTANT_SYSTEM_PROMPT
+            .replace("{available_flows}", &Self::build_flows_text(&self.workflow))
+    }
+
+    fn build_flows_text(workflow: &WorkflowConfig) -> String {
+        let mut lines = Vec::new();
+        for (flow_name, flow) in &workflow.flows {
+            let stages: Vec<&str> = flow.stages.iter().map(|s| s.name.as_str()).collect();
+            lines.push(format!("- **{}**: {}", flow_name, stages.join(" > ")));
+        }
+        lines.join("\n")
     }
 
     /// Spawn a background thread to read agent output and write log entries.
@@ -880,6 +894,7 @@ mod tests {
             Arc::clone(&store) as Arc<dyn crate::workflow::ports::WorkflowStore>,
             Arc::new(registry),
             std::env::temp_dir(), // project_root (not used in pure logic tests)
+            WorkflowConfig::new(vec![]),
         );
         (service, store)
     }
@@ -1480,6 +1495,7 @@ mod tests {
         store.save_assistant_session(&session).unwrap();
 
         // Spawn `cat` with piped stdio; drop stdin so cat exits immediately on EOF
+        #[allow(clippy::zombie_processes)]
         let mut child = Command::new("cat")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -1543,6 +1559,7 @@ mod tests {
             .expect("parser created");
 
         // Spawn `cat /dev/null` — exits immediately with no stdout content
+        #[allow(clippy::zombie_processes)]
         let mut child = Command::new("cat")
             .arg("/dev/null")
             .stdin(Stdio::null())

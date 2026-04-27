@@ -9,7 +9,7 @@ use crate::interactions::opencode::{
 };
 use crate::interactions::output::{extract_from_jsonl, extract_from_text_content};
 use crate::interface::AgentParser;
-use crate::types::ParsedUpdate;
+use crate::types::{ExtractionResult, ParsedUpdate};
 
 /// `OpenCode` agent parser.
 ///
@@ -186,31 +186,28 @@ impl AgentParser for OpenCodeParserService {
         classify_buffered_text::execute(&text)
     }
 
-    fn extract_output(&self, full_output: &str) -> Result<String, String> {
+    fn extract_output(&self, full_output: &str) -> ExtractionResult {
         let trimmed = full_output.trim();
 
         if trimmed.is_empty() {
-            return Err(
+            return ExtractionResult::Error(
                 "Agent produced no output (process may have exited unexpectedly)".to_string(),
             );
         }
 
         // Try JSONL scan first (same as Claude, for compatibility)
         if let Some(json_str) = extract_from_jsonl::execute(trimmed) {
-            return Ok(json_str);
+            return ExtractionResult::Found(json_str);
         }
 
         // Fall back to last_text (accumulated during streaming)
         if let Some(ref text) = self.last_text {
             if let Some(json_str) = extract_from_text_content::execute(text) {
-                return Ok(json_str);
+                return ExtractionResult::Found(json_str);
             }
         }
 
-        Err(format!(
-            "Failed to parse agent output: no structured output found in {} bytes of output",
-            trimmed.len()
-        ))
+        ExtractionResult::NotFound
     }
 }
 
@@ -790,11 +787,10 @@ mod tests {
 
         let output = r#"{"type":"step_finish"}"#;
         let result = parser.extract_output(output);
-        assert!(
-            result.is_ok(),
-            "extract_output should succeed via last_text: {result:?}"
-        );
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("extract_output should succeed via last_text: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "artifact");
     }
 
@@ -816,8 +812,10 @@ mod tests {
 {"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}"#;
 
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "Failed: {result:?}");
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Failed: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "artifact");
         assert_eq!(json["content"], "Found 1 file");
     }
@@ -835,26 +833,50 @@ mod tests {
 
         let output = r#"{"type":"text","part":{"text":"some stuff"}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "Failed: {result:?}");
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Failed: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
     }
 
     #[test]
-    fn extract_fallback_no_last_text_fails() {
+    fn extract_fallback_no_last_text_returns_not_found() {
         let parser = OpenCodeParserService::new();
         let output = r#"{"type":"step_start","part":{"type":"step-start"}}
 {"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_err());
+        assert!(
+            matches!(result, ExtractionResult::NotFound),
+            "Expected NotFound, got: {result:?}"
+        );
     }
 
     #[test]
     fn extract_empty_output() {
         let parser = OpenCodeParserService::new();
         let result = parser.extract_output("");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("no output"));
+        let ExtractionResult::Error(msg) = result else {
+            panic!("Expected Error, got: {result:?}");
+        };
+        assert!(msg.contains("no output"));
+    }
+
+    #[test]
+    fn extract_plain_text_returns_not_found() {
+        let mut parser = OpenCodeParserService::new();
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "Here is my analysis of the codebase."}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let result = parser.extract_output(&line);
+        assert!(
+            matches!(result, ExtractionResult::NotFound),
+            "Expected NotFound for prose-only output, got: {result:?}"
+        );
     }
 
     #[test]
@@ -870,8 +892,10 @@ mod tests {
 
         let output = r#"{"structured_output":{"type":"summary","content":"new"}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "Failed: {result:?}");
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Failed: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "new");
     }
@@ -964,8 +988,10 @@ mod tests {
 
         let output = r#"{"type":"step_finish","part":{"type":"step-finish"}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "Failed: {result:?}");
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Failed: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "done");
     }
@@ -992,8 +1018,10 @@ mod tests {
 
         let output = r#"{"type":"step_finish","part":{"type":"step-finish"}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "Failed: {result:?}");
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Failed: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["content"], "Final output");
     }
 }

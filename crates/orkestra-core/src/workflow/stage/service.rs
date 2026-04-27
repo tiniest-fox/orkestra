@@ -747,6 +747,9 @@ impl StageExecutionService {
                             Err(AgentCompletionError::MalformedOutput(error)) => {
                                 ExecutionResult::AgentMalformedOutput(error)
                             }
+                            Err(AgentCompletionError::PlainText(text)) => {
+                                ExecutionResult::AgentPlainText(text)
+                            }
                         };
                         completed.push(ExecutionComplete {
                             task_id: task_id.clone(),
@@ -1026,6 +1029,8 @@ pub enum ExecutionResult {
     AgentFailed(String),
     /// Agent produced output but it couldn't be parsed as structured output.
     AgentMalformedOutput(String),
+    /// Agent produced plain text with no structured output.
+    AgentPlainText(String),
     /// Gate script passed.
     GateSuccess,
     /// Gate script failed.

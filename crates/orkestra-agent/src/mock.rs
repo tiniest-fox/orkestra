@@ -28,6 +28,8 @@ pub struct MockAgentRunner {
     failure_with_activity: Mutex<HashMap<String, Vec<String>>>,
     /// Queue of malformed output errors: sends a `LogLine` then `MalformedOutput` error.
     malformed_outputs: Mutex<HashMap<String, Vec<String>>>,
+    /// Queue of plain text outputs: sends a `LogLine` then `PlainText` completion.
+    plain_text_outputs: Mutex<HashMap<String, Vec<String>>>,
     /// Next PID to assign.
     next_pid: AtomicU32,
     /// Recorded calls.
@@ -48,6 +50,7 @@ impl MockAgentRunner {
             activity_outputs: Mutex::new(HashMap::new()),
             failure_with_activity: Mutex::new(HashMap::new()),
             malformed_outputs: Mutex::new(HashMap::new()),
+            plain_text_outputs: Mutex::new(HashMap::new()),
             next_pid: AtomicU32::new(10000),
             calls: Mutex::new(Vec::new()),
         }
@@ -99,6 +102,19 @@ impl MockAgentRunner {
             .entry(task_id.to_string())
             .or_default()
             .push(error.into());
+    }
+
+    /// Queue a plain-text output for the next agent spawn.
+    ///
+    /// The mock sends a `LogLine` (to simulate activity) then emits
+    /// `RunEvent::Completed(Err(AgentCompletionError::PlainText(text)))`.
+    pub fn set_plain_text(&self, task_id: &str, text: impl Into<String>) {
+        self.plain_text_outputs
+            .lock()
+            .unwrap()
+            .entry(task_id.to_string())
+            .or_default()
+            .push(text.into());
     }
 
     /// Get recorded calls.
@@ -169,6 +185,7 @@ impl AgentRunner for MockAgentRunner {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     fn run_async(&self, config: RunConfig) -> Result<(u32, Receiver<RunEvent>), RunError> {
         // Record the call
         self.calls.lock().unwrap().push(config.clone());
@@ -182,7 +199,32 @@ impl AgentRunner for MockAgentRunner {
             .clone()
             .or_else(|| Self::extract_task_id(&config.prompt));
 
-        // Check malformed_outputs first (send LogLine then MalformedOutput error)
+        // Check plain_text_outputs first (send LogLine then PlainText completion)
+        let plain_text = task_id.as_ref().and_then(|id| {
+            self.plain_text_outputs
+                .lock()
+                .unwrap()
+                .get_mut(id)
+                .and_then(|queue| {
+                    if queue.is_empty() {
+                        None
+                    } else {
+                        Some(queue.remove(0))
+                    }
+                })
+        });
+
+        if let Some(text) = plain_text {
+            let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+                content: "Mock agent activity before plain text".to_string(),
+            }));
+            let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::PlainText(
+                text,
+            ))));
+            return Ok((pid, rx));
+        }
+
+        // Check malformed_outputs next (send LogLine then MalformedOutput error)
         let malformed_error = task_id.as_ref().and_then(|id| {
             self.malformed_outputs
                 .lock()

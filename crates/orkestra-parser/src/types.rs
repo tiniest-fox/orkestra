@@ -3,6 +3,21 @@
 use orkestra_types::domain::Question;
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// Extraction Result
+// ============================================================================
+
+/// Result of attempting to extract structured output from agent text.
+#[derive(Debug, Clone)]
+pub enum ExtractionResult {
+    /// Structured JSON was found.
+    Found(String),
+    /// No structured output detected — agent produced plain text.
+    NotFound,
+    /// Error during extraction (API error, empty output, etc.)
+    Error(String),
+}
+
 /// Deserialize an optional string, normalizing empty strings to `None`.
 ///
 /// Ensures `ResourceOutput.url` has the same invariant as `Resource.url`:

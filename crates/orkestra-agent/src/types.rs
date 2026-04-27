@@ -146,12 +146,16 @@ pub enum AgentCompletionError {
     Crash(String),
     /// Agent produced output but it couldn't be parsed as structured output.
     MalformedOutput(String),
+    /// Agent produced plain text with no structured output.
+    PlainText(String),
 }
 
 impl std::fmt::Display for AgentCompletionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Crash(msg) | Self::MalformedOutput(msg) => write!(f, "{msg}"),
+            Self::Crash(msg) | Self::MalformedOutput(msg) | Self::PlainText(msg) => {
+                write!(f, "{msg}")
+            }
         }
     }
 }
@@ -185,8 +189,12 @@ pub enum RunError {
     PromptWriteFailed(String),
     /// Failed to read from stdout.
     OutputReadFailed(String),
+    /// Agent produced output but no structured output could be extracted.
+    ExtractionFailed(String),
     /// Failed to parse the output.
     ParseFailed(String),
+    /// Agent produced plain text with no structured output.
+    PlainText(String),
 }
 
 impl std::fmt::Display for RunError {
@@ -195,7 +203,9 @@ impl std::fmt::Display for RunError {
             Self::SpawnFailed(msg) => write!(f, "Failed to spawn agent: {msg}"),
             Self::PromptWriteFailed(msg) => write!(f, "Failed to write prompt: {msg}"),
             Self::OutputReadFailed(msg) => write!(f, "Failed to read output: {msg}"),
+            Self::ExtractionFailed(msg) => write!(f, "No structured output found: {msg}"),
             Self::ParseFailed(msg) => write!(f, "Failed to parse output: {msg}"),
+            Self::PlainText(msg) => write!(f, "Agent produced plain text: {msg}"),
         }
     }
 }
@@ -253,6 +263,9 @@ mod tests {
 
         let err = RunError::PromptWriteFailed("test".into());
         assert!(err.to_string().contains("prompt"));
+
+        let err = RunError::ExtractionFailed("test".into());
+        assert!(err.to_string().contains("structured output"));
 
         let err = RunError::ParseFailed("test".into());
         assert!(err.to_string().contains("parse"));

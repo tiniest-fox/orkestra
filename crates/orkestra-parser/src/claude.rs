@@ -9,7 +9,7 @@ use orkestra_types::domain::LogEntry;
 use crate::interactions::claude::{parse_assistant_content, parse_tool_result_event};
 use crate::interactions::output::{check_api_error, extract_from_jsonl, extract_from_text_content};
 use crate::interface::AgentParser;
-use crate::types::ParsedUpdate;
+use crate::types::{ExtractionResult, ParsedUpdate};
 
 /// Claude Code agent parser.
 ///
@@ -174,11 +174,11 @@ impl AgentParser for ClaudeParserService {
         Vec::new()
     }
 
-    fn extract_output(&self, full_output: &str) -> Result<String, String> {
+    fn extract_output(&self, full_output: &str) -> ExtractionResult {
         let trimmed = full_output.trim();
 
         if trimmed.is_empty() {
-            return Err(
+            return ExtractionResult::Error(
                 "Agent produced no output (process may have exited unexpectedly)".to_string(),
             );
         }
@@ -186,13 +186,13 @@ impl AgentParser for ClaudeParserService {
         // Check for API error in the last line
         if let Some(last_line) = trimmed.lines().next_back() {
             if let Some(error_msg) = check_api_error::execute(last_line.trim()) {
-                return Err(format!("API error: {error_msg}"));
+                return ExtractionResult::Error(format!("API error: {error_msg}"));
             }
         }
 
         // Primary: JSONL extraction (StructuredOutput tool path)
         if let Some(json_str) = extract_from_jsonl::execute(trimmed) {
-            return Ok(json_str);
+            return ExtractionResult::Found(json_str);
         }
 
         // Fallback: text-based extraction strategies (strip fences, fenced JSON, ork fence).
@@ -202,14 +202,11 @@ impl AgentParser for ClaudeParserService {
         // on raw JSONL would not work because the fence newlines are JSON-escaped there.
         if let Some(ref text) = self.last_text {
             if let Some(json_str) = extract_from_text_content::execute(text) {
-                return Ok(json_str);
+                return ExtractionResult::Found(json_str);
             }
         }
 
-        Err(format!(
-            "Failed to parse agent output: no structured output found in {} bytes of output",
-            trimmed.len()
-        ))
+        ExtractionResult::NotFound
     }
 }
 
@@ -534,8 +531,10 @@ mod tests {
         let output = r#"{"type":"system","subtype":"init","session_id":"abc"}
 {"structured_output":{"type":"summary","content":"Work done"}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "Failed: {result:?}");
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Expected Found, got: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
     }
 
@@ -544,8 +543,10 @@ mod tests {
         let parser = ClaudeParserService::new();
         let output = r#"{"type":"result","structured_output":{"content":"{\"type\":\"questions\",\"questions\":[{\"question\":\"What?\"}]}","type":"plan"}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "Failed: {result:?}");
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Expected Found, got: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "questions");
     }
 
@@ -554,16 +555,32 @@ mod tests {
         let parser = ClaudeParserService::new();
         let output = r#"{"type":"assistant","error":"invalid_request","message":{"content":[{"type":"text","text":"Rate limit exceeded"}]}}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Rate limit exceeded"));
+        let ExtractionResult::Error(msg) = result else {
+            panic!("Expected Error, got: {result:?}");
+        };
+        assert!(msg.contains("Rate limit exceeded"));
     }
 
     #[test]
     fn extract_empty_output() {
         let parser = ClaudeParserService::new();
         let result = parser.extract_output("");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("no output"));
+        let ExtractionResult::Error(msg) = result else {
+            panic!("Expected Error, got: {result:?}");
+        };
+        assert!(msg.contains("no output"));
+    }
+
+    #[test]
+    fn extract_plain_text_returns_not_found() {
+        let mut parser = ClaudeParserService::new();
+        parser.parse_line(&assistant_text("Here is my analysis of the code."));
+        let output = assistant_text("Here is my analysis of the code.");
+        let result = parser.extract_output(&output);
+        assert!(
+            matches!(result, ExtractionResult::NotFound),
+            "Expected NotFound for prose-only output, got: {result:?}"
+        );
     }
 
     #[test]
@@ -581,11 +598,10 @@ mod tests {
 
         // extract_output should find the ork fence in accumulated last_text
         let result = parser.extract_output(&jsonl_line);
-        assert!(
-            result.is_ok(),
-            "Expected ork fence extraction to succeed: {result:?}"
-        );
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Expected ork fence extraction to succeed: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "done via ork fence");
     }
@@ -600,11 +616,10 @@ mod tests {
         parser.parse_line(&jsonl_line);
 
         let result = parser.extract_output(&jsonl_line);
-        assert!(
-            result.is_ok(),
-            "Expected markdown-fenced JSON extraction to succeed: {result:?}"
-        );
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Expected markdown-fenced JSON extraction to succeed: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "via markdown fence");
     }
@@ -626,11 +641,10 @@ mod tests {
             assistant_text("```ork\n{\"type\":\"artifact\",\"content\":\"result\"}\n```"),
         );
         let result = parser.extract_output(&output);
-        assert!(
-            result.is_ok(),
-            "Expected ork fence extraction from multi-message: {result:?}"
-        );
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let ExtractionResult::Found(json_str) = result else {
+            panic!("Expected ork fence extraction from multi-message: {result:?}");
+        };
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "artifact");
     }
 }

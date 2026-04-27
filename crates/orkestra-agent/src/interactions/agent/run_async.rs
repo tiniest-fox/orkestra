@@ -6,7 +6,7 @@ use std::thread;
 
 use orkestra_parser::interactions::output::check_api_error;
 use orkestra_parser::interactions::stream::parse_resume_marker;
-use orkestra_parser::{parse_completion, AgentParser, StageOutput};
+use orkestra_parser::AgentParser;
 use orkestra_process::ProcessHandle;
 use orkestra_types::domain::LogEntry;
 
@@ -14,6 +14,7 @@ use crate::orkestra_debug;
 use crate::registry::ProviderRegistry;
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
 
+use super::classify_output::{self, OutputClassification};
 use super::run_sync::{collect_stderr, stderr_error_message};
 
 /// Run an agent asynchronously with events.
@@ -231,26 +232,137 @@ fn send_completion(
         return;
     }
 
-    let result = match schema {
-        Some(s) => parse_completion(parser, full_output, s),
-        None => parser.extract_output(full_output).and_then(|json_str| {
-            StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string())
-        }),
+    let result = match classify_output::execute(parser, full_output, schema) {
+        OutputClassification::Success(output) => Ok(output),
+        OutputClassification::ExtractionFailed(e) => {
+            orkestra_debug!(
+                "runner",
+                "extraction failed — raw output ({} bytes):\n{}",
+                full_output.len(),
+                full_output
+            );
+            Err(AgentCompletionError::Crash(e))
+        }
+        OutputClassification::PlainText(text) => {
+            orkestra_debug!(
+                "runner",
+                "plain text output — no structured output attempted"
+            );
+            Err(AgentCompletionError::PlainText(text))
+        }
+        OutputClassification::ParseFailed(e) => {
+            orkestra_debug!(
+                "runner",
+                "parse failed — raw output ({} bytes):\n{}",
+                full_output.len(),
+                full_output
+            );
+            Err(AgentCompletionError::MalformedOutput(e))
+        }
     };
-
-    let result = result.map_err(|e| {
-        orkestra_debug!(
-            "runner",
-            "parse failed — raw output ({} bytes):\n{}",
-            full_output.len(),
-            full_output
-        );
-        AgentCompletionError::MalformedOutput(e)
-    });
 
     orkestra_debug!("runner", "parse result: {:?}", result.is_ok());
 
     if tx.send(RunEvent::Completed(result)).is_err() {
         orkestra_debug!("runner", "Channel closed before completion could be sent");
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use orkestra_parser::ExtractionResult;
+
+    use super::super::test_support::MockParser;
+    use super::*;
+
+    #[test]
+    fn extraction_error_produces_crash_not_malformed_output() {
+        let (tx, rx) = mpsc::channel();
+        let parser = MockParser {
+            extract_result: ExtractionResult::Error("API error: rate limit".to_string()),
+        };
+        let schema = serde_json::json!({"type": "object", "properties": {"type": {"type": "string"}}, "required": ["type"]});
+
+        send_completion(&tx, &parser, Some(&schema), "just prose output", 5, None);
+
+        let event = rx.recv().unwrap();
+        match event {
+            RunEvent::Completed(Err(AgentCompletionError::Crash(_))) => {}
+            other => panic!("expected Crash, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plain_text_output_produces_plain_text_error() {
+        let (tx, rx) = mpsc::channel();
+        let parser = MockParser {
+            extract_result: ExtractionResult::NotFound,
+        };
+        let schema = serde_json::json!({"type": "object"});
+
+        send_completion(&tx, &parser, Some(&schema), "Here is my analysis.", 5, None);
+
+        let event = rx.recv().unwrap();
+        match event {
+            RunEvent::Completed(Err(AgentCompletionError::PlainText(_))) => {}
+            other => panic!("expected PlainText, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_failure_after_extraction_produces_malformed_output() {
+        let (tx, rx) = mpsc::channel();
+        let parser = MockParser {
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "unknown_type_not_in_schema"}"#.to_string(),
+            ),
+        };
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["summary"]}
+            },
+            "required": ["type"]
+        });
+
+        send_completion(&tx, &parser, Some(&schema), "some output", 5, None);
+
+        let event = rx.recv().unwrap();
+        match event {
+            RunEvent::Completed(Err(AgentCompletionError::MalformedOutput(_))) => {}
+            other => panic!("expected MalformedOutput, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn successful_extraction_and_parse_produces_completed_ok() {
+        let (tx, rx) = mpsc::channel();
+        let parser = MockParser {
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "summary", "content": "done"}"#.to_string(),
+            ),
+        };
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["summary"]},
+                "content": {"type": "string"}
+            },
+            "required": ["type"]
+        });
+
+        send_completion(&tx, &parser, Some(&schema), "some output", 5, None);
+
+        let event = rx.recv().unwrap();
+        assert!(
+            matches!(event, RunEvent::Completed(Ok(_))),
+            "expected Ok completion, got: {event:?}"
+        );
     }
 }

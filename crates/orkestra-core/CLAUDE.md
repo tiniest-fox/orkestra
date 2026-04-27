@@ -187,6 +187,8 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 | `None`            | Active iteration has `stage_session_id` set | No — crash recovery |
 | `None`            | Active iteration has `stage_session_id = None` OR no active iteration | Yes — clean re-entry |
 
+**`AgentPlainText` parks without a new iteration or trigger.** When an agent produces prose with no structured output (`ExtractionResult::NotFound`), `dispatch_completion` calls `park_plain_text`, which moves the task directly to `AwaitingApproval` — current iteration stays open with `outcome = None`. No new iteration is created, no corrective prompt is sent. The previous artifact remains visible in the UI. The human approves or rejects as normal. Activity flag is still persisted so any future respawn resumes the existing session rather than starting fresh.
+
 **`MalformedOutput` retry path is `run_async`-only.** Only `AgentCompletionError::MalformedOutput` (from `run_async`) feeds into the `IterationTrigger::MalformedOutput` → retry loop. `run_sync`'s `ParseFailed` does not. If `run_sync` is ever wired into the orchestrator, parse failures would need a separate retry path.
 
 **Why `stage_session_id` and not just `ended_at IS NULL`:** `finalize_advancement` pre-creates the next stage's iteration with `stage_session_id = None` before the spawn. `on_spawn_starting` links it to the session when the agent actually runs. So a crash-recovery iteration (agent was mid-run) has `stage_session_id IS NOT NULL`; a clean re-entry iteration (pre-created, agent hasn't run yet) has `stage_session_id IS NULL`.

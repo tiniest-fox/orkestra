@@ -65,6 +65,11 @@ impl WorkflowApi {
         agent::fail_execution::execute(self.store.as_ref(), &self.iteration_service, task_id, error)
     }
 
+    /// Park a task at `AwaitingApproval` when the agent produced plain text with no structured output.
+    pub(crate) fn park_plain_text(&self, task_id: &str) -> WorkflowResult<Task> {
+        agent::park_plain_text::execute(self.store.as_ref(), task_id)
+    }
+
     /// Auto-retry malformed agent output. Re-queues with corrective prompt, up to budget.
     pub(crate) fn auto_retry_malformed_output(
         &self,

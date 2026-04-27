@@ -1,6 +1,6 @@
 // Assistant chat drawer — project-level and task-scoped AI chat with session management.
 
-import { History, Plus } from "lucide-react";
+import { Archive, History, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOptimisticMessage } from "../../hooks/useOptimisticMessage";
 import { usePolling } from "../../hooks/usePolling";
@@ -9,12 +9,14 @@ import { useToast } from "../../providers/ToastProvider";
 import { useConnectionState, useTransport } from "../../transport";
 import type { AssistantSession, WorkflowQuestion, WorkflowTask } from "../../types/workflow";
 import { parseAssistantQuestions } from "../../utils/assistantQuestions";
+import { confirmAction } from "../../utils/confirmAction";
 import { relativeTime } from "../../utils/relativeTime";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
+import { ModalPanel } from "../ui/ModalPanel";
 import { ChatComposeArea } from "./ChatComposeArea";
 import { buildDisplayMessages, MessageList } from "./MessageList";
 import { QuestionCard } from "./QuestionCard";
@@ -25,6 +27,8 @@ import { QuestionCard } from "./QuestionCard";
 
 const PLUS_ICON = <Plus />;
 const HISTORY_ICON = <History />;
+const ARCHIVE_ICON = <Archive />;
+const TRASH_ICON = <Trash2 />;
 
 interface AssistantDrawerProps {
   onClose: () => void;
@@ -57,6 +61,7 @@ export function AssistantDrawer({
   const [answers, setAnswers] = useState<string[]>([]);
 
   const [chatTask, setChatTask] = useState<WorkflowTask | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -135,6 +140,18 @@ export function AssistantDrawer({
     try {
       await transport.call("promote_to_flow", { task_id: taskId });
       setChatTask(null);
+      onClose();
+    } catch (err) {
+      if (!isDisconnectError(err)) showError(String(err));
+    }
+  }, [taskId, transport, onClose, showError]);
+
+  // -- Archive chat task --
+  const handleArchive = useCallback(async () => {
+    if (!taskId) return;
+    if (!(await confirmAction("Archive this Trak?"))) return;
+    try {
+      await transport.call("archive", { task_id: taskId });
       onClose();
     } catch (err) {
       if (!isDisconnectError(err)) showError(String(err));
@@ -321,27 +338,43 @@ export function AssistantDrawer({
 
   const headerActions = useMemo<DrawerAction[]>(
     () =>
-      taskId
-        ? []
-        : [
-            ...(activeSessionId !== null
-              ? [
-                  {
-                    icon: PLUS_ICON,
-                    label: "New session",
-                    shortLabel: "New",
-                    onClick: handleNewSession,
-                  },
-                ]
-              : []),
+      chatTask
+        ? [
             {
-              icon: HISTORY_ICON,
-              label: "Sessions",
-              shortLabel: "Sessions",
-              onClick: () => setShowSessionList(true),
+              icon: ARCHIVE_ICON,
+              label: "Archive",
+              shortLabel: "Archive",
+              onClick: handleArchive,
             },
-          ],
-    [taskId, activeSessionId, handleNewSession],
+            {
+              icon: TRASH_ICON,
+              label: "Delete Trak",
+              shortLabel: "Delete",
+              onClick: () => setShowDeleteConfirm(true),
+              destructive: true,
+            },
+          ]
+        : taskId
+          ? []
+          : [
+              ...(activeSessionId !== null
+                ? [
+                    {
+                      icon: PLUS_ICON,
+                      label: "New session",
+                      shortLabel: "New",
+                      onClick: handleNewSession,
+                    },
+                  ]
+                : []),
+              {
+                icon: HISTORY_ICON,
+                label: "Sessions",
+                shortLabel: "Sessions",
+                onClick: () => setShowSessionList(true),
+              },
+            ],
+    [chatTask, taskId, activeSessionId, handleNewSession, handleArchive],
   );
 
   const titleNode = useMemo(
@@ -406,7 +439,7 @@ export function AssistantDrawer({
   );
 
   return (
-    <Drawer onClose={onClose} disableEscape={showSessionList}>
+    <Drawer onClose={onClose} disableEscape={showSessionList || showDeleteConfirm}>
       <HotkeyScope active>
         <div className="flex flex-col h-full relative overflow-hidden">
           <DrawerHeader
@@ -453,55 +486,93 @@ export function AssistantDrawer({
             className="shrink-0 px-6 pb-4 bg-canvas"
           />
 
-          {/* Session List Overlay — slides in from right (project mode only) */}
-          <div
-            className={[
-              "absolute inset-0 bg-surface z-20 flex flex-col transition-transform duration-[160ms] ease-out",
-              !taskId && showSessionList ? "translate-x-0" : "translate-x-full",
-            ].join(" ")}
+          {/* Delete confirmation modal */}
+          <ModalPanel
+            isOpen={showDeleteConfirm}
+            onClose={() => setShowDeleteConfirm(false)}
+            className="inset-0 m-auto h-fit w-80"
           >
-            <DrawerHeader
-              title="Sessions"
-              onClose={onClose}
-              onBack={() => setShowSessionList(false)}
-              actions={[
-                {
-                  icon: <Plus />,
-                  label: "New session",
-                  shortLabel: "New",
-                  onClick: handleNewSession,
-                },
-              ]}
-            />
-            <div className="flex-1 overflow-y-auto">
-              {sessions.length === 0 && (
-                <div className="p-4 font-mono text-[11px] text-text-quaternary">
-                  No sessions yet.
-                </div>
-              )}
-              {sessions.map((session) => (
-                <button
-                  type="button"
-                  key={session.id}
-                  onClick={() => handleSwitchSession(session.id)}
-                  onKeyDown={() => {}}
-                  className={[
-                    "w-full text-left px-4 py-2.5 border-b border-border border-l-2 transition-colors",
-                    session.id === activeSessionId
-                      ? "border-l-accent bg-accent-soft"
-                      : "border-l-transparent hover:bg-canvas",
-                  ].join(" ")}
+            <div className="bg-canvas border border-border rounded-panel shadow-lg p-5 flex flex-col gap-4">
+              <div>
+                <p className="text-forge-body-md font-semibold text-text-primary">Delete Trak?</p>
+                <p className="mt-1 text-forge-body text-text-tertiary line-clamp-2">
+                  {chatTask?.title || chatTask?.description || "This chat"}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    transport
+                      .call("delete_task", { task_id: taskId })
+                      .then(onClose)
+                      .catch((err) => {
+                        if (!isDisconnectError(err)) showError(String(err));
+                      });
+                  }}
                 >
-                  <div className="font-sans text-[12px] font-medium text-text-primary truncate">
-                    {session.title ?? "Untitled session"}
-                  </div>
-                  <div className="font-mono text-[10px] text-text-tertiary mt-0.5">
-                    {relativeTime(session.updated_at)}
-                  </div>
-                </button>
-              ))}
+                  Delete
+                </Button>
+              </div>
             </div>
-          </div>
+          </ModalPanel>
+
+          {/* Session List Overlay — slides in from right (project mode only) */}
+          {!taskId && (
+            <div
+              className={[
+                "absolute inset-0 bg-surface z-20 flex flex-col transition-transform duration-[160ms] ease-out",
+                showSessionList ? "translate-x-0" : "translate-x-full",
+              ].join(" ")}
+            >
+              <DrawerHeader
+                title="Sessions"
+                onClose={onClose}
+                onBack={() => setShowSessionList(false)}
+                actions={[
+                  {
+                    icon: <Plus />,
+                    label: "New session",
+                    shortLabel: "New",
+                    onClick: handleNewSession,
+                  },
+                ]}
+              />
+              <div className="flex-1 overflow-y-auto">
+                {sessions.length === 0 && (
+                  <div className="p-4 font-mono text-[11px] text-text-quaternary">
+                    No sessions yet.
+                  </div>
+                )}
+                {sessions.map((session) => (
+                  <button
+                    type="button"
+                    key={session.id}
+                    onClick={() => handleSwitchSession(session.id)}
+                    onKeyDown={() => {}}
+                    className={[
+                      "w-full text-left px-4 py-2.5 border-b border-border border-l-2 transition-colors",
+                      session.id === activeSessionId
+                        ? "border-l-accent bg-accent-soft"
+                        : "border-l-transparent hover:bg-canvas",
+                    ].join(" ")}
+                  >
+                    <div className="font-sans text-[12px] font-medium text-text-primary truncate">
+                      {session.title ?? "Untitled session"}
+                    </div>
+                    <div className="font-mono text-[10px] text-text-tertiary mt-0.5">
+                      {relativeTime(session.updated_at)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </HotkeyScope>
     </Drawer>

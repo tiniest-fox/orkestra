@@ -74,3 +74,39 @@ export const NeedsReview: Story = {
     onApprove: () => {},
   },
 };
+
+export const ChatTrak: Story = {
+  args: {
+    task: createMockWorkflowTaskView({
+      title: "How do I set up rate limiting?",
+      is_chat: true,
+      state: { type: "queued", stage: "planning" },
+    }),
+    config: createMockWorkflowConfig(),
+    isFocused: false,
+    onMouseEnter: () => {},
+    onReview: () => {},
+    onAnswer: () => {},
+    onApprove: () => {},
+    onArchive: () => {},
+    onDelete: () => {},
+  },
+};
+
+export const ChatTrakFocused: Story = {
+  args: {
+    task: createMockWorkflowTaskView({
+      title: "How do I set up rate limiting?",
+      is_chat: true,
+      state: { type: "queued", stage: "planning" },
+    }),
+    config: createMockWorkflowConfig(),
+    isFocused: true,
+    onMouseEnter: () => {},
+    onReview: () => {},
+    onAnswer: () => {},
+    onApprove: () => {},
+    onArchive: () => {},
+    onDelete: () => {},
+  },
+};

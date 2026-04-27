@@ -400,6 +400,12 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                     if (!isDisconnectError(err)) showError(String(err));
                   });
                 }}
+                onDelete={async (taskId) => {
+                  if (!(await confirmAction("Delete this Trak? This cannot be undone."))) return;
+                  transport.call("delete_task", { task_id: taskId }).catch((err) => {
+                    if (!isDisconnectError(err)) showError(String(err));
+                  });
+                }}
                 onRowClick={onStripRowClick}
               />
             ))}

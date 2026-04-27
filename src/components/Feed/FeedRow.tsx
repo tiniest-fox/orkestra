@@ -29,6 +29,7 @@ interface FeedRowProps {
   onMerge?: () => void;
   onOpenPr?: () => void;
   onArchive?: () => void;
+  onDelete?: () => void;
   onClick?: () => void;
   /** Replaces the default HotkeyScope+FeedRowActions last column when provided. */
   actionsSlot?: React.ReactNode;
@@ -50,6 +51,7 @@ export function FeedRow({
   onMerge,
   onOpenPr,
   onArchive,
+  onDelete,
   onClick,
   actionsSlot,
 }: FeedRowProps) {
@@ -71,6 +73,7 @@ export function FeedRow({
   const { derived } = task;
   const showActionsRow =
     actionsSlot !== undefined ||
+    task.is_chat ||
     derived.is_failed ||
     derived.has_questions ||
     derived.needs_review ||
@@ -137,6 +140,7 @@ export function FeedRow({
                     onMerge={onMerge ?? (() => {})}
                     onOpenPr={onOpenPr ?? (() => {})}
                     onArchive={onArchive ?? (() => {})}
+                    onDelete={onDelete ?? (() => {})}
                     prStatus={prStatus}
                     fullWidth
                   />
@@ -202,6 +206,7 @@ export function FeedRow({
               onMerge={onMerge ?? (() => {})}
               onOpenPr={onOpenPr ?? (() => {})}
               onArchive={onArchive ?? (() => {})}
+              onDelete={onDelete ?? (() => {})}
               prStatus={prStatus}
             />
           </div>

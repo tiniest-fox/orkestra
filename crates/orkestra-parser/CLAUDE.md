@@ -24,7 +24,8 @@ src/
     │   ├── check_api_error.rs           # Detect API errors in JSONL
     │   ├── extract_fenced_json.rs       # Extract JSON from markdown fences
     │   ├── extract_from_jsonl.rs        # Scan JSONL for structured_output
-    │   ├── extract_from_text_content.rs # Shared text-based extraction cascade (ork fence → fenced JSON → raw JSON); requires "type" field
+    │   ├── extract_from_text_content.rs # Shared text-based extraction cascade (ork fence → fenced JSON → raw JSON); returns TextExtractionResult (Found/Malformed)
+    │   ├── extract_ork_fence.rs         # Pull content from ```ork fences; "last wins" semantics; shared ork_fence_positions() helper
     │   ├── parse_stage_output.rs        # Schema validation + type interpretation
     │   └── strip_markdown_fences.rs     # Remove ```json fences
     └── stream/          # Shared stream parsing

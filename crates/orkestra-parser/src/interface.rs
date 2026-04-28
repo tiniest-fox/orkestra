@@ -24,8 +24,10 @@ pub trait AgentParser: Send {
     /// Extract the structured output JSON string from the provider's raw output.
     ///
     /// Returns `Found(json_str)` when structured output is located, `NotFound` when
-    /// the agent produced plain text with no structured output, or `Error(msg)` for
-    /// API errors and other extraction failures.
+    /// the agent produced plain text with no structured output, `Error(msg)` for
+    /// API errors and other extraction failures, or `Malformed(msg)` when the output
+    /// is structurally invalid (e.g. multiple ork-fenced blocks) — triggers a
+    /// corrective retry via `MalformedOutput`.
     /// Does NOT interpret the type — that's `parse_stage_output::execute()`'s job.
     fn extract_output(&self, full_output: &str) -> ExtractionResult;
 }

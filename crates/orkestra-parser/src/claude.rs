@@ -7,9 +7,7 @@ use std::collections::{HashMap, HashSet};
 use orkestra_types::domain::LogEntry;
 
 use crate::interactions::claude::{parse_assistant_content, parse_tool_result_event};
-use crate::interactions::output::{
-    check_api_error, extract_from_jsonl, extract_from_text_content, extract_ork_fence,
-};
+use crate::interactions::output::{check_api_error, extract_from_jsonl, extract_from_text_content};
 use crate::interface::AgentParser;
 use crate::types::{ExtractionResult, ParsedUpdate};
 
@@ -203,13 +201,14 @@ impl AgentParser for ClaudeParserService {
         // unescapes JSON string escapes when deserializing). Running these strategies
         // on raw JSONL would not work because the fence newlines are JSON-escaped there.
         if let Some(ref text) = self.last_text {
-            if let Some(json_str) = extract_from_text_content::execute(text) {
-                if extract_ork_fence::count_ork_fences(text) > 1 {
-                    return ExtractionResult::Malformed(
-                        "Multiple ork-fenced blocks detected. Output exactly one ork-fenced JSON block per response.".to_string(),
-                    );
+            match extract_from_text_content::execute(text) {
+                Some(extract_from_text_content::TextExtractionResult::Found(json_str)) => {
+                    return ExtractionResult::Found(json_str);
                 }
-                return ExtractionResult::Found(json_str);
+                Some(extract_from_text_content::TextExtractionResult::Malformed(msg)) => {
+                    return ExtractionResult::Malformed(msg);
+                }
+                None => {}
             }
         }
 

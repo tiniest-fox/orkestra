@@ -2,13 +2,12 @@
 
 use super::extract_fenced_json::fence_close_positions;
 
-/// Count the number of valid ork fence openings in `text`.
+/// Collect the absolute positions of all valid ork fence openings in `text`.
 ///
-/// Uses the same validation as `execute()`: the character after "ork"
-/// must be whitespace or end-of-string. Rejects false matches like
-/// `orkestra` or `ork-json`.
-pub fn count_ork_fences(text: &str) -> usize {
-    let mut count = 0;
+/// A valid opening is ` ```ork ` followed by whitespace or end-of-string.
+/// Rejects false matches like ` ```orkestra ` or ` ```ork-json `.
+fn ork_fence_positions(text: &str) -> Vec<usize> {
+    let mut positions = Vec::new();
     let mut search_from = 0;
     while search_from < text.len() {
         let Some(pos) = text[search_from..].find("```ork") else {
@@ -21,11 +20,16 @@ pub fn count_ork_fences(text: &str) -> usize {
             Some(c) => c.is_whitespace(),
         };
         if valid {
-            count += 1;
+            positions.push(abs_pos);
         }
         search_from = abs_pos + 1;
     }
-    count
+    positions
+}
+
+/// Count the number of valid ork fence openings in `text`.
+pub fn count_ork_fences(text: &str) -> usize {
+    ork_fence_positions(text).len()
 }
 
 /// Extract structured JSON from an ork fence in the given text.
@@ -46,27 +50,11 @@ pub fn count_ork_fences(text: &str) -> usize {
 /// invalid, so the first valid candidate (furthest first) is the real fence end.
 pub fn execute(text: &str) -> Option<String> {
     let mut last_json: Option<String> = None;
-    let mut search_from = 0;
 
-    while search_from < text.len() {
-        // Find the next opening ork fence
-        let Some(fence_start) = text[search_from..].find("```ork") else {
-            break;
-        };
-        let abs_fence_start = search_from + fence_start;
-
-        // Find the end of the opening fence line (skip optional trailing text like ```ork json)
+    for abs_fence_start in ork_fence_positions(text) {
         let after_tag = abs_fence_start + "```ork".len();
 
-        // Reject matches like ```orkestra or ```ork-json: the character after "ork"
-        // must be whitespace, newline, or end-of-string.
-        if let Some(next_char) = text[after_tag..].chars().next() {
-            if !next_char.is_whitespace() {
-                // Not a valid ork fence — skip past this match and keep searching
-                search_from = abs_fence_start + 1;
-                continue;
-            }
-        }
+        // Find the end of the opening fence line (skip optional trailing text like ```ork json)
         let Some(newline_pos) = text[after_tag..].find('\n') else {
             break; // No newline after opening fence — malformed
         };
@@ -81,20 +69,13 @@ pub fn execute(text: &str) -> Option<String> {
             break; // No closing fence at all
         }
 
-        let mut matched_offset: Option<usize> = None;
-
         for &offset in candidates.iter().rev() {
             let content = text[content_start..content_start + offset].trim();
             if !content.is_empty() && serde_json::from_str::<serde_json::Value>(content).is_ok() {
                 last_json = Some(content.to_string());
-                matched_offset = Some(offset);
                 break;
             }
         }
-
-        // Advance past the matched closing fence, or past all candidates if no match
-        let advance_offset = matched_offset.unwrap_or(*candidates.last().unwrap());
-        search_from = content_start + advance_offset + "\n```".len();
     }
 
     last_json

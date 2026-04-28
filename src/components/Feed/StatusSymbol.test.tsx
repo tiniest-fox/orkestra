@@ -20,28 +20,60 @@ function makePrStatus(state: PrStatus["state"]): PrStatus {
 }
 
 describe("StatusSymbol — chat task", () => {
-  it("renders ◉ with accent colors and pulse when is_chat and assistant_active", () => {
+  it("renders * with animate-spin-bounce and accent colors when is_chat and assistant_active", () => {
     const task = createMockWorkflowTaskView({
       is_chat: true,
       derived: { assistant_active: true },
     });
     render(<StatusSymbol task={task} />);
-    const symbol = screen.getByText("◉");
+    const symbol = screen.getByText("*");
     expect(symbol).toBeInTheDocument();
     expect(symbol).toHaveClass("text-accent");
-    expect(symbol.className).toContain("forge-pulse-opacity");
+    expect(symbol).toHaveClass("animate-spin-bounce");
   });
 
-  it("renders ◉ with tertiary colors and no pulse when is_chat and assistant not active", () => {
+  it("renders ⦿ with purple colors when is_chat and needs_review", () => {
     const task = createMockWorkflowTaskView({
       is_chat: true,
-      derived: { assistant_active: false },
+      derived: { needs_review: true },
+    });
+    render(<StatusSymbol task={task} />);
+    const symbol = screen.getByText("⦿");
+    expect(symbol).toBeInTheDocument();
+    expect(symbol).toHaveClass("text-status-purple");
+  });
+
+  it("renders ? with info colors when is_chat and has_questions", () => {
+    const task = createMockWorkflowTaskView({
+      is_chat: true,
+      derived: { has_questions: true },
+    });
+    render(<StatusSymbol task={task} />);
+    const symbol = screen.getByText("?");
+    expect(symbol).toBeInTheDocument();
+    expect(symbol).toHaveClass("text-status-info");
+  });
+
+  it("renders ◉ with quaternary colors when is_chat and idle", () => {
+    const task = createMockWorkflowTaskView({
+      is_chat: true,
+      derived: { assistant_active: false, is_preparing: false },
     });
     render(<StatusSymbol task={task} />);
     const symbol = screen.getByText("◉");
     expect(symbol).toBeInTheDocument();
-    expect(symbol).toHaveClass("text-text-tertiary");
-    expect(symbol.className).not.toContain("forge-pulse-opacity");
+    expect(symbol).toHaveClass("text-text-quaternary");
+  });
+
+  it("renders ! with error colors when is_chat and is_failed", () => {
+    const task = createMockWorkflowTaskView({
+      is_chat: true,
+      derived: { is_failed: true },
+    });
+    render(<StatusSymbol task={task} />);
+    const symbol = screen.getByText("!");
+    expect(symbol).toBeInTheDocument();
+    expect(symbol).toHaveClass("text-status-error");
   });
 });
 

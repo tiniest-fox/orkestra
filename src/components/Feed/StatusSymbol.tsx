@@ -28,21 +28,6 @@ function resolveColors(
   const { derived, state } = task;
   let extraClass = "";
 
-  if (task.is_chat) {
-    if (derived.assistant_active) {
-      return {
-        colors: { bg: "bg-accent/12", icon: "text-accent" },
-        symbol: "◉",
-        extraClass: "animate-[forge-pulse-opacity_2s_ease-in-out_infinite]",
-      };
-    }
-    return {
-      colors: { bg: "bg-transparent", icon: "text-text-tertiary" },
-      symbol: "◉",
-      extraClass: "",
-    };
-  }
-
   if (derived.is_waiting_on_children && derived.subtask_progress) {
     const p = derived.subtask_progress;
     if (p.failed > 0 || p.blocked > 0) {
@@ -104,7 +89,7 @@ function resolveColors(
   if (derived.is_interrupted) {
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "\u2016", extraClass };
   }
-  if (isActivelyProgressing(task)) {
+  if (isActivelyProgressing(task) || derived.assistant_active) {
     extraClass = "animate-spin-bounce";
     if (task.auto_mode) {
       return {
@@ -152,7 +137,12 @@ function resolveColors(
     extraClass = "animate-spin-bounce";
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "\u25C7", extraClass };
   }
-  return { colors: { bg: TRANSPARENT, icon: "text-text-quaternary" }, symbol: "~", extraClass };
+  const idleSymbol = task.is_chat ? "◉" : "~";
+  return {
+    colors: { bg: TRANSPARENT, icon: "text-text-quaternary" },
+    symbol: idleSymbol,
+    extraClass,
+  };
 }
 
 export function StatusSymbol({ task, waiting, prStatus }: StatusSymbolProps) {

@@ -7,7 +7,9 @@ use std::collections::{HashMap, HashSet};
 use orkestra_types::domain::LogEntry;
 
 use crate::interactions::claude::{parse_assistant_content, parse_tool_result_event};
-use crate::interactions::output::{check_api_error, extract_from_jsonl, extract_from_text_content};
+use crate::interactions::output::{
+    check_api_error, extract_from_jsonl, extract_from_text_content, extract_ork_fence,
+};
 use crate::interface::AgentParser;
 use crate::types::{ExtractionResult, ParsedUpdate};
 
@@ -202,6 +204,11 @@ impl AgentParser for ClaudeParserService {
         // on raw JSONL would not work because the fence newlines are JSON-escaped there.
         if let Some(ref text) = self.last_text {
             if let Some(json_str) = extract_from_text_content::execute(text) {
+                if extract_ork_fence::count_ork_fences(text) > 1 {
+                    return ExtractionResult::Malformed(
+                        "Multiple ork-fenced blocks detected. Output exactly one ork-fenced JSON block per response.".to_string(),
+                    );
+                }
                 return ExtractionResult::Found(json_str);
             }
         }
@@ -622,6 +629,36 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "via markdown fence");
+    }
+
+    // -- Multi-fence detection tests --
+
+    #[test]
+    fn extract_output_multi_ork_fence_returns_malformed() {
+        let mut parser = ClaudeParserService::new();
+        let multi = "```ork\n{\"type\":\"summary\",\"content\":\"first\"}\n```\n```ork\n{\"type\":\"summary\",\"content\":\"second\"}\n```";
+        parser.parse_line(&assistant_text(multi));
+
+        let output = assistant_text(multi);
+        let result = parser.extract_output(&output);
+        assert!(
+            matches!(result, ExtractionResult::Malformed(_)),
+            "expected Malformed for multi-fence output, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn extract_output_single_ork_fence_returns_found() {
+        let mut parser = ClaudeParserService::new();
+        let single = "```ork\n{\"type\":\"artifact\",\"content\":\"done\"}\n```";
+        parser.parse_line(&assistant_text(single));
+
+        let output = assistant_text(single);
+        let result = parser.extract_output(&output);
+        assert!(
+            matches!(result, ExtractionResult::Found(_)),
+            "expected Found for single fence, got: {result:?}"
+        );
     }
 
     #[test]

@@ -202,8 +202,14 @@ impl AgentParser for OpenCodeParserService {
 
         // Fall back to last_text (accumulated during streaming)
         if let Some(ref text) = self.last_text {
-            if let Some(json_str) = extract_from_text_content::execute(text) {
-                return ExtractionResult::Found(json_str);
+            match extract_from_text_content::execute(text) {
+                Some(extract_from_text_content::TextExtractionResult::Found(json_str)) => {
+                    return ExtractionResult::Found(json_str);
+                }
+                Some(extract_from_text_content::TextExtractionResult::Malformed(msg)) => {
+                    return ExtractionResult::Malformed(msg);
+                }
+                None => {}
             }
         }
 
@@ -994,6 +1000,46 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "done");
+    }
+
+    // -- Multi-fence detection tests --
+
+    #[test]
+    fn extract_output_multi_ork_fence_returns_malformed() {
+        let mut parser = OpenCodeParserService::new();
+        let multi = "```ork\n{\"type\":\"summary\",\"content\":\"first\"}\n```\n```ork\n{\"type\":\"summary\",\"content\":\"second\"}\n```";
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": multi}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let output = r#"{"type":"step_finish","part":{"type":"step-finish"}}"#;
+        let result = parser.extract_output(output);
+        assert!(
+            matches!(result, ExtractionResult::Malformed(_)),
+            "expected Malformed for multi-fence output, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn extract_output_single_ork_fence_returns_found() {
+        let mut parser = OpenCodeParserService::new();
+        let single = "```ork\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": single}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let output = r#"{"type":"step_finish","part":{"type":"step-finish"}}"#;
+        let result = parser.extract_output(output);
+        assert!(
+            matches!(result, ExtractionResult::Found(_)),
+            "expected Found for single fence, got: {result:?}"
+        );
     }
 
     // -- Other existing tests --

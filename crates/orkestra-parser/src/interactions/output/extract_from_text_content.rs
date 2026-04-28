@@ -7,10 +7,21 @@
 
 use super::{extract_fenced_json, extract_ork_fence, strip_markdown_fences};
 
+/// Outcome of text-content extraction.
+#[derive(Debug)]
+pub enum TextExtractionResult {
+    /// Valid JSON was found.
+    Found(String),
+    /// Multiple ork fences detected — agent must output exactly one.
+    Malformed(String),
+}
+
 /// Try to extract structured JSON from accumulated model text content.
 ///
 /// Applies three strategies in priority order:
 /// 1. Extract an ork fence block (explicit structured output marker — highest priority).
+///    Returns `Malformed` immediately when multiple ork fences are present (checked
+///    before extraction so the guard only fires for the ork fence strategy).
 /// 2. Strip markdown fences and parse as JSON, requiring a `"type"` string field.
 ///    When no fences are present, `strip_markdown_fences` returns the trimmed input,
 ///    so this also catches plain JSON the model emitted without any wrapping.
@@ -20,13 +31,21 @@ use super::{extract_fenced_json, extract_ork_fence, strip_markdown_fences};
 /// snippets, code examples) in the model output are not mistaken for stage output.
 /// Schema validation happens downstream via `parse_stage_output`.
 ///
-/// Returns the raw JSON string on success, or `None` if no strategy matched.
-pub fn execute(text: &str) -> Option<String> {
+/// Returns `Some(TextExtractionResult)` on match, `None` when no strategy matched.
+pub fn execute(text: &str) -> Option<TextExtractionResult> {
     let trimmed = text.trim();
 
     // Strategy 1: ork fence (highest priority — explicit structured output marker).
+    // Count before extracting so multi-fence fires only on the ork fence strategy,
+    // not when strategies 2 or 3 succeed on text that happens to mention ork fences.
+    let ork_count = extract_ork_fence::count_ork_fences(trimmed);
+    if ork_count > 1 {
+        return Some(TextExtractionResult::Malformed(
+            "Multiple ork-fenced blocks detected. Output exactly one ork-fenced JSON block per response.".to_string(),
+        ));
+    }
     if let Some(json_str) = extract_ork_fence::execute(trimmed) {
-        return Some(json_str);
+        return Some(TextExtractionResult::Found(json_str));
     }
 
     // Strategy 2: strip markdown fences and parse as JSON, require "type" field.
@@ -35,7 +54,7 @@ pub fn execute(text: &str) -> Option<String> {
     let stripped = strip_markdown_fences::execute(trimmed);
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) {
         if value.get("type").and_then(|t| t.as_str()).is_some() {
-            return Some(stripped);
+            return Some(TextExtractionResult::Found(stripped));
         }
     }
 
@@ -43,7 +62,7 @@ pub fn execute(text: &str) -> Option<String> {
     if let Some((_prose, json_str)) = extract_fenced_json::execute(trimmed) {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json_str) {
             if value.get("type").and_then(|t| t.as_str()).is_some() {
-                return Some(json_str);
+                return Some(TextExtractionResult::Found(json_str));
             }
         }
     }
@@ -59,12 +78,18 @@ pub fn execute(text: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn unwrap_found(result: Option<TextExtractionResult>) -> String {
+        match result {
+            Some(TextExtractionResult::Found(s)) => s,
+            other => panic!("Expected Found, got: {other:?}"),
+        }
+    }
+
     #[test]
     fn extracts_markdown_fenced_json() {
         let text = "```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
-        let result = execute(text);
-        assert!(result.is_some());
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let json_str = unwrap_found(execute(text));
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "done");
     }
@@ -72,9 +97,8 @@ mod tests {
     #[test]
     fn extracts_plain_json_with_type_field() {
         let text = "{\"type\":\"summary\",\"content\":\"done\"}";
-        let result = execute(text);
-        assert!(result.is_some());
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let json_str = unwrap_found(execute(text));
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
     }
 
@@ -95,9 +119,8 @@ mod tests {
     fn extracts_mixed_prose_and_fence() {
         let text =
             "The work is complete.\n\n```json\n{\"type\":\"artifact\",\"content\":\"result\"}\n```";
-        let result = execute(text);
-        assert!(result.is_some());
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let json_str = unwrap_found(execute(text));
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "artifact");
     }
 
@@ -111,9 +134,8 @@ mod tests {
     #[test]
     fn extracts_ork_fence() {
         let text = "```ork\n{\"type\":\"summary\",\"content\":\"via ork\"}\n```";
-        let result = execute(text);
-        assert!(result.is_some());
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let json_str = unwrap_found(execute(text));
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "via ork");
     }
@@ -124,10 +146,33 @@ mod tests {
         // (strategy 1 — highest priority).
         let text = "```json\n{\"type\":\"from_markdown\",\"content\":\"loses\"}\n\
                     ```\n\n```ork\n{\"type\":\"from_ork\",\"content\":\"wins\"}\n```";
-        let result = execute(text);
-        assert!(result.is_some());
-        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        // Two ork-like structures but only one actual ork fence — still counts the
+        // json fence via strategy 2, but ork fence count is 1 so no Malformed.
+        // Actually: the ```json fence is not an ork fence, so ork_count = 1. Found wins.
+        let json_str = unwrap_found(execute(text));
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert_eq!(json["type"], "from_ork");
+    }
+
+    #[test]
+    fn multiple_ork_fences_returns_malformed() {
+        let text = "```ork\n{\"type\":\"summary\",\"content\":\"first\"}\n```\n\
+                    ```ork\n{\"type\":\"summary\",\"content\":\"second\"}\n```";
+        assert!(
+            matches!(execute(text), Some(TextExtractionResult::Malformed(_))),
+            "Expected Malformed for multiple ork fences"
+        );
+    }
+
+    #[test]
+    fn multi_fence_in_prose_context_still_returns_malformed() {
+        // Even with surrounding prose, multiple ork fences → Malformed (not strategy 3)
+        let text = "Here is my work:\n\n```ork\n{\"type\":\"a\",\"content\":\"x\"}\n```\n\
+                    ```ork\n{\"type\":\"b\",\"content\":\"y\"}\n```";
+        assert!(
+            matches!(execute(text), Some(TextExtractionResult::Malformed(_))),
+            "Expected Malformed for multiple ork fences"
+        );
     }
 
     #[test]

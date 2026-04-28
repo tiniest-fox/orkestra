@@ -1,4 +1,4 @@
-// Mobile bottom tab bar: git (left), new task (center), assistant (right).
+// Mobile bottom tab bar: git (left), new task (center), new chat (right).
 //
 // The center Plus button protrudes above the bar. The outer wrapper uses
 // overflow-visible so the button isn't clipped; the border-t is on the inner
@@ -54,15 +54,15 @@ export function MobileTabBar({
           </button>
         </div>
 
-        {/* Assistant */}
+        {/* New Chat */}
         <button
           type="button"
           onClick={onAssistantOpen}
           className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 h-full transition-colors ${assistantActive ? "text-accent" : "text-text-tertiary"}`}
-          aria-label="Assistant"
+          aria-label="New Chat"
         >
           <MessageSquare size={20} />
-          <span className="font-mono text-[10px]">Assistant</span>
+          <span className="font-mono text-[10px]">New Chat</span>
         </button>
       </div>
     </div>

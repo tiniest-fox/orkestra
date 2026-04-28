@@ -459,15 +459,11 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
             openNewTask();
           }}
           onAssistantOpen={() => {
-            setAssistantOpen((prev) => {
-              if (!prev) {
-                setActiveTaskId(null);
-                setGitHistoryOpen(false);
-                setTaskAssistantId(null);
-                setFileViewerPath(null);
-              }
-              return !prev;
-            });
+            if (draftChatOpen && taskAssistantId === null) {
+              handleAssistantClose();
+            } else {
+              openNewChat();
+            }
           }}
         />
       )}

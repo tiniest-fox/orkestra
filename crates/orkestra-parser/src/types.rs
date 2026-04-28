@@ -16,6 +16,9 @@ pub enum ExtractionResult {
     NotFound,
     /// Error during extraction (API error, empty output, etc.)
     Error(String),
+    /// Structured output was detected but is malformed (e.g. multiple ork-fenced blocks).
+    /// Maps to `MalformedOutput` retry — the agent gets a corrective prompt.
+    Malformed(String),
 }
 
 /// Deserialize an optional string, normalizing empty strings to `None`.

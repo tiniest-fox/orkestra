@@ -2,6 +2,32 @@
 
 use super::extract_fenced_json::fence_close_positions;
 
+/// Count the number of valid ork fence openings in `text`.
+///
+/// Uses the same validation as `execute()`: the character after "ork"
+/// must be whitespace or end-of-string. Rejects false matches like
+/// `orkestra` or `ork-json`.
+pub fn count_ork_fences(text: &str) -> usize {
+    let mut count = 0;
+    let mut search_from = 0;
+    while search_from < text.len() {
+        let Some(pos) = text[search_from..].find("```ork") else {
+            break;
+        };
+        let abs_pos = search_from + pos;
+        let after_tag = abs_pos + "```ork".len();
+        let valid = match text[after_tag..].chars().next() {
+            None => true,
+            Some(c) => c.is_whitespace(),
+        };
+        if valid {
+            count += 1;
+        }
+        search_from = abs_pos + 1;
+    }
+    count
+}
+
 /// Extract structured JSON from an ork fence in the given text.
 ///
 /// Searches for `` ```ork\n `` ... `` \n``` `` blocks. When multiple ork fences
@@ -81,6 +107,35 @@ pub fn execute(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- count_ork_fences tests --
+
+    #[test]
+    fn count_ork_fences_no_fences() {
+        assert_eq!(count_ork_fences("no fences here"), 0);
+    }
+
+    #[test]
+    fn count_ork_fences_single() {
+        assert_eq!(count_ork_fences("```ork\n{}\n```"), 1);
+    }
+
+    #[test]
+    fn count_ork_fences_two() {
+        assert_eq!(count_ork_fences("```ork\n{}\n```\n```ork\n{}\n```"), 2);
+    }
+
+    #[test]
+    fn count_ork_fences_rejects_false_match() {
+        assert_eq!(count_ork_fences("```orkestra\n{}\n```"), 0);
+    }
+
+    #[test]
+    fn count_ork_fences_rejects_ork_hyphen() {
+        assert_eq!(count_ork_fences("```ork-json\n{}\n```"), 0);
+    }
+
+    // -- execute tests --
 
     #[test]
     fn valid_fence_extracts_json() {

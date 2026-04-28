@@ -28,6 +28,7 @@ pub fn execute(
             return OutputClassification::PlainText(full_output.to_string())
         }
         ExtractionResult::Error(e) => return OutputClassification::ExtractionFailed(e),
+        ExtractionResult::Malformed(msg) => return OutputClassification::ParseFailed(msg),
     };
 
     // Step 2: parse and validate the extracted JSON
@@ -143,6 +144,19 @@ mod tests {
         assert!(
             matches!(result, OutputClassification::Success(_)),
             "expected Success without schema, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn malformed_extraction_returns_parse_failed() {
+        let parser = MockParser {
+            extract_result: ExtractionResult::Malformed("Multiple ork fences".to_string()),
+        };
+        let schema = serde_json::json!({"type": "object"});
+        let result = execute(&parser, "some output", Some(&schema));
+        assert!(
+            matches!(result, OutputClassification::ParseFailed(_)),
+            "expected ParseFailed, got: {result:?}"
         );
     }
 

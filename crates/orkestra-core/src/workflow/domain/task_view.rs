@@ -153,12 +153,13 @@ impl DerivedTaskState {
             current_stage: task.current_stage().map(str::to_string),
             is_working: !task.is_terminal() && task.state.has_active_agent(),
             is_system_active: !task.is_terminal() && task.state.is_system_active(),
-            is_preparing: matches!(
-                task.state,
-                TaskState::AwaitingSetup { .. }
-                    | TaskState::SettingUp { .. }
-                    | TaskState::Queued { .. }
-            ),
+            is_preparing: !task.is_chat
+                && matches!(
+                    task.state,
+                    TaskState::AwaitingSetup { .. }
+                        | TaskState::SettingUp { .. }
+                        | TaskState::Queued { .. }
+                ),
             phase_icon: compute_phase_icon(task),
             is_interrupted: matches!(task.state, TaskState::Interrupted { .. }),
             is_failed: task.is_failed(),
@@ -1231,5 +1232,48 @@ mod tests {
         assert!(!derived.is_working);
         assert!(!derived.is_terminal);
         assert!(derived.is_failed);
+    }
+
+    #[test]
+    fn test_chat_task_queued_not_preparing() {
+        let mut task = make_task("chat");
+        task.is_chat = true;
+        task.flow = String::new();
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
+
+        assert!(
+            !derived.is_preparing,
+            "Chat tasks in Queued state should not be preparing"
+        );
+        assert!(!derived.needs_review);
+        assert!(!derived.is_working);
+    }
+
+    #[test]
+    fn test_non_chat_task_queued_is_preparing() {
+        let task = make_task("planning");
+        let derived =
+            DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), false);
+
+        assert!(
+            derived.is_preparing,
+            "Non-chat tasks in Queued state should be preparing"
+        );
+    }
+
+    #[test]
+    fn test_chat_task_assistant_active_not_needs_review() {
+        let mut task = make_task("chat");
+        task.is_chat = true;
+        task.flow = String::new();
+        let derived = DerivedTaskState::build(&task, &[], &[], &[], &test_default_workflow(), true);
+
+        assert!(derived.assistant_active);
+        assert!(
+            !derived.needs_review,
+            "Chat task with running assistant should not need review"
+        );
+        assert!(!derived.is_preparing);
     }
 }

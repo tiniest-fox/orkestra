@@ -75,12 +75,18 @@ pub fn list_active(
         .map(|t| t.id.as_str())
         .collect();
     let mut chat_assistant_active: HashMap<String, bool> = HashMap::new();
+    let mut chat_needs_review: HashMap<String, bool> = HashMap::new();
     for task_id in chat_task_ids {
         if let Ok(Some(session)) =
             store.get_assistant_session_for_task(task_id, &SessionType::Assistant)
         {
             let active = session.agent_pid.is_some_and(is_process_running);
             chat_assistant_active.insert(task_id.to_string(), active);
+            // Chat task "needs review" when session has been used but agent is not running.
+            // This means the assistant produced a response and the human should read it.
+            if !active && session.spawn_count > 0 {
+                chat_needs_review.insert(task_id.to_string(), true);
+            }
         }
     }
 
@@ -90,7 +96,7 @@ pub fn list_active(
             .get(&task.id)
             .copied()
             .unwrap_or(false);
-        let view = build_single_top_level_view(
+        let mut view = build_single_top_level_view(
             task,
             &iterations_by_task,
             &sessions_by_task,
@@ -98,6 +104,13 @@ pub fn list_active(
             workflow,
             assistant_active,
         );
+        if chat_needs_review
+            .get(&view.task.id)
+            .copied()
+            .unwrap_or(false)
+        {
+            view.derived.needs_review = true;
+        }
         views.push(view);
     }
 

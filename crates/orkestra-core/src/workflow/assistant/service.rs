@@ -444,13 +444,20 @@ impl AssistantService {
                 .join("\n\n---\n\n")
         };
 
+        let chat_promotion_guidance = if task.is_chat {
+            crate::prompts::CHAT_PROMOTION_GUIDANCE
+                .replace("{available_flows}", &Self::build_flows_text(workflow))
+        } else {
+            String::new()
+        };
+
         crate::prompts::TASK_ASSISTANT_SYSTEM_PROMPT
             .replace("{task_id}", &task.id)
             .replace("{task_title}", &task.title)
             .replace("{task_description}", &task.description)
             .replace("{current_stage}", &task.state.to_string())
             .replace("{artifacts}", &artifacts_text)
-            .replace("{available_flows}", &Self::build_flows_text(workflow))
+            .replace("{chat_promotion_guidance}", &chat_promotion_guidance)
     }
 
     /// Build the interactive-mode system prompt with task context interpolated.
@@ -1616,28 +1623,67 @@ mod tests {
     }
 
     #[test]
-    fn test_build_task_system_prompt_includes_promotion_guidance() {
+    fn test_build_task_system_prompt_includes_promotion_guidance_for_chat_task() {
         let workflow = make_workflow_with_flow("default", &["planning", "work", "review"]);
         let now = chrono::Utc::now().to_rfc3339();
-        let task = Task::new("task-1", "My Task", "desc", "work", &now);
+        let mut task = Task::new("task-1", "My Task", "desc", "chat", &now);
+        task.is_chat = true;
 
         let prompt = AssistantService::build_task_system_prompt(&task, &workflow);
 
-        assert!(prompt.contains("Proposing a Trak"), "prompt must include promotion guidance section");
-        assert!(prompt.contains("proposal"), "prompt must include proposal block type");
-        assert!(prompt.contains("planning"), "prompt must list available flow stage names");
+        assert!(
+            prompt.contains("Proposing a Trak"),
+            "chat prompt must include promotion guidance section"
+        );
+        assert!(
+            prompt.contains("proposal"),
+            "chat prompt must include proposal block type"
+        );
+        assert!(
+            prompt.contains("planning"),
+            "chat prompt must list available flow stage names"
+        );
     }
 
     #[test]
-    fn test_build_task_system_prompt_injects_flow_names() {
-        let workflow = make_workflow_with_flow("my-flow", &["design", "implement"]);
+    fn test_build_task_system_prompt_excludes_promotion_guidance_for_workflow_task() {
+        let workflow = make_workflow_with_flow("default", &["planning", "work", "review"]);
         let now = chrono::Utc::now().to_rfc3339();
         let task = Task::new("task-2", "My Task", "desc", "work", &now);
+        // is_chat defaults to false
 
         let prompt = AssistantService::build_task_system_prompt(&task, &workflow);
 
-        assert!(prompt.contains("my-flow"), "prompt must include flow name");
-        assert!(prompt.contains("design"), "prompt must include stage names");
-        assert!(prompt.contains("implement"), "prompt must include stage names");
+        assert!(
+            !prompt.contains("Proposing a Trak"),
+            "workflow prompt must NOT include promotion guidance"
+        );
+        assert!(
+            !prompt.contains("available_flows"),
+            "workflow prompt must NOT have unresolved placeholder"
+        );
+    }
+
+    #[test]
+    fn test_build_task_system_prompt_injects_flow_names_for_chat_task() {
+        let workflow = make_workflow_with_flow("my-flow", &["design", "implement"]);
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut task = Task::new("task-3", "My Task", "desc", "chat", &now);
+        task.is_chat = true;
+
+        let prompt = AssistantService::build_task_system_prompt(&task, &workflow);
+
+        assert!(
+            prompt.contains("my-flow"),
+            "chat prompt must include flow name"
+        );
+        assert!(
+            prompt.contains("design"),
+            "chat prompt must include stage names"
+        );
+        assert!(
+            prompt.contains("implement"),
+            "chat prompt must include stage names"
+        );
     }
 }

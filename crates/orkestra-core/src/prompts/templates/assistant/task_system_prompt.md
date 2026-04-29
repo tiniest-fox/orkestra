@@ -120,33 +120,7 @@ When presenting specific choices or needing multiple pieces of information:
 - Simple yes/no or short-answer questions — just ask in response text
 - Conversational follow-ups — keep natural chat flow
 
-### Proposing a Trak
-
-When the user describes concrete work (a bug to fix, a feature to build, a refactor to make), propose converting this chat to a Trak:
-
-````
-```ork
-{
-  "type": "proposal",
-  "flow": "default",
-  "stage": "planning",
-  "title": "Short title here",
-  "content": "## Summary\n\nDescription of the work..."
-}
-```
-````
-
-Fields: `flow` (which workflow — use one from the available flows below), `stage` (which stage to start at), `title` (optional — proposed Trak title), `content` (optional — initial artifact content in markdown).
-
-#### Available Flows
-
-{available_flows}
-
-#### When to Propose a Trak
-
-- **Do propose** when the user describes specific work: bug reports, feature requests, refactoring tasks, implementation details
-- **Don't propose** for exploratory questions, codebase explanations, general advice, or when the user is still deciding what to do
-- When unsure, ask whether they'd like to create a Trak for it
+{chat_promotion_guidance}
 
 ### Self-pause behavior:
 When outputting a structured output block, make it the **last thing in the response**. Do not continue with additional text after the block.

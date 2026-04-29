@@ -126,6 +126,7 @@ pub(crate) fn execute(
         user_prompt,
         system_prompt,
         &resolved.capabilities,
+        spawn_context.is_resume,
     );
 
     // 7b. Inject schema reference/enforcement only when the agent needs to produce
@@ -481,25 +482,38 @@ fn get_stage_schema(
 /// Returns `(user_prompt, optional_system_prompt_for_config)`.
 ///
 /// If the provider supports a system prompt CLI flag, the system prompt is
-/// returned as `Some` for the agent config. Otherwise it is prepended to the
-/// user message, since the provider has no other way to receive it.
+/// returned as `Some` for the agent config. On initial spawn without system
+/// prompt support, the system prompt is inserted after the first line (the
+/// `<!orkestra:spawn:STAGE>` marker) so the marker stays at position 0 for
+/// `parse_resume_marker` detection. On resume, the system prompt is skipped
+/// entirely — the session already has it from the initial spawn.
 pub(crate) fn apply_provider_fallbacks(
     task_id: &str,
     stage: &str,
     mut user_prompt: String,
     system_prompt: String,
     capabilities: &ProviderCapabilities,
+    is_resume: bool,
 ) -> (String, Option<String>) {
     let system_prompt_for_config = if capabilities.supports_system_prompt {
         Some(system_prompt)
+    } else if is_resume {
+        // Resume: session already has the system prompt from the initial spawn.
+        None
     } else {
         orkestra_debug!(
             "exec",
-            "execute_stage {}/{}: provider lacks system prompt support, prepending to user message",
+            "execute_stage {}/{}: provider lacks system prompt support, inserting after marker",
             task_id,
             stage
         );
-        user_prompt = format!("{system_prompt}\n\n{user_prompt}");
+        // Insert system prompt after the first line so the <!orkestra:spawn:STAGE>
+        // marker stays at position 0 for parse_resume_marker detection.
+        if let Some(newline_pos) = user_prompt.find('\n') {
+            user_prompt.insert_str(newline_pos + 1, &format!("{system_prompt}\n\n"));
+        } else {
+            user_prompt = format!("{user_prompt}\n{system_prompt}");
+        }
         None
     };
 
@@ -737,6 +751,7 @@ mod tests {
             user_prompt.clone(),
             system_prompt.clone(),
             &claude_caps,
+            false,
         );
 
         // User message should be unchanged
@@ -767,15 +782,84 @@ mod tests {
             user_prompt.clone(),
             system_prompt.clone(),
             &opencode_caps,
+            false,
         );
 
-        // System prompt should be prepended to user message with "\n\n" separator
-        assert!(final_user.starts_with("You are a worker agent"));
-        assert!(final_user.contains("\n\nDo the work"));
+        // System prompt should be in the user message (no marker, so appended after newline)
+        assert!(final_user.contains("You are a worker agent"));
+        assert!(final_user.contains("Do the work"));
         // System prompt should NOT be in config
         assert!(sys_for_config.is_none());
         // Schema injection is NOT the responsibility of this function
         assert!(!final_user.contains("## JSON Schema Reference"));
+    }
+
+    #[test]
+    fn test_provider_fallback_resume_skips_prepend() {
+        let task_id = "test-task";
+        let stage = "work";
+        let user_prompt = "Continue where you left off".to_string();
+        let system_prompt =
+            "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
+
+        let opencode_caps = ProviderCapabilities {
+            supports_json_schema: false,
+            supports_sessions: true,
+            generates_own_session_id: true,
+            requires_direct_structured_output: false,
+            supports_system_prompt: false,
+        };
+
+        let (final_user, sys_for_config) = apply_provider_fallbacks(
+            task_id,
+            stage,
+            user_prompt.clone(),
+            system_prompt.clone(),
+            &opencode_caps,
+            true, // is_resume
+        );
+
+        // User prompt should be passed through unchanged — session already has system prompt
+        assert_eq!(final_user, user_prompt);
+        // System prompt should NOT be in config
+        assert!(sys_for_config.is_none());
+    }
+
+    #[test]
+    fn test_provider_fallback_initial_preserves_marker() {
+        let task_id = "test-task";
+        let stage = "work";
+        let marker_line = "<!orkestra:spawn:work>";
+        let rest = "Here is your task description.";
+        let user_prompt = format!("{marker_line}\n{rest}");
+        let system_prompt =
+            "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
+
+        let opencode_caps = ProviderCapabilities {
+            supports_json_schema: false,
+            supports_sessions: true,
+            generates_own_session_id: true,
+            requires_direct_structured_output: false,
+            supports_system_prompt: false,
+        };
+
+        let (final_user, sys_for_config) = apply_provider_fallbacks(
+            task_id,
+            stage,
+            user_prompt.clone(),
+            system_prompt.clone(),
+            &opencode_caps,
+            false, // initial spawn
+        );
+
+        // Marker must remain at position 0 for parse_resume_marker detection
+        assert!(final_user.starts_with(marker_line));
+        // System prompt must be present in the user message (after the marker)
+        assert!(final_user.contains("You are a worker agent"));
+        // System prompt should NOT be in config
+        assert!(sys_for_config.is_none());
+        // The original rest content must still be present
+        assert!(final_user.contains(rest));
     }
 
     #[test]

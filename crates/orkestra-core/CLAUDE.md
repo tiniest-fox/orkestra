@@ -166,7 +166,7 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 
 `DerivedTaskState::build()` requires `WorkflowConfig` as a parameter for this config lookup. When adding new call sites, ensure the workflow config is available — don't try to detect approval state without it.
 
-**`build()` signature evolution**: The function takes individual primitive params for values that require external computation (process liveness, network state) and can't be derived from `Task` alone. Currently only `assistant_active: bool` fits this category. If a second such field is needed, replace the accumulating bools with a single `DerivedTaskContext` struct to keep the signature stable.
+**`build()` signature evolution**: The function takes individual primitive params for values that require external computation (process liveness, network state) and can't be derived from `Task` alone. Currently `assistant_active: bool` and `chat_needs_review: bool` both fit this category — two trailing bools is the documented threshold. The next time a new external input is needed, replace the accumulating bools with a single `DerivedTaskContext` struct to keep the signature stable.
 
 ### Stage Session Supersession Rules
 

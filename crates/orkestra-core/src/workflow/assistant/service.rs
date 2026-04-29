@@ -182,11 +182,12 @@ impl AssistantService {
         task_id: &str,
         message: &str,
     ) -> WorkflowResult<AssistantSession> {
+        let workflow = &self.workflow;
         self.send_task_scoped_message(
             task_id,
             message,
             SessionType::Assistant,
-            Self::build_task_system_prompt,
+            |task| Self::build_task_system_prompt(task, workflow),
             ASSISTANT_DISALLOWED_TOOLS,
         )
     }
@@ -222,7 +223,7 @@ impl AssistantService {
         task_id: &str,
         message: &str,
         session_type: SessionType,
-        build_prompt: fn(&Task) -> String,
+        build_prompt: impl Fn(&Task) -> String,
         disallowed_tools: &str,
     ) -> WorkflowResult<AssistantSession> {
         let now = chrono::Utc::now().to_rfc3339();
@@ -432,7 +433,7 @@ impl AssistantService {
     }
 
     /// Build the task-specific system prompt with task context interpolated.
-    fn build_task_system_prompt(task: &Task) -> String {
+    fn build_task_system_prompt(task: &Task, workflow: &WorkflowConfig) -> String {
         let artifacts_text = if task.artifacts.is_empty() {
             "No artifacts yet.".to_string()
         } else {
@@ -443,12 +444,20 @@ impl AssistantService {
                 .join("\n\n---\n\n")
         };
 
+        let chat_promotion_guidance = if task.is_chat {
+            crate::prompts::CHAT_PROMOTION_GUIDANCE
+                .replace("{available_flows}", &Self::build_flows_text(workflow))
+        } else {
+            String::new()
+        };
+
         crate::prompts::TASK_ASSISTANT_SYSTEM_PROMPT
             .replace("{task_id}", &task.id)
             .replace("{task_title}", &task.title)
             .replace("{task_description}", &task.description)
             .replace("{current_stage}", &task.state.to_string())
             .replace("{artifacts}", &artifacts_text)
+            .replace("{chat_promotion_guidance}", &chat_promotion_guidance)
     }
 
     /// Build the interactive-mode system prompt with task context interpolated.
@@ -466,12 +475,20 @@ impl AssistantService {
     }
 
     fn build_flows_text(workflow: &WorkflowConfig) -> String {
-        let mut lines = Vec::new();
+        let mut blocks = Vec::new();
         for (flow_name, flow) in &workflow.flows {
-            let stages: Vec<&str> = flow.stages.iter().map(|s| s.name.as_str()).collect();
-            lines.push(format!("- **{}**: {}", flow_name, stages.join(" > ")));
+            let mut lines = vec![format!("- **{}**:", flow_name)];
+            for stage in &flow.stages {
+                let desc = stage
+                    .description
+                    .as_deref()
+                    .map(|d| format!(": {d}"))
+                    .unwrap_or_default();
+                lines.push(format!("  - {}{}", stage.name, desc));
+            }
+            blocks.push(lines.join("\n"));
         }
-        lines.join("\n")
+        blocks.join("\n")
     }
 
     /// Spawn a background thread to read agent output and write log entries.
@@ -1578,6 +1595,95 @@ mod tests {
         assert_ne!(
             fetched.updated_at, old_ts,
             "read_assistant_output must call touch_task after the agent finishes"
+        );
+    }
+
+    // ========================================================================
+    // build_task_system_prompt tests
+    // ========================================================================
+
+    fn make_workflow_with_flow(flow_name: &str, stage_names: &[&str]) -> WorkflowConfig {
+        use crate::workflow::config::{FlowConfig, IntegrationConfig, StageConfig};
+        use indexmap::IndexMap;
+        let stages = stage_names
+            .iter()
+            .map(|n| StageConfig::new(*n, "artifact"))
+            .collect();
+        let mut flows = IndexMap::new();
+        flows.insert(
+            flow_name.to_string(),
+            FlowConfig {
+                stages,
+                integration: IntegrationConfig::new(
+                    stage_names.first().copied().unwrap_or("").to_string(),
+                ),
+            },
+        );
+        WorkflowConfig::new(vec![]).with_flows(flows)
+    }
+
+    #[test]
+    fn test_build_task_system_prompt_includes_promotion_guidance_for_chat_task() {
+        let workflow = make_workflow_with_flow("default", &["planning", "work", "review"]);
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut task = Task::new("task-1", "My Task", "desc", "chat", &now);
+        task.is_chat = true;
+
+        let prompt = AssistantService::build_task_system_prompt(&task, &workflow);
+
+        assert!(
+            prompt.contains("Proposing a Trak"),
+            "chat prompt must include promotion guidance section"
+        );
+        assert!(
+            prompt.contains("proposal"),
+            "chat prompt must include proposal block type"
+        );
+        assert!(
+            prompt.contains("planning"),
+            "chat prompt must list available flow stage names"
+        );
+    }
+
+    #[test]
+    fn test_build_task_system_prompt_excludes_promotion_guidance_for_workflow_task() {
+        let workflow = make_workflow_with_flow("default", &["planning", "work", "review"]);
+        let now = chrono::Utc::now().to_rfc3339();
+        let task = Task::new("task-2", "My Task", "desc", "work", &now);
+        // is_chat defaults to false
+
+        let prompt = AssistantService::build_task_system_prompt(&task, &workflow);
+
+        assert!(
+            !prompt.contains("Proposing a Trak"),
+            "workflow prompt must NOT include promotion guidance"
+        );
+        assert!(
+            !prompt.contains("available_flows"),
+            "workflow prompt must NOT have unresolved placeholder"
+        );
+    }
+
+    #[test]
+    fn test_build_task_system_prompt_injects_flow_names_for_chat_task() {
+        let workflow = make_workflow_with_flow("my-flow", &["design", "implement"]);
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut task = Task::new("task-3", "My Task", "desc", "chat", &now);
+        task.is_chat = true;
+
+        let prompt = AssistantService::build_task_system_prompt(&task, &workflow);
+
+        assert!(
+            prompt.contains("my-flow"),
+            "chat prompt must include flow name"
+        );
+        assert!(
+            prompt.contains("design"),
+            "chat prompt must include stage names"
+        );
+        assert!(
+            prompt.contains("implement"),
+            "chat prompt must include stage names"
         );
     }
 }

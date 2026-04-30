@@ -10,11 +10,8 @@ services:
       dockerfile: Dockerfile.service
     restart: unless-stopped
     ports:
-      - "${SERVICE_PORT:-3847}:3847"
+      - "${SERVICE_HOST_PORT:-3847}:3847"
     environment:
-      # --- Networking ---
-      SERVICE_PORT: "${SERVICE_PORT:-3847}"
-
       # --- Claude auth: use ONE of these ---
       # Option A: API key (set this env var in Dokploy)
       # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"

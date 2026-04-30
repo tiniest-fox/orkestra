@@ -853,9 +853,7 @@ fn spawn_claude_process(
     cmd.args(["--dangerously-skip-permissions"]);
     cmd.args(["--disallowedTools", disallowed_tools]);
 
-    if !is_resume {
-        cmd.args(["--system-prompt", system_prompt]);
-    }
+    cmd.args(["--system-prompt", system_prompt]);
 
     if let Some(env_map) = env {
         cmd.env_clear();

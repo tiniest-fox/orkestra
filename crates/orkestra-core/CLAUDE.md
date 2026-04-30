@@ -154,6 +154,7 @@ Chat tasks are a distinct task type that live outside the normal workflow pipeli
 - **Promotion**: `promote_to_flow` transitions a chat task to `AwaitingSetup` with `flow` set to the target flow, killing any active assistant sessions. After promotion it behaves identically to a normal task.
 - **`is_chat` on `TaskHeader`**: This flag enables cheap filtering in `find_spawn_candidates` without loading full task artifacts. When adding new orchestrator filters, `TaskHeader` (not `Task`) is the right type to check.
 - **Working directory**: Chat tasks have no worktree. `AssistantService::send_task_scoped_message` falls back to `project_root` when `task.is_chat` — don't add worktree assumptions to assistant message paths.
+- **System prompt injection flags differ by spawner**: The assistant spawner (`workflow/assistant/service.rs`) passes `--system-prompt` on every invocation (initial and resume). The agent spawner (`crates/orkestra-agent/src/interactions/spawner/claude.rs`) passes `--append-system-prompt` unconditionally. Both are intentional — `--system-prompt` replaces the full system prompt, while `--append-system-prompt` appends to Claude Code's built-in prompt. Don't conflate them when modifying prompt injection logic.
 
 ### `DerivedTaskState::build()` — Approval vs. Rejection Detection
 

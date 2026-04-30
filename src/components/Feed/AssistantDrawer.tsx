@@ -372,12 +372,12 @@ export function AssistantDrawer({
         const imageLines = paths.map((p) => `[Image: ${p}]`).join("\n");
         augmentedMessage = msg ? `${msg}\n\n${imageLines}` : imageLines;
       }
-      for (const img of imagesToSend) {
-        URL.revokeObjectURL(img.previewUrl);
-      }
       setOptimisticMessage(augmentedMessage);
       triggerScroll();
       await sendAndRefresh(augmentedMessage);
+      for (const img of imagesToSend) {
+        URL.revokeObjectURL(img.previewUrl);
+      }
     } catch (err) {
       if (!isDisconnectError(err)) showError(String(err));
       setOptimisticMessage(null);

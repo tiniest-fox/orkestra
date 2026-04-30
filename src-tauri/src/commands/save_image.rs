@@ -37,6 +37,10 @@ pub fn save_temp_image(
         .decode(raw_b64)
         .map_err(|e| TauriError::new("INVALID_IMAGE_DATA", format!("Base64 decode failed: {e}")))?;
 
+    if bytes.is_empty() {
+        return Err(TauriError::new("INVALID_IMAGE_DATA", "Image data is empty"));
+    }
+
     let dir = project_root.join(".orkestra/.tmp/images");
     fs::create_dir_all(&dir).map_err(|e| {
         TauriError::new("IO_ERROR", format!("Failed to create image directory: {e}"))
@@ -110,5 +114,16 @@ mod tests {
     fn strip_data_url_prefix_passes_through_raw_base64() {
         let raw = "iVBORw0KGgo=";
         assert_eq!(strip_data_url_prefix(raw), raw);
+    }
+
+    #[test]
+    fn empty_base64_decodes_to_empty_bytes() {
+        // Verifies the guard condition: base64::decode("") returns Ok(vec![])
+        // so the is_empty() check is the only thing preventing a 0-byte write.
+        use base64::Engine as _;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode("")
+            .expect("decode should succeed");
+        assert!(bytes.is_empty());
     }
 }

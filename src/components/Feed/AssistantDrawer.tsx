@@ -286,6 +286,10 @@ export function AssistantDrawer({
       setShowSessionList(false);
       setInputValue("");
       setOptimisticMessage(null);
+      setPendingImages((prev) => {
+        for (const img of prev) URL.revokeObjectURL(img.previewUrl);
+        return [];
+      });
     },
     [setOptimisticMessage],
   );
@@ -360,7 +364,7 @@ export function AssistantDrawer({
         for (const img of imagesToSend) {
           const base64 = await fileToBase64(img.file);
           const path = await transport.call<string>("save_temp_image", {
-            data: base64,
+            image_data: base64,
             mime_type: img.file.type,
           });
           paths.push(path);
@@ -377,6 +381,8 @@ export function AssistantDrawer({
     } catch (err) {
       if (!isDisconnectError(err)) showError(String(err));
       setOptimisticMessage(null);
+      setInputValue(msg);
+      setPendingImages(imagesToSend);
     } finally {
       setSending(false);
     }
@@ -431,6 +437,10 @@ export function AssistantDrawer({
     setShowSessionList(false);
     setInputValue("");
     setOptimisticMessage(null);
+    setPendingImages((prev) => {
+      for (const img of prev) URL.revokeObjectURL(img.previewUrl);
+      return [];
+    });
   }, [setOptimisticMessage]);
 
   const displayMessages = useMemo(() => {

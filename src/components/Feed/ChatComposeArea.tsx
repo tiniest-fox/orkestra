@@ -80,7 +80,7 @@ export const ChatComposeArea = memo(function ChatComposeArea({
     const newImages: PendingImage[] = imageItems.flatMap((item) => {
       const file = item.getAsFile();
       if (!file) return [];
-      return [{ id: crypto.randomUUID() as string, file, previewUrl: URL.createObjectURL(file) }];
+      return [{ id: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) }];
     });
     onImagesAdded(newImages);
   }

@@ -17,10 +17,28 @@ import { Drawer } from "../ui/Drawer/Drawer";
 import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
 import { ModalPanel } from "../ui/ModalPanel";
-import { ChatComposeArea } from "./ChatComposeArea";
+import { ChatComposeArea, type PendingImage } from "./ChatComposeArea";
 import { buildDisplayMessages, MessageList } from "./MessageList";
 import { ProposalCard } from "./ProposalCard";
 import { QuestionCard } from "./QuestionCard";
+
+const IS_TAURI = Boolean(import.meta.env.TAURI_ENV_PLATFORM);
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // ============================================================================
 // AssistantDrawer
@@ -60,6 +78,7 @@ export function AssistantDrawer({
   const [inputValue, setInputValue] = useState("");
   const [sending, setSending] = useState(false);
   const [answers, setAnswers] = useState<string[]>([]);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
 
   const [chatTask, setChatTask] = useState<WorkflowTask | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -311,23 +330,66 @@ export function AssistantDrawer({
     [transport, activeSessionId, taskId, draftChat, onTaskCreated],
   );
 
+  // -- Image callbacks (Tauri only) --
+  const handleImagesAdded = useCallback((images: PendingImage[]) => {
+    setPendingImages((prev) => [...prev, ...images]);
+  }, []);
+
+  const handleImageRemoved = useCallback((id: string) => {
+    setPendingImages((prev) => {
+      const removed = prev.find((img) => img.id === id);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((img) => img.id !== id);
+    });
+  }, []);
+
   // -- Send message --
   const handleSend = useCallback(async () => {
     const msg = inputValue.trim();
-    if (!msg || sending) return;
+    const hasImages = pendingImages.length > 0;
+    if ((!msg && !hasImages) || sending) return;
     setSending(true);
     setInputValue("");
-    setOptimisticMessage(msg);
-    triggerScroll();
+    const imagesToSend = [...pendingImages];
+    setPendingImages([]);
+
     try {
-      await sendAndRefresh(msg);
+      let augmentedMessage = msg;
+      if (imagesToSend.length > 0) {
+        const paths: string[] = [];
+        for (const img of imagesToSend) {
+          const base64 = await fileToBase64(img.file);
+          const path = await transport.call<string>("save_temp_image", {
+            data: base64,
+            mime_type: img.file.type,
+          });
+          paths.push(path);
+        }
+        const imageLines = paths.map((p) => `[Image: ${p}]`).join("\n");
+        augmentedMessage = msg ? `${msg}\n\n${imageLines}` : imageLines;
+      }
+      for (const img of imagesToSend) {
+        URL.revokeObjectURL(img.previewUrl);
+      }
+      setOptimisticMessage(augmentedMessage);
+      triggerScroll();
+      await sendAndRefresh(augmentedMessage);
     } catch (err) {
       if (!isDisconnectError(err)) showError(String(err));
       setOptimisticMessage(null);
     } finally {
       setSending(false);
     }
-  }, [inputValue, sending, sendAndRefresh, setOptimisticMessage, triggerScroll, showError]);
+  }, [
+    inputValue,
+    pendingImages,
+    sending,
+    sendAndRefresh,
+    transport,
+    setOptimisticMessage,
+    triggerScroll,
+    showError,
+  ]);
 
   // -- Send question answers --
   const handleSendAnswers = useCallback(async () => {
@@ -549,6 +611,13 @@ export function AssistantDrawer({
             placeholder="Ask the assistant…"
             onResize={handleComposeResize}
             className="shrink-0 px-6 pb-4 bg-canvas"
+            {...(IS_TAURI
+              ? {
+                  pendingImages,
+                  onImagesAdded: handleImagesAdded,
+                  onImageRemoved: handleImageRemoved,
+                }
+              : {})}
           />
 
           {/* Delete confirmation modal */}

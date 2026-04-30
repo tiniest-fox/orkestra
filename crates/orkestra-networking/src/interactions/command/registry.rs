@@ -79,6 +79,7 @@ pub const DESKTOP_ONLY_COMMANDS: &[&str] = &[
     "stop_run_script",
     "get_run_status",
     "get_run_logs",
+    "save_temp_image",
 ];
 
 /// Commands with transport-specific implementations in both transports.

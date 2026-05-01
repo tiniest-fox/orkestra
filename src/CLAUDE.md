@@ -422,6 +422,26 @@ The `FeedRowActions.tsx` "View" button demonstrates this pattern. All new action
 
 `useTaskDrawerState.ts` contains a pre-existing `invokeAndClose` helper that silently swallows backend errors (logs to `console.error` but does not update any error state). **Do not use `invokeAndClose` for new action handlers that need to surface errors to the user.**
 
+**Blob URL revocation ordering in error recovery**: When an async operation does cleanup (e.g., `URL.revokeObjectURL`) as part of optimistic UI and must restore state on failure, revoke blob URLs *after* the operation succeeds — not before. Revoking before the `await` means a failed request leaves restored state (e.g., re-populated `pendingImages`) with invalid/expired URLs, so thumbnails that appear to render can no longer load.
+
+```ts
+// Wrong — URLs revoked before await; error recovery restores invalid URLs
+for (const img of imagesToSend) URL.revokeObjectURL(img.blobUrl);
+try {
+  await sendAndRefresh(message);
+} catch {
+  setPendingImages(snapshot); // snapshot URLs were just revoked — thumbnails broken
+}
+
+// Correct — revoke only after success; error path sees valid URLs
+try {
+  await sendAndRefresh(message);
+  for (const img of imagesToSend) URL.revokeObjectURL(img.blobUrl);
+} catch {
+  setPendingImages(snapshot); // snapshot URLs still valid
+}
+```
+
 <!-- compound: seasonally-sensual-guineapig -->
 **Always guard action handler `.catch()` calls with `isDisconnectError`** — Any action handler that calls `transport.call()` and shows a toast on error must filter through `isDisconnectError(err)` before calling `showError`. Without this guard, dead-socket reconnection produces spurious "Request timed out" toasts — the exact scenario these transport-layer fixes are meant to make silent.
 

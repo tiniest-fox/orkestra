@@ -8,6 +8,8 @@ use orkestra_types::domain::{
     StageSession, Task, TaskHeader, WorkflowArtifact,
 };
 
+use crate::types::WorktreeRecord;
+
 // ============================================================================
 // Error types
 // ============================================================================
@@ -399,6 +401,20 @@ pub trait WorkflowStore: Send + Sync {
         }
         Ok(())
     }
+
+    // -- Worktree --
+
+    /// Save a worktree record (insert or replace by `task_id`).
+    fn save_worktree_record(&self, record: &WorktreeRecord) -> WorkflowResult<()>;
+
+    /// Get a worktree record by `task_id`.
+    fn get_worktree_record(&self, task_id: &str) -> WorkflowResult<Option<WorktreeRecord>>;
+
+    /// Delete a worktree record by `task_id`.
+    fn delete_worktree_record(&self, task_id: &str) -> WorkflowResult<()>;
+
+    /// List all worktree records.
+    fn list_worktree_records(&self) -> WorkflowResult<Vec<WorktreeRecord>>;
 
     // -- Artifact --
 

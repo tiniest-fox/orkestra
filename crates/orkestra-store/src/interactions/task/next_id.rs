@@ -13,7 +13,7 @@ pub fn execute(conn: &Connection) -> WorkflowResult<String> {
             continue;
         };
 
-        let exists: bool = conn
+        let exists_task: bool = conn
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM workflow_tasks WHERE id = ?)",
                 params![&id],
@@ -21,7 +21,15 @@ pub fn execute(conn: &Connection) -> WorkflowResult<String> {
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
-        if !exists {
+        let exists_worktree: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM worktrees WHERE task_id = ?)",
+                params![&id],
+                |row| row.get(0),
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        if !exists_task && !exists_worktree {
             return Ok(id);
         }
     }

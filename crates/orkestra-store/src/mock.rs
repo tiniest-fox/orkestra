@@ -13,6 +13,7 @@ use orkestra_types::domain::{
 };
 
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
+use crate::types::WorktreeRecord;
 
 type LogEntryRecord = (String, i64, LogEntry, Option<String>);
 
@@ -24,6 +25,7 @@ pub struct InMemoryWorkflowStore {
     assistant_sessions: Mutex<Vec<AssistantSession>>,
     log_entries: Mutex<Vec<LogEntryRecord>>,
     artifacts: Mutex<Vec<WorkflowArtifact>>,
+    worktree_records: Mutex<HashMap<String, WorktreeRecord>>,
     next_id: AtomicU32,
 }
 
@@ -37,6 +39,7 @@ impl InMemoryWorkflowStore {
             assistant_sessions: Mutex::new(Vec::new()),
             log_entries: Mutex::new(Vec::new()),
             artifacts: Mutex::new(Vec::new()),
+            worktree_records: Mutex::new(HashMap::new()),
             next_id: AtomicU32::new(1),
         }
     }
@@ -604,6 +607,44 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .collect();
         result.sort_by_key(|(_, seq, _, _)| *seq);
         Ok(result.into_iter().map(|(_, _, entry, _)| entry).collect())
+    }
+
+    // -- Worktree --
+
+    fn save_worktree_record(&self, record: &WorktreeRecord) -> WorkflowResult<()> {
+        let mut records = self
+            .worktree_records
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        records.insert(record.task_id.clone(), record.clone());
+        Ok(())
+    }
+
+    fn get_worktree_record(&self, task_id: &str) -> WorkflowResult<Option<WorktreeRecord>> {
+        let records = self
+            .worktree_records
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        Ok(records.get(task_id).cloned())
+    }
+
+    fn delete_worktree_record(&self, task_id: &str) -> WorkflowResult<()> {
+        let mut records = self
+            .worktree_records
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        records.remove(task_id);
+        Ok(())
+    }
+
+    fn list_worktree_records(&self) -> WorkflowResult<Vec<WorktreeRecord>> {
+        let records = self
+            .worktree_records
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = records.values().cloned().collect();
+        result.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(result)
     }
 
     // -- Artifact --

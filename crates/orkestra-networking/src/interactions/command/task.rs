@@ -47,9 +47,10 @@ pub fn get_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayl
 /// Creates a new task.
 ///
 /// Expected params: `{ "title": "<title>", "description": "<desc>", "base_branch": "<branch>",
-/// "auto_mode": <bool>, "flow": "<flow_name>" }`
+/// "auto_mode": <bool>, "flow": "<flow_name>", "task_id": "<id>" }`
 ///
-/// `base_branch` and `flow` are optional.
+/// `base_branch`, `flow`, and `task_id` are optional. When `task_id` is provided,
+/// the task adopts the prewarmed worktree for that ID.
 pub fn create_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let title = params
         .get("title")
@@ -78,20 +79,37 @@ pub fn create_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorP
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
+    let task_id = params
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
+    let mode = if auto_mode {
+        TaskCreationMode::AutoMode
+    } else {
+        TaskCreationMode::Normal
+    };
+
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api
-        .create_task_with_options(
+    let task = if let Some(id) = task_id.as_deref() {
+        api.create_task_with_prewarm(
+            id,
             &title,
             &description,
             base_branch.as_deref(),
-            if auto_mode {
-                TaskCreationMode::AutoMode
-            } else {
-                TaskCreationMode::Normal
-            },
+            mode,
             flow.as_deref(),
         )
-        .map_err(ErrorPayload::from)?;
+    } else {
+        api.create_task_with_options(
+            &title,
+            &description,
+            base_branch.as_deref(),
+            mode,
+            flow.as_deref(),
+        )
+    }
+    .map_err(ErrorPayload::from)?;
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 

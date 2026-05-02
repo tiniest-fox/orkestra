@@ -84,8 +84,15 @@ pub fn execute(
     // Mutate task into a full workflow task
     task.is_chat = false;
     task.flow = flow_name.to_string();
-    task.base_branch = base_branch;
-    task.state = TaskState::awaiting_setup(&target_stage.name);
+    if task.base_branch.is_empty() {
+        task.base_branch = base_branch;
+    }
+    // Skip AwaitingSetup if a prewarmed worktree is already set on the task.
+    if task.worktree_path.is_some() {
+        task.state = TaskState::queued(&target_stage.name);
+    } else {
+        task.state = TaskState::awaiting_setup(&target_stage.name);
+    }
     task.updated_at.clone_from(&now);
 
     // Update title if provided and non-empty

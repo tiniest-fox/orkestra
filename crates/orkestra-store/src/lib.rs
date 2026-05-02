@@ -13,6 +13,7 @@ mod types;
 pub use connection::DatabaseConnection;
 pub use interface::{WorkflowError, WorkflowResult, WorkflowStore};
 pub use service::SqliteWorkflowStore;
+pub use types::{WorktreeRecord, WorktreeStatus};
 
 #[cfg(any(test, feature = "testutil"))]
 mod mock;

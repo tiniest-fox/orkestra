@@ -9,6 +9,8 @@ use orkestra_types::domain::{
     AnnotatedLogEntry, AssistantSession, GateResult, Iteration, LogEntry, SessionType,
     StageSession, Task, TaskHeader, WorkflowArtifact,
 };
+
+use crate::types::WorktreeRecord;
 use rusqlite::Connection;
 
 use crate::interactions;
@@ -317,6 +319,28 @@ impl WorkflowStore for SqliteWorkflowStore {
         interactions::assistant::get_logs::execute(&conn, assistant_session_id)
     }
 
+    // -- Worktree --
+
+    fn save_worktree_record(&self, record: &WorktreeRecord) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::worktree::save::execute(&conn, record)
+    }
+
+    fn get_worktree_record(&self, task_id: &str) -> WorkflowResult<Option<WorktreeRecord>> {
+        let conn = self.lock_conn()?;
+        interactions::worktree::get::execute(&conn, task_id)
+    }
+
+    fn delete_worktree_record(&self, task_id: &str) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::worktree::delete::execute(&conn, task_id)
+    }
+
+    fn list_worktree_records(&self) -> WorkflowResult<Vec<WorktreeRecord>> {
+        let conn = self.lock_conn()?;
+        interactions::worktree::list_all::execute(&conn)
+    }
+
     // -- Artifact --
 
     fn save_artifact(&self, artifact: &WorkflowArtifact) -> WorkflowResult<()> {
@@ -347,5 +371,120 @@ impl WorkflowStore for SqliteWorkflowStore {
     fn delete_artifacts_for_task(&self, task_id: &str) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
         interactions::artifact::delete_for_task::execute(&conn, task_id)
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::DatabaseConnection;
+    use crate::types::{WorktreeRecord, WorktreeStatus};
+
+    fn make_store() -> SqliteWorkflowStore {
+        let db = DatabaseConnection::in_memory().unwrap();
+        SqliteWorkflowStore::new(db.shared())
+    }
+
+    fn make_record(task_id: &str) -> WorktreeRecord {
+        WorktreeRecord {
+            task_id: task_id.to_string(),
+            status: WorktreeStatus::Pending,
+            base_branch: Some("main".to_string()),
+            worktree_path: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn worktree_record_save_and_get() {
+        let store = make_store();
+        let record = make_record("task-abc");
+
+        store.save_worktree_record(&record).unwrap();
+
+        let loaded = store.get_worktree_record("task-abc").unwrap().unwrap();
+        assert_eq!(loaded.task_id, "task-abc");
+        assert_eq!(loaded.status, WorktreeStatus::Pending);
+        assert_eq!(loaded.base_branch.as_deref(), Some("main"));
+        assert!(loaded.worktree_path.is_none());
+    }
+
+    #[test]
+    fn worktree_record_get_nonexistent_returns_none() {
+        let store = make_store();
+        let result = store.get_worktree_record("no-such-task").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn worktree_record_delete_removes_it() {
+        let store = make_store();
+        let record = make_record("task-del");
+        store.save_worktree_record(&record).unwrap();
+
+        store.delete_worktree_record("task-del").unwrap();
+
+        assert!(store.get_worktree_record("task-del").unwrap().is_none());
+    }
+
+    #[test]
+    fn worktree_record_list_returns_all() {
+        let store = make_store();
+        store.save_worktree_record(&make_record("task-1")).unwrap();
+        store.save_worktree_record(&make_record("task-2")).unwrap();
+        store.save_worktree_record(&make_record("task-3")).unwrap();
+
+        let records = store.list_worktree_records().unwrap();
+        assert_eq!(records.len(), 3);
+    }
+
+    #[test]
+    fn worktree_record_update_replaces_existing() {
+        let store = make_store();
+        let mut record = make_record("task-upd");
+        store.save_worktree_record(&record).unwrap();
+
+        record.status = WorktreeStatus::Ready;
+        record.worktree_path = Some("/tmp/worktrees/task-upd".to_string());
+        store.save_worktree_record(&record).unwrap();
+
+        let loaded = store.get_worktree_record("task-upd").unwrap().unwrap();
+        assert_eq!(loaded.status, WorktreeStatus::Ready);
+        assert_eq!(
+            loaded.worktree_path.as_deref(),
+            Some("/tmp/worktrees/task-upd")
+        );
+    }
+
+    #[test]
+    fn next_task_id_skips_ids_in_worktrees_table() {
+        let db = DatabaseConnection::in_memory().unwrap();
+        let conn = db.shared();
+
+        // Manually insert a row into the worktrees table so next_task_id must skip it
+        {
+            let locked = conn.lock().unwrap();
+            locked
+                .execute(
+                    "INSERT INTO worktrees (task_id, status, created_at) VALUES (?, 'pending', ?)",
+                    rusqlite::params!["taken-id", "2026-01-01T00:00:00Z"],
+                )
+                .unwrap();
+        }
+
+        let store = SqliteWorkflowStore::new(conn);
+
+        // The store's next_task_id should not return "taken-id"
+        for _ in 0..20 {
+            let id = store.next_task_id().unwrap();
+            assert_ne!(
+                id, "taken-id",
+                "next_task_id returned a worktrees-reserved ID"
+            );
+        }
     }
 }

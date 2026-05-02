@@ -6,16 +6,16 @@ import { createMockWorkflowTaskView } from "../../test/mocks/fixtures";
 import type { PrStatus } from "../../types/workflow";
 import { StatusSymbol } from "./StatusSymbol";
 
-function makePrStatus(state: PrStatus["state"]): PrStatus {
+function makePrStatus(overrides: Partial<PrStatus> & Pick<PrStatus, "state">): PrStatus {
   return {
     url: "https://github.com/owner/repo/pull/42",
-    state,
     checks: [],
     reviews: [],
     comments: [],
     fetched_at: "2025-01-01T00:00:00Z",
     mergeable: true,
     merge_state_status: null,
+    ...overrides,
   };
 }
 
@@ -95,13 +95,17 @@ describe("StatusSymbol — done task", () => {
     expect(screen.getByText("↑")).toBeInTheDocument();
   });
 
-  it("renders ↑ when task is done and PR state is open", () => {
+  it("renders SVG with success colors when PR is open with no checks (passing)", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
     });
-    render(<StatusSymbol task={task} prStatus={makePrStatus("open")} />);
-    expect(screen.getByText("↑")).toBeInTheDocument();
+    const { container } = render(
+      <StatusSymbol task={task} prStatus={makePrStatus({ state: "open" })} />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-success");
   });
 
   it("renders ✓ when task is done and PR state is merged", () => {
@@ -109,7 +113,7 @@ describe("StatusSymbol — done task", () => {
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
     });
-    render(<StatusSymbol task={task} prStatus={makePrStatus("merged")} />);
+    render(<StatusSymbol task={task} prStatus={makePrStatus({ state: "merged" })} />);
     expect(screen.getByText("✓")).toBeInTheDocument();
   });
 
@@ -118,7 +122,126 @@ describe("StatusSymbol — done task", () => {
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
     });
-    render(<StatusSymbol task={task} prStatus={makePrStatus("closed")} />);
+    render(<StatusSymbol task={task} prStatus={makePrStatus({ state: "closed" })} />);
     expect(screen.getByText("✕")).toBeInTheDocument();
+  });
+
+  it("renders SVG with success colors when PR is open and all checks pass", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "success" }],
+        })}
+      />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-success");
+  });
+
+  it("renders SVG with warning colors when PR has pending checks", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "pending" }],
+        })}
+      />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-warning");
+  });
+
+  it("renders SVG with error colors when PR has failing checks", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "failure" }],
+        })}
+      />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-error");
+  });
+
+  it("renders SVG with warning colors when PR has merge conflicts", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          mergeable: false,
+          merge_state_status: "DIRTY",
+        })}
+      />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-warning");
+  });
+
+  it("conflicts take precedence over failing checks — renders warning (not error) colors", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "failure" }],
+          mergeable: false,
+          merge_state_status: "DIRTY",
+        })}
+      />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    // Conflict takes precedence — warning, not error
+    expect(svg?.parentElement).toHaveClass("text-status-warning");
+    expect(svg?.parentElement).not.toHaveClass("text-status-error");
+  });
+
+  it("skipped checks are treated as passing — renders SVG with success colors", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "skipped" }],
+        })}
+      />,
+    );
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-success");
   });
 });

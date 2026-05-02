@@ -582,6 +582,8 @@ pub fn run() {
             commands::workflow_list_subtasks,
             commands::workflow_get_archived_tasks,
             commands::workflow_create_chat_task,
+            commands::workflow_prewarm_worktree,
+            commands::workflow_cancel_prewarm,
             commands::workflow_approve,
             commands::workflow_answer_questions,
             commands::workflow_merge_task,

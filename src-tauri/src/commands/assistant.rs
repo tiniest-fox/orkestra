@@ -97,14 +97,21 @@ pub fn assistant_send_task_message(
 ///
 /// Derives a title from `message`, creates the chat task, sends the first message,
 /// and returns `{ task, session }` so the frontend can transition to task-scoped mode.
+/// When `task_id` is provided, adopts the prewarmed worktree for that ID.
 #[tauri::command]
 pub fn workflow_create_chat_and_send(
     registry: State<ProjectRegistry>,
     window: Window,
     message: String,
+    task_id: Option<String>,
+    base_branch: Option<String>,
 ) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
-        let params = serde_json::json!({ "message": message });
+        let params = serde_json::json!({
+            "message": message,
+            "task_id": task_id,
+            "base_branch": base_branch,
+        });
         assistant::create_chat_and_send(state.command_context(), &params).map_err(Into::into)
     })
 }

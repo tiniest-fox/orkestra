@@ -1,7 +1,7 @@
 //! Task CRUD commands.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_networking::task;
+use orkestra_networking::{prewarm, task};
 use serde_json::Value;
 use tauri::{State, Window};
 
@@ -28,6 +28,7 @@ pub fn workflow_get_tasks(
 /// `base_branch` specifies which branch to create from (defaults to current).
 /// `auto_mode` enables autonomous execution through all stages.
 /// `flow` selects an alternate workflow flow (e.g., `"quick_fix"`). Omit for default full pipeline.
+/// `task_id` is optional — when provided, adopts the prewarmed worktree for that ID.
 #[tauri::command]
 pub fn workflow_create_task(
     registry: State<ProjectRegistry>,
@@ -37,6 +38,7 @@ pub fn workflow_create_task(
     base_branch: Option<String>,
     auto_mode: Option<bool>,
     flow: Option<String>,
+    task_id: Option<String>,
 ) -> Result<Value, TauriError> {
     registry.with_project(window.label(), |state| {
         let params = serde_json::json!({
@@ -45,6 +47,7 @@ pub fn workflow_create_task(
             "base_branch": base_branch,
             "auto_mode": auto_mode,
             "flow": flow,
+            "task_id": task_id,
         });
         task::create_task(state.command_context(), &params).map_err(Into::into)
     })
@@ -135,5 +138,37 @@ pub fn workflow_create_chat_task(
     registry.with_project(window.label(), |state| {
         let params = serde_json::json!({ "title": title });
         task::create_chat_task(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
+/// Trigger background prewarming for a future task worktree.
+///
+/// `task_id` is the petname ID the frontend intends to use when creating the task.
+/// `base_branch` is optional — if omitted, the current HEAD branch is used.
+#[tauri::command]
+pub fn workflow_prewarm_worktree(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    base_branch: Option<String>,
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id, "base_branch": base_branch });
+        prewarm::prewarm_worktree(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
+/// Cancel a pending prewarm and remove the worktree record.
+///
+/// The worktree directory (if created) is cleaned up on next startup.
+#[tauri::command]
+pub fn workflow_cancel_prewarm(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id });
+        prewarm::cancel_prewarm(state.command_context(), &params).map_err(Into::into)
     })
 }

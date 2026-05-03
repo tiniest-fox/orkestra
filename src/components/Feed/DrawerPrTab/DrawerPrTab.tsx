@@ -3,7 +3,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePrStatus } from "../../../providers/PrStatusProvider";
-import type { PrCheckData, PrCommentData, PrStatus } from "../../../types/workflow";
+import type { PrCheckData, PrCommentData } from "../../../types/workflow";
+import { hasConflicts } from "../../../utils/prStatus";
 import type { PrTabFooterState } from "../Drawer/drawerTabs";
 import { groupCommentsByReview } from "../groupCommentsByReview";
 import { ConflictPanel } from "./ConflictPanel";
@@ -231,10 +232,6 @@ export function DrawerPrTab({
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function hasConflicts(status: PrStatus): boolean {
-  return status.merge_state_status === "DIRTY" || status.mergeable === false;
-}
 
 function extractPrNumber(prUrl: string): string | null {
   const match = prUrl.match(/\/pull\/(\d+)/);

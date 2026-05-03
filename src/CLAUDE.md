@@ -550,6 +550,8 @@ const summary = toolSummary(entry, projectRoot);
 </div>
 ```
 
+**`noNonNullAssertion` fixes are "unsafe" and won't auto-apply**: Biome's `noNonNullAssertion` rule flags `!` non-null assertions (e.g., `foo!.bar`) and suggests replacing them with optional chaining (`foo?.bar`). Biome marks this fix as **unsafe**, so `biome check --fix` skips it entirely. When the gate reports `noNonNullAssertion` errors, you must replace each `!` with `?.` (or an appropriate null-safe alternative) manually. There is no automated path.
+
 <!-- compound: lengthily-enchanted-fieldfare -->
 
 **`useSemanticElements` conflicts with `role="status"` for loading skeletons**: Biome's `useSemanticElements` rule flags `<div role="status">` and suggests using `<output>`, but `<output>` is semantically for form calculation results — not loading indicators. Use `<div role="status">` with a `biome-ignore` line comment:

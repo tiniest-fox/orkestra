@@ -4,11 +4,11 @@ import { Drawer } from "../ui/Drawer/Drawer";
 import type { NewTaskFormProps } from "./NewTaskForm";
 import { NewTaskForm } from "./NewTaskForm";
 
-export function NewTaskDrawer({ config, onClose, onCreate }: NewTaskFormProps) {
+export function NewTaskDrawer({ config, onClose, onCreate, prewarmId }: NewTaskFormProps) {
   return (
     <Drawer onClose={onClose}>
       <div className="flex flex-col h-full bg-surface">
-        <NewTaskForm config={config} onClose={onClose} onCreate={onCreate} />
+        <NewTaskForm config={config} onClose={onClose} onCreate={onCreate} prewarmId={prewarmId} />
       </div>
     </Drawer>
   );

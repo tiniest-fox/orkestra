@@ -11,6 +11,7 @@ import type { DrawerTabId } from "./drawerTabs";
 import { ResourcesTab } from "./Sections/ResourcesTab";
 import { RunTab } from "./Sections/RunTab";
 import { SubtasksSection } from "./Sections/SubtasksSection";
+import { getSplashLabel, StageSplash } from "./StageSplash";
 import type { TaskDrawerState } from "./useTaskDrawerState";
 
 // ============================================================================
@@ -47,6 +48,10 @@ export function DrawerTabContent({
   runScript,
 }: DrawerTabContentProps) {
   if (activeTab === "agent") {
+    const splashLabel = getSplashLabel(task.state);
+    if (splashLabel) {
+      return <StageSplash label={splashLabel} />;
+    }
     return (
       <AgentTab
         task={task}

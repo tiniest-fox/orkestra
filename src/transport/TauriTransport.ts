@@ -88,6 +88,10 @@ const METHOD_MAP: Record<string, string> = {
   task_sync_status: "workflow_task_sync_status",
   force_push_pr_changes: "workflow_force_push_pr_changes",
 
+  // -- Prewarm --
+  prewarm_worktree: "workflow_prewarm_worktree",
+  cancel_prewarm: "workflow_cancel_prewarm",
+
   // -- Same-name commands (no prefix needed) --
   assistant_send_message: "assistant_send_message",
   assistant_stop: "assistant_stop",

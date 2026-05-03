@@ -4,6 +4,7 @@ import { Inbox } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawerHistory } from "../../hooks/useDrawerHistory";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { usePrewarm } from "../../hooks/usePrewarm";
 import { stalenessClass } from "../../hooks/useStalenessTimer";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { usePrStatus } from "../../providers/PrStatusProvider";
@@ -98,6 +99,8 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     draftChatOpen ||
     fileViewerPath !== null;
   const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
+  const { prewarmId: newTaskPrewarmId } = usePrewarm(isNewTaskOpen);
+  const { prewarmId: draftChatPrewarmId } = usePrewarm(draftChatOpen && !taskAssistantId);
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
   const { getPrStatus } = usePrStatus();
 
@@ -475,13 +478,15 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
         <NewTaskDrawer
           config={config}
           onClose={closeNewTask}
-          onCreate={async (description, autoMode, baseBranch, flow) => {
+          prewarmId={newTaskPrewarmId}
+          onCreate={async (description, autoMode, baseBranch, flow, prewarmId) => {
             await transport.call("create_task", {
               title: "",
               description,
               base_branch: baseBranch || null,
               auto_mode: autoMode,
               flow: flow ?? null,
+              ...(prewarmId ? { task_id: prewarmId } : {}),
             });
           }}
         />
@@ -496,13 +501,15 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
             <NewTaskModal
               config={config}
               onClose={closeNewTask}
-              onCreate={async (description, autoMode, baseBranch, flow) => {
+              prewarmId={newTaskPrewarmId}
+              onCreate={async (description, autoMode, baseBranch, flow, prewarmId) => {
                 await transport.call("create_task", {
                   title: "",
                   description,
                   base_branch: baseBranch || null,
                   auto_mode: autoMode,
                   flow: flow ?? null,
+                  ...(prewarmId ? { task_id: prewarmId } : {}),
                 });
               }}
             />
@@ -516,6 +523,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           taskId={taskAssistantId ?? undefined}
           draftChat={draftChatOpen && !taskAssistantId}
           onTaskCreated={handleChatTaskCreated}
+          prewarmId={draftChatPrewarmId}
         />
       )}
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}

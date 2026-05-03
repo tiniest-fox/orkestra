@@ -41,6 +41,8 @@ interface AssistantDrawerProps {
   draftChat?: boolean;
   /** Called with the new task ID after the first message creates the task. */
   onTaskCreated?: (taskId: string) => void;
+  /** Pre-warmed worktree ID to pass to create_chat_and_send for faster task creation. */
+  prewarmId?: string | null;
 }
 
 export function AssistantDrawer({
@@ -49,6 +51,7 @@ export function AssistantDrawer({
   taskId,
   draftChat,
   onTaskCreated,
+  prewarmId,
 }: AssistantDrawerProps) {
   const transport = useTransport();
   const connectionState = useConnectionState();
@@ -279,7 +282,10 @@ export function AssistantDrawer({
         // First message in a new chat — create task and session atomically.
         const result = await transport.call<{ task: WorkflowTask; session: AssistantSession }>(
           "create_chat_and_send",
-          { message },
+          {
+            message,
+            ...(prewarmId ? { task_id: prewarmId } : {}),
+          },
         );
         session = result.session;
         setActiveSessionId(session.id);
@@ -308,7 +314,7 @@ export function AssistantDrawer({
         // Logs refresh via the hook's effect (session ID change) or event listener.
       }
     },
-    [transport, activeSessionId, taskId, draftChat, onTaskCreated],
+    [transport, activeSessionId, taskId, draftChat, onTaskCreated, prewarmId],
   );
 
   // -- Send message --

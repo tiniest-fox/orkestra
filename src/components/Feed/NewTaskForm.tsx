@@ -17,10 +17,12 @@ export interface NewTaskFormProps {
     autoMode: boolean,
     baseBranch: string,
     flow?: string,
+    prewarmId?: string | null,
   ) => Promise<void>;
+  prewarmId?: string | null;
 }
 
-export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
+export function NewTaskForm({ config, onClose, onCreate, prewarmId }: NewTaskFormProps) {
   const [description, setDescription] = useState("");
   const [autoMode, setAutoMode] = useState(false);
   const [baseBranch, setBaseBranch] = useState("");
@@ -41,12 +43,12 @@ export function NewTaskForm({ config, onClose, onCreate }: NewTaskFormProps) {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await onCreate(description.trim(), autoMode, baseBranch, selectedFlow);
+      await onCreate(description.trim(), autoMode, baseBranch, selectedFlow, prewarmId);
       onClose();
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, description, autoMode, baseBranch, selectedFlow, onCreate, onClose]);
+  }, [canSubmit, description, autoMode, baseBranch, selectedFlow, onCreate, onClose, prewarmId]);
 
   const flows = config.flows;
   const flowKeys: string[] = useMemo(() => Object.keys(flows), [flows]);

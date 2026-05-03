@@ -103,7 +103,7 @@ describe("StatusSymbol — done task", () => {
     const { container } = render(
       <StatusSymbol task={task} prStatus={makePrStatus({ state: "open" })} />,
     );
-    const svg = container.querySelector("svg");
+    const svg = container.querySelector("[data-testid='icon-passing']");
     expect(svg).toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-success");
   });
@@ -140,7 +140,7 @@ describe("StatusSymbol — done task", () => {
         })}
       />,
     );
-    const svg = container.querySelector("svg");
+    const svg = container.querySelector("[data-testid='icon-passing']");
     expect(svg).toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-success");
   });
@@ -159,7 +159,7 @@ describe("StatusSymbol — done task", () => {
         })}
       />,
     );
-    const svg = container.querySelector("svg");
+    const svg = container.querySelector("[data-testid='icon-pending']");
     expect(svg).toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-warning");
   });
@@ -178,7 +178,7 @@ describe("StatusSymbol — done task", () => {
         })}
       />,
     );
-    const svg = container.querySelector("svg");
+    const svg = container.querySelector("[data-testid='icon-failing']");
     expect(svg).toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-error");
   });
@@ -198,7 +198,7 @@ describe("StatusSymbol — done task", () => {
         })}
       />,
     );
-    const svg = container.querySelector("svg");
+    const svg = container.querySelector("[data-testid='icon-conflicts']");
     expect(svg).toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-warning");
   });
@@ -219,9 +219,10 @@ describe("StatusSymbol — done task", () => {
         })}
       />,
     );
-    const svg = container.querySelector("svg");
+    // Conflict icon (AlertTriangle) takes precedence over failing icon (CircleX)
+    const svg = container.querySelector("[data-testid='icon-conflicts']");
     expect(svg).toBeInTheDocument();
-    // Conflict takes precedence — warning, not error
+    expect(container.querySelector("[data-testid='icon-failing']")).not.toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-warning");
     expect(svg?.parentElement).not.toHaveClass("text-status-error");
   });
@@ -240,7 +241,7 @@ describe("StatusSymbol — done task", () => {
         })}
       />,
     );
-    const svg = container.querySelector("svg");
+    const svg = container.querySelector("[data-testid='icon-passing']");
     expect(svg).toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-success");
   });

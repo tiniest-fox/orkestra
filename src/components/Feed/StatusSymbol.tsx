@@ -3,6 +3,7 @@
 import { AlertTriangle, CircleCheck, CircleX, Clock } from "lucide-react";
 import type { ReactNode } from "react";
 import type { PrStatus, WorkflowTaskView } from "../../types/workflow";
+import { hasConflicts } from "../../utils/prStatus";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 
 interface StatusSymbolProps {
@@ -21,7 +22,7 @@ const TRANSPARENT = "bg-transparent";
 const PR_ICON_SIZE = 14;
 
 function derivePrHealth(prStatus: PrStatus): "passing" | "pending" | "failing" | "conflicts" {
-  if (prStatus.merge_state_status === "DIRTY" || prStatus.mergeable === false) {
+  if (hasConflicts(prStatus)) {
     return "conflicts";
   }
   const meaningful = prStatus.checks.filter((c) => c.status !== "skipped");
@@ -134,25 +135,25 @@ function resolveColors(
         case "conflicts":
           return {
             colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
-            symbol: <AlertTriangle size={PR_ICON_SIZE} />,
+            symbol: <AlertTriangle data-testid="icon-conflicts" size={PR_ICON_SIZE} />,
             extraClass,
           };
         case "failing":
           return {
             colors: { bg: "bg-status-error-bg", icon: "text-status-error" },
-            symbol: <CircleX size={PR_ICON_SIZE} />,
+            symbol: <CircleX data-testid="icon-failing" size={PR_ICON_SIZE} />,
             extraClass,
           };
         case "pending":
           return {
             colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
-            symbol: <Clock size={PR_ICON_SIZE} />,
+            symbol: <Clock data-testid="icon-pending" size={PR_ICON_SIZE} />,
             extraClass,
           };
         case "passing":
           return {
             colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
-            symbol: <CircleCheck size={PR_ICON_SIZE} />,
+            symbol: <CircleCheck data-testid="icon-passing" size={PR_ICON_SIZE} />,
             extraClass,
           };
       }

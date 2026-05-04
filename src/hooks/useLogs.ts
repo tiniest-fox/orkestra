@@ -173,13 +173,15 @@ export function useLogs(
     activeLogStage === task.derived.current_stage &&
     !error;
 
-  const { reset } = usePolling(shouldPoll ? fetchLogs : null, 2000);
+  usePolling(shouldPoll ? fetchLogs : null, 2000);
 
   // Debounce timer ref — cleared and reset on each push event to coalesce rapid notifications.
   const pushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Push subscription: react to log_entry_appended events and trigger an immediate fetch.
   // Filters to the currently active task/session so events for other tasks are ignored.
+  // Calls fetchLogs() directly rather than reset() so fetches aren't dropped when polling
+  // is disabled (e.g., after task transitions from working to non-working).
   useTransportListener<{ task_id: string; session_id: string }>(
     "log_entry_appended",
     useCallback(
@@ -191,12 +193,23 @@ export function useLogs(
         if (pushTimeoutRef.current !== null) clearTimeout(pushTimeoutRef.current);
         pushTimeoutRef.current = setTimeout(() => {
           pushTimeoutRef.current = null;
-          reset();
+          fetchLogs();
         }, 100);
       },
-      [task.id, reset],
+      [task.id, fetchLogs],
     ),
   );
+
+  // Final fetch when agent stops working — catches artifacts that arrive during the
+  // transition window when polling is disabled but the push event may have been missed.
+  const wasWorkingRef = useRef(task.derived.is_working);
+  useEffect(() => {
+    const wasWorking = wasWorkingRef.current;
+    wasWorkingRef.current = task.derived.is_working;
+    if (wasWorking && !task.derived.is_working && isActive && activeLogStage) {
+      fetchLogs();
+    }
+  }, [task.derived.is_working, isActive, activeLogStage, fetchLogs]);
 
   // Clean up debounce timer on unmount.
   useEffect(() => {

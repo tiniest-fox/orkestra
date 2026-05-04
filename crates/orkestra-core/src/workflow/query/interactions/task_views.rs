@@ -53,16 +53,7 @@ pub fn list_active(
         group_by_task_id(store.list_stage_sessions_for_tasks(&all_task_id_refs)?);
 
     // Compute max child updated_at per parent BEFORE consuming subtasks_by_parent.
-    let max_child_updated_at: HashMap<String, String> = subtasks_by_parent
-        .iter()
-        .filter_map(|(parent_id, subtasks)| {
-            subtasks
-                .iter()
-                .map(|t| t.updated_at.as_str())
-                .max()
-                .map(|max_ts| (parent_id.clone(), max_ts.to_string()))
-        })
-        .collect();
+    let max_child_updated_at = compute_max_child_updated_at(&subtasks_by_parent);
 
     let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
     let mut subtask_views: Vec<TaskView> = Vec::new();
@@ -247,16 +238,7 @@ pub fn list_archived(
         group_by_task_id(store.list_stage_sessions_for_tasks(&all_task_id_refs)?);
 
     // Compute max child updated_at per parent BEFORE consuming subtasks_by_parent.
-    let max_child_updated_at: HashMap<String, String> = subtasks_by_parent
-        .iter()
-        .filter_map(|(parent_id, subtasks)| {
-            subtasks
-                .iter()
-                .map(|t| t.updated_at.as_str())
-                .max()
-                .map(|max_ts| (parent_id.clone(), max_ts.to_string()))
-        })
-        .collect();
+    let max_child_updated_at = compute_max_child_updated_at(&subtasks_by_parent);
 
     let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
     let mut subtask_views: Vec<TaskView> = Vec::new();
@@ -293,6 +275,22 @@ pub fn list_archived(
 }
 
 // -- Helpers --
+
+/// Compute the maximum `updated_at` timestamp across subtasks for each parent.
+fn compute_max_child_updated_at(
+    subtasks_by_parent: &HashMap<String, Vec<Task>>,
+) -> HashMap<String, String> {
+    subtasks_by_parent
+        .iter()
+        .filter_map(|(parent_id, subtasks)| {
+            subtasks
+                .iter()
+                .map(|t| t.updated_at.as_str())
+                .max()
+                .map(|max_ts| (parent_id.clone(), max_ts.to_string()))
+        })
+        .collect()
+}
 
 /// Extend `subtasks_by_parent` with archived subtasks for a set of parent IDs.
 ///

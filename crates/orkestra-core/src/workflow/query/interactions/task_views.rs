@@ -52,6 +52,18 @@ pub fn list_active(
     let sessions_by_task =
         group_by_task_id(store.list_stage_sessions_for_tasks(&all_task_id_refs)?);
 
+    // Compute max child updated_at per parent BEFORE consuming subtasks_by_parent.
+    let max_child_updated_at: HashMap<String, String> = subtasks_by_parent
+        .iter()
+        .filter_map(|(parent_id, subtasks)| {
+            subtasks
+                .iter()
+                .map(|t| t.updated_at.as_str())
+                .max()
+                .map(|max_ts| (parent_id.clone(), max_ts.to_string()))
+        })
+        .collect();
+
     let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
     let mut subtask_views: Vec<TaskView> = Vec::new();
 
@@ -97,11 +109,13 @@ pub fn list_active(
             .copied()
             .unwrap_or(false);
         let needs_review = chat_needs_review.get(&task.id).copied().unwrap_or(false);
+        let child_ts = max_child_updated_at.get(&task.id).map(String::as_str);
         let view = build_single_top_level_view(
             task,
             &iterations_by_task,
             &sessions_by_task,
             &subtask_derived_by_parent,
+            child_ts,
             workflow,
             assistant_active,
             needs_review,
@@ -147,25 +161,11 @@ pub fn list_active_differential<S: std::hash::BuildHasher>(
         .cloned()
         .collect();
 
-    // Parents must appear in the response when any child changes, because
-    // parent derived state (subtask_progress) depends on child states.
-    let parents_with_changed_children: std::collections::HashSet<String> = all_views
-        .iter()
-        .filter_map(|v| {
-            if since.get(&v.task.id) == Some(&v.task.updated_at) {
-                None
-            } else {
-                v.task.parent_id.clone()
-            }
-        })
-        .collect();
-
+    // Parent views now carry an effective updated_at = max(parent, children), so parents
+    // are naturally included whenever any child changes — no special-case needed.
     let tasks = all_views
         .into_iter()
-        .filter(|v| {
-            since.get(&v.task.id) != Some(&v.task.updated_at)
-                || parents_with_changed_children.contains(&v.task.id)
-        })
+        .filter(|v| since.get(&v.task.id) != Some(&v.task.updated_at))
         .collect();
 
     Ok(DifferentialTaskResponse { tasks, deleted_ids })
@@ -246,6 +246,18 @@ pub fn list_archived(
     let sessions_by_task =
         group_by_task_id(store.list_stage_sessions_for_tasks(&all_task_id_refs)?);
 
+    // Compute max child updated_at per parent BEFORE consuming subtasks_by_parent.
+    let max_child_updated_at: HashMap<String, String> = subtasks_by_parent
+        .iter()
+        .filter_map(|(parent_id, subtasks)| {
+            subtasks
+                .iter()
+                .map(|t| t.updated_at.as_str())
+                .max()
+                .map(|max_ts| (parent_id.clone(), max_ts.to_string()))
+        })
+        .collect();
+
     let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
     let mut subtask_views: Vec<TaskView> = Vec::new();
 
@@ -263,11 +275,13 @@ pub fn list_archived(
 
     let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
     for task in top_level {
+        let child_ts = max_child_updated_at.get(&task.id).map(String::as_str);
         views.push(build_single_top_level_view(
             task,
             &iterations_by_task,
             &sessions_by_task,
             &subtask_derived_by_parent,
+            child_ts,
             workflow,
             false, // archived tasks never have an active assistant agent
             false, // archived tasks never need review
@@ -349,15 +363,26 @@ fn build_subtask_derived_data(
 }
 
 /// Build a view for a single top-level task using preloaded data.
+///
+/// `max_child_updated_at` is the maximum `updated_at` across all of the task's
+/// subtasks. When it exceeds the parent's own `updated_at`, the parent's
+/// `TaskView.task.updated_at` is set to that value so differential sync
+/// naturally detects the change without a separate cascade step.
 fn build_single_top_level_view(
-    task: Task,
+    mut task: Task,
     iterations_by_task: &HashMap<String, Vec<Iteration>>,
     sessions_by_task: &HashMap<String, Vec<StageSession>>,
     subtask_derived_by_parent: &HashMap<String, Vec<DerivedTaskState>>,
+    max_child_updated_at: Option<&str>,
     workflow: &WorkflowConfig,
     assistant_active: bool,
     chat_needs_review: bool,
 ) -> TaskView {
+    if let Some(child_ts) = max_child_updated_at {
+        if child_ts > task.updated_at.as_str() {
+            task.updated_at = child_ts.to_string();
+        }
+    }
     let iterations = iterations_by_task
         .get(&task.id)
         .cloned()
@@ -475,4 +500,121 @@ pub(crate) fn topological_sort(tasks: Vec<Task>) -> Vec<Task> {
         }
     }
     result
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow::config::StageConfig;
+    use crate::workflow::domain::Task;
+    use crate::workflow::runtime::TaskState;
+    use crate::workflow::InMemoryWorkflowStore;
+
+    fn simple_workflow() -> WorkflowConfig {
+        WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
+    }
+
+    fn make_task(id: &str, updated_at: &str) -> Task {
+        let mut task = Task::new(id, "Test", "desc", "work", "2020-01-01T00:00:00Z");
+        task.updated_at = updated_at.to_string();
+        task
+    }
+
+    fn make_subtask(id: &str, parent_id: &str, updated_at: &str) -> Task {
+        let mut task = make_task(id, updated_at);
+        task.parent_id = Some(parent_id.to_string());
+        task.state = TaskState::queued("work".to_string());
+        task
+    }
+
+    /// When a subtask's `updated_at` is newer than the parent's, the parent
+    /// view's `task.updated_at` must reflect the subtask's timestamp.
+    #[test]
+    fn parent_updated_at_reflects_child_changes() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let workflow = simple_workflow();
+
+        let mut parent = make_task("parent-1", "2020-01-01T00:00:00Z");
+        parent.state = TaskState::waiting_on_children("work");
+        store.save_task(&parent).unwrap();
+
+        let subtask = make_subtask("sub-1", "parent-1", "2020-06-01T00:00:00Z");
+        store.save_task(&subtask).unwrap();
+
+        let views = list_active(&store, &workflow).unwrap();
+        let parent_view = views.iter().find(|v| v.task.id == "parent-1").unwrap();
+
+        assert_eq!(
+            parent_view.task.updated_at, "2020-06-01T00:00:00Z",
+            "parent updated_at should equal the subtask's newer timestamp"
+        );
+    }
+
+    /// When the parent's own `updated_at` is newer than all children, it
+    /// is used unchanged (no regression when parent is newer).
+    #[test]
+    fn parent_updated_at_unchanged_when_newer_than_children() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let workflow = simple_workflow();
+
+        let mut parent = make_task("parent-1", "2021-01-01T00:00:00Z");
+        parent.state = TaskState::waiting_on_children("work");
+        store.save_task(&parent).unwrap();
+
+        let subtask = make_subtask("sub-1", "parent-1", "2020-06-01T00:00:00Z");
+        store.save_task(&subtask).unwrap();
+
+        let views = list_active(&store, &workflow).unwrap();
+        let parent_view = views.iter().find(|v| v.task.id == "parent-1").unwrap();
+
+        assert_eq!(
+            parent_view.task.updated_at, "2021-01-01T00:00:00Z",
+            "parent updated_at should not be overwritten when it is already newer"
+        );
+    }
+
+    /// `list_active_differential` must include the parent when a child's
+    /// `updated_at` changes, even if the parent's own `updated_at` is unchanged.
+    /// This works because the parent view's effective `updated_at` equals
+    /// max(parent, children).
+    #[test]
+    fn differential_sync_includes_parent_when_child_changes() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let workflow = simple_workflow();
+
+        let mut parent = make_task("parent-1", "2020-01-01T00:00:00Z");
+        parent.state = TaskState::waiting_on_children("work");
+        store.save_task(&parent).unwrap();
+
+        let mut subtask = make_subtask("sub-1", "parent-1", "2020-01-01T00:00:00Z");
+        subtask.state = TaskState::queued("work");
+        store.save_task(&subtask).unwrap();
+
+        // Build a since map reflecting the current state (both timestamps match).
+        let mut since = HashMap::new();
+        since.insert("parent-1".to_string(), "2020-01-01T00:00:00Z".to_string());
+        since.insert("sub-1".to_string(), "2020-01-01T00:00:00Z".to_string());
+
+        // Bump only the subtask's updated_at (parent's own stays the same).
+        let mut updated_sub = subtask.clone();
+        updated_sub.updated_at = "2020-06-01T00:00:00Z".to_string();
+        store.save_task(&updated_sub).unwrap();
+
+        let result = list_active_differential(&store, &workflow, &since).unwrap();
+        let returned_ids: std::collections::HashSet<&str> =
+            result.tasks.iter().map(|v| v.task.id.as_str()).collect();
+
+        assert!(
+            returned_ids.contains("parent-1"),
+            "parent must appear when subtask changes (aggregate timestamp propagation)"
+        );
+        assert!(
+            returned_ids.contains("sub-1"),
+            "changed subtask must appear in differential response"
+        );
+    }
 }

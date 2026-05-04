@@ -36,15 +36,16 @@ export function applyOptimisticTransition(
         }
         return {
           ...task,
-          state: { type: "done" },
+          state: { type: "finishing", stage },
           derived: {
             ...task.derived,
-            current_stage: null,
+            current_stage: stage,
             needs_review: false,
             has_questions: false,
-            is_done: true,
-            is_terminal: true,
-            phase_icon: null,
+            is_done: false,
+            is_terminal: false,
+            is_system_active: true,
+            phase_icon: "git",
           },
         };
       }

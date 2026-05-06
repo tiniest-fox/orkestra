@@ -298,7 +298,7 @@ fn handle_window_close(app_handle: &AppHandle, window_label: &str) {
 /// Tauri's build-time resource validation passes before `ork` has been compiled.
 /// The size check distinguishes this placeholder (0 bytes) from a real binary.
 fn is_real_ork_binary(path: &std::path::Path) -> bool {
-    path.metadata().map(|m| m.len() > 0).unwrap_or(false)
+    path.metadata().is_ok_and(|m| m.len() > 0)
 }
 
 /// Run the Tauri application.

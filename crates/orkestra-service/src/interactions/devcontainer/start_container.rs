@@ -319,7 +319,7 @@ fn compose_up(
     extra_mounts: &[String],
 ) -> Result<String, ServiceError> {
     // 10 minutes is generous for even the heaviest healthcheck chains.
-    const TIMEOUT: Duration = Duration::from_secs(600);
+    const TIMEOUT: Duration = Duration::from_mins(10);
 
     std::fs::create_dir_all(override_dir)
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;

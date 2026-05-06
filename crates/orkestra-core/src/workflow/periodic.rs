@@ -64,7 +64,7 @@ mod tests {
     fn test_all_tasks_due_on_first_poll() {
         let mut scheduler = PeriodicScheduler::new();
         scheduler.register("fast", Duration::from_millis(100));
-        scheduler.register("slow", Duration::from_secs(60));
+        scheduler.register("slow", Duration::from_mins(1));
 
         let due = scheduler.poll_due();
         assert_eq!(due, vec!["fast", "slow"]);
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn test_tasks_not_due_immediately_after_poll() {
         let mut scheduler = PeriodicScheduler::new();
-        scheduler.register("task_a", Duration::from_secs(60));
+        scheduler.register("task_a", Duration::from_mins(1));
 
         // First poll: due
         assert_eq!(scheduler.poll_due(), vec!["task_a"]);
@@ -97,7 +97,7 @@ mod tests {
     fn test_mixed_intervals() {
         let mut scheduler = PeriodicScheduler::new();
         scheduler.register("fast", Duration::from_millis(1));
-        scheduler.register("slow", Duration::from_secs(60));
+        scheduler.register("slow", Duration::from_mins(1));
 
         // First poll: both due
         let due = scheduler.poll_due();

@@ -304,15 +304,14 @@ impl StageExecutionService {
         let has_agent = self
             .active_agents
             .lock()
-            .map(|agents| agents.contains_key(task_id))
-            .unwrap_or(false);
+            .is_ok_and(|agents| agents.contains_key(task_id));
 
         has_agent || self.script_service.has_active_script(task_id)
     }
 
     /// Get count of active executions (agents + scripts).
     pub fn active_count(&self) -> usize {
-        let agent_count = self.active_agents.lock().map(|a| a.len()).unwrap_or(0);
+        let agent_count = self.active_agents.lock().map_or(0, |a| a.len());
         agent_count + self.script_service.active_count()
     }
 
@@ -391,8 +390,7 @@ impl StageExecutionService {
         let generates_own = self
             .registry
             .resolve(model_spec)
-            .map(|r| r.capabilities.generates_own_session_id)
-            .unwrap_or(false);
+            .is_ok_and(|r| r.capabilities.generates_own_session_id);
 
         // Closure to generate session ID based on provider capabilities
         let generate_session_id = || {

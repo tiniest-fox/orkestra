@@ -313,7 +313,7 @@ fn claudecode_websearch_tool_logs() {
          You MUST use the WebSearch tool - do not try to answer from your training data. \
          Report the year Rust was first released. Only use web search.",
     );
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     // Verify artifact produced
     env.assert_has_artifact(&task_id, "result");
@@ -377,7 +377,7 @@ fn claudecode_webfetch_tool_logs() {
          You MUST use the WebFetch tool - do not try to summarize from memory. \
          Report the title of the page. Only use web fetch.",
     );
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     // Verify artifact produced
     env.assert_has_artifact(&task_id, "result");

@@ -100,6 +100,10 @@ The split exists because callers need to save worktree info to the database befo
 
 This lets cleanup code safely call `is_branch_merged()` without worrying about deleted branches.
 
+### Fetching from Remote
+
+Always fetch without a refspec: `git fetch origin` (via `interactions/remote/fetch.rs`). The refspec form `git fetch origin main:main` fails with an error when `main` is the currently checked-out branch, because git refuses to update a checked-out branch via a refspec. After fetching, resolve the base commit from the remote-tracking ref (`origin/main`) rather than the local branch ref — this ensures worktrees branch from `origin/main`'s tip regardless of whether the user has run `git pull`.
+
 ### git2 vs CLI
 
 The crate uses both git2 (Rust bindings) and git CLI:
@@ -118,6 +122,8 @@ The `Repository` is wrapped in `Mutex<Repository>` because git2's `Repository` i
 ## Testing
 
 Unit tests live inline in `service.rs` and `mock.rs`. Tests create real git repositories in temp directories.
+
+When testing worktree creation, call `git.fetch_origin()` before `ensure_worktree()` to mirror production usage (see `setup_worktree.rs`). Without the preceding fetch, the remote-tracking ref won't be populated and tests that rely on resolving `origin/main` will fail.
 
 For integration tests in other crates, use `MockGitService` (requires `testutil` feature). Two patterns exist for injecting errors:
 

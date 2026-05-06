@@ -290,9 +290,9 @@ fn test_task_setup_syncs_base_branch() {
 fn test_task_setup_continues_on_sync_failure() {
     let ctx = TestEnv::with_mock_git(&test_default_workflow(), &["planner", "worker"]);
 
-    // Configure mock to fail sync
+    // Configure mock to fail fetch
     ctx.mock_git_service()
-        .set_next_sync_result(Err(GitError::Other("Network error".to_string())));
+        .set_next_fetch_result(Err(GitError::Other("Network error".to_string())));
 
     // Create a task - should succeed despite sync failure
     let task = ctx.create_task(

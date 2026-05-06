@@ -244,6 +244,7 @@ fn read_lock_state(lock_path: &Path) -> LockState {
 }
 
 fn now_secs() -> u64 {
+    // u64::MAX on pre-epoch clocks: treated as a fresh lock timestamp, preventing stale-lock theft
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(u64::MAX, |d| d.as_secs())

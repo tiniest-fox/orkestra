@@ -244,13 +244,10 @@ fn read_lock_state(lock_path: &Path) -> LockState {
 }
 
 fn now_secs() -> u64 {
+    // u64::MAX on pre-epoch clocks: treated as a fresh lock timestamp, preventing stale-lock theft
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        // If the system clock is before UNIX_EPOCH, use u64::MAX so the lock
-        // appears maximally fresh (age = 0 via saturating_sub) rather than
-        // maximally stale (age = current_time via unwrap_or(0)).
-        .unwrap_or(u64::MAX)
+        .map_or(u64::MAX, |d| d.as_secs())
 }
 
 /// Write `{pid}:{timestamp}` to `lock_path` via an atomic rename.

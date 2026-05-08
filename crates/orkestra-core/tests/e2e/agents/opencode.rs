@@ -24,7 +24,7 @@ fn opencode_full_orchestrator_run() {
         "List files",
         "List the files in the current directory using ls. Report what you see. Do NOT create or modify any files.",
     );
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
     env.assert_has_logs(&task_id, "work");
     env.assert_has_artifact(&task_id, "result");
 }
@@ -56,7 +56,7 @@ fn opencode_session_resume_after_rejection() {
     );
 
     // First run
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     let session_before = env.get_stage_session(&task_id, "work");
     let logs_before = env.get_log_count(&task_id, "work");
@@ -89,7 +89,7 @@ fn opencode_session_resume_after_rejection() {
 
     // Reject and re-run
     env.reject(&task_id, "Please also report the total number of files.");
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     let session_after = env.get_stage_session(&task_id, "work");
     let logs_after = env.get_log_count(&task_id, "work");
@@ -144,7 +144,7 @@ fn opencode_fresh_start_without_session_id() {
     );
 
     // First run — establishes a session with a real ses_... ID
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     let session = env.get_stage_session(&task_id, "work");
     assert!(
@@ -170,7 +170,7 @@ fn opencode_fresh_start_without_session_id() {
 
     // Reject and re-run — must start fresh (not resume)
     env.reject(&task_id, "Please also report the total number of files.");
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     // Should have completed with a new session ID extracted from stream
     let session_after = env.get_stage_session(&task_id, "work");
@@ -223,7 +223,7 @@ fn opencode_questions_output() {
          Do NOT attempt any work — ONLY ask the question.",
     );
     let task_id = env.create_task("Set up project", "Help me set up a new project.");
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     let questions = env.assert_has_questions(&task_id);
     assert_eq!(questions.len(), 1, "Should have exactly 1 question");
@@ -251,7 +251,7 @@ fn opencode_failed_output() {
         "Read the file /nonexistent/impossible/path_that_does_not_exist_xyz.rs and summarize it. \
          If the file does not exist, you MUST report failure using the \"failed\" output type.",
     );
-    let reason = env.run_to_failure(&task_id, Duration::from_secs(60));
+    let reason = env.run_to_failure(&task_id, Duration::from_mins(1));
     assert!(!reason.is_empty(), "Failure reason should not be empty");
     println!("Failed with reason: {reason}");
 }
@@ -270,7 +270,7 @@ fn opencode_blocked_output() {
          Set the reason to explain that you need access to an external database that is not available. \
          Do NOT attempt any work.",
     );
-    let reason = env.run_to_blocked(&task_id, Duration::from_secs(60));
+    let reason = env.run_to_blocked(&task_id, Duration::from_mins(1));
     assert!(!reason.is_empty(), "Blocked reason should not be empty");
     println!("Blocked with reason: {reason}");
 }
@@ -295,7 +295,7 @@ fn opencode_subtasks_output() {
         "Build calculator",
         "Build a simple calculator library with add and subtract functions.",
     );
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
     env.assert_has_artifact(&task_id, "result");
 }
 
@@ -314,7 +314,7 @@ fn opencode_structured_tool_call_logs() {
          with the content 'hello world'. Then use bash to run ls. \
          Report what you see. Do NOT modify any other files.",
     );
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     // Verify artifact produced
     env.assert_has_artifact(&task_id, "result");
@@ -386,7 +386,7 @@ fn opencode_websearch_tool_logs() {
          You MUST use the WebSearch tool if available. \
          Report the year Rust was first released.",
     );
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     // Verify artifact produced
     env.assert_has_artifact(&task_id, "result");
@@ -452,7 +452,7 @@ fn opencode_webfetch_tool_logs() {
          You MUST use the WebFetch tool if available. \
          Report the title of the page.",
     );
-    env.run_to_completion(&task_id, Duration::from_secs(60));
+    env.run_to_completion(&task_id, Duration::from_mins(1));
 
     // Verify artifact produced
     env.assert_has_artifact(&task_id, "result");

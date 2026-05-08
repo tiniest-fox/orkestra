@@ -130,7 +130,7 @@ impl ScriptExecutionService {
 
     /// Get the number of active scripts.
     pub fn active_count(&self) -> usize {
-        self.active_scripts.lock().map(|s| s.len()).unwrap_or(0)
+        self.active_scripts.lock().map_or(0, |s| s.len())
     }
 
     /// Get the set of task IDs with active script executions.

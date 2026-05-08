@@ -187,7 +187,7 @@ impl OrchestratorLoop {
         let mut scheduler = PeriodicScheduler::new();
 
         // Maintenance — runs periodically (core phases run unconditionally every tick)
-        scheduler.register("cleanup_worktrees", Duration::from_secs(60));
+        scheduler.register("cleanup_worktrees", Duration::from_mins(1));
 
         Self {
             api,

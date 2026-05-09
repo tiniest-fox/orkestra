@@ -43,6 +43,8 @@ interface AssistantDrawerProps {
   onTaskCreated?: (taskId: string) => void;
   /** Pre-warmed worktree ID to pass to create_chat_and_send for faster task creation. */
   prewarmId?: string | null;
+  /** Called before task creation to prevent cancel_prewarm firing after adoption. */
+  onAdoptPrewarm?: () => void;
 }
 
 export function AssistantDrawer({
@@ -52,6 +54,7 @@ export function AssistantDrawer({
   draftChat,
   onTaskCreated,
   prewarmId,
+  onAdoptPrewarm,
 }: AssistantDrawerProps) {
   const transport = useTransport();
   const connectionState = useConnectionState();
@@ -280,6 +283,7 @@ export function AssistantDrawer({
       let session: AssistantSession;
       if (draftChat && !taskId) {
         // First message in a new chat — create task and session atomically.
+        onAdoptPrewarm?.();
         const result = await transport.call<{ task: WorkflowTask; session: AssistantSession }>(
           "create_chat_and_send",
           {
@@ -314,7 +318,7 @@ export function AssistantDrawer({
         // Logs refresh via the hook's effect (session ID change) or event listener.
       }
     },
-    [transport, activeSessionId, taskId, draftChat, onTaskCreated, prewarmId],
+    [transport, activeSessionId, taskId, draftChat, onTaskCreated, prewarmId, onAdoptPrewarm],
   );
 
   // -- Send message --

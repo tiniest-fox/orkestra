@@ -59,19 +59,41 @@ impl TaskSetupService {
     /// deletes the record so normal task creation can handle setup.
     pub fn spawn_prewarm(
         &self,
-        store: Arc<dyn WorkflowStore>,
-        git_service: Arc<dyn GitService>,
         task_id: String,
         base_branch: Option<String>,
     ) -> WorkflowResult<()> {
+        // Fail fast if a task or prewarm record with this ID already exists.
+        if self.store.get_task(&task_id)?.is_some() {
+            return Err(crate::workflow::ports::WorkflowError::InvalidState(
+                format!("task {task_id} already exists"),
+            ));
+        }
+        if self.store.get_worktree_record(&task_id)?.is_some() {
+            return Err(crate::workflow::ports::WorkflowError::InvalidState(
+                format!("prewarm record for {task_id} already exists"),
+            ));
+        }
+
         let record = WorktreeRecord {
             task_id: task_id.clone(),
             status: WorktreeStatus::Pending,
             base_branch: base_branch.clone(),
             worktree_path: None,
+            branch_name: None,
+            base_commit: None,
             created_at: Utc::now().to_rfc3339(),
         };
-        store.save_worktree_record(&record)?;
+        self.store.save_worktree_record(&record)?;
+
+        let store = Arc::clone(&self.store);
+        let git_service = match self.git.as_ref() {
+            Some(g) => Arc::clone(g),
+            None => {
+                return Err(crate::workflow::ports::WorkflowError::GitError(
+                    "No git service configured".into(),
+                ))
+            }
+        };
 
         let run = move || {
             let branch = base_branch.as_deref();
@@ -82,16 +104,32 @@ impl TaskSetupService {
                         status: WorktreeStatus::Ready,
                         base_branch: record.base_branch.clone(),
                         worktree_path: Some(result.worktree_path.to_string_lossy().into_owned()),
+                        branch_name: Some(result.branch_name.clone()),
+                        base_commit: Some(result.base_commit.clone()),
                         created_at: record.created_at.clone(),
                     };
-                    let _ = store.save_worktree_record(&updated);
+                    if let Err(e) = store.save_worktree_record(&updated) {
+                        crate::orkestra_debug!(
+                            "setup",
+                            "CRITICAL: Failed to save ready worktree record for {task_id}: {e}"
+                        );
+                    }
                 }
-                Err(_) => {
-                    let _ = store.delete_worktree_record(&task_id);
+                Err(e) => {
+                    crate::orkestra_debug!(
+                        "setup",
+                        "CRITICAL: Prewarm worktree creation failed for {task_id}: {e}"
+                    );
+                    if let Err(e2) = store.delete_worktree_record(&task_id) {
+                        crate::orkestra_debug!(
+                            "setup",
+                            "CRITICAL: Failed to delete failed prewarm record for {task_id}: {e2}"
+                        );
+                    }
                 }
             }
         };
-        if self.sync.load(Ordering::SeqCst) {
+        if self.sync.load(Ordering::Relaxed) {
             run();
         } else {
             thread::spawn(run);

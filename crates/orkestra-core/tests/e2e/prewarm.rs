@@ -13,7 +13,7 @@ use orkestra_core::workflow::runtime::TaskState;
 use orkestra_core::workflow::{Git2GitService, SqliteWorkflowStore, WorkflowApi};
 use orkestra_store::{WorktreeRecord, WorktreeStatus};
 
-use crate::helpers::TestEnv;
+use crate::helpers::{enable_auto_merge, MockAgentOutput, TestEnv};
 
 // =============================================================================
 // Helpers
@@ -141,6 +141,8 @@ fn test_prewarm_pending_fallback() {
         status: WorktreeStatus::Pending,
         base_branch: None,
         worktree_path: None,
+        branch_name: None,
+        base_commit: None,
         created_at: chrono::Utc::now().to_rfc3339(),
     };
     store
@@ -340,5 +342,82 @@ fn test_startup_recovery_cleans_worktree_records() {
         matches!(task.state, TaskState::AwaitingSetup { .. }),
         "Task should fall back to AwaitingSetup when recovery cleared prewarm record, got: {:?}",
         task.state
+    );
+}
+
+// =============================================================================
+// Prewarmed task completes integration (branch_name populated correctly)
+// =============================================================================
+
+#[test]
+fn test_prewarm_adopt_task_merges_at_integration() {
+    let workflow = enable_auto_merge(two_stage_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planning", "work"]);
+
+    let task_id = "prewarm-integration-id";
+
+    // Prewarm then create task.
+    ctx.api()
+        .prewarm_worktree(task_id, None)
+        .expect("prewarm should succeed");
+    let task = ctx
+        .api()
+        .create_task_with_prewarm(
+            task_id,
+            "Prewarm integration",
+            "Description",
+            None,
+            orkestra_core::workflow::domain::TaskCreationMode::Normal,
+            None,
+        )
+        .expect("create should succeed");
+
+    // Adopted worktree must have branch_name set so integration doesn't short-circuit.
+    assert!(
+        task.branch_name.is_some(),
+        "Adopted task must have branch_name for integration to merge"
+    );
+    assert!(
+        !task.base_commit.is_empty(),
+        "Adopted task must have base_commit for integration"
+    );
+
+    // Drive through planning stage.
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan content".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // setup → queued (already done) → spawn planning
+    ctx.advance(); // process plan → AwaitingApproval
+    ctx.api().approve(task_id).expect("approve planning");
+    ctx.advance(); // advance to work stage
+
+    // Drive through work stage.
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn work
+    ctx.advance(); // process summary → AwaitingApproval
+    ctx.api().approve(task_id).expect("approve work");
+    ctx.advance(); // commit pipeline → Done → auto_merge triggers integration
+
+    // With auto_merge and sync background, integration runs inline.
+    // Task must be Archived — confirming branch_name was set and merge happened.
+    let final_task = ctx.api().get_task(task_id).unwrap();
+    assert_eq!(
+        final_task.state,
+        TaskState::Archived,
+        "Prewarmed task must be Archived after integration (branch_name set correctly)"
     );
 }

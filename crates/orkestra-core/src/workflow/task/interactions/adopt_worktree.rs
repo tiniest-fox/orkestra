@@ -41,6 +41,8 @@ mod tests {
             status,
             base_branch: Some("main".to_string()),
             worktree_path: Some("/tmp/wt".to_string()),
+            branch_name: Some("task/my-task".to_string()),
+            base_commit: Some("abc123".to_string()),
             created_at: "2025-01-01T00:00:00Z".to_string(),
         }
     }

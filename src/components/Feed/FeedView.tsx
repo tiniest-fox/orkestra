@@ -99,8 +99,10 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     draftChatOpen ||
     fileViewerPath !== null;
   const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
-  const { prewarmId: newTaskPrewarmId } = usePrewarm(isNewTaskOpen);
-  const { prewarmId: draftChatPrewarmId } = usePrewarm(draftChatOpen && !taskAssistantId);
+  const { prewarmId: newTaskPrewarmId, adopt: adoptNewTaskPrewarm } = usePrewarm(isNewTaskOpen);
+  const { prewarmId: draftChatPrewarmId, adopt: adoptDraftChatPrewarm } = usePrewarm(
+    draftChatOpen && !taskAssistantId,
+  );
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
   const { getPrStatus } = usePrStatus();
 
@@ -480,6 +482,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           onClose={closeNewTask}
           prewarmId={newTaskPrewarmId}
           onCreate={async (description, autoMode, baseBranch, flow, prewarmId) => {
+            adoptNewTaskPrewarm();
             await transport.call("create_task", {
               title: "",
               description,
@@ -503,6 +506,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
               onClose={closeNewTask}
               prewarmId={newTaskPrewarmId}
               onCreate={async (description, autoMode, baseBranch, flow, prewarmId) => {
+                adoptNewTaskPrewarm();
                 await transport.call("create_task", {
                   title: "",
                   description,
@@ -524,6 +528,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
           draftChat={draftChatOpen && !taskAssistantId}
           onTaskCreated={handleChatTaskCreated}
           prewarmId={draftChatPrewarmId}
+          onAdoptPrewarm={adoptDraftChatPrewarm}
         />
       )}
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}

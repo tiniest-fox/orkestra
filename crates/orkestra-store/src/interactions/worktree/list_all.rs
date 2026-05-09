@@ -8,7 +8,7 @@ use crate::types::WorktreeRecord;
 pub fn execute(conn: &Connection) -> WorkflowResult<Vec<WorktreeRecord>> {
     let mut stmt = conn
         .prepare(
-            "SELECT task_id, status, base_branch, worktree_path, created_at
+            "SELECT task_id, status, base_branch, worktree_path, created_at, branch_name, base_commit
              FROM worktrees ORDER BY created_at ASC",
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;

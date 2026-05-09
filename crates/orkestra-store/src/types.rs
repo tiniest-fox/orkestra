@@ -32,12 +32,13 @@ impl fmt::Display for WorktreeStatus {
 }
 
 impl FromStr for WorktreeStatus {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "pending" => Ok(WorktreeStatus::Pending),
             "ready" => Ok(WorktreeStatus::Ready),
-            _ => Ok(WorktreeStatus::Pending),
+            other => Err(format!("unknown worktree status: {other:?}")),
         }
     }
 }
@@ -53,6 +54,10 @@ pub struct WorktreeRecord {
     pub base_branch: Option<String>,
     /// Absolute path to the worktree on disk.
     pub worktree_path: Option<String>,
+    /// Branch name created for this worktree (e.g. `task/my-id`).
+    pub branch_name: Option<String>,
+    /// Git commit SHA of the base branch at worktree creation time.
+    pub base_commit: Option<String>,
     /// ISO 8601 timestamp when the record was created.
     pub created_at: String,
 }

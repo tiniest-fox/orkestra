@@ -90,4 +90,19 @@ describe("usePrewarm", () => {
       expect(result.current.prewarmId).toBeNull();
     });
   });
+
+  it("does not call cancel_prewarm on unmount after adopt()", async () => {
+    const { result, unmount } = renderHook(() => usePrewarm(true));
+    await waitFor(() => {
+      expect(result.current.prewarmId).toBe("ably-brave-cat");
+    });
+
+    // Simulate task creation — adopt() nulls the ref so cleanup is a no-op.
+    act(() => result.current.adopt());
+    mockCall.mockReset();
+
+    act(() => unmount());
+
+    expect(mockCall).not.toHaveBeenCalledWith("cancel_prewarm", expect.anything());
+  });
 });

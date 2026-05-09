@@ -395,6 +395,8 @@ mod tests {
             status: WorktreeStatus::Pending,
             base_branch: Some("main".to_string()),
             worktree_path: None,
+            branch_name: None,
+            base_commit: None,
             created_at: "2026-01-01T00:00:00Z".to_string(),
         }
     }

@@ -1,7 +1,5 @@
 //! Task CRUD operations.
 
-use std::sync::Arc;
-
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::{Task, TaskCreationMode};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
@@ -97,15 +95,8 @@ impl WorkflowApi {
     /// Saves a Pending worktree record and creates the worktree in the background.
     /// When task creation uses the same `task_id`, it will adopt the ready worktree.
     pub fn prewarm_worktree(&self, task_id: &str, base_branch: Option<&str>) -> WorkflowResult<()> {
-        let git = self.git_service.as_ref().ok_or_else(|| {
-            crate::workflow::ports::WorkflowError::GitError("No git service configured".into())
-        })?;
-        self.setup_service.spawn_prewarm(
-            Arc::clone(&self.store),
-            Arc::clone(git),
-            task_id.to_string(),
-            base_branch.map(str::to_string),
-        )
+        self.setup_service
+            .spawn_prewarm(task_id.to_string(), base_branch.map(str::to_string))
     }
 
     /// Cancel a pending prewarm and delete its worktree record.

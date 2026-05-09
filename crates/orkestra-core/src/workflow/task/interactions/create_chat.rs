@@ -1,4 +1,4 @@
-//! Create a new chat task (no flow, no worktree, starts in Queued).
+//! Create a new chat task (no flow, starts in Queued).
 
 use crate::orkestra_debug;
 use crate::workflow::domain::Task;
@@ -33,6 +33,12 @@ pub fn execute(
         }
         if let Some(branch) = record.base_branch {
             task.base_branch = branch;
+        }
+        if let Some(branch_name) = record.branch_name {
+            task.branch_name = Some(branch_name);
+        }
+        if let Some(base_commit) = record.base_commit {
+            task.base_commit = base_commit;
         }
     }
 

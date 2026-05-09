@@ -69,6 +69,12 @@ pub fn execute(
                 task.base_branch = branch;
             }
         }
+        if let Some(branch_name) = record.branch_name {
+            task.branch_name = Some(branch_name);
+        }
+        if let Some(base_commit) = record.base_commit {
+            task.base_commit = base_commit;
+        }
         // Start directly in Queued — worktree is already ready.
         task.state = TaskState::queued(&first_stage.name);
     } else {

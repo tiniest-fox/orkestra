@@ -68,7 +68,9 @@ function FeedTaskRowInner({
 
 // Memoize to skip re-renders when only callback props change reference.
 // Task data comparison uses updated_at — bumped by touch_task whenever
-// iterations or sessions change, so this is a safe equality proxy.
+// iterations or sessions change, so this is a safe equality proxy. For parent
+// tasks, updated_at reflects max(parent, children) so any child state change
+// also triggers a re-render of the parent row without a separate cascade.
 //
 // `actionsSlot` is intentionally omitted from the comparator: React.ReactNode
 // references are new objects on every parent render, so comparing them would

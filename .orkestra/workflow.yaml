@@ -12,13 +12,13 @@ flows:
         description: Produces a high-level implementation plan for the feature
         artifact: plan
         prompt: planner.md
-        model: opus
+        model: opencode-go/kimi-k2.6
 
       - name: task
         description: Breaks down the plan into actionable subtasks with technical and implementation guidance
         artifact: breakdown
         prompt: breakdown.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         capabilities:
           subtasks:
             flow: hotfix
@@ -28,7 +28,7 @@ flows:
         description: Implements the approved plan and produces a work summary
         artifact: summary
         prompt: worker.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
         gate:
           command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
           timeout_seconds: 1200
@@ -52,7 +52,7 @@ flows:
         description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: reviewer.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         disallowed_tools:
           - pattern: "Bash(*cargo *)"
             message: "All automated checks have passed and all tests pass as-is — focus on code review, not re-running checks"
@@ -63,7 +63,7 @@ flows:
         description: Captures key learnings and produces updated documentation
         artifact: learnings
         prompt: compound.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
 
     integration:
       on_failure: task
@@ -74,13 +74,13 @@ flows:
         description: Produces a high-level implementation plan for the feature
         artifact: plan
         prompt: quick_planner.md
-        model: opus
+        model: opencode-go/kimi-k2.6
       - *work_stage
       - name: review
         description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: reviewer.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         gate: true
       - *compound_stage
     integration:
@@ -92,7 +92,7 @@ flows:
         description: Implements the approved plan and produces a work summary
         artifact: summary
         prompt: worker.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
         gate:
           command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
           timeout_seconds: 1200
@@ -115,7 +115,7 @@ flows:
         description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: subtask-reviewer.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         gate: true
     integration:
       on_failure: work
@@ -126,7 +126,7 @@ flows:
         description: Implements the approved plan and produces a work summary
         artifact: summary
         prompt: worker.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
         gate:
           command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
           timeout_seconds: 1200
@@ -139,19 +139,19 @@ flows:
         description: Gathers requirements about what to change in the prompt and why, researches best practices
         artifact: requirements
         prompt: prompt_requirements.md
-        model: opus
+        model: opencode-go/kimi-k2.6
 
       - name: write
         description: Implements the prompt changes based on the requirements
         artifact: summary
         prompt: prompt_writer.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
 
       - name: review
         description: Reviews the revised prompt for consistency, coverage, and prompt engineering best practices
         artifact: verdict
         prompt: prompt_reviewer.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         gate: true
     integration:
       on_failure: write
@@ -169,7 +169,7 @@ flows:
         description: Explores the codebase and produces a detailed analysis to guide documentation
         artifact: analysis
         prompt: researcher.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         disallowed_tools:
           - pattern: "Edit"
             message: "Research is read-only — explore and document findings, don't modify files"
@@ -182,7 +182,7 @@ flows:
         description: Authors MDX documentation in docs/src/content/docs/ based on the research analysis
         artifact: draft
         prompt: writer.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
         gate:
           command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-docs.sh"
           timeout_seconds: 300
@@ -193,7 +193,7 @@ flows:
         description: Reviews documentation for technical accuracy, writing quality, and style adherence
         artifact: verdict
         prompt: editor.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         gate: true
         disallowed_tools:
           - pattern: "Edit"
@@ -207,7 +207,7 @@ flows:
         description: Captures learnings from the completed Trak to improve future documentation work
         artifact: learnings
         prompt: compound-docs.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
 
     integration:
       on_failure: write
@@ -223,13 +223,13 @@ flows:
         description: Defines the component's purpose, props, visual design, and usage examples based on the request
         artifact: spec
         prompt: planner.md
-        model: opus
+        model: opencode-go/kimi-k2.6
 
       - name: build
         description: Implements the Astro component and updates docs/editorial/components.md
         artifact: summary
         prompt: worker.md
-        model: sonnet
+        model: opencode-go/kimi-k2.6
         gate:
           command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-docs.sh"
           timeout_seconds: 300
@@ -238,7 +238,7 @@ flows:
         description: Reviews the component for correctness, design system adherence, and documentation quality
         artifact: verdict
         prompt: reviewer.md
-        model: opus
+        model: opencode-go/kimi-k2.6
         gate: true
 
     integration:

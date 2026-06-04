@@ -37,6 +37,10 @@ pub use script_handle::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
 pub use interactions::env::resolve_project_env::execute as resolve_project_env;
 pub use interactions::spawner::cli_path::{prepend_cli_dir, set_bundled_ork_path};
 
+// Hook notification server
+pub use interactions::hooks::execute as start_hook_server;
+pub use interactions::hooks::{HookEvent, HookEventType, HookReceiver, HookServer};
+
 /// Resolve the full agent environment for a project.
 ///
 /// Runs the login shell in the project root to capture the environment,

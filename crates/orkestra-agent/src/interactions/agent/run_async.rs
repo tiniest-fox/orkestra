@@ -38,8 +38,15 @@ pub fn execute(
         .create_parser(&resolved.provider_name)
         .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-    // Parse the schema for validation (before build_process_config consumes config)
-    let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
+    // Parse the schema for validation — fail fast on invalid JSON rather than silently ignoring it
+    let schema: Option<serde_json::Value> = if config.json_schema.trim().is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_str(&config.json_schema)
+                .map_err(|e| RunError::SpawnFailed(format!("invalid JSON schema: {e}")))?,
+        )
+    };
 
     // Clone sections before build_process_config consumes config
     let prompt_sections = config.prompt_sections.clone();

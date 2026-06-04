@@ -128,6 +128,10 @@ fn run_accept_loop(
                 if shutdown.load(Ordering::Acquire) {
                     break;
                 }
+                // Prevent a stuck connection from blocking all hook delivery.
+                if let Err(e) = stream.set_read_timeout(Some(std::time::Duration::from_secs(5))) {
+                    orkestra_debug!("hooks", "could not set read timeout: {e}");
+                }
                 let mut buf = String::new();
                 if let Err(e) = stream.take(65_536).read_to_string(&mut buf) {
                     orkestra_debug!("hooks", "read error on hook connection: {e}");

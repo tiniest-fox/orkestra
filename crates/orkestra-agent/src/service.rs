@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::interactions::hooks::types::HookServer;
 use crate::interface::AgentRunner;
-use crate::registry::ProviderRegistry;
+use crate::registry::{ExecutionMode, ProviderRegistry};
 use crate::types::{RunConfig, RunError, RunEvent, RunResult};
 
 // ============================================================================
@@ -83,7 +83,7 @@ impl AgentRunner for ProcessAgentRunner {
             .resolve(config.model.as_deref())
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-        if resolved.provider_name == "claude-pty" {
+        if resolved.capabilities.execution_mode == ExecutionMode::Pty {
             let hook_server = self.hook_server.as_ref().ok_or_else(|| {
                 RunError::SpawnFailed("claude-pty provider requires a hook server".into())
             })?;

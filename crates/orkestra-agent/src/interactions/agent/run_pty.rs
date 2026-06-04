@@ -4,6 +4,7 @@
 //! the hook-based Stop callback, reads the JSONL transcript, classifies output,
 //! and emits `RunEvents` matching the (u32, Receiver<RunEvent>) contract.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -118,28 +119,16 @@ pub fn execute(
         })
         .map_err(|e| RunError::SpawnFailed(format!("failed to open PTY: {e}")))?;
 
-    let mut cmd = CommandBuilder::new("claude");
-    if is_resume {
-        cmd.args(["--resume", &session_id]);
-    } else {
-        cmd.args(["--session-id", &session_id]);
-    }
-    cmd.args(["--permission-mode", "acceptEdits"]);
-    let settings_path_str = settings_path.to_str().ok_or_else(|| {
-        RunError::SpawnFailed("settings path contains non-UTF-8 characters".into())
+    let cmd = build_pty_command(PtyCommandConfig {
+        session_id: &session_id,
+        is_resume,
+        settings_path: &settings_path,
+        model: resolved_model_id.as_deref(),
+        working_dir: &working_dir,
+        task_id: &task_id,
+        disallowed_tools: &config.disallowed_tools,
+        env: env.as_ref(),
     })?;
-    cmd.args(["--settings", settings_path_str]);
-    if let Some(ref model) = resolved_model_id {
-        cmd.args(["--model", model]);
-    }
-    cmd.cwd(&working_dir);
-    cmd.env("ORK_TASK_ID", &task_id);
-    cmd.env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
-    if let Some(ref env_map) = env {
-        for (k, v) in env_map {
-            cmd.env(k, v);
-        }
-    }
 
     let child = pair
         .slave
@@ -340,23 +329,84 @@ fn drive_pty_session(
 // Helpers
 // ============================================================================
 
+/// Parameters for constructing the PTY `CommandBuilder`.
+struct PtyCommandConfig<'a> {
+    session_id: &'a str,
+    is_resume: bool,
+    settings_path: &'a Path,
+    model: Option<&'a str>,
+    working_dir: &'a Path,
+    task_id: &'a str,
+    disallowed_tools: &'a [String],
+    env: Option<&'a HashMap<String, String>>,
+}
+
+/// Build the `CommandBuilder` for spawning Claude Code in a PTY.
+///
+/// Mirrors the headless path in `spawner/claude.rs`: uses
+/// `--dangerously-skip-permissions`, blocks `EnterPlanMode`/`ExitPlanMode`, and
+/// threads `disallowed_tools` from the stage config.
+fn build_pty_command(cfg: PtyCommandConfig<'_>) -> Result<CommandBuilder, RunError> {
+    let mut cmd = CommandBuilder::new("claude");
+
+    if cfg.is_resume {
+        cmd.args(["--resume", cfg.session_id]);
+    } else {
+        cmd.args(["--session-id", cfg.session_id]);
+    }
+
+    cmd.arg("--dangerously-skip-permissions");
+
+    let settings_path_str = cfg.settings_path.to_str().ok_or_else(|| {
+        RunError::SpawnFailed("settings path contains non-UTF-8 characters".into())
+    })?;
+    cmd.args(["--settings", settings_path_str]);
+
+    if let Some(model) = cfg.model {
+        cmd.args(["--model", model]);
+    }
+
+    // Block plan-mode tools and any stage-level restrictions (same as headless path).
+    let mut disallowed = vec!["EnterPlanMode".to_string(), "ExitPlanMode".to_string()];
+    disallowed.extend_from_slice(cfg.disallowed_tools);
+    cmd.args(["--disallowedTools", &disallowed.join(",")]);
+
+    cmd.cwd(cfg.working_dir);
+    cmd.env("ORK_TASK_ID", cfg.task_id);
+    cmd.env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+
+    if let Some(env_map) = cfg.env {
+        for (k, v) in env_map {
+            cmd.env(k, v);
+        }
+    }
+
+    Ok(cmd)
+}
+
 /// Write Claude Code hook settings JSON to a temp file.
 ///
 /// The Stop hook sends the turn-done signal to the UDS server. `SessionEnd`
 /// fires when the process terminates. Both commands use `$ORK_TASK_ID` (set
 /// in the PTY environment) for server-side routing.
 ///
-/// Returns an error if `socket_path` contains shell metacharacters.
+/// Returns an error if `socket_path` or `session_id` contain shell metacharacters.
 fn build_settings_file(
     session_id: &str,
     socket_path: &str,
 ) -> Result<NamedTempFile, Box<dyn std::error::Error + Send + Sync>> {
-    // Guard against shell injection — socket_path is embedded in a shell command.
+    // Guard against shell injection — both values are embedded in a shell command.
     if !socket_path
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '-' | '_'))
     {
         return Err(format!("socket path contains shell-unsafe characters: {socket_path}").into());
+    }
+    if !session_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    {
+        return Err(format!("session_id contains shell-unsafe characters: {session_id}").into());
     }
 
     let stop_cmd = format!(
@@ -653,6 +703,80 @@ mod tests {
         assert!(
             result.is_err(),
             "expected error for shell-unsafe socket path"
+        );
+    }
+
+    #[test]
+    fn build_settings_file_rejects_shell_unsafe_session_id() {
+        let result = build_settings_file("ses-1\"; rm -rf /", "/tmp/hooks.sock");
+        assert!(
+            result.is_err(),
+            "expected error for shell-unsafe session_id"
+        );
+    }
+
+    #[test]
+    fn build_settings_file_accepts_valid_session_id() {
+        let result = build_settings_file("550e8400-e29b-41d4-a716-446655440000", "/tmp/hooks.sock");
+        assert!(
+            result.is_ok(),
+            "UUID-formatted session_id should be accepted"
+        );
+    }
+
+    #[test]
+    fn wait_for_stable_size_returns_immediately_for_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent.jsonl");
+        // Should not hang — file doesn't exist, returns after first poll
+        wait_for_stable_size(&path, Duration::from_millis(50), Duration::from_millis(200));
+        // No assertion needed — test passes if it returns within the timeout
+    }
+
+    #[test]
+    fn wait_for_stable_size_returns_when_file_stabilizes() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        std::fs::write(&path, b"initial content").unwrap();
+
+        // File is stable from the start — should return quickly (< stable_for + poll interval)
+        let start = std::time::Instant::now();
+        wait_for_stable_size(&path, Duration::from_millis(100), Duration::from_secs(5));
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "should return quickly for stable file"
+        );
+    }
+
+    #[test]
+    fn wait_for_stable_size_respects_timeout_for_growing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("growing.jsonl");
+        std::fs::write(&path, b"initial").unwrap();
+
+        // Spawn a thread that keeps writing to the file to keep it "growing"
+        let path_clone = path.clone();
+        let handle = std::thread::spawn(move || {
+            for i in 0..20u8 {
+                std::thread::sleep(Duration::from_millis(30));
+                if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(&path_clone) {
+                    let _ = std::io::Write::write_all(&mut f, &[i]);
+                }
+            }
+        });
+
+        // stable_for = 500ms, but file grows every 30ms — should time out after ~300ms
+        let start = std::time::Instant::now();
+        wait_for_stable_size(
+            &path,
+            Duration::from_millis(500),
+            Duration::from_millis(300),
+        );
+        let elapsed = start.elapsed();
+        handle.join().ok();
+        assert!(
+            elapsed >= Duration::from_millis(250),
+            "should wait for timeout when file keeps growing (elapsed: {elapsed:?})"
         );
     }
 }

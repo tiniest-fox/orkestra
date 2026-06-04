@@ -32,10 +32,13 @@ pub use orkestra_agent::HookServer;
 pub use orkestra_agent::ProcessAgentRunner as AgentRunner;
 pub use orkestra_agent::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    pty_claude_capabilities, AgentCompletionError, ProviderCapabilities, ProviderRegistry,
-    RegistryError, ResolvedProvider, RunConfig, RunError, RunEvent, RunResult, ScriptEnv,
-    ScriptHandle, ScriptPollState, ScriptResult, StubPtySpawner,
+    AgentCompletionError, ExecutionMode, ProviderCapabilities, ProviderRegistry, RegistryError,
+    ResolvedProvider, RunConfig, RunError, RunEvent, RunResult, ScriptEnv, ScriptHandle,
+    ScriptPollState, ScriptResult,
 };
+
+// Internal-only imports for build_production_registry — not part of the public API.
+use orkestra_agent::{pty_claude_capabilities, StubPtySpawner};
 
 #[cfg(any(test, feature = "testutil"))]
 pub use orkestra_agent::{default_test_registry, MockAgentRunner};
@@ -74,4 +77,44 @@ pub fn build_production_registry() -> ProviderRegistry {
         std::collections::HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
     );
     registry
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that `build_production_registry` wires `claude-pty` with `ExecutionMode::Pty`.
+    ///
+    /// This is the orchestrator-level integration check: if `execution_mode` is wrong, the
+    /// `ProcessAgentRunner` dispatch in `service.rs` routes PTY tasks to the headless path.
+    #[test]
+    fn production_registry_claude_pty_has_pty_execution_mode() {
+        let registry = build_production_registry();
+        let resolved = registry
+            .resolve(Some("claude-pty/sonnet"))
+            .expect("claude-pty should be registered");
+        assert_eq!(
+            resolved.capabilities.execution_mode,
+            ExecutionMode::Pty,
+            "claude-pty must use ExecutionMode::Pty for correct dispatch"
+        );
+    }
+
+    /// Verify claudecode stays on the Process path after the PTY provider was added.
+    #[test]
+    fn production_registry_claudecode_has_process_execution_mode() {
+        let registry = build_production_registry();
+        let resolved = registry
+            .resolve(Some("claudecode/sonnet"))
+            .expect("claudecode should be registered");
+        assert_eq!(
+            resolved.capabilities.execution_mode,
+            ExecutionMode::Process,
+            "claudecode must use ExecutionMode::Process"
+        );
+    }
 }

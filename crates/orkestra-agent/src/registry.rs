@@ -21,10 +21,21 @@ use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawne
 // Provider Capabilities
 // ============================================================================
 
+/// How agents for this provider are executed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutionMode {
+    /// Standard process I/O via stdin/stdout (`run_async` path).
+    Process,
+    /// PTY-based interactive session (`run_pty` path).
+    Pty,
+}
+
 /// Capabilities of a provider, describing what features it supports.
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct ProviderCapabilities {
+    /// How the provider's agent processes are executed.
+    pub execution_mode: ExecutionMode,
     /// Whether the provider supports native `--json-schema` enforcement.
     pub supports_json_schema: bool,
     /// Whether the provider supports session resume (`--session-id` / `--resume`).
@@ -320,6 +331,7 @@ pub fn opencode_aliases() -> HashMap<String, String> {
 /// Claude Code provider capabilities.
 pub fn claudecode_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
+        execution_mode: ExecutionMode::Process,
         supports_json_schema: true,
         supports_sessions: true,
         generates_own_session_id: false,
@@ -331,6 +343,7 @@ pub fn claudecode_capabilities() -> ProviderCapabilities {
 /// `OpenCode` provider capabilities.
 pub fn opencode_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
+        execution_mode: ExecutionMode::Process,
         supports_json_schema: false,
         supports_sessions: true,
         generates_own_session_id: true,
@@ -347,6 +360,7 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
 /// on first spawn, just like the headless `claudecode` provider.
 pub fn pty_claude_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
+        execution_mode: ExecutionMode::Pty,
         supports_json_schema: false,
         supports_sessions: true,
         generates_own_session_id: false,

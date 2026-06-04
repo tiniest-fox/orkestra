@@ -11,9 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use orkestra_agent::interactions::agent::run_pty;
-use orkestra_agent::{
-    default_test_registry, start_hook_server, HookEventType, RunConfig, RunEvent,
-};
+use orkestra_agent::interactions::hooks::HookEventType;
+use orkestra_agent::{default_test_registry, start_hook_server, RunConfig, RunEvent};
 use tempfile::TempDir;
 
 // ============================================================================

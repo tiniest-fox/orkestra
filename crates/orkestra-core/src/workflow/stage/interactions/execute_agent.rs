@@ -662,7 +662,7 @@ mod tests {
     use super::*;
     use crate::workflow::config::ToolRestriction;
 
-    use crate::workflow::execution::ProviderCapabilities;
+    use crate::workflow::execution::{ExecutionMode, ProviderCapabilities};
 
     #[test]
     fn test_append_schema_enforcement() {
@@ -738,6 +738,7 @@ mod tests {
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
 
         let claude_caps = ProviderCapabilities {
+            execution_mode: ExecutionMode::Process,
             supports_json_schema: true,
             supports_sessions: true,
             generates_own_session_id: false,
@@ -769,6 +770,7 @@ mod tests {
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
 
         let opencode_caps = ProviderCapabilities {
+            execution_mode: ExecutionMode::Process,
             supports_json_schema: false,
             supports_sessions: true,
             generates_own_session_id: true,
@@ -803,6 +805,7 @@ mod tests {
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
 
         let opencode_caps = ProviderCapabilities {
+            execution_mode: ExecutionMode::Process,
             supports_json_schema: false,
             supports_sessions: true,
             generates_own_session_id: true,
@@ -836,6 +839,7 @@ mod tests {
             "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
 
         let opencode_caps = ProviderCapabilities {
+            execution_mode: ExecutionMode::Process,
             supports_json_schema: false,
             supports_sessions: true,
             generates_own_session_id: true,

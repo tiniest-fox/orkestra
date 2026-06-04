@@ -26,6 +26,7 @@ pub use prompt::{
 };
 
 // Re-exports from orkestra-agent (backward-compatible aliases)
+pub use orkestra_agent::start_hook_server;
 pub use orkestra_agent::AgentRunner as AgentRunnerTrait;
 pub use orkestra_agent::HookServer;
 pub use orkestra_agent::ProcessAgentRunner as AgentRunner;

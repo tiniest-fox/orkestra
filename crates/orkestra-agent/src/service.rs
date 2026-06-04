@@ -1,11 +1,13 @@
 //! Production agent runner implementation.
 //!
 //! `ProcessAgentRunner` delegates to interactions for sync and async execution.
+//! When a `HookServer` is attached via `with_hook_server`, the `claude-pty`
+//! provider is routed to `run_pty::execute()` instead of the standard path.
 
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
-use crate::hook_server::HookServer;
+use crate::interactions::hooks::types::HookServer;
 use crate::interface::AgentRunner;
 use crate::registry::ProviderRegistry;
 use crate::types::{RunConfig, RunError, RunEvent, RunResult};
@@ -29,7 +31,6 @@ use crate::types::{RunConfig, RunError, RunEvent, RunResult};
 /// - Task state updates (caller handles)
 pub struct ProcessAgentRunner {
     registry: Arc<ProviderRegistry>,
-    /// Optional hook server for receiving PTY session lifecycle callbacks.
     hook_server: Option<Arc<HookServer>>,
 }
 
@@ -42,7 +43,10 @@ impl ProcessAgentRunner {
         }
     }
 
-    /// Attach a hook server for receiving PTY session lifecycle callbacks.
+    /// Attach a hook server, enabling the `claude-pty` provider path.
+    ///
+    /// Required when any registered provider uses `claude-pty`. Without a hook
+    /// server, `run_async` returns `SpawnFailed` for PTY provider runs.
     #[must_use]
     pub fn with_hook_server(mut self, server: Arc<HookServer>) -> Self {
         self.hook_server = Some(server);
@@ -74,6 +78,18 @@ impl AgentRunner for ProcessAgentRunner {
     }
 
     fn run_async(&self, config: RunConfig) -> Result<(u32, Receiver<RunEvent>), RunError> {
-        crate::interactions::agent::run_async::execute(&self.registry, config)
+        let resolved = self
+            .registry
+            .resolve(config.model.as_deref())
+            .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
+
+        if resolved.provider_name == "claude-pty" {
+            let hook_server = self.hook_server.as_ref().ok_or_else(|| {
+                RunError::SpawnFailed("claude-pty provider requires a hook server".into())
+            })?;
+            crate::interactions::agent::run_pty::execute(&self.registry, &config, hook_server)
+        } else {
+            crate::interactions::agent::run_async::execute(&self.registry, config)
+        }
     }
 }

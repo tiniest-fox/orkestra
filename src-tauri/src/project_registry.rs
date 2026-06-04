@@ -9,14 +9,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::adapters::{
-    ClaudeProcessSpawner, GhPrService, OpenCodeProcessSpawner,
-};
-use orkestra_core::workflow::execution::{
-    claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    pty_claude_capabilities, ProviderRegistry,
-};
-use orkestra_core::workflow::ports::ProcessSpawner;
+use orkestra_core::workflow::adapters::GhPrService;
+use orkestra_core::workflow::execution::build_production_registry;
 use orkestra_core::workflow::{
     Git2GitService, GitService, SqliteWorkflowStore, TaskView, WorkflowApi, WorkflowConfig,
     WorkflowStore,
@@ -93,30 +87,7 @@ impl ProjectState {
         };
 
         // Construct shared provider registry (built before the API so it can be wired in)
-        let mut provider_registry = ProviderRegistry::new("claudecode");
-        provider_registry.register(
-            "claudecode",
-            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            claudecode_capabilities(),
-            claudecode_aliases(),
-        );
-        provider_registry.register(
-            "opencode",
-            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            opencode_capabilities(),
-            opencode_aliases(),
-        );
-        {
-            use orkestra_core::workflow::execution::StubPtySpawner;
-
-            provider_registry.register(
-                "claude-pty",
-                Arc::new(StubPtySpawner) as Arc<dyn ProcessSpawner>,
-                pty_claude_capabilities(),
-                std::collections::HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
-            );
-        }
-        let provider_registry = Arc::new(provider_registry);
+        let provider_registry = Arc::new(build_production_registry());
 
         // Create workflow API with or without git service, wiring in the registry and project root
         let api = if let Some(git) = git_service {

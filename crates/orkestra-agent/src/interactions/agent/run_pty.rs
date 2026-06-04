@@ -93,7 +93,13 @@ pub fn execute(
 
     // Register task with hook server before spawning PTY so no events are missed
     let hook_rx = hook_server.register_task(&task_id);
-    let socket_path = hook_server.socket_path().to_string_lossy().to_string();
+    let socket_path = hook_server
+        .socket_path()
+        .to_str()
+        .ok_or_else(|| {
+            RunError::SpawnFailed("hook socket path contains non-UTF-8 characters".into())
+        })?
+        .to_string();
 
     // Write hook settings to a temp file; kept alive until the session ends
     let settings_file = build_settings_file(&session_id, &socket_path)
@@ -183,7 +189,7 @@ pub fn execute(
         // Keep settings_file alive until the PTY session ends
         let _settings_file = settings_file;
 
-        let ctx = SessionCtx {
+        let ctx = PtySessionParams {
             task_id: &task_id,
             session_id: &session_id,
             working_dir: &working_dir,
@@ -191,7 +197,7 @@ pub fn execute(
             schema: schema.as_ref(),
             home_dir: &home_dir,
         };
-        run_background(pty_handle, &hook_rx, &hook_server_thread, &tx, parser, ctx);
+        drive_pty_session(pty_handle, &hook_rx, &hook_server_thread, &tx, parser, ctx);
     });
 
     Ok((pid, rx))
@@ -201,9 +207,9 @@ pub fn execute(
 // Background Thread
 // ============================================================================
 
-/// Session parameters bundled to keep `run_background`'s argument count in check.
+/// Session parameters bundled to keep `drive_pty_session`'s argument count in check.
 #[derive(Copy, Clone)]
-struct SessionCtx<'a> {
+struct PtySessionParams<'a> {
     task_id: &'a str,
     session_id: &'a str,
     working_dir: &'a Path,
@@ -213,13 +219,13 @@ struct SessionCtx<'a> {
     home_dir: &'a Path,
 }
 
-fn run_background(
+fn drive_pty_session(
     mut pty_handle: PtyHandle,
     hook_rx: &HookReceiver,
     hook_server: &HookServer,
     tx: &Sender<RunEvent>,
     mut parser: Box<dyn AgentParser>,
-    ctx: SessionCtx<'_>,
+    ctx: PtySessionParams<'_>,
 ) {
     // Write prompt to PTY master, then send Enter
     let write_result = pty_handle
@@ -242,13 +248,21 @@ fn run_background(
     );
 
     // Poll for JSONL transcript file to confirm session started.
-    // Emitting this LogLine triggers `has_confirmed_output` in ActiveAgent::poll(),
-    // persisting `has_activity=true` for crash recovery.
+    // Two Text entries are required to set `has_confirmed_output` in ActiveAgent::poll(),
+    // persisting `has_activity=true` for crash recovery (one Text only sets `has_any_output`).
     let fallback_transcript_path =
         compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
     if poll_for_file(&fallback_transcript_path, Duration::from_secs(30)) {
         let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
             content: "PTY session active".to_string(),
+        }));
+        let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+            content: "PTY session confirmed".to_string(),
+        }));
+    } else {
+        let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+            content: "PTY session may not have started — transcript file not found after 30s"
+                .to_string(),
         }));
     }
 
@@ -277,8 +291,13 @@ fn run_background(
         .and_then(|e| e.transcript_path.clone())
         .unwrap_or(fallback_transcript_path);
 
-    // Wait briefly for file flush before reading
-    thread::sleep(Duration::from_millis(100));
+    // Wait for transcript file size to stabilize before reading; the Stop hook fires
+    // before Claude finishes flushing the final bytes to disk.
+    wait_for_stable_size(
+        &transcript_path,
+        Duration::from_millis(200),
+        Duration::from_secs(5),
+    );
 
     // Read and parse JSONL transcript, emit log events
     let (full_output, line_count) = read_and_parse_transcript(&transcript_path, &mut *parser, tx);
@@ -326,10 +345,20 @@ fn run_background(
 /// The Stop hook sends the turn-done signal to the UDS server. `SessionEnd`
 /// fires when the process terminates. Both commands use `$ORK_TASK_ID` (set
 /// in the PTY environment) for server-side routing.
+///
+/// Returns an error if `socket_path` contains shell metacharacters.
 fn build_settings_file(
     session_id: &str,
     socket_path: &str,
 ) -> Result<NamedTempFile, Box<dyn std::error::Error + Send + Sync>> {
+    // Guard against shell injection — socket_path is embedded in a shell command.
+    if !socket_path
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '-' | '_'))
+    {
+        return Err(format!("socket path contains shell-unsafe characters: {socket_path}").into());
+    }
+
     let stop_cmd = format!(
         "echo '{{\"event\":\"stop\",\"task_id\":\"'\"$ORK_TASK_ID\"'\",\"session_id\":\"{session_id}\",\"transcript_path\":\"'\"$CLAUDE_TRANSCRIPT_PATH\"'\"}}' | nc -U {socket_path}"
     );
@@ -374,6 +403,33 @@ fn poll_for_file(path: &Path, timeout: Duration) -> bool {
             return false;
         }
         thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// Wait until the file size stops changing for `stable_for`, up to `timeout`.
+///
+/// Polls at 50ms intervals. Returns immediately if the file does not exist (the
+/// caller will get a zero-line result from `read_and_parse_transcript`).
+fn wait_for_stable_size(path: &Path, stable_for: Duration, timeout: Duration) {
+    let deadline = std::time::Instant::now() + timeout;
+    let mut last_size: Option<u64> = None;
+    let mut stable_since: Option<std::time::Instant> = None;
+
+    loop {
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        let current_size = std::fs::metadata(path).map(|m| m.len()).ok();
+        if current_size.is_some() && current_size == last_size {
+            let since = stable_since.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed() >= stable_for {
+                break;
+            }
+        } else {
+            stable_since = None;
+        }
+        last_size = current_size;
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -518,18 +574,18 @@ mod tests {
         assert!(found, "should return true when file exists");
     }
 
-    #[test]
-    fn read_and_parse_transcript_returns_empty_for_missing_file() {
+    fn make_null_parser() -> impl AgentParser {
         use orkestra_parser::types::ParsedUpdate;
         use orkestra_parser::AgentParser;
         use orkestra_parser::ExtractionResult;
-        use std::sync::mpsc;
 
         struct NullParser;
         impl AgentParser for NullParser {
-            fn parse_line(&mut self, _line: &str) -> ParsedUpdate {
+            fn parse_line(&mut self, line: &str) -> ParsedUpdate {
                 ParsedUpdate {
-                    log_entries: vec![],
+                    log_entries: vec![LogEntry::Text {
+                        content: line.to_string(),
+                    }],
                     session_id: None,
                 }
             }
@@ -540,12 +596,63 @@ mod tests {
                 ExtractionResult::NotFound
             }
         }
+        NullParser
+    }
+
+    #[test]
+    fn read_and_parse_transcript_returns_empty_for_missing_file() {
+        use std::sync::mpsc;
 
         let (tx, _rx) = mpsc::channel();
-        let mut parser = NullParser;
+        let mut parser = make_null_parser();
         let (output, count) =
             read_and_parse_transcript(&PathBuf::from("/nonexistent/path.jsonl"), &mut parser, &tx);
         assert_eq!(output, "");
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn read_and_parse_transcript_happy_path() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("session.jsonl");
+        // Three JSONL lines with a blank line in between — blank lines are skipped.
+        std::fs::write(
+            &path,
+            b"{\"type\":\"text\",\"text\":\"line1\"}\n\n{\"type\":\"text\",\"text\":\"line2\"}\n{\"type\":\"text\",\"text\":\"line3\"}\n",
+        )
+        .unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let mut parser = make_null_parser();
+        let (full_output, line_count) = read_and_parse_transcript(&path, &mut parser, &tx);
+
+        assert_eq!(line_count, 3, "blank lines must not be counted");
+        assert!(
+            full_output.contains("line1"),
+            "full_output must contain first line"
+        );
+        assert!(
+            full_output.contains("line3"),
+            "full_output must contain last line"
+        );
+
+        // Each non-blank line emits one LogLine event.
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(
+            events.len(),
+            3,
+            "expected one LogLine per non-blank line, got {events:?}"
+        );
+    }
+
+    #[test]
+    fn build_settings_file_rejects_shell_unsafe_socket_path() {
+        let result = build_settings_file("ses-1", "/tmp/hooks.sock; rm -rf /");
+        assert!(
+            result.is_err(),
+            "expected error for shell-unsafe socket path"
+        );
     }
 }

@@ -94,7 +94,30 @@ impl AgentRunner for ProcessAgentRunner {
                 hook_server,
             )
         } else {
-            crate::interactions::agent::run_async::execute(&self.registry, config)
+            crate::interactions::agent::run_async::execute(resolved, &self.registry, config)
         }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::default_test_registry;
+    use crate::types::RunConfig;
+
+    #[test]
+    fn claude_pty_without_hook_server_returns_spawn_failed() {
+        let registry = Arc::new(default_test_registry());
+        let runner = ProcessAgentRunner::new(registry);
+        let config = RunConfig::new("/tmp", "test prompt", "{}").with_model("claude-pty/sonnet");
+        let result = runner.run_async(config);
+        assert!(
+            matches!(result, Err(RunError::SpawnFailed(_))),
+            "expected SpawnFailed when claude-pty is used without a hook server, got: {result:?}"
+        );
     }
 }

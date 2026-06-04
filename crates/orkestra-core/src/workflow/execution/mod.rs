@@ -39,3 +39,39 @@ pub use orkestra_agent::{
 
 #[cfg(any(test, feature = "testutil"))]
 pub use orkestra_agent::{default_test_registry, MockAgentRunner};
+
+// ============================================================================
+// Production registry factory
+// ============================================================================
+
+/// Build the canonical production provider registry.
+///
+/// Registers claudecode, opencode, and claude-pty with their standard
+/// capabilities and aliases. This is the single source of truth — all three
+/// production callers (`StageExecutionService`, daemon, Tauri) use this function.
+pub fn build_production_registry() -> ProviderRegistry {
+    use crate::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
+    use crate::workflow::ports::ProcessSpawner;
+    use std::sync::Arc;
+
+    let mut registry = ProviderRegistry::new("claudecode");
+    registry.register(
+        "claudecode",
+        Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        claudecode_capabilities(),
+        claudecode_aliases(),
+    );
+    registry.register(
+        "opencode",
+        Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        opencode_capabilities(),
+        opencode_aliases(),
+    );
+    registry.register(
+        "claude-pty",
+        Arc::new(StubPtySpawner) as Arc<dyn ProcessSpawner>,
+        pty_claude_capabilities(),
+        std::collections::HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
+    );
+    registry
+}

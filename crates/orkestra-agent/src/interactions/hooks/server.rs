@@ -124,12 +124,12 @@ fn run_accept_loop(
 ) {
     loop {
         match listener.accept() {
-            Ok((mut stream, _)) => {
+            Ok((stream, _)) => {
                 if shutdown.load(Ordering::Acquire) {
                     break;
                 }
                 let mut buf = String::new();
-                if let Err(e) = stream.read_to_string(&mut buf) {
+                if let Err(e) = stream.take(65_536).read_to_string(&mut buf) {
                     orkestra_debug!("hooks", "read error on hook connection: {e}");
                     continue;
                 }
@@ -181,7 +181,9 @@ fn dispatch_payload(payload: &str, senders: &Arc<Mutex<HashMap<String, mpsc::Sen
         reason: parsed.reason,
     };
 
-    let senders = senders.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let senders = senders
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(sender) = senders.get(&parsed.task_id) {
         // Ignore send errors — the receiver may have been dropped intentionally.
         let _ = sender.send(event);

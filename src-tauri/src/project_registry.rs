@@ -14,7 +14,7 @@ use orkestra_core::workflow::adapters::{
 };
 use orkestra_core::workflow::execution::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    ProviderRegistry,
+    pty_claude_capabilities, ProviderRegistry,
 };
 use orkestra_core::workflow::ports::ProcessSpawner;
 use orkestra_core::workflow::{
@@ -106,6 +106,29 @@ impl ProjectState {
             opencode_capabilities(),
             opencode_aliases(),
         );
+        {
+            use orkestra_core::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle};
+
+            struct StubPtySpawner;
+            impl ProcessSpawner for StubPtySpawner {
+                fn spawn(
+                    &self,
+                    _: &std::path::Path,
+                    _: ProcessConfig,
+                ) -> Result<ProcessHandle, ProcessError> {
+                    Err(ProcessError::SpawnFailed(
+                        "claude-pty uses run_pty, not ProcessSpawner".into(),
+                    ))
+                }
+            }
+
+            provider_registry.register(
+                "claude-pty",
+                Arc::new(StubPtySpawner) as Arc<dyn ProcessSpawner>,
+                pty_claude_capabilities(),
+                std::collections::HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
+            );
+        }
         let provider_registry = Arc::new(provider_registry);
 
         // Create workflow API with or without git service, wiring in the registry and project root

@@ -19,7 +19,7 @@ use orkestra_core::workflow::adapters::{
 };
 use orkestra_core::workflow::execution::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    ProviderRegistry,
+    pty_claude_capabilities, ProviderRegistry,
 };
 use orkestra_core::workflow::ports::ProcessSpawner;
 use orkestra_core::workflow::{
@@ -223,6 +223,21 @@ async fn run(
     // (which creates its own internally). The registry is stateless, so having
     // two instances is fine.
     let provider_registry = {
+        use orkestra_core::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle};
+
+        struct StubPtySpawner;
+        impl ProcessSpawner for StubPtySpawner {
+            fn spawn(
+                &self,
+                _: &std::path::Path,
+                _: ProcessConfig,
+            ) -> Result<ProcessHandle, ProcessError> {
+                Err(ProcessError::SpawnFailed(
+                    "claude-pty uses run_pty, not ProcessSpawner".into(),
+                ))
+            }
+        }
+
         let mut registry = ProviderRegistry::new("claudecode");
         registry.register(
             "claudecode",
@@ -235,6 +250,12 @@ async fn run(
             Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
             opencode_capabilities(),
             opencode_aliases(),
+        );
+        registry.register(
+            "claude-pty",
+            Arc::new(StubPtySpawner) as Arc<dyn ProcessSpawner>,
+            pty_claude_capabilities(),
+            std::collections::HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
         );
         Arc::new(registry)
     };

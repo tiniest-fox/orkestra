@@ -247,9 +247,22 @@ impl StageExecutionService {
         use crate::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
         use crate::workflow::execution::{
             claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-            ProviderRegistry,
+            pty_claude_capabilities, HookServer, ProviderRegistry,
         };
-        use crate::workflow::ports::ProcessSpawner;
+        use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
+
+        struct StubPtySpawner;
+        impl ProcessSpawner for StubPtySpawner {
+            fn spawn(
+                &self,
+                _: &std::path::Path,
+                _: ProcessConfig,
+            ) -> Result<ProcessHandle, ProcessError> {
+                Err(ProcessError::SpawnFailed(
+                    "claude-pty uses run_pty, not ProcessSpawner".into(),
+                ))
+            }
+        }
 
         let mut registry = ProviderRegistry::new("claudecode");
         registry.register(
@@ -264,9 +277,19 @@ impl StageExecutionService {
             opencode_capabilities(),
             opencode_aliases(),
         );
+        registry.register(
+            "claude-pty",
+            Arc::new(StubPtySpawner) as Arc<dyn ProcessSpawner>,
+            pty_claude_capabilities(),
+            std::collections::HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
+        );
 
         let registry = Arc::new(registry);
-        let runner: Arc<dyn AgentRunnerTrait> = Arc::new(AgentRunner::new(Arc::clone(&registry)));
+        let hook_server =
+            Arc::new(HookServer::start(&project_root).expect("Failed to start hook server"));
+        let runner: Arc<dyn AgentRunnerTrait> = Arc::new(
+            AgentRunner::new(Arc::clone(&registry)).with_hook_server(Arc::clone(&hook_server)),
+        );
 
         Self::with_runner(
             workflow,

@@ -223,20 +223,7 @@ async fn run(
     // (which creates its own internally). The registry is stateless, so having
     // two instances is fine.
     let provider_registry = {
-        use orkestra_core::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle};
-
-        struct StubPtySpawner;
-        impl ProcessSpawner for StubPtySpawner {
-            fn spawn(
-                &self,
-                _: &std::path::Path,
-                _: ProcessConfig,
-            ) -> Result<ProcessHandle, ProcessError> {
-                Err(ProcessError::SpawnFailed(
-                    "claude-pty uses run_pty, not ProcessSpawner".into(),
-                ))
-            }
-        }
+        use orkestra_core::workflow::execution::StubPtySpawner;
 
         let mut registry = ProviderRegistry::new("claudecode");
         registry.register(
@@ -296,7 +283,8 @@ async fn run(
         project_root.clone(),
         Arc::clone(&store),
         iteration_service,
-    );
+    )
+    .map_err(|e| format!("Failed to start hook server: {e}"))?;
     stage_executor_inner.set_log_notify_tx(log_tx.clone());
     let stage_executor = Arc::new(stage_executor_inner);
 

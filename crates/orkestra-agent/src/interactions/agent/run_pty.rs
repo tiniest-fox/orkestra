@@ -20,7 +20,7 @@ use tempfile::NamedTempFile;
 
 use crate::interactions::hooks::types::{HookReceiver, HookServer};
 use crate::orkestra_debug;
-use crate::registry::ProviderRegistry;
+use crate::registry::{ProviderRegistry, ResolvedProvider};
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
 
 use super::classify_output::{self, OutputClassification};
@@ -49,23 +49,28 @@ struct PtyHandle {
 /// Spawns Claude Code in a PTY, writes the prompt via keystrokes, waits for
 /// the hook-based Stop callback, reads the JSONL transcript, classifies output,
 /// and emits `RunEvents`. Returns `(pid, receiver)` matching the standard contract.
+///
+/// `resolved` is the already-resolved provider from the service layer (avoids double resolution).
 pub fn execute(
+    resolved: ResolvedProvider,
     registry: &Arc<ProviderRegistry>,
     config: &RunConfig,
     hook_server: &Arc<HookServer>,
 ) -> Result<(u32, Receiver<RunEvent>), RunError> {
-    // Resolve provider
-    let resolved = registry
-        .resolve(config.model.as_deref())
-        .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
-
     // Create parser — claude-pty uses the same JSONL format as claudecode
     let parser = registry
         .create_parser(&resolved.provider_name)
         .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-    // Parse schema for validation
-    let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
+    // Parse schema for validation — fail fast on invalid JSON rather than silently ignoring it
+    let schema: Option<serde_json::Value> = if config.json_schema.trim().is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_str(&config.json_schema)
+                .map_err(|e| RunError::SpawnFailed(format!("invalid JSON schema: {e}")))?,
+        )
+    };
 
     // Clone before config is consumed
     let prompt_sections = config.prompt_sections.clone();
@@ -80,6 +85,11 @@ pub fn execute(
     let working_dir = config.working_dir.clone();
     let resolved_model_id = resolved.model_id.clone();
     let env = config.env.clone();
+
+    // Resolve HOME before spawning the background thread (no hidden env access in helpers)
+    let home_dir = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| RunError::SpawnFailed("HOME environment variable not set".into()))?;
 
     // Register task with hook server before spawning PTY so no events are missed
     let hook_rx = hook_server.register_task(&task_id);
@@ -109,7 +119,10 @@ pub fn execute(
         cmd.args(["--session-id", &session_id]);
     }
     cmd.args(["--permission-mode", "acceptEdits"]);
-    cmd.args(["--settings", settings_path.to_str().unwrap_or_default()]);
+    let settings_path_str = settings_path.to_str().ok_or_else(|| {
+        RunError::SpawnFailed("settings path contains non-UTF-8 characters".into())
+    })?;
+    cmd.args(["--settings", settings_path_str]);
     if let Some(ref model) = resolved_model_id {
         cmd.args(["--model", model]);
     }
@@ -176,6 +189,7 @@ pub fn execute(
             working_dir: &working_dir,
             prompt: &prompt,
             schema: schema.as_ref(),
+            home_dir: &home_dir,
         };
         run_background(pty_handle, &hook_rx, &hook_server_thread, &tx, parser, ctx);
     });
@@ -195,6 +209,8 @@ struct SessionCtx<'a> {
     working_dir: &'a Path,
     prompt: &'a str,
     schema: Option<&'a serde_json::Value>,
+    /// Resolved `$HOME` directory — passed explicitly to avoid hidden env reads in helpers.
+    home_dir: &'a Path,
 }
 
 fn run_background(
@@ -228,8 +244,9 @@ fn run_background(
     // Poll for JSONL transcript file to confirm session started.
     // Emitting this LogLine triggers `has_confirmed_output` in ActiveAgent::poll(),
     // persisting `has_activity=true` for crash recovery.
-    let transcript_hint = compute_transcript_path(ctx.working_dir, ctx.session_id);
-    if poll_for_file(&transcript_hint, Duration::from_secs(30)) {
+    let fallback_transcript_path =
+        compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
+    if poll_for_file(&fallback_transcript_path, Duration::from_secs(30)) {
         let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
             content: "PTY session active".to_string(),
         }));
@@ -258,7 +275,7 @@ fn run_background(
     let transcript_path = hook_event
         .as_ref()
         .and_then(|e| e.transcript_path.clone())
-        .unwrap_or(transcript_hint);
+        .unwrap_or(fallback_transcript_path);
 
     // Wait briefly for file flush before reading
     thread::sleep(Duration::from_millis(100));
@@ -337,10 +354,9 @@ fn build_settings_file(
 ///
 /// Claude Code writes `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`
 /// where encoded-cwd replaces every `/` with `-`.
-fn compute_transcript_path(working_dir: &Path, session_id: &str) -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+fn compute_transcript_path(home_dir: &Path, working_dir: &Path, session_id: &str) -> PathBuf {
     let encoded_cwd = working_dir.to_string_lossy().replace('/', "-");
-    PathBuf::from(home)
+    home_dir
         .join(".claude")
         .join("projects")
         .join(encoded_cwd)
@@ -463,8 +479,9 @@ mod tests {
 
     #[test]
     fn compute_transcript_path_replaces_slashes() {
+        let home = PathBuf::from("/home/user");
         let dir = PathBuf::from("/home/user/projects/my-repo");
-        let path = compute_transcript_path(&dir, "ses-456");
+        let path = compute_transcript_path(&home, &dir, "ses-456");
         let path_str = path.to_string_lossy();
 
         assert!(

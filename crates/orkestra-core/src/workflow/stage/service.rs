@@ -243,26 +243,13 @@ impl StageExecutionService {
         project_root: PathBuf,
         store: Arc<dyn WorkflowStore>,
         iteration_service: Arc<IterationService>,
-    ) -> Self {
+    ) -> Result<Self, std::io::Error> {
         use crate::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
         use crate::workflow::execution::{
             claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-            pty_claude_capabilities, start_hook_server, ProviderRegistry,
+            pty_claude_capabilities, start_hook_server, ProviderRegistry, StubPtySpawner,
         };
-        use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
-
-        struct StubPtySpawner;
-        impl ProcessSpawner for StubPtySpawner {
-            fn spawn(
-                &self,
-                _: &std::path::Path,
-                _: ProcessConfig,
-            ) -> Result<ProcessHandle, ProcessError> {
-                Err(ProcessError::SpawnFailed(
-                    "claude-pty uses run_pty, not ProcessSpawner".into(),
-                ))
-            }
-        }
+        use crate::workflow::ports::ProcessSpawner;
 
         let mut registry = ProviderRegistry::new("claudecode");
         registry.register(
@@ -285,20 +272,19 @@ impl StageExecutionService {
         );
 
         let registry = Arc::new(registry);
-        let hook_server =
-            Arc::new(start_hook_server(&project_root).expect("Failed to start hook server"));
+        let hook_server = Arc::new(start_hook_server(&project_root)?);
         let runner: Arc<dyn AgentRunnerTrait> = Arc::new(
             AgentRunner::new(Arc::clone(&registry)).with_hook_server(Arc::clone(&hook_server)),
         );
 
-        Self::with_runner(
+        Ok(Self::with_runner(
             workflow,
             project_root,
             store,
             iteration_service,
             runner,
             registry,
-        )
+        ))
     }
 
     /// Disable login-shell env resolution for agent execution.

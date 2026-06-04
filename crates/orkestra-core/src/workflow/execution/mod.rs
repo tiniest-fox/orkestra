@@ -34,7 +34,7 @@ pub use orkestra_agent::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
     pty_claude_capabilities, AgentCompletionError, ProviderCapabilities, ProviderRegistry,
     RegistryError, ResolvedProvider, RunConfig, RunError, RunEvent, RunResult, ScriptEnv,
-    ScriptHandle, ScriptPollState, ScriptResult,
+    ScriptHandle, ScriptPollState, ScriptResult, StubPtySpawner,
 };
 
 #[cfg(any(test, feature = "testutil"))]

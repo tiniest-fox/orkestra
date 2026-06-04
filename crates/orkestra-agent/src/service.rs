@@ -87,7 +87,12 @@ impl AgentRunner for ProcessAgentRunner {
             let hook_server = self.hook_server.as_ref().ok_or_else(|| {
                 RunError::SpawnFailed("claude-pty provider requires a hook server".into())
             })?;
-            crate::interactions::agent::run_pty::execute(&self.registry, &config, hook_server)
+            crate::interactions::agent::run_pty::execute(
+                resolved,
+                &self.registry,
+                &config,
+                hook_server,
+            )
         } else {
             crate::interactions::agent::run_async::execute(&self.registry, config)
         }

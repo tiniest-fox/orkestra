@@ -75,13 +75,19 @@ impl HookServer {
     /// Call this before spawning the PTY session so no events are missed.
     pub fn register_task(&self, task_id: &str) -> HookReceiver {
         let (tx, rx) = mpsc::channel();
-        self.senders.lock().unwrap().insert(task_id.to_string(), tx);
+        self.senders
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(task_id.to_string(), tx);
         HookReceiver { receiver: rx }
     }
 
     /// Unregister a task, dropping any unread events for it.
     pub fn unregister_task(&self, task_id: &str) {
-        self.senders.lock().unwrap().remove(task_id);
+        self.senders
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(task_id);
     }
 
     /// The socket path the PTY spawner should use when constructing hook commands.
@@ -93,7 +99,7 @@ impl HookServer {
     ///
     /// Safe to call more than once; errors during cleanup are ignored.
     pub fn shutdown(&self) {
-        self.shutdown.store(true, Ordering::Relaxed);
+        self.shutdown.store(true, Ordering::Release);
         // Probe connection unblocks the blocking accept() in the background thread.
         let _ = std::os::unix::net::UnixStream::connect(&self.socket_path);
         let _ = std::fs::remove_file(&self.socket_path);
@@ -119,7 +125,7 @@ fn run_accept_loop(
     loop {
         match listener.accept() {
             Ok((mut stream, _)) => {
-                if shutdown.load(Ordering::Relaxed) {
+                if shutdown.load(Ordering::Acquire) {
                     break;
                 }
                 let mut buf = String::new();
@@ -129,11 +135,11 @@ fn run_accept_loop(
                 }
                 let trimmed = buf.trim();
                 if !trimmed.is_empty() {
-                    handle_payload(trimmed, senders);
+                    dispatch_payload(trimmed, senders);
                 }
             }
             Err(e) => {
-                if !shutdown.load(Ordering::Relaxed) {
+                if !shutdown.load(Ordering::Acquire) {
                     orkestra_debug!("hooks", "accept error on hook socket: {e}");
                 }
                 break;
@@ -144,7 +150,7 @@ fn run_accept_loop(
     let _ = std::fs::remove_file(socket_path);
 }
 
-fn handle_payload(payload: &str, senders: &Arc<Mutex<HashMap<String, mpsc::Sender<HookEvent>>>>) {
+fn dispatch_payload(payload: &str, senders: &Arc<Mutex<HashMap<String, mpsc::Sender<HookEvent>>>>) {
     let parsed: HookPayload = match serde_json::from_str(payload) {
         Ok(p) => p,
         Err(e) => {
@@ -175,7 +181,7 @@ fn handle_payload(payload: &str, senders: &Arc<Mutex<HashMap<String, mpsc::Sende
         reason: parsed.reason,
     };
 
-    let senders = senders.lock().unwrap();
+    let senders = senders.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(sender) = senders.get(&parsed.task_id) {
         // Ignore send errors — the receiver may have been dropped intentionally.
         let _ = sender.send(event);

@@ -107,20 +107,7 @@ impl ProjectState {
             opencode_aliases(),
         );
         {
-            use orkestra_core::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle};
-
-            struct StubPtySpawner;
-            impl ProcessSpawner for StubPtySpawner {
-                fn spawn(
-                    &self,
-                    _: &std::path::Path,
-                    _: ProcessConfig,
-                ) -> Result<ProcessHandle, ProcessError> {
-                    Err(ProcessError::SpawnFailed(
-                        "claude-pty uses run_pty, not ProcessSpawner".into(),
-                    ))
-                }
-            }
+            use orkestra_core::workflow::execution::StubPtySpawner;
 
             provider_registry.register(
                 "claude-pty",

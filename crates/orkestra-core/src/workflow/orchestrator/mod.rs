@@ -213,13 +213,13 @@ impl OrchestratorLoop {
     ///
     /// # Panics
     ///
-    /// Panics if the API mutex is poisoned.
+    /// Returns `Err` if the hook server socket cannot be bound.
     pub fn for_project(
         api: Arc<Mutex<WorkflowApi>>,
         workflow: WorkflowConfig,
         project_root: PathBuf,
         store: Arc<dyn WorkflowStore>,
-    ) -> Self {
+    ) -> std::io::Result<Self> {
         // Get iteration service from api to share with executor
         let iteration_service = api.lock().unwrap().iteration_service().clone();
 
@@ -228,11 +228,11 @@ impl OrchestratorLoop {
             project_root.clone(),
             store,
             iteration_service,
-        ));
+        )?);
 
         let mut orchestrator = Self::new(api, stage_executor);
         orchestrator.project_root = Some(project_root);
-        orchestrator
+        Ok(orchestrator)
     }
 
     /// Create with a custom stage executor (for testing).
@@ -867,12 +867,10 @@ mod tests {
         let iteration_service = api.lock().unwrap().iteration_service().clone();
         let project_root = PathBuf::from("/tmp");
 
-        let stage_executor = Arc::new(StageExecutionService::new(
-            workflow,
-            project_root,
-            store,
-            iteration_service,
-        ));
+        let stage_executor = Arc::new(
+            StageExecutionService::new(workflow, project_root, store, iteration_service)
+                .expect("failed to start hook server in test"),
+        );
 
         OrchestratorLoop::new(api, stage_executor)
     }

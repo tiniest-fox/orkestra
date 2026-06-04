@@ -15,7 +15,7 @@ use orkestra_parser::{
     OpenCodeParserService as OpenCodeAgentParser,
 };
 
-use orkestra_process::ProcessSpawner;
+use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 
 // ============================================================================
 // Provider Capabilities
@@ -356,6 +356,25 @@ pub fn pty_claude_capabilities() -> ProviderCapabilities {
 }
 
 // ============================================================================
+// Stub Spawner for PTY Provider
+// ============================================================================
+
+/// No-op `ProcessSpawner` placeholder for the `claude-pty` provider.
+///
+/// `claude-pty` dispatches via `run_pty::execute()`, never through `ProcessSpawner`.
+/// This stub satisfies the registry's spawner requirement while making it clear
+/// that calling `spawn()` on this type is always a programming error.
+pub struct StubPtySpawner;
+
+impl ProcessSpawner for StubPtySpawner {
+    fn spawn(&self, _: &std::path::Path, _: ProcessConfig) -> Result<ProcessHandle, ProcessError> {
+        Err(ProcessError::SpawnFailed(
+            "claude-pty uses run_pty, not ProcessSpawner".into(),
+        ))
+    }
+}
+
+// ============================================================================
 // Test Utilities
 // ============================================================================
 
@@ -368,7 +387,6 @@ pub fn pty_claude_capabilities() -> ProviderCapabilities {
 /// `supports_json_schema`) when building prompts.
 #[cfg(any(test, feature = "testutil"))]
 pub fn default_test_registry() -> ProviderRegistry {
-    use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
     use std::path::Path;
 
     /// Stub spawner that never spawns real processes. Used in tests where
@@ -376,11 +394,7 @@ pub fn default_test_registry() -> ProviderRegistry {
     struct StubSpawner;
 
     impl ProcessSpawner for StubSpawner {
-        fn spawn(
-            &self,
-            _working_dir: &Path,
-            _config: ProcessConfig,
-        ) -> Result<ProcessHandle, ProcessError> {
+        fn spawn(&self, _: &Path, _: ProcessConfig) -> Result<ProcessHandle, ProcessError> {
             Err(ProcessError::SpawnFailed(
                 "StubSpawner does not spawn real processes (test-only)".to_string(),
             ))
@@ -402,7 +416,7 @@ pub fn default_test_registry() -> ProviderRegistry {
     );
     registry.register(
         "claude-pty",
-        Arc::new(StubSpawner),
+        Arc::new(StubPtySpawner),
         pty_claude_capabilities(),
         HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
     );
@@ -416,7 +430,6 @@ pub fn default_test_registry() -> ProviderRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle};
     use std::path::Path;
 
     /// Minimal spawner for tests — never actually spawns.

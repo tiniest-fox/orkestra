@@ -3,6 +3,7 @@
 //! Owns agent spawning, output streaming, result parsing, script execution,
 //! provider resolution, and `ProcessSpawner` implementations.
 
+mod hook_server;
 pub mod interactions;
 mod interface;
 pub mod registry;
@@ -52,10 +53,14 @@ pub fn resolve_agent_env(
     Some(env)
 }
 
+// Hook server
+pub use hook_server::HookServer;
+
 // Registry
 pub use registry::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider,
+    pty_claude_capabilities, ProviderCapabilities, ProviderRegistry, RegistryError,
+    ResolvedProvider,
 };
 
 // Mock (feature-gated)

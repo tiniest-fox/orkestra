@@ -27,12 +27,13 @@ pub use prompt::{
 
 // Re-exports from orkestra-agent (backward-compatible aliases)
 pub use orkestra_agent::AgentRunner as AgentRunnerTrait;
+pub use orkestra_agent::HookServer;
 pub use orkestra_agent::ProcessAgentRunner as AgentRunner;
 pub use orkestra_agent::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    AgentCompletionError, ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider,
-    RunConfig, RunError, RunEvent, RunResult, ScriptEnv, ScriptHandle, ScriptPollState,
-    ScriptResult,
+    pty_claude_capabilities, AgentCompletionError, ProviderCapabilities, ProviderRegistry,
+    RegistryError, ResolvedProvider, RunConfig, RunError, RunEvent, RunResult, ScriptEnv,
+    ScriptHandle, ScriptPollState, ScriptResult,
 };
 
 #[cfg(any(test, feature = "testutil"))]

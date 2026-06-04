@@ -5,6 +5,7 @@
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
+use crate::hook_server::HookServer;
 use crate::interface::AgentRunner;
 use crate::registry::ProviderRegistry;
 use crate::types::{RunConfig, RunError, RunEvent, RunResult};
@@ -28,12 +29,24 @@ use crate::types::{RunConfig, RunError, RunEvent, RunResult};
 /// - Task state updates (caller handles)
 pub struct ProcessAgentRunner {
     registry: Arc<ProviderRegistry>,
+    /// Optional hook server for receiving PTY session lifecycle callbacks.
+    hook_server: Option<Arc<HookServer>>,
 }
 
 impl ProcessAgentRunner {
     /// Create a new agent runner with the given provider registry.
     pub fn new(registry: Arc<ProviderRegistry>) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            hook_server: None,
+        }
+    }
+
+    /// Attach a hook server for receiving PTY session lifecycle callbacks.
+    #[must_use]
+    pub fn with_hook_server(mut self, server: Arc<HookServer>) -> Self {
+        self.hook_server = Some(server);
+        self
     }
 
     /// Create a new agent runner with a single process spawner (backward compat).
@@ -50,6 +63,7 @@ impl ProcessAgentRunner {
         );
         Self {
             registry: Arc::new(registry),
+            hook_server: None,
         }
     }
 }

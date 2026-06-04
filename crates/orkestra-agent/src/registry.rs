@@ -210,7 +210,7 @@ impl ProviderRegistry {
         provider_name: &str,
     ) -> Result<Box<dyn AgentParser>, RegistryError> {
         match provider_name {
-            "claudecode" => Ok(Box::new(ClaudeAgentParser::new())),
+            "claudecode" | "claude-pty" => Ok(Box::new(ClaudeAgentParser::new())),
             "opencode" => Ok(Box::new(OpenCodeAgentParser::new())),
             _ => Err(RegistryError::UnknownProvider(provider_name.to_string())),
         }
@@ -235,7 +235,9 @@ impl ProviderRegistry {
 
     /// Resolve a non-empty model spec string using prefix-based routing.
     fn resolve_spec(&self, spec: &str) -> Result<ResolvedProvider, RegistryError> {
-        if let Some(model) = spec.strip_prefix("claude/") {
+        if let Some(model) = spec.strip_prefix("claude-pty/") {
+            self.resolve_with_provider("claude-pty", Some(model.to_string()))
+        } else if let Some(model) = spec.strip_prefix("claude/") {
             self.resolve_with_provider("claudecode", Some(model.to_string()))
         } else if let Some(model) = spec.strip_prefix("claudecode/") {
             self.resolve_with_provider("claudecode", Some(model.to_string()))
@@ -337,6 +339,22 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
     }
 }
 
+/// `claude-pty` provider capabilities (interactive PTY-based Claude Code).
+///
+/// Interactive mode disables flags that only work in headless (`-p`) invocations:
+/// `--json-schema`, `--append-system-prompt`. Session resume works via
+/// `--resume <uuid>` from the same worktree. Caller supplies the UUID (`--session-id`)
+/// on first spawn, just like the headless `claudecode` provider.
+pub fn pty_claude_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        supports_json_schema: false,
+        supports_sessions: true,
+        generates_own_session_id: false,
+        requires_direct_structured_output: false,
+        supports_system_prompt: false,
+    }
+}
+
 // ============================================================================
 // Test Utilities
 // ============================================================================
@@ -381,6 +399,12 @@ pub fn default_test_registry() -> ProviderRegistry {
         Arc::new(StubSpawner),
         opencode_capabilities(),
         opencode_aliases(),
+    );
+    registry.register(
+        "claude-pty",
+        Arc::new(StubSpawner),
+        pty_claude_capabilities(),
+        HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
     );
     registry
 }
@@ -434,6 +458,12 @@ mod tests {
             Arc::new(StubSpawner::new("opencode")),
             opencode_capabilities(),
             opencode_aliases(),
+        );
+        registry.register(
+            "claude-pty",
+            Arc::new(StubSpawner::new("claude-pty")),
+            pty_claude_capabilities(),
+            HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
         );
         registry
     }
@@ -639,7 +669,42 @@ mod tests {
         let registry = test_registry();
         let mut names = registry.provider_names();
         names.sort_unstable();
-        assert_eq!(names, vec!["claudecode", "opencode"]);
+        assert_eq!(names, vec!["claude-pty", "claudecode", "opencode"]);
+    }
+
+    // -- claude-pty provider tests --
+
+    #[test]
+    fn resolve_claude_pty_prefix_routes_correctly() {
+        let registry = test_registry();
+        let resolved = registry.resolve(Some("claude-pty/sonnet")).unwrap();
+        assert_eq!(resolved.provider_name, "claude-pty");
+        assert_eq!(resolved.model_id, Some("sonnet".to_string()));
+        assert!(!resolved.capabilities.supports_json_schema);
+        assert!(!resolved.capabilities.supports_system_prompt);
+    }
+
+    #[test]
+    fn claude_pty_parser_is_created() {
+        let registry = test_registry();
+        assert!(registry.create_parser("claude-pty").is_ok());
+    }
+
+    #[test]
+    fn claude_pty_capabilities_are_correct() {
+        let caps = pty_claude_capabilities();
+        assert!(!caps.supports_json_schema);
+        assert!(caps.supports_sessions);
+        assert!(!caps.generates_own_session_id);
+        assert!(!caps.requires_direct_structured_output);
+        assert!(!caps.supports_system_prompt);
+    }
+
+    #[test]
+    fn claude_pty_does_not_shadow_claude_prefix() {
+        let registry = test_registry();
+        let resolved = registry.resolve(Some("claude/sonnet")).unwrap();
+        assert_eq!(resolved.provider_name, "claudecode");
     }
 
     // -- Alias table tests --

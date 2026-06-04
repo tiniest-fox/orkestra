@@ -15,7 +15,7 @@ use std::time::Duration;
 use orkestra_parser::interactions::stream::parse_resume_marker;
 use orkestra_parser::AgentParser;
 use orkestra_process::ProcessGuard;
-use orkestra_types::domain::LogEntry;
+use orkestra_types::domain::{LogEntry, PromptSection};
 use portable_pty::{CommandBuilder, PtySize};
 use tempfile::NamedTempFile;
 
@@ -53,7 +53,7 @@ struct PtyHandle {
 ///
 /// `resolved` is the already-resolved provider from the service layer (avoids double resolution).
 pub fn execute(
-    resolved: ResolvedProvider,
+    resolved: &ResolvedProvider,
     registry: &Arc<ProviderRegistry>,
     config: &RunConfig,
     hook_server: &Arc<HookServer>,
@@ -108,18 +108,7 @@ pub fn execute(
 
     let settings_path = settings_file.path().to_path_buf();
 
-    // Spawn PTY
-    let pty_system = portable_pty::native_pty_system();
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| RunError::SpawnFailed(format!("failed to open PTY: {e}")))?;
-
-    let cmd = build_pty_command(PtyCommandConfig {
+    let (pty_handle, pid) = open_and_spawn_pty(&PtyCommandConfig {
         session_id: &session_id,
         is_resume,
         settings_path: &settings_path,
@@ -129,47 +118,13 @@ pub fn execute(
         disallowed_tools: &config.disallowed_tools,
         env: env.as_ref(),
     })?;
-
-    let child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| RunError::SpawnFailed(format!("failed to spawn PTY process: {e}")))?;
-
-    let pid = child
-        .process_id()
-        .ok_or_else(|| RunError::SpawnFailed("PTY child has no process ID".into()))?
-        as u32;
-
     orkestra_debug!("runner", "run_pty: spawned pid={}", pid);
-
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|e| RunError::SpawnFailed(format!("failed to get PTY writer: {e}")))?;
-
-    let pty_handle = PtyHandle {
-        writer,
-        child,
-        guard: ProcessGuard::new(pid),
-    };
 
     // Create event channel
     let (tx, rx) = mpsc::channel();
 
     // Emit UserMessage log entry (same pattern as run_async)
-    if let Some(marker) = parse_resume_marker::execute(&prompt) {
-        let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
-            resume_type: marker.marker_type.as_str().to_string(),
-            content: marker.content,
-            sections: prompt_sections,
-        }));
-    } else {
-        let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
-            resume_type: "user_message".to_string(),
-            content: prompt.clone(),
-            sections: prompt_sections,
-        }));
-    }
+    emit_user_message(&tx, &prompt, prompt_sections);
 
     // Clone Arc for the background thread
     let hook_server_thread = Arc::clone(hook_server);
@@ -329,6 +284,61 @@ fn drive_pty_session(
 // Helpers
 // ============================================================================
 
+/// Open a PTY, spawn the Claude Code command, and return a `PtyHandle` with the child PID.
+fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), RunError> {
+    let cmd = build_pty_command(cfg)?;
+
+    let pty_system = portable_pty::native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| RunError::SpawnFailed(format!("failed to open PTY: {e}")))?;
+
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| RunError::SpawnFailed(format!("failed to spawn PTY process: {e}")))?;
+
+    let pid = child
+        .process_id()
+        .ok_or_else(|| RunError::SpawnFailed("PTY child has no process ID".into()))?
+        as u32;
+
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| RunError::SpawnFailed(format!("failed to get PTY writer: {e}")))?;
+
+    Ok((
+        PtyHandle {
+            writer,
+            child,
+            guard: ProcessGuard::new(pid),
+        },
+        pid,
+    ))
+}
+
+fn emit_user_message(tx: &Sender<RunEvent>, prompt: &str, prompt_sections: Vec<PromptSection>) {
+    if let Some(marker) = parse_resume_marker::execute(prompt) {
+        let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
+            resume_type: marker.marker_type.as_str().to_string(),
+            content: marker.content,
+            sections: prompt_sections,
+        }));
+    } else {
+        let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
+            resume_type: "user_message".to_string(),
+            content: prompt.to_string(),
+            sections: prompt_sections,
+        }));
+    }
+}
+
 /// Parameters for constructing the PTY `CommandBuilder`.
 struct PtyCommandConfig<'a> {
     session_id: &'a str,
@@ -346,7 +356,7 @@ struct PtyCommandConfig<'a> {
 /// Mirrors the headless path in `spawner/claude.rs`: uses
 /// `--dangerously-skip-permissions`, blocks `EnterPlanMode`/`ExitPlanMode`, and
 /// threads `disallowed_tools` from the stage config.
-fn build_pty_command(cfg: PtyCommandConfig<'_>) -> Result<CommandBuilder, RunError> {
+fn build_pty_command(cfg: &PtyCommandConfig<'_>) -> Result<CommandBuilder, RunError> {
     let mut cmd = CommandBuilder::new("claude");
 
     if cfg.is_resume {

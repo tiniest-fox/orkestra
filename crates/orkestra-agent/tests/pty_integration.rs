@@ -71,7 +71,7 @@ fn pty_provider_full_lifecycle() {
     .with_env(env_override);
 
     let resolved = registry.resolve(config.model.as_deref()).unwrap();
-    let (pid, rx) = run_pty::execute(resolved, &registry, &config, &hook_server).unwrap();
+    let (pid, rx) = run_pty::execute(&resolved, &registry, &config, &hook_server).unwrap();
     assert!(pid > 0, "PTY process must have a valid PID");
 
     // Collect events until Completed arrives or 30s elapses

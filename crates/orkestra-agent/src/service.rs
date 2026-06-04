@@ -88,7 +88,7 @@ impl AgentRunner for ProcessAgentRunner {
                 RunError::SpawnFailed("claude-pty provider requires a hook server".into())
             })?;
             crate::interactions::agent::run_pty::execute(
-                resolved,
+                &resolved,
                 &self.registry,
                 &config,
                 hook_server,

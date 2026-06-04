@@ -9,7 +9,7 @@ src/
 ├── lib.rs              # Public API re-exports
 ├── interface.rs        # AgentRunner trait (run_sync, run_async)
 ├── service.rs          # ProcessAgentRunner implementation
-├── registry.rs         # ProviderRegistry, capabilities, aliases
+├── registry.rs         # ProviderRegistry, ExecutionMode, capabilities, aliases
 ├── types.rs            # RunConfig, RunEvent, RunResult, RunError
 ├── script_handle.rs    # ScriptHandle for gate script execution
 ├── mock.rs             # MockAgentRunner (feature-gated)
@@ -18,7 +18,13 @@ src/
     │   ├── build_process_config.rs  # Convert RunConfig → ProcessConfig
     │   ├── classify_output.rs       # Two-phase output classification (ExtractionFailed / ParseFailed / Success)
     │   ├── run_sync.rs              # Blocking execution
-    │   └── run_async.rs             # Async execution with event streaming
+    │   ├── run_async.rs             # Async execution with event streaming (Process path)
+    │   └── run_pty.rs               # PTY-based interactive execution (PTY path)
+    ├── hooks/
+    │   ├── server.rs    # HookServer — Unix domain socket listener for claude hook events
+    │   └── types.rs     # HookEvent, HookEventType, HookReceiver
+    ├── env/
+    │   └── resolve_project_env.rs   # Resolve project env vars from config
     └── spawner/
         ├── cli_path.rs    # PATH preparation for CLI tools
         ├── claude.rs      # ClaudeProcessSpawner
@@ -50,6 +56,7 @@ The registry also creates provider-specific parsers via `create_parser()`.
 
 ```rust
 pub struct ProviderCapabilities {
+    pub execution_mode: ExecutionMode,        // Process (stdin/stdout) or Pty (virtual terminal)
     pub supports_json_schema: bool,           // Native --json-schema flag
     pub supports_sessions: bool,              // Session resume support
     pub generates_own_session_id: bool,       // Provider creates session IDs
@@ -58,7 +65,18 @@ pub struct ProviderCapabilities {
 }
 ```
 
+`ExecutionMode::Pty` providers bypass `ProcessSpawner` entirely — `run_pty` owns its own `PtyHandle` and the spawner field in the registry is a `StubPtySpawner` used only for capability/parser dispatch.
+
 When `supports_json_schema` is false, the JSON schema is embedded in the prompt text upstream (in `orkestra-prompt`).
+
+### PTY Execution Path
+
+The PTY path (`run_pty.rs`) is an alternative to the standard process path (`run_async.rs`) for billing-friendly interactive sessions. Key design constraints:
+
+- **`ProcessSpawner` is bypassed entirely** — `run_pty` owns a `PtyHandle` directly. The spawner stored in the registry for `claude-pty` is a `StubPtySpawner` used only for capability and parser dispatch.
+- **No stdout streaming** — PTY output isn't available as a stream; `run_pty` watches the claude JSONL transcript file. This means `has_activity` / `has_confirmed_output` must be signaled by emitting synthetic `LogLine` events after the transcript file appears (one `Text` entry is insufficient — at least 2 are needed to cross `has_confirmed_output`'s threshold).
+- **Disallowed tools divergence risk** — `run_pty.rs` assembles the `--disallowedTools` flag independently of `spawner/claude.rs`. If you add a new default-disallowed tool to the headless spawner, you must mirror it in `run_pty.rs::build_pty_command()`. There is no shared constant for this list yet.
+- **Environment isolation differs** — The PTY path inherits the parent process environment (portable-pty default) then overlays `cfg.env`. The headless spawner calls `env_clear()` first. PTY sessions may see env vars that headless sessions don't.
 
 ### Output Classification
 
@@ -110,6 +128,7 @@ Async execution emits events through a channel:
 - **Provider capabilities affect prompts**: When `supports_json_schema` is false, the JSON schema is injected into the prompt text by `PromptBuilder` in orkestra-prompt.
 - **System prompt fallback**: When `supports_system_prompt` is false, the system prompt is inserted into the user message *after the first line* (the `<!orkestra:spawn:STAGE>` marker) so `parse_resume_marker` still detects the marker at position 0. On resume, the injection is skipped entirely — the session already has the system prompt from the initial spawn.
 - **Disallowed tools fallback**: OpenCode doesn't support `--disallowedTools`, so restriction messages are injected into the system prompt only.
+- **Disallowed tools are duplicated across paths**: The headless path (`spawner/claude.rs`) and the PTY path (`run_pty.rs::build_pty_command()`) each assemble `--disallowedTools` independently. When adding a new default-disallowed tool, update both.
 - **Marker parser asymmetry**: `parse_resume_marker` only recognizes `continue`, `integration`, `answers`, and `initial`. Build_prompt emits `malformed_output` and `pr_comments` markers that the parser doesn't recognize, so `run_async.rs`'s else branch will log them as `resume_type: "user_message"` — mislabeled but logging-only. If the mislabeling becomes a problem, guard the else branch with `!prompt.trim_start().starts_with("<!orkestra:")` or extend `parse_resume_marker` with the missing variants.
 
 ## Anti-patterns

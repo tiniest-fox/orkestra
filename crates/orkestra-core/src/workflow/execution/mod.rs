@@ -26,14 +26,95 @@ pub use prompt::{
 };
 
 // Re-exports from orkestra-agent (backward-compatible aliases)
+pub use orkestra_agent::start_hook_server;
 pub use orkestra_agent::AgentRunner as AgentRunnerTrait;
+pub use orkestra_agent::HookServer;
 pub use orkestra_agent::ProcessAgentRunner as AgentRunner;
 pub use orkestra_agent::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    AgentCompletionError, ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider,
-    RunConfig, RunError, RunEvent, RunResult, ScriptEnv, ScriptHandle, ScriptPollState,
-    ScriptResult,
+    AgentCompletionError, ExecutionMode, ProviderCapabilities, ProviderRegistry, RegistryError,
+    ResolvedProvider, RunConfig, RunError, RunEvent, RunResult, ScriptEnv, ScriptHandle,
+    ScriptPollState, ScriptResult,
 };
+
+// Internal-only imports for build_production_registry — not part of the public API.
+use orkestra_agent::{pty_claude_capabilities, StubPtySpawner};
 
 #[cfg(any(test, feature = "testutil"))]
 pub use orkestra_agent::{default_test_registry, MockAgentRunner};
+
+// ============================================================================
+// Production registry factory
+// ============================================================================
+
+/// Build the canonical production provider registry.
+///
+/// Registers claudecode, opencode, and claude-pty with their standard
+/// capabilities and aliases. This is the single source of truth — all three
+/// production callers (`StageExecutionService`, daemon, Tauri) use this function.
+pub fn build_production_registry() -> ProviderRegistry {
+    use crate::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
+    use crate::workflow::ports::ProcessSpawner;
+    use std::sync::Arc;
+
+    let mut registry = ProviderRegistry::new("claudecode");
+    registry.register(
+        "claudecode",
+        Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        claudecode_capabilities(),
+        claudecode_aliases(),
+    );
+    registry.register(
+        "opencode",
+        Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        opencode_capabilities(),
+        opencode_aliases(),
+    );
+    registry.register(
+        "claude-pty",
+        Arc::new(StubPtySpawner) as Arc<dyn ProcessSpawner>,
+        pty_claude_capabilities(),
+        std::collections::HashMap::new(), // no bare aliases — reach via "claude-pty/<model>" prefix
+    );
+    registry
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that `build_production_registry` wires `claude-pty` with `ExecutionMode::Pty`.
+    ///
+    /// This is the orchestrator-level integration check: if `execution_mode` is wrong, the
+    /// `ProcessAgentRunner` dispatch in `service.rs` routes PTY tasks to the headless path.
+    #[test]
+    fn production_registry_claude_pty_has_pty_execution_mode() {
+        let registry = build_production_registry();
+        let resolved = registry
+            .resolve(Some("claude-pty/sonnet"))
+            .expect("claude-pty should be registered");
+        assert_eq!(
+            resolved.capabilities.execution_mode,
+            ExecutionMode::Pty,
+            "claude-pty must use ExecutionMode::Pty for correct dispatch"
+        );
+    }
+
+    /// Verify claudecode stays on the Process path after the PTY provider was added.
+    #[test]
+    fn production_registry_claudecode_has_process_execution_mode() {
+        let registry = build_production_registry();
+        let resolved = registry
+            .resolve(Some("claudecode/sonnet"))
+            .expect("claudecode should be registered");
+        assert_eq!(
+            resolved.capabilities.execution_mode,
+            ExecutionMode::Process,
+            "claudecode must use ExecutionMode::Process"
+        );
+    }
+}

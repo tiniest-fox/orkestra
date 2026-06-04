@@ -243,39 +243,23 @@ impl StageExecutionService {
         project_root: PathBuf,
         store: Arc<dyn WorkflowStore>,
         iteration_service: Arc<IterationService>,
-    ) -> Self {
-        use crate::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
-        use crate::workflow::execution::{
-            claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-            ProviderRegistry,
-        };
-        use crate::workflow::ports::ProcessSpawner;
+    ) -> Result<Self, std::io::Error> {
+        use crate::workflow::execution::{build_production_registry, start_hook_server};
 
-        let mut registry = ProviderRegistry::new("claudecode");
-        registry.register(
-            "claudecode",
-            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            claudecode_capabilities(),
-            claudecode_aliases(),
-        );
-        registry.register(
-            "opencode",
-            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            opencode_capabilities(),
-            opencode_aliases(),
+        let registry = Arc::new(build_production_registry());
+        let hook_server = Arc::new(start_hook_server(&project_root)?);
+        let runner: Arc<dyn AgentRunnerTrait> = Arc::new(
+            AgentRunner::new(Arc::clone(&registry)).with_hook_server(Arc::clone(&hook_server)),
         );
 
-        let registry = Arc::new(registry);
-        let runner: Arc<dyn AgentRunnerTrait> = Arc::new(AgentRunner::new(Arc::clone(&registry)));
-
-        Self::with_runner(
+        Ok(Self::with_runner(
             workflow,
             project_root,
             store,
             iteration_service,
             runner,
             registry,
-        )
+        ))
     }
 
     /// Disable login-shell env resolution for agent execution.
@@ -1050,9 +1034,29 @@ mod tests {
     use super::*;
     use crate::workflow::config::{StageConfig, WorkflowConfig};
     use crate::workflow::domain::LogEntry;
+    use crate::workflow::execution::default_test_registry;
     use crate::workflow::iteration::IterationService;
     use crate::workflow::InMemoryWorkflowStore;
+    use orkestra_agent::MockAgentRunner;
     use std::sync::mpsc;
+
+    fn make_service(
+        workflow: WorkflowConfig,
+        store: Arc<dyn WorkflowStore>,
+        iteration_service: Arc<IterationService>,
+    ) -> StageExecutionService {
+        let runner: Arc<dyn crate::workflow::execution::AgentRunnerTrait> =
+            Arc::new(MockAgentRunner::new());
+        let registry = Arc::new(default_test_registry());
+        StageExecutionService::with_runner(
+            workflow,
+            std::path::PathBuf::from("/tmp"),
+            store,
+            iteration_service,
+            runner,
+            registry,
+        )
+    }
 
     #[test]
     fn test_spawn_error_display() {
@@ -1071,10 +1075,8 @@ mod tests {
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
-        let project_root = std::path::PathBuf::from("/tmp");
 
-        let mut service =
-            StageExecutionService::new(workflow, project_root, store, iteration_service);
+        let mut service = make_service(workflow, store, iteration_service);
 
         let (tx, rx) = mpsc::channel();
         service.set_log_notify_tx(tx);
@@ -1099,10 +1101,8 @@ mod tests {
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
-        let project_root = std::path::PathBuf::from("/tmp");
 
-        let mut service =
-            StageExecutionService::new(workflow, project_root, store, iteration_service);
+        let mut service = make_service(workflow, store, iteration_service);
 
         let (tx, rx) = mpsc::channel();
         service.set_log_notify_tx(tx);
@@ -1125,10 +1125,8 @@ mod tests {
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
-        let project_root = std::path::PathBuf::from("/tmp");
 
-        let mut service =
-            StageExecutionService::new(workflow, project_root, store, iteration_service);
+        let mut service = make_service(workflow, store, iteration_service);
 
         let (tx, rx) = mpsc::channel();
         service.set_log_notify_tx(tx);
@@ -1155,10 +1153,8 @@ mod tests {
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
-        let project_root = std::path::PathBuf::from("/tmp");
 
-        let mut service =
-            StageExecutionService::new(workflow, project_root, store, iteration_service);
+        let mut service = make_service(workflow, store, iteration_service);
 
         let (tx, rx) = mpsc::channel();
         service.set_log_notify_tx(tx);

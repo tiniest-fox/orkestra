@@ -58,7 +58,8 @@ pub fn execute(
     let api = Arc::new(Mutex::new(base_api));
 
     let mut orchestrator =
-        OrchestratorLoop::for_project(Arc::clone(&api), workflow_config, project_root, store);
+        OrchestratorLoop::for_project(Arc::clone(&api), workflow_config, project_root, store)
+            .map_err(|e| format!("Failed to start hook server: {e}"))?;
     orchestrator.set_sync_background(true);
 
     let title_str = title.unwrap_or_else(|| description.chars().take(60).collect());

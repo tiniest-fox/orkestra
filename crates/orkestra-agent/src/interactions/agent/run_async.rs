@@ -11,14 +11,17 @@ use orkestra_process::ProcessHandle;
 use orkestra_types::domain::LogEntry;
 
 use crate::orkestra_debug;
-use crate::registry::ProviderRegistry;
+use crate::registry::{ProviderRegistry, ResolvedProvider};
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
 
 use super::classify_output::{self, OutputClassification};
 use super::run_sync::{collect_stderr, stderr_error_message};
 
 /// Run an agent asynchronously with events.
+///
+/// `resolved` is the already-resolved provider from the service layer (avoids double resolution).
 pub fn execute(
+    resolved: ResolvedProvider,
     registry: &Arc<ProviderRegistry>,
     config: RunConfig,
 ) -> Result<(u32, Receiver<RunEvent>), RunError> {
@@ -30,18 +33,20 @@ pub fn execute(
         config.model
     );
 
-    // Resolve provider from model spec
-    let resolved = registry
-        .resolve(config.model.as_deref())
-        .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
-
     // Create the provider-specific parser
     let parser = registry
         .create_parser(&resolved.provider_name)
         .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-    // Parse the schema for validation (before build_process_config consumes config)
-    let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
+    // Parse the schema for validation — fail fast on invalid JSON rather than silently ignoring it
+    let schema: Option<serde_json::Value> = if config.json_schema.trim().is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_str(&config.json_schema)
+                .map_err(|e| RunError::SpawnFailed(format!("invalid JSON schema: {e}")))?,
+        )
+    };
 
     // Clone sections before build_process_config consumes config
     let prompt_sections = config.prompt_sections.clone();

@@ -1,12 +1,15 @@
 //! Production agent runner implementation.
 //!
 //! `ProcessAgentRunner` delegates to interactions for sync and async execution.
+//! When a `HookServer` is attached via `with_hook_server`, the `claude-pty`
+//! provider is routed to `run_pty::execute()` instead of the standard path.
 
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
+use crate::interactions::hooks::types::HookServer;
 use crate::interface::AgentRunner;
-use crate::registry::ProviderRegistry;
+use crate::registry::{ExecutionMode, ProviderRegistry};
 use crate::types::{RunConfig, RunError, RunEvent, RunResult};
 
 // ============================================================================
@@ -28,12 +31,26 @@ use crate::types::{RunConfig, RunError, RunEvent, RunResult};
 /// - Task state updates (caller handles)
 pub struct ProcessAgentRunner {
     registry: Arc<ProviderRegistry>,
+    hook_server: Option<Arc<HookServer>>,
 }
 
 impl ProcessAgentRunner {
     /// Create a new agent runner with the given provider registry.
     pub fn new(registry: Arc<ProviderRegistry>) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            hook_server: None,
+        }
+    }
+
+    /// Attach a hook server, enabling the `claude-pty` provider path.
+    ///
+    /// Required when any registered provider uses `claude-pty`. Without a hook
+    /// server, `run_async` returns `SpawnFailed` for PTY provider runs.
+    #[must_use]
+    pub fn with_hook_server(mut self, server: Arc<HookServer>) -> Self {
+        self.hook_server = Some(server);
+        self
     }
 
     /// Create a new agent runner with a single process spawner (backward compat).
@@ -50,6 +67,7 @@ impl ProcessAgentRunner {
         );
         Self {
             registry: Arc::new(registry),
+            hook_server: None,
         }
     }
 }
@@ -60,6 +78,46 @@ impl AgentRunner for ProcessAgentRunner {
     }
 
     fn run_async(&self, config: RunConfig) -> Result<(u32, Receiver<RunEvent>), RunError> {
-        crate::interactions::agent::run_async::execute(&self.registry, config)
+        let resolved = self
+            .registry
+            .resolve(config.model.as_deref())
+            .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
+
+        if resolved.capabilities.execution_mode == ExecutionMode::Pty {
+            let hook_server = self.hook_server.as_ref().ok_or_else(|| {
+                RunError::SpawnFailed("claude-pty provider requires a hook server".into())
+            })?;
+            crate::interactions::agent::run_pty::execute(
+                &resolved,
+                &self.registry,
+                &config,
+                hook_server,
+            )
+        } else {
+            crate::interactions::agent::run_async::execute(resolved, &self.registry, config)
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::default_test_registry;
+    use crate::types::RunConfig;
+
+    #[test]
+    fn claude_pty_without_hook_server_returns_spawn_failed() {
+        let registry = Arc::new(default_test_registry());
+        let runner = ProcessAgentRunner::new(registry);
+        let config = RunConfig::new("/tmp", "test prompt", "{}").with_model("claude-pty/sonnet");
+        let result = runner.run_async(config);
+        assert!(
+            matches!(result, Err(RunError::SpawnFailed(_))),
+            "expected SpawnFailed when claude-pty is used without a hook server, got: {result:?}"
+        );
     }
 }

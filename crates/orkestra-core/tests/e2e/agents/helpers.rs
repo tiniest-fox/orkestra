@@ -108,12 +108,10 @@ impl AgentTestEnv {
         let iteration_service = api.lock().unwrap().iteration_service().clone();
 
         // Real stage executor — registers both ClaudeProcessSpawner and OpenCodeProcessSpawner
-        let stage_executor = Arc::new(StageExecutionService::new(
-            loaded_workflow,
-            project_root,
-            store,
-            iteration_service,
-        ));
+        let stage_executor = Arc::new(
+            StageExecutionService::new(loaded_workflow, project_root, store, iteration_service)
+                .expect("failed to start hook server in test"),
+        );
 
         let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
 

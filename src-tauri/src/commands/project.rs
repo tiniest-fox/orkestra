@@ -437,12 +437,18 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
     // (chat path). A listener thread forwards these to the Tauri window as push events.
     let (log_tx, log_rx) = std::sync::mpsc::channel::<orkestra_core::workflow::LogNotification>();
 
-    let mut stage_executor_inner = orkestra_core::workflow::StageExecutionService::new(
+    let mut stage_executor_inner = match orkestra_core::workflow::StageExecutionService::new(
         config.clone(),
         project_root.clone(),
         store.clone(),
         iteration_service,
-    );
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            orkestra_debug!("orchestrator", "Failed to start hook server: {}", e);
+            return;
+        }
+    };
     stage_executor_inner.set_log_notify_tx(log_tx.clone());
     let stage_executor = std::sync::Arc::new(stage_executor_inner);
 

@@ -37,6 +37,12 @@ pub use script_handle::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
 pub use interactions::env::resolve_project_env::execute as resolve_project_env;
 pub use interactions::spawner::cli_path::{prepend_cli_dir, set_bundled_ork_path};
 
+// Hook notification server — only the server handle and start function are public API.
+// HookEvent, HookEventType, HookReceiver remain accessible via
+// `orkestra_agent::interactions::hooks::{HookEvent, HookEventType, HookReceiver}`.
+pub use interactions::hooks::execute as start_hook_server;
+pub use interactions::hooks::HookServer;
+
 /// Resolve the full agent environment for a project.
 ///
 /// Runs the login shell in the project root to capture the environment,
@@ -55,7 +61,8 @@ pub fn resolve_agent_env(
 // Registry
 pub use registry::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider,
+    pty_claude_capabilities, ExecutionMode, ProviderCapabilities, ProviderRegistry, RegistryError,
+    ResolvedProvider, StubPtySpawner,
 };
 
 // Mock (feature-gated)

@@ -295,6 +295,10 @@ api.iteration_service.create_iteration(&task.id, "review", None).unwrap();
 
 Forgetting this used to produce a silent fallback artifact ID. Now it surfaces as an error, exposing the gap.
 
+### Missing PTY Orchestrator-Level E2E Test
+
+The PTY execution path (`ExecutionMode::Pty`) has solid component-level coverage (unit tests in `run_pty`, hook server, registry routing, integration test with mock script), but no test drives a PTY-configured task through the full orchestrator tick loop. `MockAgentRunner` in existing e2e tests bypasses the `ExecutionMode::Pty` dispatch branch in `ProcessAgentRunner::run_async()`. The `AgentTestEnv` infrastructure already supports this — only the test case is missing.
+
 ### Known Test Gaps in `init.rs`
 
 Two gaps exist in `test_checks_script_is_executable` (the `ensure_orkestra_project` test):

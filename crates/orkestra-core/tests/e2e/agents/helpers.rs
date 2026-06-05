@@ -43,6 +43,122 @@ impl AgentTestEnv {
         )
     }
 
+    /// Create a test environment for PTY-based execution using the mock claude script.
+    ///
+    /// Copies `mock_claude_pty.sh` from the orkestra-agent fixture directory into
+    /// `<temp>/bin/claude`, sets executable permissions, and prepends the bin dir
+    /// to PATH so the PTY child process finds our mock. Uses `claude-pty/sonnet`
+    /// as the model and skips login-shell env resolution so the mock PATH is
+    /// inherited directly.
+    pub fn new_pty_mock() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/orkestra-agent/tests/fixtures");
+
+        // Build a temp bin dir and install the mock claude script
+        let temp_bin = tempfile::TempDir::new().expect("temp bin dir");
+        let claude_bin = temp_bin.path().join("claude");
+        std::fs::copy(fixtures_dir.join("mock_claude_pty.sh"), &claude_bin)
+            .expect("copy mock_claude_pty.sh");
+        let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&claude_bin, perms).unwrap();
+
+        // Prepend the mock bin dir to PATH so the PTY child inherits it
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!("{}:{}", temp_bin.path().display(), original_path);
+        // SAFETY: modifying PATH in tests is acceptable; tests are single-threaded
+        // at the point where new_pty_mock() is called.
+        std::env::set_var("PATH", &new_path);
+
+        let env = Self::with_capabilities_and_skip_env(
+            "claude-pty/sonnet",
+            StageCapabilities::default(),
+            "You are a worker agent. Complete the task described below.",
+        );
+
+        // Keep temp_bin alive by leaking it — the mock claude must exist for the
+        // duration of the test. The OS will clean up the temp dir on process exit.
+        std::mem::forget(temp_bin);
+
+        env
+    }
+
+    /// Internal constructor used by `new_pty_mock`: builds with `skip_env_resolution=true`.
+    fn with_capabilities_and_skip_env(
+        model: &str,
+        capabilities: StageCapabilities,
+        prompt: &str,
+    ) -> Self {
+        use orkestra_core::testutil::create_temp_git_repo;
+
+        let temp_dir = create_temp_git_repo().expect("create temp git repo");
+
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
+        std::fs::create_dir_all(orkestra_dir.join("agents")).unwrap();
+
+        orkestra_core::debug_log::init(&orkestra_dir);
+        println!(
+            "Debug log: {}",
+            orkestra_dir.join(".logs/debug.log").display()
+        );
+        std::fs::write(orkestra_dir.join("agents/worker.md"), prompt).unwrap();
+
+        std::fs::write(
+            temp_dir.path().join("opencode.json"),
+            r#"{"permission": "allow"}"#,
+        )
+        .unwrap();
+
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_model(model)
+            .with_capabilities(capabilities)])
+        .with_integration(IntegrationConfig::new("work"));
+
+        let workflow_path = orkestra_dir.join("workflow.yaml");
+        std::fs::write(&workflow_path, serde_yaml::to_string(&workflow).unwrap()).unwrap();
+        let loaded_workflow =
+            orkestra_core::workflow::config::load_workflow(&workflow_path).expect("load workflow");
+
+        let db_path = orkestra_dir.join(".database/orkestra.db");
+        let db_conn = DatabaseConnection::open(&db_path).expect("open database");
+        let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
+            Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
+
+        let git_service: Arc<dyn GitService> =
+            Arc::new(Git2GitService::new(temp_dir.path()).expect("git service"));
+
+        let api = Arc::new(Mutex::new(
+            WorkflowApi::with_git(
+                loaded_workflow.clone(),
+                Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+                git_service,
+            )
+            .with_title_generator(Arc::new(MockTitleGenerator::succeeding())),
+        ));
+
+        let project_root = PathBuf::from(temp_dir.path());
+        let iteration_service = api.lock().unwrap().iteration_service().clone();
+
+        // Skip login-shell env resolution so the mock PATH is inherited directly
+        let stage_executor = Arc::new(
+            StageExecutionService::new(loaded_workflow, project_root, store, iteration_service)
+                .expect("failed to start hook server in test")
+                .with_skip_env_resolution(),
+        );
+
+        let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+
+        Self {
+            api,
+            orchestrator,
+            temp_dir,
+        }
+    }
+
     /// Create a test environment with custom stage capabilities and prompt.
     ///
     /// Builds a single "work" stage workflow with the given capabilities and

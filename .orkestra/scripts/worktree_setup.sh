@@ -13,6 +13,17 @@ WORKTREE_PATH="$1"
 MAIN_REPO="$(pwd)"
 
 # ---------------------------------------------------------------------------
+# Trust the worktree's mise config
+# ---------------------------------------------------------------------------
+# A git worktree checks .mise.toml out at a fresh path that mise treats as
+# untrusted. If mise shims are on PATH, the background cargo check below — and
+# later gate runs — would fail with an "untrusted config" error and never see
+# the pinned toolchain. Blanket-trust the project tree (MAIN_REPO is the parent
+# of WORKTREE_PATH, so this covers the worktree's config too). The worktree's
+# .mise.toml is byte-identical to the already-trusted repo root.
+export MISE_TRUSTED_CONFIG_PATHS="$MAIN_REPO${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
+
+# ---------------------------------------------------------------------------
 # Symlink shared build artifact directories
 # ---------------------------------------------------------------------------
 # Cargo's target/ is ~27GB and nearly identical across worktrees. Sharing via

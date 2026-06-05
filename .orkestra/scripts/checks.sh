@@ -30,6 +30,17 @@ set -e
 
 # This project uses mise for tool management. Activate it so cargo, node, pnpm
 # etc. are available when running from the .app bundle or agent worktrees.
+#
+# Blanket-trust the project tree first. Each git worktree checks .mise.toml out
+# at a fresh path that mise has never seen, so activation would otherwise fail
+# with an "untrusted config" error and leave cargo/node/pnpm off PATH — every
+# check then fails instantly. The worktree's .mise.toml is byte-identical to the
+# trusted repo root (it's the same tracked file), so this adds no trust surface
+# beyond the repo you already work in. $PWD covers the worktree the gate runs in;
+# the project root covers the shared config when ORKESTRA_PROJECT_ROOT points at
+# the main repo.
+PROJECT_TREE="${ORKESTRA_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+export MISE_TRUSTED_CONFIG_PATHS="$PROJECT_TREE:$PWD${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
 command -v mise &>/dev/null && eval "$(mise activate bash --shims)" || true
 
 # Parse arguments

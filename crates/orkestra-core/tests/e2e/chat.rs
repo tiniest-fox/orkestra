@@ -222,7 +222,7 @@ fn test_promote_to_flow_converts_chat_task() {
 
     let promoted = env
         .api()
-        .promote_to_flow(&chat.id, None, None, None, None)
+        .promote_to_flow(&chat.id, None, None, None, None, None)
         .unwrap();
 
     assert!(!promoted.is_chat, "promoted task must have is_chat=false");
@@ -246,7 +246,7 @@ fn test_promote_to_flow_rejected_for_non_chat_task() {
 
     let result = env
         .api()
-        .promote_to_flow(&normal_task.id, None, None, None, None);
+        .promote_to_flow(&normal_task.id, None, None, None, None, None);
 
     assert!(
         matches!(result, Err(WorkflowError::InvalidTransition(_))),
@@ -260,7 +260,7 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
 
     let chat = env.api().create_chat_task("Will be promoted").unwrap();
     env.api()
-        .promote_to_flow(&chat.id, None, None, None, None)
+        .promote_to_flow(&chat.id, None, None, None, None, None)
         .unwrap();
 
     // Advance to trigger setup (sync setup enabled).
@@ -275,6 +275,36 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
         "promoted task should have completed setup after one tick, got: {:?}",
         task.state
     );
+}
+
+#[test]
+fn test_promote_to_flow_applies_description() {
+    let env = TestEnv::with_workflow(one_stage_workflow());
+
+    let chat = env.api().create_chat_task("Chat").unwrap();
+    assert!(chat.description.is_empty());
+
+    let promoted = env
+        .api()
+        .promote_to_flow(&chat.id, None, None, None, Some("Bug fix for login"), None)
+        .unwrap();
+
+    assert_eq!(promoted.description, "Bug fix for login");
+}
+
+#[test]
+fn test_promote_to_flow_whitespace_description_does_not_overwrite() {
+    let env = TestEnv::with_workflow(one_stage_workflow());
+
+    let chat = env.api().create_chat_task("Chat").unwrap();
+
+    let promoted = env
+        .api()
+        .promote_to_flow(&chat.id, None, None, None, Some("   "), None)
+        .unwrap();
+
+    // Whitespace-only description must not be applied; original (empty) description unchanged.
+    assert!(promoted.description.is_empty());
 }
 
 // =============================================================================

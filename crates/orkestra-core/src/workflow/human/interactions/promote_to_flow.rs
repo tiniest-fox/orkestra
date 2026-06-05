@@ -20,6 +20,7 @@ pub fn execute(
     flow: Option<&str>,
     starting_stage: Option<&str>,
     title: Option<&str>,
+    description: Option<&str>,
     artifact_content: Option<&str>,
 ) -> WorkflowResult<Task> {
     let mut task = store
@@ -93,6 +94,14 @@ pub fn execute(
         let trimmed = new_title.trim();
         if !trimmed.is_empty() {
             task.title = trimmed.to_string();
+        }
+    }
+
+    // Update description if provided and non-empty
+    if let Some(new_desc) = description {
+        let trimmed = new_desc.trim();
+        if !trimmed.is_empty() {
+            task.description = trimmed.to_string();
         }
     }
 

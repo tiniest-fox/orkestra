@@ -351,8 +351,9 @@ pub fn workflow_send_message(
 ///
 /// Converts the chat task to a workflow task: sets `is_chat=false`, assigns a flow,
 /// creates a worktree, and queues it for the orchestrator's setup phase.
-/// `flow`, `starting_stage`, `title`, and `artifact_content` are optional.
+/// `flow`, `starting_stage`, `title`, `description`, and `artifact_content` are optional.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn workflow_promote_to_flow(
     registry: State<ProjectRegistry>,
     window: Window,
@@ -360,6 +361,7 @@ pub fn workflow_promote_to_flow(
     flow: Option<String>,
     starting_stage: Option<String>,
     title: Option<String>,
+    description: Option<String>,
     artifact_content: Option<String>,
 ) -> Result<Value, TauriError> {
     orkestra_debug!("tauri", "promote_to_flow {task_id}");
@@ -369,6 +371,7 @@ pub fn workflow_promote_to_flow(
             "flow": flow,
             "starting_stage": starting_stage,
             "title": title,
+            "description": description,
             "artifact_content": artifact_content,
         });
         action::promote_to_flow(state.command_context(), &params).map_err(Into::into)

@@ -1077,3 +1077,14 @@ When adding a `connectionState === "connected"` guard to a polling hook, the gua
 **Components using `usePolling` that still lack connection guards** (known follow-up):
 - `src/components/Feed/LatestLogSummary.tsx`
 - `src/service/components/ProjectLatestLog.tsx`
+
+## OrkBlock Proposal Parser Tests
+
+When adding a new optional field to the OrkBlock proposal parser (`src/lib/orkBlocks.ts`), **always update both test cases in `orkBlocks.test.ts`**:
+
+1. **"all fields" test** — add the new field to the input JSON and assert it appears in the parsed output
+2. **"missing optional fields" test** — add `fieldName: undefined` to the expected output assertion
+
+TypeScript won't catch missing test updates — the parser compiles and all existing tests pass even when a new field has no coverage. The omission only surfaces during review.
+
+This pattern is symmetric with the Rust backend changes: when a new optional field is threaded through `promote_to_flow`, both the Rust tests (`test_promote_to_flow_applies_*`) and the TypeScript parser tests need updating. Neither set is complete without the other.

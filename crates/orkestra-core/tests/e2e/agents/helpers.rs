@@ -28,6 +28,9 @@ pub struct AgentTestEnv {
     api: Arc<Mutex<WorkflowApi>>,
     orchestrator: OrchestratorLoop,
     temp_dir: TempDir,
+    /// Keeps the mock binary directory alive for the duration of the test.
+    /// Only set when constructed via `new_pty_mock()`.
+    _mock_bin: Option<TempDir>,
 }
 
 impl AgentTestEnv {
@@ -43,21 +46,80 @@ impl AgentTestEnv {
         )
     }
 
+    /// Create a test environment for PTY-based execution using the mock claude script.
+    ///
+    /// Copies `mock_claude_pty.sh` from the orkestra-agent fixture directory into
+    /// `<temp>/bin/claude`, sets executable permissions, and prepends the bin dir
+    /// to PATH so the PTY child process finds our mock. Uses `claude-pty/sonnet`
+    /// as the model and skips login-shell env resolution so the mock PATH is
+    /// inherited directly.
+    ///
+    /// # Note on PATH mutation
+    ///
+    /// This modifies `PATH` via `std::env::set_var`. PTY tests must run with
+    /// `--test-threads=1` to avoid races with other tests reading PATH.
+    pub fn new_pty_mock() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/orkestra-agent/tests/fixtures");
+
+        // Build a temp bin dir and install the mock claude script
+        let temp_bin = tempfile::TempDir::new().expect("temp bin dir");
+        let claude_bin = temp_bin.path().join("claude");
+        std::fs::copy(fixtures_dir.join("mock_claude_pty.sh"), &claude_bin)
+            .expect("copy mock_claude_pty.sh");
+        let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&claude_bin, perms).unwrap();
+
+        // Prepend the mock bin dir to PATH so the PTY child inherits it.
+        // Requires --test-threads=1; see doc comment above.
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!("{}:{}", temp_bin.path().display(), original_path);
+        std::env::set_var("PATH", &new_path);
+
+        let mut env = Self::build_env(
+            "claude-pty/sonnet",
+            StageCapabilities::default(),
+            "You are a worker agent. Complete the task described below.",
+            "summary",
+            true,
+        );
+
+        // Store temp_bin so it lives for the duration of the test.
+        env._mock_bin = Some(temp_bin);
+        env
+    }
+
     /// Create a test environment with custom stage capabilities and prompt.
     ///
     /// Builds a single "work" stage workflow with the given capabilities and
     /// writes the prompt content to `.orkestra/agents/worker.md`.
     pub fn with_capabilities(model: &str, capabilities: StageCapabilities, prompt: &str) -> Self {
+        Self::build_env(model, capabilities, prompt, "result", false)
+    }
+
+    /// Shared setup for all constructors.
+    ///
+    /// `artifact` is the stage artifact name (`"result"` for normal agents,
+    /// `"summary"` for PTY mock). `skip_env` enables `with_skip_env_resolution()`
+    /// so the PTY child inherits the caller's PATH directly.
+    fn build_env(
+        model: &str,
+        capabilities: StageCapabilities,
+        prompt: &str,
+        artifact: &str,
+        skip_env: bool,
+    ) -> Self {
         use orkestra_core::testutil::create_temp_git_repo;
 
         let temp_dir = create_temp_git_repo().expect("create temp git repo");
 
-        // Create .orkestra directory structure + agent prompt file
         let orkestra_dir = temp_dir.path().join(".orkestra");
         std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
         std::fs::create_dir_all(orkestra_dir.join("agents")).unwrap();
 
-        // Initialize debug logging so ORKESTRA_DEBUG=1 works in tests
         orkestra_core::debug_log::init(&orkestra_dir);
         println!(
             "Debug log: {}",
@@ -73,8 +135,7 @@ impl AgentTestEnv {
         )
         .unwrap();
 
-        // Build and save workflow config
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "result")
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", artifact)
             .with_prompt("worker.md")
             .with_model(model)
             .with_capabilities(capabilities)])
@@ -85,13 +146,11 @@ impl AgentTestEnv {
         let loaded_workflow =
             orkestra_core::workflow::config::load_workflow(&workflow_path).expect("load workflow");
 
-        // Real SQLite database
         let db_path = orkestra_dir.join(".database/orkestra.db");
         let db_conn = DatabaseConnection::open(&db_path).expect("open database");
         let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
             Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
 
-        // Git service
         let git_service: Arc<dyn GitService> =
             Arc::new(Git2GitService::new(temp_dir.path()).expect("git service"));
 
@@ -107,11 +166,15 @@ impl AgentTestEnv {
         let project_root = PathBuf::from(temp_dir.path());
         let iteration_service = api.lock().unwrap().iteration_service().clone();
 
-        // Real stage executor — registers both ClaudeProcessSpawner and OpenCodeProcessSpawner
-        let stage_executor = Arc::new(
+        let base =
             StageExecutionService::new(loaded_workflow, project_root, store, iteration_service)
-                .expect("failed to start hook server in test"),
-        );
+                .expect("failed to start hook server in test");
+
+        let stage_executor = if skip_env {
+            Arc::new(base.with_skip_env_resolution())
+        } else {
+            Arc::new(base)
+        };
 
         let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
 
@@ -119,6 +182,7 @@ impl AgentTestEnv {
             api,
             orchestrator,
             temp_dir,
+            _mock_bin: None,
         }
     }
 

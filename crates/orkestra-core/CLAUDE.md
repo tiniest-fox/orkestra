@@ -295,9 +295,11 @@ api.iteration_service.create_iteration(&task.id, "review", None).unwrap();
 
 Forgetting this used to produce a silent fallback artifact ID. Now it surfaces as an error, exposing the gap.
 
-### Missing PTY Orchestrator-Level E2E Test
+### PTY E2E Tests
 
-The PTY execution path (`ExecutionMode::Pty`) has solid component-level coverage (unit tests in `run_pty`, hook server, registry routing, integration test with mock script), but no test drives a PTY-configured task through the full orchestrator tick loop. `MockAgentRunner` in existing e2e tests bypasses the `ExecutionMode::Pty` dispatch branch in `ProcessAgentRunner::run_async()`. The `AgentTestEnv` infrastructure already supports this — only the test case is missing.
+PTY orchestrator-level tests live in `tests/e2e/agents/pty.rs`. Two tests (`pty_full_orchestrator_run`, `pty_session_resume_after_rejection`) use `AgentTestEnv::new_pty_mock()` with a `mock_claude_pty.sh` injected via PATH. Both are `#[ignore]` — run with `--ignored` on a developer machine (require PTY support and Python3).
+
+**Remaining gap**: no test exercises the error path where `claude` is absent from PATH (task should fail with a clear error rather than hang).
 
 ### Known Test Gaps in `init.rs`
 

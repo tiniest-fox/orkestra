@@ -260,3 +260,22 @@ flows:
 
     integration:
       on_failure: think
+
+  pty:
+    stages:
+      - name: work
+        description: Implements the task using PTY-based Claude Code execution
+        artifact: summary
+        prompt: worker.md
+        model: claude-pty/sonnet
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
+          timeout_seconds: 1200
+      - name: review
+        description: Reviews completed work and produces an approval or rejection verdict
+        artifact: verdict
+        prompt: reviewer.md
+        model: opus
+        gate: true
+    integration:
+      on_failure: work

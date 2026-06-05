@@ -353,6 +353,7 @@ pub fn workflow_send_message(
 /// creates a worktree, and queues it for the orchestrator's setup phase.
 /// `flow`, `starting_stage`, `title`, `description`, and `artifact_content` are optional.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn workflow_promote_to_flow(
     registry: State<ProjectRegistry>,
     window: Window,

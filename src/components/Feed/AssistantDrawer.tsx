@@ -198,6 +198,7 @@ export function AssistantDrawer({
         flow: proposal.flow || undefined,
         starting_stage: proposal.stage || undefined,
         title: proposal.title || undefined,
+        description: proposal.description || undefined,
         artifact_content: proposal.content || undefined,
       });
       setChatTask(null);

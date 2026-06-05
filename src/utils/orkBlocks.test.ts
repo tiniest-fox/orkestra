@@ -26,7 +26,7 @@ describe("parseOrkBlocks", () => {
       {
         type: "text",
         content: `\`\`\`ork
-{"type":"proposal","flow":"default","stage":"planning","title":"My Trak","content":"Some content"}
+{"type":"proposal","flow":"default","stage":"planning","title":"My Trak","content":"Some content","description":"Fix login bug"}
 \`\`\``,
       },
     ];
@@ -38,6 +38,7 @@ describe("parseOrkBlocks", () => {
       stage: "planning",
       title: "My Trak",
       content: "Some content",
+      description: "Fix login bug",
     });
   });
 
@@ -58,6 +59,7 @@ describe("parseOrkBlocks", () => {
       stage: undefined,
       title: undefined,
       content: undefined,
+      description: undefined,
     });
   });
 

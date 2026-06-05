@@ -366,6 +366,7 @@ fn build_subtask_derived_data(
 /// subtasks. When it exceeds the parent's own `updated_at`, the parent's
 /// `TaskView.task.updated_at` is set to that value so differential sync
 /// naturally detects the change without a separate cascade step.
+#[allow(clippy::too_many_arguments)]
 fn build_single_top_level_view(
     mut task: Task,
     iterations_by_task: &HashMap<String, Vec<Iteration>>,

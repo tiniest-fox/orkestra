@@ -164,6 +164,95 @@ fn existing_claudecode_routing_unchanged() {
 // Test 4: Hook delivery
 // ============================================================================
 
+/// PTY fail-fast: when the mock `claude` exits immediately without writing a
+/// transcript, `run_pty::execute` emits `Completed(Err(Crash(...)))` within ~35
+/// seconds rather than stalling for 1 hour.
+///
+/// Ignored by default — requires a Unix PTY and bash.
+///
+/// Run with: `cargo test -p orkestra-agent -- --ignored pty_fails_fast_when_transcript_missing`
+#[test]
+#[ignore = "requires PTY support; run with --ignored on a developer machine"]
+fn pty_fails_fast_when_transcript_missing() {
+    use std::collections::HashMap;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::mpsc::RecvTimeoutError;
+
+    let tmp = TempDir::new().unwrap();
+
+    let hook_server = Arc::new(start_hook_server(tmp.path()).unwrap());
+
+    // Install the no-start mock as `claude` on PATH
+    let bin_dir = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let claude_bin = bin_dir.join("claude");
+    std::fs::copy(
+        fixtures_dir.join("mock_claude_pty_no_start.sh"),
+        &claude_bin,
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&claude_bin, perms).unwrap();
+
+    let mut env_override = HashMap::new();
+    env_override.insert(
+        "PATH".to_string(),
+        format!(
+            "{}:{}",
+            bin_dir.display(),
+            std::env::var("PATH").unwrap_or_default()
+        ),
+    );
+
+    let registry = Arc::new(default_test_registry());
+    let config = RunConfig::new(tmp.path(), "Test prompt", r#"{"type":"object"}"#)
+        .with_task_id("fail-fast-test")
+        .with_model("claude-pty/sonnet")
+        .with_env(env_override);
+
+    let resolved = registry.resolve(config.model.as_deref()).unwrap();
+    let (_pid, rx) = run_pty::execute(&resolved, &registry, &config, &hook_server).unwrap();
+
+    // Collect events; the fail-fast path must emit Completed(Err(Crash)) within ~35 seconds
+    let deadline = std::time::Instant::now() + Duration::from_secs(35);
+    let mut completed_event: Option<RunEvent> = None;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining.min(Duration::from_millis(500))) {
+            Ok(event) => {
+                if matches!(event, RunEvent::Completed(_)) {
+                    completed_event = Some(event);
+                    break;
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    let completed = completed_event
+        .expect("Completed event not received within 35s — fail-fast path may be stalling");
+    if let RunEvent::Completed(result) = completed {
+        assert!(
+            result.is_err(),
+            "expected Completed(Err(Crash)), got Completed(Ok(...))"
+        );
+        let err = result.unwrap_err();
+        let err_str = format!("{err:?}");
+        assert!(
+            err_str.contains("transcript") || err_str.contains("start"),
+            "expected error message about transcript/start, got: {err_str}"
+        );
+    } else {
+        panic!("unexpected event type");
+    }
+}
+
 /// `HookServer` routes a Stop hook payload to the correct per-task receiver.
 #[test]
 fn hook_triggers_correct_event() {

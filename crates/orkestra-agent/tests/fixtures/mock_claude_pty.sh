@@ -17,9 +17,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Encode working dir to match compute_transcript_path in run_pty.rs:
-# replaces every '/' with '-'.
+# replaces every '/' or '.' with '-'.
 WORKDIR="$(pwd)"
 ENCODED_CWD="${WORKDIR//\//-}"
+ENCODED_CWD="${ENCODED_CWD//./-}"
 TRANSCRIPT_DIR="$HOME/.claude/projects/$ENCODED_CWD"
 mkdir -p "$TRANSCRIPT_DIR"
 TRANSCRIPT="$TRANSCRIPT_DIR/${SESSION_ID}.jsonl"

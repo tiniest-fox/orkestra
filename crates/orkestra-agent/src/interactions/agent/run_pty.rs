@@ -171,11 +171,15 @@ fn drive_pty_session(
     mut parser: Box<dyn AgentParser>,
     ctx: PtySessionParams<'_>,
 ) {
-    // Write prompt to PTY master, then send Enter
+    // Write prompt to PTY master, then send Enter (\r) and flush.
+    // \r is used instead of \n: Claude Code's TUI runs in raw mode where \r is
+    // the Enter key. The PTY line discipline (ICRNL) converts \r→\n for the slave
+    // in canonical mode, so \r also works for shells/scripts that read lines.
     let write_result = pty_handle
         .writer
         .write_all(ctx.prompt.as_bytes())
-        .and_then(|()| pty_handle.writer.write_all(b"\n"));
+        .and_then(|()| pty_handle.writer.write_all(b"\r"))
+        .and_then(|()| pty_handle.writer.flush());
 
     if let Err(e) = write_result {
         let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
@@ -204,10 +208,14 @@ fn drive_pty_session(
             content: "PTY session confirmed".to_string(),
         }));
     } else {
-        let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
-            content: "PTY session may not have started — transcript file not found after 30s"
-                .to_string(),
-        }));
+        // Transcript never appeared — Claude Code did not start (binary missing, crash on
+        // startup, permissions). Waiting for the hook would stall the worker for up to 1 hour.
+        drop(pty_handle);
+        hook_server.unregister_task(ctx.task_id);
+        let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
+            "PTY session failed to start — transcript file not found after 30s".to_string(),
+        ))));
+        return;
     }
 
     // Wait for Stop hook (turn completion signal from Claude Code)
@@ -244,21 +252,13 @@ fn drive_pty_session(
     );
 
     // Read and parse JSONL transcript, emit log events
-    let (full_output, line_count) = read_and_parse_transcript(&transcript_path, &mut *parser, tx);
+    let (full_output, _line_count) = read_and_parse_transcript(&transcript_path, &mut *parser, tx);
 
     // Kill PTY process — ProcessGuard fires SIGTERM on drop (not disarmed)
     drop(pty_handle);
 
     // Cleanup
     hook_server.unregister_task(ctx.task_id);
-
-    // Timeout with no output = crash
-    if hook_event.is_none() && line_count == 0 {
-        let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
-            "PTY session timed out with no output".to_string(),
-        ))));
-        return;
-    }
 
     // Flush finalized parser entries
     for entry in parser.finalize() {
@@ -442,9 +442,14 @@ fn build_settings_file(
 /// Compute the JSONL transcript path Claude Code uses for a given session.
 ///
 /// Claude Code writes `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`
-/// where encoded-cwd replaces every `/` with `-`.
+/// where encoded-cwd replaces every `/` or `.` with `-`. Replacing `.` is
+/// necessary for paths containing hidden directories like `.orkestra`.
 fn compute_transcript_path(home_dir: &Path, working_dir: &Path, session_id: &str) -> PathBuf {
-    let encoded_cwd = working_dir.to_string_lossy().replace('/', "-");
+    let encoded_cwd: String = working_dir
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
     home_dir
         .join(".claude")
         .join("projects")
@@ -594,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_transcript_path_replaces_slashes() {
+    fn compute_transcript_path_encodes_slashes_and_dots() {
         let home = PathBuf::from("/home/user");
         let dir = PathBuf::from("/home/user/projects/my-repo");
         let path = compute_transcript_path(&home, &dir, "ses-456");
@@ -611,6 +616,16 @@ mod tests {
         assert!(
             path_str.contains("-home-user-projects-my-repo"),
             "path should encode slashes as dashes"
+        );
+
+        // Paths with hidden directories (leading dots) must match Claude Code's encoding:
+        // both '/' and '.' are replaced with '-'.
+        let dotted_dir = PathBuf::from("/projects/my-app/.orkestra/.worktrees/some-task");
+        let dotted_path = compute_transcript_path(&home, &dotted_dir, "ses-789");
+        let dotted_str = dotted_path.to_string_lossy();
+        assert!(
+            dotted_str.contains("-projects-my-app--orkestra--worktrees-some-task"),
+            "dots in path components must be encoded as dashes, got: {dotted_str}"
         );
     }
 

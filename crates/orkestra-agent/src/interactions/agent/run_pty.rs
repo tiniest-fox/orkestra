@@ -5,7 +5,7 @@
 //! and emits `RunEvents` matching the (u32, Receiver<RunEvent>) contract.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
@@ -34,11 +34,17 @@ use super::classify_output::{self, OutputClassification};
 ///
 /// `child` and `guard` are held for their drop-side effects rather than read
 /// access — `child` keeps the PTY slave open, `guard` sends SIGTERM on drop.
+/// `_drain_thread` continuously reads and discards PTY master output to prevent
+/// the classic output-buffer deadlock: if the slave process fills the master
+/// output buffer, it blocks on stdout and stops reading stdin, which in turn
+/// blocks our prompt `write_all`. The drain thread exits naturally when the PTY
+/// closes (EOF) after the process is killed.
 #[allow(dead_code)]
 struct PtyHandle {
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     guard: ProcessGuard,
+    _drain_thread: thread::JoinHandle<()>,
 }
 
 // ============================================================================
@@ -308,6 +314,25 @@ fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), Ru
         .ok_or_else(|| RunError::SpawnFailed("PTY child has no process ID".into()))?
         as u32;
 
+    // Clone the master reader before taking the writer — both use &self so order
+    // doesn't matter, but cloning first makes the intent clear: we need to drain
+    // the output side to prevent output-buffer deadlock during the prompt write.
+    let drain_reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| RunError::SpawnFailed(format!("failed to clone PTY reader: {e}")))?;
+
+    let drain_thread = thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        let mut reader = drain_reader;
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    });
+
     let writer = pair
         .master
         .take_writer()
@@ -318,6 +343,7 @@ fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), Ru
             writer,
             child,
             guard: ProcessGuard::new(pid),
+            _drain_thread: drain_thread,
         },
         pid,
     ))
@@ -771,6 +797,68 @@ mod tests {
             start.elapsed() < Duration::from_secs(2),
             "should return quickly for stable file"
         );
+    }
+
+    /// Regression test for the PTY output-buffer deadlock fix.
+    ///
+    /// Without a drain thread, `cat` echoes stdin to stdout, fills the PTY master
+    /// output buffer, blocks on stdout, stops reading stdin, and our large `write_all`
+    /// deadlocks. With the drain thread active, the buffer never fills and the write
+    /// completes in well under 5 seconds.
+    #[test]
+    fn large_prompt_write_completes_with_drain_thread() {
+        use portable_pty::{CommandBuilder, PtySize};
+        use std::io::Read;
+
+        let pty_system = portable_pty::native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+
+        let cmd = CommandBuilder::new("cat");
+        let mut child = pair.slave.spawn_command(cmd).unwrap();
+
+        // Drain thread — the fix under test
+        let mut drain_reader = pair.master.try_clone_reader().unwrap();
+        let drain = thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match drain_reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        });
+
+        let mut writer = pair.master.take_writer().unwrap();
+        let payload = vec![b'x'; 30_000]; // Larger than typical PTY buffer
+        let start = std::time::Instant::now();
+        writer
+            .write_all(&payload)
+            .expect("large write should not deadlock with drain thread active");
+        let _ = writer.flush();
+
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "large write must complete quickly with active drain thread, took {:?}",
+            start.elapsed()
+        );
+
+        // Cleanup
+        drop(writer);
+        child.kill().ok();
+        // Drop the PTY pair (closes the slave fd) before joining the drain thread.
+        // On Linux, the master reader only returns EIO (EOF) once ALL slave fds are
+        // closed. macOS/BSD returns EIO as soon as the child dies, but Linux requires
+        // the parent-side slave to be dropped too. Without this, drain.join() hangs
+        // indefinitely on Linux CI.
+        drop(pair);
+        let _ = drain.join();
     }
 
     #[test]

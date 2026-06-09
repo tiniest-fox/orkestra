@@ -40,6 +40,7 @@ fn test_play_happy_path() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -111,6 +112,7 @@ fn test_play_with_subtasks() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -257,6 +259,7 @@ fn test_play_questions_auto_answered() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -323,6 +326,7 @@ fn test_play_agent_blocked() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -367,6 +371,7 @@ fn test_play_agent_failed() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -426,6 +431,7 @@ fn test_play_gate_failure_requeues_agent() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -530,6 +536,7 @@ fn test_play_integration_after_done() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -586,6 +593,7 @@ fn test_play_pr_creation_after_done() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -660,6 +668,7 @@ fn test_play_with_flow() {
             None,
             TaskCreationMode::AutoMode,
             Some("quick"),
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -713,6 +722,7 @@ fn test_play_auto_merge_completes_to_archived() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -768,6 +778,7 @@ fn test_play_no_integrate_stays_done() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();

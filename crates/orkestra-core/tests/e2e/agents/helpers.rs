@@ -88,7 +88,10 @@ impl AgentTestEnv {
         );
 
         // Store temp_bin so it lives for the duration of the test.
-        env._mock_bin = Some(temp_bin);
+        #[allow(clippy::used_underscore_binding)]
+        {
+            env._mock_bin = Some(temp_bin);
+        }
         env
     }
 

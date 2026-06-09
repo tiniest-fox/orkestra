@@ -1559,6 +1559,7 @@ fn manual_subtask_inherits_parent_flow() {
                 None,
                 TaskCreationMode::Normal,
                 Some("hotfix"),
+                false,
             )
             .expect("Should create parent task");
         let task_id = task.id.clone();

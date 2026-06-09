@@ -91,6 +91,10 @@ pub struct Task {
     #[serde(default)]
     pub auto_mode: bool,
 
+    /// Whether to automatically create a GitHub PR when the task reaches Done.
+    #[serde(default)]
+    pub auto_pr: bool,
+
     /// Named flow for this task (e.g., "quick"). Defaults to "default" (full pipeline).
     #[serde(default = "default_flow_name")]
     pub flow: String,
@@ -141,6 +145,7 @@ impl Task {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
+            auto_pr: false,
             flow: "default".to_string(),
             is_chat: false,
             created_at: created.clone(),
@@ -169,6 +174,13 @@ impl Task {
     #[must_use]
     pub fn with_auto_mode(mut self, auto_mode: bool) -> Self {
         self.auto_mode = auto_mode;
+        self
+    }
+
+    /// Builder: enable auto PR creation.
+    #[must_use]
+    pub fn with_auto_pr(mut self, auto_pr: bool) -> Self {
+        self.auto_pr = auto_pr;
         self
     }
 
@@ -319,6 +331,7 @@ pub struct TaskHeader {
     pub base_commit: String,
     pub pr_url: Option<String>,
     pub auto_mode: bool,
+    pub auto_pr: bool,
     pub flow: String,
     pub is_chat: bool,
     pub created_at: String,
@@ -374,6 +387,7 @@ impl From<&Task> for TaskHeader {
             base_commit: task.base_commit.clone(),
             pr_url: task.pr_url.clone(),
             auto_mode: task.auto_mode,
+            auto_pr: task.auto_pr,
             flow: task.flow.clone(),
             is_chat: task.is_chat,
             created_at: task.created_at.clone(),
@@ -703,6 +717,7 @@ mod tests {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
+            auto_pr: false,
             flow: "default".to_string(),
             is_chat: false,
             created_at: String::new(),
@@ -742,6 +757,7 @@ mod tests {
             base_commit: String::new(),
             pr_url: None,
             auto_mode: false,
+            auto_pr: false,
             flow: "default".to_string(),
             is_chat: false,
             created_at: String::new(),

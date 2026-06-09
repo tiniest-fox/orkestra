@@ -10269,3 +10269,54 @@ fn test_plain_text_sets_activity_flag() {
         "has_activity must be true after plain text so future respawns resume the session"
     );
 }
+
+/// Test that `ORKESTRA.md` content is injected into the agent system prompt.
+///
+/// Creates a project with a `.orkestra/ORKESTRA.md` file, drives a task through
+/// a single stage, and asserts the captured system prompt includes the file's
+/// content under a "Project Instructions" heading.
+#[test]
+fn test_universal_prompt_injected_into_system_prompt() {
+    let workflow = test_default_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["planner"]);
+
+    // Write ORKESTRA.md into the test project's .orkestra directory
+    let orkestra_md = ctx.repo_path().join(".orkestra/ORKESTRA.md");
+    std::fs::write(
+        &orkestra_md,
+        "Always use snake_case for variable names.\nPrefer functional patterns.",
+    )
+    .unwrap();
+
+    let task = ctx.create_task("Test universal prompt", "Check ORKESTRA.md injection", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan here".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+
+    ctx.advance(); // spawns planner
+
+    let system_prompt = ctx
+        .last_system_prompt()
+        .expect("Should have a system prompt");
+
+    assert!(
+        system_prompt.contains("Project Instructions"),
+        "System prompt should contain 'Project Instructions' heading from ORKESTRA.md injection"
+    );
+    assert!(
+        system_prompt.contains("Always use snake_case"),
+        "System prompt should contain ORKESTRA.md content"
+    );
+    assert!(
+        system_prompt.contains("Prefer functional patterns"),
+        "System prompt should contain full ORKESTRA.md content"
+    );
+}

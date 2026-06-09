@@ -1,5 +1,11 @@
 {{agent_definition}}
 
+{{#if universal_prompt}}
+## Project Instructions
+
+{{universal_prompt}}
+{{/if}}
+
 {{output_format}}
 
 ## Visual Communication

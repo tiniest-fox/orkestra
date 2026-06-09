@@ -134,6 +134,15 @@ These threads take cloned inputs (no lock held) and call back via `Arc<Mutex<Wor
 
 Title generation (`title.rs`) and commit message generation (`commit_message.rs`) use internal templates, not configurable agent prompts. They're utility functions, not workflow stages.
 
+### Optional vs. Required Config File Loading
+
+Functions in `execution/prompt.rs` that load config files follow two distinct patterns:
+
+- **Required** (e.g., `load_agent_definition`): returns `std::io::Result<T>`. All errors — including `NotFound` — propagate.
+- **Optional** (e.g., `load_universal_prompt`): returns `std::io::Result<Option<T>>`. `io::ErrorKind::NotFound` becomes `Ok(None)`; all other I/O errors propagate.
+
+Don't collapse optional loaders to `Option<T>` — that silently swallows real I/O errors and violates Fail Fast.
+
 ## Critical Documentation
 
 Read these before modifying cross-cutting flows:

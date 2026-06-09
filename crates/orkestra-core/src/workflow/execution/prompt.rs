@@ -79,6 +79,23 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
     ))
 }
 
+/// Load the universal prompt from `.orkestra/ORKESTRA.md`.
+///
+/// Returns `Ok(None)` if the file doesn't exist or is empty/whitespace-only.
+/// Returns `Err` for permission errors, encoding failures, or other I/O errors.
+pub fn load_universal_prompt(project_root: Option<&Path>) -> std::io::Result<Option<String>> {
+    let Some(root) = project_root else {
+        return Ok(None);
+    };
+    let path = root.join(".orkestra/ORKESTRA.md");
+    match fs::read_to_string(&path) {
+        Ok(content) if !content.trim().is_empty() => Ok(Some(content)),
+        Ok(_) => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Get the JSON schema for a stage's agent.
 ///
 /// Generates schema dynamically based on stage configuration,
@@ -156,6 +173,10 @@ pub fn resolve_stage_agent_config_for(
         AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
     })?;
 
+    // I/O: Load project-level universal prompt (optional)
+    let universal_prompt = load_universal_prompt(project_root)
+        .map_err(|e| AgentConfigError::DefinitionNotFound(format!("ORKESTRA.md: {e}")))?;
+
     // Pure: delegate to orkestra-prompt for assembly
     RENDERER.build_agent_config(
         workflow,
@@ -164,6 +185,7 @@ pub fn resolve_stage_agent_config_for(
         artifact_names,
         &agent_def,
         &json_schema,
+        universal_prompt.as_deref(),
         feedback,
         integration_error,
         show_direct_structured_output_hint,
@@ -450,6 +472,47 @@ mod tests {
             .unwrap();
 
         assert!(ctx.question_history.is_empty());
+    }
+
+    // -- load_universal_prompt tests --
+
+    #[test]
+    fn test_load_universal_prompt_exists() {
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        std::fs::create_dir_all(&orkestra_dir).unwrap();
+        std::fs::write(orkestra_dir.join("ORKESTRA.md"), "Use TypeScript.").unwrap();
+
+        let result = load_universal_prompt(Some(temp_dir.path())).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("Use TypeScript."));
+    }
+
+    #[test]
+    fn test_load_universal_prompt_missing() {
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().unwrap();
+        let result = load_universal_prompt(Some(temp_dir.path())).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_universal_prompt_empty() {
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        std::fs::create_dir_all(&orkestra_dir).unwrap();
+        std::fs::write(orkestra_dir.join("ORKESTRA.md"), "   \n  ").unwrap();
+
+        let result = load_universal_prompt(Some(temp_dir.path())).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_load_universal_prompt_none_root() {
+        let result = load_universal_prompt(None).unwrap();
+        assert!(result.is_none());
     }
 
     // -- Schema generation tests (I/O) --

@@ -28,6 +28,8 @@ use super::context::PromptBuilder;
 /// # Arguments
 /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
 ///   These are used to construct file paths in the prompt.
+/// * `universal_prompt` - Optional project-level instructions injected into every
+///   stage's system prompt. Loaded from `.orkestra/ORKESTRA.md` by the caller.
 /// * `parent_resources` - Resources from the parent task (for subtasks), merged into
 ///   the inline resources list in the prompt.
 #[allow(clippy::too_many_arguments)]
@@ -39,6 +41,7 @@ pub fn execute(
     artifact_names: &[String],
     agent_definition: &str,
     json_schema: &str,
+    universal_prompt: Option<&str>,
     feedback: Option<&str>,
     integration_error: Option<IntegrationErrorContext<'_>>,
     show_direct_structured_output_hint: bool,
@@ -64,8 +67,9 @@ pub fn execute(
         )
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
 
-    // Build system prompt (agent definition + output format)
-    let system_prompt = super::system_prompt::execute(templates, agent_definition, &ctx);
+    // Build system prompt (agent definition + project instructions + output format)
+    let system_prompt =
+        super::system_prompt::execute(templates, agent_definition, universal_prompt, &ctx);
 
     // Build user message (task context only)
     let user_message = super::user_message::execute(templates, &ctx);

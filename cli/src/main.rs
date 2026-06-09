@@ -406,16 +406,22 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             flow,
             auto,
             pr,
-        } => handle_create_task(
-            &api,
-            &title,
-            &description,
-            base_branch.as_deref(),
-            flow.as_deref(),
-            auto,
-            pr,
-            pretty,
-        ),
+        } => {
+            let mode = if auto {
+                TaskCreationMode::AutoMode
+            } else {
+                TaskCreationMode::Normal
+            };
+            let opts = CreateTaskOptions {
+                title,
+                description,
+                base_branch,
+                mode,
+                flow,
+                auto_pr: pr,
+            };
+            handle_create_task(&api, &opts, pretty);
+        }
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
         TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
@@ -547,29 +553,8 @@ fn print_log_entry_pretty(entry: &LogEntry) {
     }
 }
 
-fn handle_create_task(
-    api: &WorkflowApi,
-    title: &str,
-    description: &str,
-    base_branch: Option<&str>,
-    flow: Option<&str>,
-    auto: bool,
-    pr: bool,
-    pretty: bool,
-) {
-    let mode = if auto {
-        TaskCreationMode::AutoMode
-    } else {
-        TaskCreationMode::Normal
-    };
-    let task = match api.create_task_with_options(&CreateTaskOptions {
-        title: title.to_string(),
-        description: description.to_string(),
-        base_branch: base_branch.map(ToString::to_string),
-        mode,
-        flow: flow.map(ToString::to_string),
-        auto_pr: pr,
-    }) {
+fn handle_create_task(api: &WorkflowApi, opts: &CreateTaskOptions, pretty: bool) {
+    let task = match api.create_task_with_options(opts) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error creating trak: {e}");

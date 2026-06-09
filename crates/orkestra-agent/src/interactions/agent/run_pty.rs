@@ -852,6 +852,12 @@ mod tests {
         // Cleanup
         drop(writer);
         child.kill().ok();
+        // Drop the PTY pair (closes the slave fd) before joining the drain thread.
+        // On Linux, the master reader only returns EIO (EOF) once ALL slave fds are
+        // closed. macOS/BSD returns EIO as soon as the child dies, but Linux requires
+        // the parent-side slave to be dropped too. Without this, drain.join() hangs
+        // indefinitely on Linux CI.
+        drop(pair);
         let _ = drain.join();
     }
 

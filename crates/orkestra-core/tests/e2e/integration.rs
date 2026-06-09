@@ -1,6 +1,7 @@
 //! E2E tests for the integration choice point (`auto_merge`, `merge_task`, `open_pr`, Failed state).
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
+use orkestra_core::workflow::domain::TaskCreationMode;
 use orkestra_core::workflow::ports::{PrError, WorkflowError};
 use orkestra_core::workflow::runtime::TaskState;
 use orkestra_core::workflow::{create_pr_sync, merge_task_sync};
@@ -1288,5 +1289,198 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     assert!(
         !matches!(hotfix_after.state, TaskState::Done),
         "hotfix task should have auto-integrated (auto_merge=true), but is still Done"
+    );
+}
+
+// =============================================================================
+// auto_pr Orchestrator Tests
+// =============================================================================
+
+/// Helper to create a bare git repo and add it as origin.
+fn setup_bare_remote(ctx: &TestEnv) {
+    let bare_repo = tempfile::tempdir().expect("Should create temp dir");
+    std::process::Command::new("git")
+        .args(["init", "--bare"])
+        .current_dir(bare_repo.path())
+        .output()
+        .expect("Should init bare repo");
+    std::process::Command::new("git")
+        .args([
+            "remote",
+            "add",
+            "origin",
+            bare_repo.path().to_str().unwrap(),
+        ])
+        .current_dir(ctx.temp_dir())
+        .output()
+        .expect("Should add git remote");
+    // Leak the tempdir so it stays alive for the test duration
+    std::mem::forget(bare_repo);
+}
+
+/// A task with `auto_pr=true` has a PR created automatically when it reaches Done.
+#[test]
+fn auto_pr_creates_pr_on_done() {
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+    setup_bare_remote(&ctx);
+
+    let task = ctx
+        .api()
+        .create_task_with_options(
+            "Auto-PR task",
+            "Should auto-create PR",
+            None,
+            TaskCreationMode::Normal,
+            None,
+            true, // auto_pr = true
+        )
+        .expect("Should create task");
+    let task_id = task.id.clone();
+    ctx.advance(); // complete setup
+
+    // Set mock before advance_to_done: with sync_background, PR creation fires in the
+    // same tick that transitions the task to Done (last advance in advance_to_done).
+    ctx.pr_service()
+        .set_next_result(Ok("https://github.com/test/repo/pull/99".to_string()));
+
+    advance_to_done(&ctx, &task_id);
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should be Done with PR created"
+    );
+    assert_eq!(
+        task.pr_url,
+        Some("https://github.com/test/repo/pull/99".to_string()),
+        "PR URL should be set after auto-PR"
+    );
+}
+
+/// `auto_pr=true` takes precedence over `auto_merge=true` — PR is created, not merged.
+#[test]
+fn auto_pr_takes_precedence_over_auto_merge() {
+    let mut workflow = test_default_workflow();
+    if let Some(flow) = workflow.flow_mut("default") {
+        flow.integration.auto_merge = true; // explicitly enable auto_merge
+    }
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+    setup_bare_remote(&ctx);
+
+    let task = ctx
+        .api()
+        .create_task_with_options(
+            "Auto-PR over merge task",
+            "auto_pr should win over auto_merge",
+            None,
+            TaskCreationMode::Normal,
+            None,
+            true, // auto_pr = true
+        )
+        .expect("Should create task");
+    let task_id = task.id.clone();
+    ctx.advance(); // complete setup
+
+    // Configure mock PR service before advancing to Done so it's ready for any tick
+    ctx.pr_service()
+        .set_next_result(Ok("https://github.com/test/repo/pull/100".to_string()));
+
+    advance_to_done(&ctx, &task_id);
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    // Task should be Done with pr_url set (not Archived, which would mean merge happened)
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should be Done (PR, not merged/archived), got: {:?}",
+        task.state
+    );
+    assert!(
+        task.pr_url.is_some(),
+        "PR URL should be set when auto_pr=true wins over auto_merge"
+    );
+}
+
+/// `find_pr_candidate` returns `None` for subtask headers (unit-level test).
+#[test]
+fn find_pr_candidate_skips_subtasks() {
+    use orkestra_core::workflow::domain::TickSnapshot;
+    use orkestra_core::workflow::integration::interactions::find_pr_candidate;
+    use orkestra_core::workflow::runtime::TaskState;
+    use orkestra_types::domain::TaskHeader;
+
+    // Build a minimal TaskHeader for a subtask with auto_pr=true and Done state + worktree
+    let subtask_header = TaskHeader {
+        id: "subtask-1".to_string(),
+        title: String::new(),
+        description: String::new(),
+        state: TaskState::Done,
+        parent_id: Some("parent-id".to_string()), // it's a subtask
+        short_id: None,
+        depends_on: Vec::new(),
+        branch_name: Some("task/subtask-1".to_string()),
+        worktree_path: Some("/tmp/worktree".to_string()), // needed to appear in idle_done_with_worktree
+        base_branch: "task/parent-id".to_string(),
+        base_commit: String::new(),
+        pr_url: None,
+        auto_mode: false,
+        auto_pr: true, // auto_pr=true, but it's a subtask so should be ignored
+        flow: "default".to_string(),
+        is_chat: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+        completed_at: None,
+    };
+
+    let snapshot = TickSnapshot::build(vec![subtask_header]);
+    assert_eq!(
+        snapshot.idle_done_with_worktree.len(),
+        1,
+        "Header should be in idle_done_with_worktree"
+    );
+
+    let result = find_pr_candidate::execute(&snapshot);
+    assert!(
+        result.is_none(),
+        "find_pr_candidate should return None for subtask headers (parent_id is Some)"
+    );
+}
+
+/// When no PR service is configured, auto-PR failure generates an error event but does not crash.
+#[test]
+fn auto_pr_without_pr_service_fails_gracefully() {
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+    setup_bare_remote(&ctx);
+
+    let task = ctx
+        .api()
+        .create_task_with_options(
+            "No PR service task",
+            "Should fail gracefully without PR service",
+            None,
+            TaskCreationMode::Normal,
+            None,
+            true, // auto_pr = true
+        )
+        .expect("Should create task");
+    let task_id = task.id.clone();
+    ctx.advance(); // complete setup
+
+    // Set mock failure before advance_to_done: with sync_background, PR creation fires
+    // in the same tick that transitions the task to Done (last advance in advance_to_done).
+    ctx.pr_service()
+        .set_next_result(Err(PrError::CreationFailed(
+            "No PR service configured".to_string(),
+        )));
+
+    advance_to_done(&ctx, &task_id);
+
+    // PR creation failed gracefully — task should be in Failed state, not crashed
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Failed { .. }),
+        "Task should be Failed when PR service fails, got: {:?}",
+        task.state
     );
 }

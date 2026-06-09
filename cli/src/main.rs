@@ -149,6 +149,9 @@ enum TaskAction {
         /// Set auto mode — Trak runs through stages without pausing for approval. Use `ork play` to also run it in the foreground.
         #[arg(long)]
         auto: bool,
+        /// Automatically create a GitHub PR when the Trak reaches Done.
+        #[arg(long)]
+        pr: bool,
     },
     /// Approve the current stage artifact
     Approve {
@@ -402,6 +405,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             base_branch,
             flow,
             auto,
+            pr,
         } => handle_create_task(
             &api,
             &title,
@@ -409,6 +413,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             base_branch.as_deref(),
             flow.as_deref(),
             auto,
+            pr,
             pretty,
         ),
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
@@ -549,6 +554,7 @@ fn handle_create_task(
     base_branch: Option<&str>,
     flow: Option<&str>,
     auto: bool,
+    pr: bool,
     pretty: bool,
 ) {
     let mode = if auto {
@@ -556,7 +562,7 @@ fn handle_create_task(
     } else {
         TaskCreationMode::Normal
     };
-    let task = match api.create_task_with_options(title, description, base_branch, mode, flow) {
+    let task = match api.create_task_with_options(title, description, base_branch, mode, flow, pr) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error creating trak: {e}");

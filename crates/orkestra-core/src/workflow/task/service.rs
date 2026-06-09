@@ -20,10 +20,11 @@ impl WorkflowApi {
             base_branch,
             TaskCreationMode::Normal,
             None,
+            false,
         )
     }
 
-    /// Create a new task with options (`mode`, flow).
+    /// Create a new task with options (`mode`, flow, `auto_pr`).
     pub fn create_task_with_options(
         &self,
         title: &str,
@@ -31,6 +32,7 @@ impl WorkflowApi {
         base_branch: Option<&str>,
         mode: TaskCreationMode,
         flow: Option<&str>,
+        auto_pr: bool,
     ) -> WorkflowResult<Task> {
         task_interactions::create::execute(
             self.store.as_ref(),
@@ -42,6 +44,7 @@ impl WorkflowApi {
             base_branch,
             mode,
             flow,
+            auto_pr,
         )
     }
 

@@ -1223,6 +1223,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
             None,
             TaskCreationMode::Normal,
             Some("default"),
+            false,
         )
         .expect("Should create default task")
         .id;
@@ -1235,6 +1236,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
             None,
             TaskCreationMode::Normal,
             Some("hotfix"),
+            false,
         )
         .expect("Should create hotfix task")
         .id;

@@ -245,6 +245,7 @@ fn test_task_create_with_flow() {
             None,
             TaskCreationMode::Normal,
             Some("quick"),
+            false,
         )
         .expect("create task with flow");
 
@@ -260,6 +261,7 @@ fn test_task_create_with_flow() {
         None,
         TaskCreationMode::Normal,
         Some("nonexistent"),
+        false,
     );
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -614,6 +616,7 @@ fn test_create_task_with_auto_mode() {
             None,
             TaskCreationMode::AutoMode,
             None,
+            false,
         )
         .expect("create auto task");
     assert!(
@@ -629,6 +632,7 @@ fn test_create_task_with_auto_mode() {
             None,
             TaskCreationMode::Normal,
             None,
+            false,
         )
         .expect("create normal task");
     assert!(

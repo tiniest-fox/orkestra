@@ -979,6 +979,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             None,
             TaskCreationMode::Normal,
             Some("quick"),
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -5173,6 +5174,7 @@ fn test_disallowed_tools_flow_override() {
             None,
             TaskCreationMode::Normal,
             Some("hotfix"),
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -7943,6 +7945,7 @@ fn test_flow_gate_override_disables_gate() {
             None,
             TaskCreationMode::Normal,
             Some("no-gate"),
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();
@@ -8730,6 +8733,7 @@ fn test_send_to_stage_respects_flow() {
             None,
             TaskCreationMode::Normal,
             Some("quick"),
+            false,
         )
         .unwrap();
     let task_id = task.id.clone();

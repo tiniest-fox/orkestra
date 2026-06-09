@@ -241,7 +241,14 @@ fn test_promote_to_flow_rejected_for_non_chat_task() {
     // create_task creates a normal (non-chat) task via sync setup.
     let normal_task = env
         .api()
-        .create_task_with_options("Normal", "desc", None, TaskCreationMode::Normal, None)
+        .create_task_with_options(
+            "Normal",
+            "desc",
+            None,
+            TaskCreationMode::Normal,
+            None,
+            false,
+        )
         .unwrap();
 
     let result = env

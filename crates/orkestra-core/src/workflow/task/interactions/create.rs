@@ -18,6 +18,7 @@ pub fn execute(
     base_branch: Option<&str>,
     mode: TaskCreationMode,
     flow: Option<&str>,
+    auto_pr: bool,
 ) -> WorkflowResult<Task> {
     // Validate flow exists if specified
     if let Some(flow_name) = flow {
@@ -53,6 +54,7 @@ pub fn execute(
     let mut task = Task::new(&id, title, description, &first_stage.name, &now);
     task.base_branch = resolved_base_branch;
     task.auto_mode = matches!(mode, TaskCreationMode::AutoMode);
+    task.auto_pr = auto_pr;
     task.flow = flow_name.to_string();
 
     // Start in AwaitingSetup - orchestrator will pick this up and trigger setup

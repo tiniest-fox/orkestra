@@ -72,6 +72,7 @@ pub fn execute(
             base_branch,
             TaskCreationMode::AutoMode,
             flow,
+            false,
         )
         .map_err(|e| format!("Failed to create trak: {e}"))?;
     let task_id = task.id.clone();

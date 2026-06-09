@@ -97,9 +97,11 @@ The orchestrator is a thin sequencer that dispatches to domain interactions:
 3. **Process completed executions** → `agent::dispatch_completion::execute()`
 4. **Commit pipeline** → `stage::advance_all_committed::execute()`
 5. **Find spawn candidates** → `task::find_spawn_candidates::execute()`
-6. **Integration** → `integration::find_next_candidate::execute()`
+6. **Integration OR PR creation** → `tick_integration_or_pr()` helper — `else if` mutual exclusion: at most one of these runs per tick.
 
 Business logic lives in interactions; orchestrator handles I/O plumbing (locks, threads, events).
+
+**`auto_pr` vs `auto_merge` precedence**: `find_next_candidate` (merge) skips tasks with `auto_pr=true` via a `!h.auto_pr` guard; `find_pr_candidate` then picks them up in the `else if` branch. Subtasks are always merged via `auto_merge` regardless of `auto_pr`. Result: for top-level tasks, `auto_pr` wins over `auto_merge` — they never both apply to the same task.
 
 ### Narrow Mutex Scopes
 
@@ -129,6 +131,8 @@ Merge and PR creation run on background threads to avoid blocking the tick loop:
 - `integration::pr_creation::run_pr_creation()` — creates PR via GitHub API
 
 These threads take cloned inputs (no lock held) and call back via `Arc<Mutex<WorkflowApi>>`.
+
+**Known gap in `run_pr_creation`**: lock-poison and save errors inside the callback are silently dropped (`if let Ok(api) = api.lock() { let _ = ... }`). The merge path logs lock-poison via `workflow_warn!`; the PR path doesn't. This won't cause incorrect behavior but makes PR creation failures harder to diagnose. If you're debugging a PR creation issue and see no log output, add `workflow_warn!` calls on the error arms to match the merge path.
 
 ### Title/Commit Generators Are Internal
 

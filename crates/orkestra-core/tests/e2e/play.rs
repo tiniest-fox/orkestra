@@ -35,7 +35,7 @@ fn test_play_happy_path() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Implement feature".into(),
             description: "Build it".into(),
             base_branch: None,
@@ -107,7 +107,7 @@ fn test_play_with_subtasks() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Build feature".into(),
             description: "Complex task needing breakdown".into(),
             base_branch: None,
@@ -254,7 +254,7 @@ fn test_play_questions_auto_answered() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Plan task".into(),
             description: "Needs planning".into(),
             base_branch: None,
@@ -321,7 +321,7 @@ fn test_play_agent_blocked() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Blocked task".into(),
             description: "Will block".into(),
             base_branch: None,
@@ -366,7 +366,7 @@ fn test_play_agent_failed() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Failed task".into(),
             description: "Will fail".into(),
             base_branch: None,
@@ -426,7 +426,7 @@ fn test_play_gate_failure_requeues_agent() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Gate test".into(),
             description: "Test gate retry with auto_mode".into(),
             base_branch: None,
@@ -531,7 +531,7 @@ fn test_play_integration_after_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Integration test".into(),
             description: "Test post-loop merge".into(),
             base_branch: None,
@@ -588,7 +588,7 @@ fn test_play_pr_creation_after_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "PR test".into(),
             description: "Test PR creation path".into(),
             base_branch: None,
@@ -663,7 +663,7 @@ fn test_play_with_flow() {
     // Create task with flow="quick" — should skip planning
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Quick task".into(),
             description: "No planning needed".into(),
             base_branch: None,
@@ -717,7 +717,7 @@ fn test_play_auto_merge_completes_to_archived() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Auto merge task".into(),
             description: "Test auto_merge path".into(),
             base_branch: None,
@@ -773,7 +773,7 @@ fn test_play_no_integrate_stays_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "No-integrate task".into(),
             description: "Test no-integrate path".into(),
             base_branch: None,

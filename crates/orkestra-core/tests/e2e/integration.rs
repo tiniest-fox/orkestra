@@ -1219,7 +1219,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     // to be spawned (without mock output) during the second task's setup tick.
     let default_id = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Default task".into(),
             description: "On default flow".into(),
             base_branch: None,
@@ -1232,7 +1232,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
 
     let hotfix_id = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Hotfix task".into(),
             description: "On hotfix flow".into(),
             base_branch: None,
@@ -1327,7 +1327,7 @@ fn auto_pr_creates_pr_on_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Auto-PR task".into(),
             description: "Should auto-create PR".into(),
             base_branch: None,
@@ -1370,7 +1370,7 @@ fn auto_pr_takes_precedence_over_auto_merge() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Auto-PR over merge task".into(),
             description: "auto_pr should win over auto_merge".into(),
             base_branch: None,
@@ -1455,7 +1455,7 @@ fn auto_pr_without_pr_service_fails_gracefully() {
 
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "No PR service task".into(),
             description: "Should fail gracefully without PR service".into(),
             base_branch: None,

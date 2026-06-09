@@ -85,7 +85,7 @@ pub fn create_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorP
 
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
     let task = api
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title,
             description,
             base_branch,

@@ -1553,7 +1553,7 @@ fn manual_subtask_inherits_parent_flow() {
     let parent = {
         let task = ctx
             .api()
-            .create_task_with_options(CreateTaskOptions {
+            .create_task_with_options(&CreateTaskOptions {
                 title: "Hotfix parent".into(),
                 description: "A parent task on the hotfix flow".into(),
                 base_branch: None,

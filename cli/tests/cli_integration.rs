@@ -240,7 +240,7 @@ fn test_task_create_with_flow() {
 
     // Create task with valid flow
     let task = api
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Test task".into(),
             description: "Description".into(),
             base_branch: None,
@@ -256,7 +256,7 @@ fn test_task_create_with_flow() {
     assert!(matches!(task.state, TaskState::AwaitingSetup { .. }));
 
     // Test invalid flow name
-    let result = api.create_task_with_options(CreateTaskOptions {
+    let result = api.create_task_with_options(&CreateTaskOptions {
         title: "Test task".into(),
         description: "Description".into(),
         base_branch: None,
@@ -611,7 +611,7 @@ fn test_create_task_with_auto_mode() {
 
     // Create task with AutoMode
     let auto_task = api
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Auto task".into(),
             description: "Description".into(),
             base_branch: None,
@@ -627,7 +627,7 @@ fn test_create_task_with_auto_mode() {
 
     // Create task with Normal mode — should default to false
     let normal_task = api
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Normal task".into(),
             description: "Description".into(),
             base_branch: None,

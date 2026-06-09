@@ -24,7 +24,7 @@ impl WorkflowApi {
         description: &str,
         base_branch: Option<&str>,
     ) -> WorkflowResult<Task> {
-        self.create_task_with_options(CreateTaskOptions {
+        self.create_task_with_options(&CreateTaskOptions {
             title: title.to_string(),
             description: description.to_string(),
             base_branch: base_branch.map(ToString::to_string),
@@ -35,7 +35,7 @@ impl WorkflowApi {
     }
 
     /// Create a new task with options (`mode`, flow, `auto_pr`).
-    pub fn create_task_with_options(&self, options: CreateTaskOptions) -> WorkflowResult<Task> {
+    pub fn create_task_with_options(&self, options: &CreateTaskOptions) -> WorkflowResult<Task> {
         task_interactions::create::execute(
             self.store.as_ref(),
             &self.workflow,

@@ -562,7 +562,7 @@ fn handle_create_task(
     } else {
         TaskCreationMode::Normal
     };
-    let task = match api.create_task_with_options(CreateTaskOptions {
+    let task = match api.create_task_with_options(&CreateTaskOptions {
         title: title.to_string(),
         description: description.to_string(),
         base_branch: base_branch.map(ToString::to_string),

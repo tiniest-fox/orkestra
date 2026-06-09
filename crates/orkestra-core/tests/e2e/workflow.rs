@@ -973,7 +973,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
     // Create task with the "quick" flow
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Test flow override".into(),
             description: "Test description".into(),
             base_branch: None,
@@ -5168,7 +5168,7 @@ fn test_disallowed_tools_flow_override() {
     // Create task with "hotfix" flow
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Hotfix task".into(),
             description: "Fix it".into(),
             base_branch: None,
@@ -7939,7 +7939,7 @@ fn test_flow_gate_override_disables_gate() {
     // Create task with the no-gate flow
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Flow no-gate test".into(),
             description: "Test flow disables gate".into(),
             base_branch: None,
@@ -8727,7 +8727,7 @@ fn test_send_to_stage_respects_flow() {
     // Create task with "quick" flow (no review stage)
     let task = ctx
         .api()
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: "Test flow".into(),
             description: "Description".into(),
             base_branch: None,

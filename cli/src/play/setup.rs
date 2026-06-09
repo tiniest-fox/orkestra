@@ -67,7 +67,7 @@ pub fn execute(
     let task = api
         .lock()
         .map_err(|_| "Workflow API lock poisoned".to_string())?
-        .create_task_with_options(CreateTaskOptions {
+        .create_task_with_options(&CreateTaskOptions {
             title: title_str.clone(),
             description: description.to_string(),
             base_branch: base_branch.map(ToString::to_string),

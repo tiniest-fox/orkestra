@@ -19,9 +19,10 @@ pub fn execute<'a>(
     }
 
     snapshot.idle_done_with_worktree.iter().find(|h| {
-        h.parent_id.is_some()
-            || workflow
-                .flow(&h.flow)
-                .is_some_and(|f| f.integration.auto_merge)
+        h.parent_id.is_some()  // Subtasks always auto-merge
+            || (!h.auto_pr
+                && workflow
+                    .flow(&h.flow)
+                    .is_some_and(|f| f.integration.auto_merge))
     })
 }

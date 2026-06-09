@@ -345,6 +345,7 @@ impl OrchestratorLoop {
     ///
     /// Each phase delegates to a domain interaction for business logic,
     /// then the orchestrator handles I/O plumbing (locks, threads, events).
+    #[allow(clippy::too_many_lines)]
     pub fn tick(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
         let mut defer_spawn_ids = HashSet::new();
@@ -412,7 +413,7 @@ impl OrchestratorLoop {
         // Spawn gate scripts for tasks awaiting gate validation
         self.spawn_pending_gates(&snapshot, &mut events)?;
 
-        // Integrate next done task (one at a time)
+        // Integrate or auto-PR the next done task (one at a time)
         let workflow = {
             let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
             api.workflow.clone()
@@ -421,6 +422,10 @@ impl OrchestratorLoop {
             integration_interactions::find_next_candidate::execute(&snapshot, &workflow)
         {
             self.start_integration(candidate, &mut events)?;
+        } else if let Some(candidate) =
+            integration_interactions::find_pr_candidate::execute(&snapshot)
+        {
+            self.start_pr_creation(candidate, &mut events);
         }
 
         // Periodic maintenance
@@ -836,6 +841,34 @@ impl OrchestratorLoop {
         }
 
         Ok(())
+    }
+
+    /// Start PR creation for a candidate task with `auto_pr=true`.
+    fn start_pr_creation(&self, header: &TaskHeader, events: &mut Vec<OrchestratorEvent>) {
+        let task_id = header.id.clone();
+        let api = Arc::clone(&self.api);
+
+        if self.sync_background {
+            match crate::workflow::integration::pr_creation::create_pr_sync(api, &task_id) {
+                Ok(_) => {}
+                Err(e) => {
+                    events.push(OrchestratorEvent::Error {
+                        task_id: Some(task_id),
+                        error: format!("Auto-PR creation failed: {e}"),
+                    });
+                }
+            }
+        } else {
+            match crate::workflow::integration::pr_creation::spawn_pr_creation(api, &task_id) {
+                Ok(_) => {}
+                Err(e) => {
+                    events.push(OrchestratorEvent::Error {
+                        task_id: Some(task_id),
+                        error: format!("Auto-PR creation failed: {e}"),
+                    });
+                }
+            }
+        }
     }
 }
 

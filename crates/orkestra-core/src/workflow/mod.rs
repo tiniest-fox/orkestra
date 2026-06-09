@@ -124,6 +124,7 @@ pub use stage::service::{
     ExecutionComplete, ExecutionResult, SpawnError, SpawnResult, StageExecutionService,
 };
 pub use stage::session::SessionSpawnContext;
+pub use task::service::CreateTaskOptions;
 
 // Parser re-exports
 pub use orkestra_parser::{ResumeMarker, ResumeMarkerType};

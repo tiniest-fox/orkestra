@@ -6,6 +6,16 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult};
 
 use super::interactions as task_interactions;
 
+/// Options for [`WorkflowApi::create_task_with_options`].
+pub struct CreateTaskOptions {
+    pub title: String,
+    pub description: String,
+    pub base_branch: Option<String>,
+    pub mode: TaskCreationMode,
+    pub flow: Option<String>,
+    pub auto_pr: bool,
+}
+
 impl WorkflowApi {
     /// Create a new task. Starts in the first workflow stage.
     pub fn create_task(
@@ -14,37 +24,29 @@ impl WorkflowApi {
         description: &str,
         base_branch: Option<&str>,
     ) -> WorkflowResult<Task> {
-        self.create_task_with_options(
-            title,
-            description,
-            base_branch,
-            TaskCreationMode::Normal,
-            None,
-            false,
-        )
+        self.create_task_with_options(CreateTaskOptions {
+            title: title.to_string(),
+            description: description.to_string(),
+            base_branch: base_branch.map(ToString::to_string),
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: false,
+        })
     }
 
     /// Create a new task with options (`mode`, flow, `auto_pr`).
-    pub fn create_task_with_options(
-        &self,
-        title: &str,
-        description: &str,
-        base_branch: Option<&str>,
-        mode: TaskCreationMode,
-        flow: Option<&str>,
-        auto_pr: bool,
-    ) -> WorkflowResult<Task> {
+    pub fn create_task_with_options(&self, options: CreateTaskOptions) -> WorkflowResult<Task> {
         task_interactions::create::execute(
             self.store.as_ref(),
             &self.workflow,
             self.git_service.as_deref(),
             &self.iteration_service,
-            title,
-            description,
-            base_branch,
-            mode,
-            flow,
-            auto_pr,
+            &options.title,
+            &options.description,
+            options.base_branch.as_deref(),
+            options.mode,
+            options.flow.as_deref(),
+            options.auto_pr,
         )
     }
 

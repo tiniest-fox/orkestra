@@ -16,6 +16,7 @@ use orkestra_core::workflow::ports::{
     MockProcessSpawner, ProcessSpawner, WorkflowError, WorkflowStore,
 };
 use orkestra_core::workflow::runtime::TaskState;
+use orkestra_core::workflow::CreateTaskOptions;
 use orkestra_core::workflow::{AssistantService, SqliteWorkflowStore, WorkflowApi};
 use tempfile::TempDir;
 
@@ -241,14 +242,14 @@ fn test_promote_to_flow_rejected_for_non_chat_task() {
     // create_task creates a normal (non-chat) task via sync setup.
     let normal_task = env
         .api()
-        .create_task_with_options(
-            "Normal",
-            "desc",
-            None,
-            TaskCreationMode::Normal,
-            None,
-            false,
-        )
+        .create_task_with_options(CreateTaskOptions {
+            title: "Normal".into(),
+            description: "desc".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
 
     let result = env

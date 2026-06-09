@@ -18,8 +18,8 @@ use orkestra_core::{
         domain::{IterationTrigger, LogEntry, PrCheckData},
         load_workflow_for_project,
         runtime::Outcome,
-        Git2GitService, GitService, Iteration, SqliteWorkflowStore, StageSession, Task,
-        TaskCreationMode, TaskState, TaskView, WorkflowApi,
+        CreateTaskOptions, Git2GitService, GitService, Iteration, SqliteWorkflowStore,
+        StageSession, Task, TaskCreationMode, TaskState, TaskView, WorkflowApi,
     },
 };
 use orkestra_types::config::workflow::WorkflowConfig;
@@ -562,7 +562,14 @@ fn handle_create_task(
     } else {
         TaskCreationMode::Normal
     };
-    let task = match api.create_task_with_options(title, description, base_branch, mode, flow, pr) {
+    let task = match api.create_task_with_options(CreateTaskOptions {
+        title: title.to_string(),
+        description: description.to_string(),
+        base_branch: base_branch.map(ToString::to_string),
+        mode,
+        flow: flow.map(ToString::to_string),
+        auto_pr: pr,
+    }) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error creating trak: {e}");

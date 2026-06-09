@@ -4,6 +4,7 @@ use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::domain::TaskCreationMode;
 use orkestra_core::workflow::ports::{PrError, WorkflowError};
 use orkestra_core::workflow::runtime::TaskState;
+use orkestra_core::workflow::CreateTaskOptions;
 use orkestra_core::workflow::{create_pr_sync, merge_task_sync};
 
 use super::helpers::{disable_auto_merge, MockAgentOutput, TestEnv};
@@ -1218,27 +1219,27 @@ fn per_flow_auto_merge_resolved_per_candidate() {
     // to be spawned (without mock output) during the second task's setup tick.
     let default_id = ctx
         .api()
-        .create_task_with_options(
-            "Default task",
-            "On default flow",
-            None,
-            TaskCreationMode::Normal,
-            Some("default"),
-            false,
-        )
+        .create_task_with_options(CreateTaskOptions {
+            title: "Default task".into(),
+            description: "On default flow".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: Some("default".into()),
+            auto_pr: false,
+        })
         .expect("Should create default task")
         .id;
 
     let hotfix_id = ctx
         .api()
-        .create_task_with_options(
-            "Hotfix task",
-            "On hotfix flow",
-            None,
-            TaskCreationMode::Normal,
-            Some("hotfix"),
-            false,
-        )
+        .create_task_with_options(CreateTaskOptions {
+            title: "Hotfix task".into(),
+            description: "On hotfix flow".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: Some("hotfix".into()),
+            auto_pr: false,
+        })
         .expect("Should create hotfix task")
         .id;
 
@@ -1297,7 +1298,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
 // =============================================================================
 
 /// Helper to create a bare git repo and add it as origin.
-fn setup_bare_remote(ctx: &TestEnv) {
+fn setup_bare_remote(ctx: &TestEnv) -> tempfile::TempDir {
     let bare_repo = tempfile::tempdir().expect("Should create temp dir");
     std::process::Command::new("git")
         .args(["init", "--bare"])
@@ -1314,8 +1315,7 @@ fn setup_bare_remote(ctx: &TestEnv) {
         .current_dir(ctx.temp_dir())
         .output()
         .expect("Should add git remote");
-    // Leak the tempdir so it stays alive for the test duration
-    std::mem::forget(bare_repo);
+    bare_repo
 }
 
 /// A task with `auto_pr=true` has a PR created automatically when it reaches Done.
@@ -1323,18 +1323,18 @@ fn setup_bare_remote(ctx: &TestEnv) {
 fn auto_pr_creates_pr_on_done() {
     let workflow = disable_auto_merge(test_default_workflow());
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    setup_bare_remote(&ctx);
+    let _bare_remote = setup_bare_remote(&ctx);
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Auto-PR task",
-            "Should auto-create PR",
-            None,
-            TaskCreationMode::Normal,
-            None,
-            true, // auto_pr = true
-        )
+        .create_task_with_options(CreateTaskOptions {
+            title: "Auto-PR task".into(),
+            description: "Should auto-create PR".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: true,
+        })
         .expect("Should create task");
     let task_id = task.id.clone();
     ctx.advance(); // complete setup
@@ -1366,18 +1366,18 @@ fn auto_pr_takes_precedence_over_auto_merge() {
         flow.integration.auto_merge = true; // explicitly enable auto_merge
     }
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    setup_bare_remote(&ctx);
+    let _bare_remote = setup_bare_remote(&ctx);
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Auto-PR over merge task",
-            "auto_pr should win over auto_merge",
-            None,
-            TaskCreationMode::Normal,
-            None,
-            true, // auto_pr = true
-        )
+        .create_task_with_options(CreateTaskOptions {
+            title: "Auto-PR over merge task".into(),
+            description: "auto_pr should win over auto_merge".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: true,
+        })
         .expect("Should create task");
     let task_id = task.id.clone();
     ctx.advance(); // complete setup
@@ -1451,18 +1451,18 @@ fn find_pr_candidate_skips_subtasks() {
 fn auto_pr_without_pr_service_fails_gracefully() {
     let workflow = disable_auto_merge(test_default_workflow());
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    setup_bare_remote(&ctx);
+    let _bare_remote = setup_bare_remote(&ctx);
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "No PR service task",
-            "Should fail gracefully without PR service",
-            None,
-            TaskCreationMode::Normal,
-            None,
-            true, // auto_pr = true
-        )
+        .create_task_with_options(CreateTaskOptions {
+            title: "No PR service task".into(),
+            description: "Should fail gracefully without PR service".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: true,
+        })
         .expect("Should create task");
     let task_id = task.id.clone();
     ctx.advance(); // complete setup

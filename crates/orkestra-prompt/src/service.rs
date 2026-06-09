@@ -56,6 +56,8 @@ impl PromptService {
     /// # Arguments
     /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
     ///   These are used to construct file paths in the prompt.
+    /// * `universal_prompt` - Optional project-level instructions injected into every
+    ///   stage's system prompt. Loaded from `.orkestra/ORKESTRA.md` by the caller.
     /// * `parent_resources` - Resources from the parent task (for subtasks), merged into
     ///   the inline resources list in the prompt.
     #[allow(clippy::too_many_arguments)]
@@ -67,6 +69,7 @@ impl PromptService {
         artifact_names: &[String],
         agent_definition: &str,
         json_schema: &str,
+        universal_prompt: Option<&str>,
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
         show_direct_structured_output_hint: bool,
@@ -81,6 +84,7 @@ impl PromptService {
             artifact_names,
             agent_definition,
             json_schema,
+            universal_prompt,
             feedback,
             integration_error,
             show_direct_structured_output_hint,
@@ -93,9 +97,15 @@ impl PromptService {
     pub fn build_system_prompt(
         &self,
         agent_definition: &str,
+        universal_prompt: Option<&str>,
         ctx: &StagePromptContext<'_>,
     ) -> String {
-        interactions::build::system_prompt::execute(&self.templates, agent_definition, ctx)
+        interactions::build::system_prompt::execute(
+            &self.templates,
+            agent_definition,
+            universal_prompt,
+            ctx,
+        )
     }
 
     /// Build a user message from task context.

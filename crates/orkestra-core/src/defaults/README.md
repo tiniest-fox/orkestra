@@ -72,6 +72,7 @@ After a Trak is approved, Orkestra merges its worktree branch into the main bran
 ## `.orkestra/` Directory Layout
 
 - **`workflow.yaml`** — Stage pipeline configuration
+- **`ORKESTRA.md`** — Optional project-level instructions injected into every stage agent's system prompt. Write plain text or Markdown. Leave empty (the default) to add nothing to the prompt.
 - **`agents/`** — Agent prompt templates; customize these per project to guide agent behavior
 - **`scripts/`** — Shell scripts: `worktree_setup.sh` and `worktree_cleanup.sh` run when worktrees are created/removed; `checks.sh` is the default gate script
 - **`.database/`** — SQLite database (gitignored)

@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 
-use orkestra_types::domain::{SessionTokenUsage, StageTokenUsage, TaskTokenUsage, TokenUsage};
+use orkestra_types::domain::{
+    compute_transcript_path, SessionTokenUsage, StageTokenUsage, TaskTokenUsage, TokenUsage,
+};
 
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 
@@ -121,23 +123,6 @@ fn read_usage_from_jsonl(path: &Path) -> Option<TokenUsage> {
             .unwrap_or(0);
     }
     Some(total)
-}
-
-/// Compute the path where Claude Code writes JSONL transcripts.
-///
-/// Claude Code writes `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`
-/// where encoded-cwd replaces every `/` or `.` with `-`.
-fn compute_transcript_path(home_dir: &Path, working_dir: &Path, session_id: &str) -> PathBuf {
-    let encoded_cwd: String = working_dir
-        .to_string_lossy()
-        .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
-        .collect();
-    home_dir
-        .join(".claude")
-        .join("projects")
-        .join(encoded_cwd)
-        .join(format!("{session_id}.jsonl"))
 }
 
 // ============================================================================

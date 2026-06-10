@@ -103,27 +103,12 @@ impl WorkflowApi {
 
     /// Get token usage for a task by reading its Claude Code JSONL session files.
     pub fn get_token_usage(&self, task_id: &str) -> WorkflowResult<TaskTokenUsage> {
-        let home_dir = dirs::home_dir()
-            .ok_or_else(|| WorkflowError::InvalidState("HOME directory not found".into()))?;
-        query::token_usage::execute(self.store.as_ref(), task_id, &home_dir)
+        query::token_usage::execute(self.store.as_ref(), task_id, &self.home_dir)
     }
 
     /// Get all running agent processes as (`task_id`, stage, pid) tuples.
     pub fn get_running_agent_pids(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
         query::sessions::get_running_agent_pids(self.store.as_ref())
-    }
-
-    /// Get token usage using an explicit home directory (test-only).
-    ///
-    /// Allows tests to use a temporary directory instead of the real `~/.claude/`
-    /// so that mock JSONL files don't pollute the developer's home directory.
-    #[cfg(feature = "testutil")]
-    pub fn get_token_usage_with_home(
-        &self,
-        task_id: &str,
-        home_dir: &std::path::Path,
-    ) -> WorkflowResult<crate::workflow::domain::TaskTokenUsage> {
-        query::token_usage::execute(self.store.as_ref(), task_id, home_dir)
     }
 
     /// Clear the `claude_session_id` for a stage session (test-only).

@@ -1,5 +1,7 @@
 //! Token usage types for Claude Code session tracking.
 
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 
 /// Raw token counts from a single Claude Code API call.
@@ -52,4 +54,53 @@ pub struct TaskTokenUsage {
     pub task_id: String,
     pub stages: Vec<StageTokenUsage>,
     pub total: TokenUsage,
+}
+
+/// Compute the path where Claude Code writes JSONL transcripts for a session.
+///
+/// Claude Code writes `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`
+/// where encoded-cwd replaces every `/` or `.` with `-`. Replacing `.` is
+/// necessary for paths containing hidden directories like `.orkestra`.
+pub fn compute_transcript_path(home_dir: &Path, working_dir: &Path, session_id: &str) -> PathBuf {
+    let encoded_cwd: String = working_dir
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
+    home_dir
+        .join(".claude")
+        .join("projects")
+        .join(encoded_cwd)
+        .join(format!("{session_id}.jsonl"))
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_compute_transcript_path_encodes_slashes_and_dots() {
+        let home = PathBuf::from("/home/user");
+        let working_dir = PathBuf::from("/home/user/projects/.orkestra/.worktrees/my-task");
+        let result = compute_transcript_path(&home, &working_dir, "abc-123");
+        let expected = home
+            .join(".claude")
+            .join("projects")
+            .join("-home-user-projects--orkestra--worktrees-my-task")
+            .join("abc-123.jsonl");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_compute_transcript_path_appends_jsonl_extension() {
+        let home = PathBuf::from("/tmp");
+        let working_dir = PathBuf::from("/tmp/project");
+        let result = compute_transcript_path(&home, &working_dir, "session-xyz");
+        assert!(result.to_string_lossy().ends_with("session-xyz.jsonl"));
+    }
 }

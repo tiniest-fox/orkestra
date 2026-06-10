@@ -3,6 +3,9 @@ name = "orkestra-networking"
 version = "0.1.2"
 edition = "2021"
 
+[lib]
+doctest = false
+
 [lints]
 workspace = true
 

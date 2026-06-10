@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use orkestra_core::workflow::config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig};
-use orkestra_core::workflow::domain::TokenUsage;
+use orkestra_core::workflow::domain::{compute_transcript_path, TokenUsage};
 
 use crate::helpers::{MockAgentOutput, TestEnv};
 
@@ -19,24 +19,6 @@ fn two_stage_workflow() -> WorkflowConfig {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
     ])
     .with_integration(IntegrationConfig::new("work"))
-}
-
-/// Compute the transcript path matching the extraction interaction's logic.
-fn compute_transcript_path(
-    home_dir: &std::path::Path,
-    working_dir: &std::path::Path,
-    session_id: &str,
-) -> PathBuf {
-    let encoded_cwd: String = working_dir
-        .to_string_lossy()
-        .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
-        .collect();
-    home_dir
-        .join(".claude")
-        .join("projects")
-        .join(encoded_cwd)
-        .join(format!("{session_id}.jsonl"))
 }
 
 /// Write a fake JSONL transcript with known token values.
@@ -126,10 +108,11 @@ fn test_token_usage_with_mock_jsonl_files() {
     // Work: 1 message (2000, 400, 100, 20)
     write_fake_jsonl(&work_path, &[(2000, 400, 100, 20)]);
 
-    // Exercise: extract token usage via the testutil method with fake home dir
+    // Exercise: extract token usage with the fake home dir injected at construction.
+    env.api().set_home_dir(fake_home.path().to_path_buf());
     let usage = env
         .api()
-        .get_token_usage_with_home(&task_id, fake_home.path())
+        .get_token_usage(&task_id)
         .expect("token usage extraction should succeed");
 
     assert_eq!(usage.task_id, task_id);
@@ -191,10 +174,11 @@ fn test_missing_jsonl_produces_none_not_error() {
         .unwrap();
 
     let fake_home = tempfile::TempDir::new().unwrap();
+    env.api().set_home_dir(fake_home.path().to_path_buf());
 
     let usage = env
         .api()
-        .get_token_usage_with_home(&task_id, fake_home.path())
+        .get_token_usage(&task_id)
         .expect("should succeed even without JSONL file");
 
     let planning_stage = usage
@@ -222,10 +206,11 @@ fn test_task_without_worktree_returns_empty_stages() {
         .unwrap();
 
     let fake_home = tempfile::TempDir::new().unwrap();
+    env.api().set_home_dir(fake_home.path().to_path_buf());
 
     let usage = env
         .api()
-        .get_token_usage_with_home(&task.id, fake_home.path())
+        .get_token_usage(&task.id)
         .expect("should succeed for task without worktree_path");
 
     assert_eq!(usage.task_id, task.id);

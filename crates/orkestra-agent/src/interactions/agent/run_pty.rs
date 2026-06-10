@@ -15,7 +15,7 @@ use std::time::Duration;
 use orkestra_parser::interactions::stream::parse_resume_marker;
 use orkestra_parser::AgentParser;
 use orkestra_process::ProcessGuard;
-use orkestra_types::domain::{LogEntry, PromptSection};
+use orkestra_types::domain::{compute_transcript_path, LogEntry, PromptSection};
 use portable_pty::{CommandBuilder, PtySize};
 use tempfile::NamedTempFile;
 
@@ -463,24 +463,6 @@ fn build_settings_file(
     let json_bytes = serde_json::to_vec(&settings)?;
     file.write_all(&json_bytes)?;
     Ok(file)
-}
-
-/// Compute the JSONL transcript path Claude Code uses for a given session.
-///
-/// Claude Code writes `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`
-/// where encoded-cwd replaces every `/` or `.` with `-`. Replacing `.` is
-/// necessary for paths containing hidden directories like `.orkestra`.
-fn compute_transcript_path(home_dir: &Path, working_dir: &Path, session_id: &str) -> PathBuf {
-    let encoded_cwd: String = working_dir
-        .to_string_lossy()
-        .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
-        .collect();
-    home_dir
-        .join(".claude")
-        .join("projects")
-        .join(encoded_cwd)
-        .join(format!("{session_id}.jsonl"))
 }
 
 /// Poll until the given file exists or the deadline is reached.

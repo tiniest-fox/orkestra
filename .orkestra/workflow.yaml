@@ -275,7 +275,7 @@ flows:
         description: Reviews completed work and produces an approval or rejection verdict
         artifact: verdict
         prompt: reviewer.md
-        model: opus
+        model: claude-pty/opus
         gate: true
     integration:
       on_failure: work

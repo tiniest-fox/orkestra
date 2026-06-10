@@ -289,9 +289,9 @@ mod tests {
         task
     }
 
-    fn make_service(store: Arc<dyn WorkflowStore>) -> TaskSetupService {
+    fn make_service(store: &Arc<dyn WorkflowStore>) -> TaskSetupService {
         let title_gen: Arc<dyn TitleGenerator> = Arc::new(MockTitleGenerator::succeeding());
-        TaskSetupService::new(Arc::clone(&store), None, title_gen)
+        TaskSetupService::new(Arc::clone(store), None, title_gen)
     }
 
     /// Both setup paths (success → Queued, failure → Failed) must bump `updated_at`.
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn apply_setup_result_bumps_updated_at() {
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
-        let service = make_service(Arc::clone(&store));
+        let service = make_service(&store);
         service.set_sync(true); // run inline so we can check state after
 
         let task = make_setting_up_task("task-1");

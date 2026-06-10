@@ -95,6 +95,74 @@ impl AgentTestEnv {
         env
     }
 
+    /// Create a test environment for PTY-based execution using the crash mock claude script.
+    ///
+    /// Like `new_pty_mock()` but installs `mock_claude_pty_crash.sh` — a variant that
+    /// exits without firing the Stop hook, simulating a process crash. Use this to test
+    /// dead-process detection and crash recovery paths.
+    ///
+    /// Call `swap_to_normal_mock()` after the crash run to replace the crash mock with
+    /// the normal mock for subsequent orchestrator ticks.
+    pub fn new_pty_crash_mock() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/orkestra-agent/tests/fixtures");
+
+        // Build a temp bin dir and install the crash mock claude script
+        let temp_bin = tempfile::TempDir::new().expect("temp bin dir");
+        let claude_bin = temp_bin.path().join("claude");
+        std::fs::copy(fixtures_dir.join("mock_claude_pty_crash.sh"), &claude_bin)
+            .expect("copy mock_claude_pty_crash.sh");
+        let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&claude_bin, perms).unwrap();
+
+        // Prepend the mock bin dir to PATH so the PTY child inherits it.
+        // Requires --test-threads=1; see doc comment on new_pty_mock().
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!("{}:{}", temp_bin.path().display(), original_path);
+        std::env::set_var("PATH", &new_path);
+
+        let mut env = Self::build_env(
+            "claude-pty/sonnet",
+            StageCapabilities::default(),
+            "You are a worker agent. Complete the task described below.",
+            "summary",
+            true,
+        );
+
+        // Store temp_bin so it lives for the duration of the test.
+        #[allow(clippy::used_underscore_binding)]
+        {
+            env._mock_bin = Some(temp_bin);
+        }
+        env
+    }
+
+    /// Replace the crash mock binary with the normal mock for subsequent spawns.
+    ///
+    /// Overwrites the `claude` binary in the temp bin dir with `mock_claude_pty.sh`.
+    /// Only valid on environments constructed via `new_pty_crash_mock()`.
+    #[allow(clippy::used_underscore_binding)]
+    pub fn swap_to_normal_mock(&self) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/orkestra-agent/tests/fixtures");
+
+        if let Some(ref bin_dir) = self._mock_bin {
+            let claude_bin = bin_dir.path().join("claude");
+            std::fs::copy(fixtures_dir.join("mock_claude_pty.sh"), &claude_bin)
+                .expect("copy mock_claude_pty.sh for swap");
+            let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&claude_bin, perms).unwrap();
+        } else {
+            panic!("swap_to_normal_mock called on non-PTY test env");
+        }
+    }
+
     /// Create a test environment with custom stage capabilities and prompt.
     ///
     /// Builds a single "work" stage workflow with the given capabilities and

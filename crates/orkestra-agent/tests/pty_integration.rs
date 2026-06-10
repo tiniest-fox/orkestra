@@ -253,6 +253,80 @@ fn pty_fails_fast_when_transcript_missing() {
     }
 }
 
+// ============================================================================
+// Test 5: Real Claude binary smoke test
+// ============================================================================
+
+/// Canary test using the real Claude Code binary.
+///
+/// Run after Claude auto-updates to verify the PTY path still works:
+/// `cargo test -p orkestra-agent -- --ignored pty_real_claude_smoke_test`
+#[test]
+#[ignore = "requires installed and authenticated Claude Code; run with --ignored"]
+fn pty_real_claude_smoke_test() {
+    use orkestra_agent::AgentCompletionError;
+    use std::sync::mpsc::RecvTimeoutError;
+
+    let tmp = TempDir::new().unwrap();
+
+    // Initialize a git repo (Claude Code requires one)
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("git init failed");
+
+    let hook_server = Arc::new(start_hook_server(tmp.path()).unwrap());
+    let registry = Arc::new(default_test_registry());
+    let config = RunConfig::new(
+        tmp.path(),
+        "Reply with exactly the word ping and nothing else",
+        "",
+    )
+    .with_task_id("real-claude-test")
+    .with_model("claude-pty/sonnet");
+
+    let resolved = registry.resolve(config.model.as_deref()).unwrap();
+    let (_pid, rx) = run_pty::execute(&resolved, &registry, &config, &hook_server).unwrap();
+
+    let mut events: Vec<RunEvent> = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining.min(Duration::from_millis(500))) {
+            Ok(event) => {
+                let done = matches!(event, RunEvent::Completed(_));
+                events.push(event);
+                if done {
+                    break;
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    assert!(
+        events.iter().any(|e| matches!(e, RunEvent::LogLine(_))),
+        "expected at least one LogLine event; events: {events:?}"
+    );
+
+    let completed = events
+        .iter()
+        .find(|e| matches!(e, RunEvent::Completed(_)))
+        .expect("no Completed event received within 60s");
+
+    if let RunEvent::Completed(result) = completed {
+        assert!(
+            result.is_ok() || matches!(result, Err(AgentCompletionError::PlainText(_))),
+            "expected Completed(Ok) or Completed(PlainText), got: {result:?}"
+        );
+    }
+}
+
 /// `HookServer` routes a Stop hook payload to the correct per-task receiver.
 #[test]
 fn hook_triggers_correct_event() {

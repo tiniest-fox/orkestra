@@ -4,11 +4,11 @@
 //! the hook-based Stop callback, reads the JSONL transcript, classifies output,
 //! and emits `RunEvents` matching the (u32, Receiver<RunEvent>) contract.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -34,17 +34,19 @@ use super::classify_output::{self, OutputClassification};
 ///
 /// `child` and `guard` are held for their drop-side effects rather than read
 /// access — `child` keeps the PTY slave open, `guard` sends SIGTERM on drop.
-/// `_drain_thread` continuously reads and discards PTY master output to prevent
-/// the classic output-buffer deadlock: if the slave process fills the master
-/// output buffer, it blocks on stdout and stops reading stdin, which in turn
-/// blocks our prompt `write_all`. The drain thread exits naturally when the PTY
-/// closes (EOF) after the process is killed.
+/// `_drain_thread` continuously reads PTY master output to prevent the classic
+/// output-buffer deadlock: if the slave process fills the master output buffer,
+/// it blocks on stdout and stops reading stdin, which in turn blocks our prompt
+/// `write_all`. The drain thread also retains the last 8KB of output for
+/// diagnosability on startup failure. It exits naturally when the PTY closes
+/// (EOF) after the process is killed.
 #[allow(dead_code)]
 struct PtyHandle {
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     guard: ProcessGuard,
     _drain_thread: thread::JoinHandle<()>,
+    output_tail: Arc<Mutex<VecDeque<u8>>>,
 }
 
 // ============================================================================
@@ -204,9 +206,45 @@ fn drive_pty_session(
     // Poll for JSONL transcript file to confirm session started.
     // Two Text entries are required to set `has_confirmed_output` in ActiveAgent::poll(),
     // persisting `has_activity=true` for crash recovery (one Text only sets `has_any_output`).
+    //
+    // Re-send Enter every ~3s to handle the TUI startup race: when the TUI isn't ready,
+    // the prompt and trailing \r written above are ingested as paste-like input and the \r
+    // doesn't submit. Extra \r on an idle composer is a no-op; on an unsubmitted composer
+    // it submits.
     let fallback_transcript_path =
         compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
-    if poll_for_file(&fallback_transcript_path, Duration::from_secs(30)) {
+    let poll_deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let mut polls_since_enter = 0u32;
+    let mut transcript_found = false;
+    loop {
+        if fallback_transcript_path.exists() {
+            transcript_found = true;
+            break;
+        }
+        if std::time::Instant::now() >= poll_deadline {
+            break;
+        }
+        polls_since_enter += 1;
+        if polls_since_enter >= 6 {
+            polls_since_enter = 0;
+            if let Err(e) = pty_handle
+                .writer
+                .write_all(b"\r")
+                .and_then(|()| pty_handle.writer.flush())
+            {
+                // PTY process died — fail fast instead of waiting 30s
+                let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
+                    format!("PTY process died during startup — failed to write Enter: {e}"),
+                ))));
+                drop(pty_handle);
+                hook_server.unregister_task(ctx.task_id);
+                return;
+            }
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    if transcript_found {
         let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
             content: "PTY session active".to_string(),
         }));
@@ -215,12 +253,24 @@ fn drive_pty_session(
         }));
     } else {
         // Transcript never appeared — Claude Code did not start (binary missing, crash on
-        // startup, permissions). Waiting for the hook would stall the worker for up to 1 hour.
+        // startup, permissions, or settings error). Surface the PTY output tail for diagnosis.
+        let tail_text = {
+            let raw = pty_handle
+                .output_tail
+                .lock()
+                .map(|tail| tail.iter().copied().collect::<Vec<u8>>())
+                .unwrap_or_default();
+            strip_ansi_codes(&String::from_utf8_lossy(&raw))
+        };
         drop(pty_handle);
         hook_server.unregister_task(ctx.task_id);
-        let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
-            "PTY session failed to start — transcript file not found after 30s".to_string(),
-        ))));
+        let mut msg =
+            "PTY session failed to start — transcript file not found after 30s".to_string();
+        if !tail_text.is_empty() {
+            msg.push_str("\n\n--- PTY output tail ---\n");
+            msg.push_str(&tail_text);
+        }
+        let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(msg))));
         return;
     }
 
@@ -322,13 +372,25 @@ fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), Ru
         .try_clone_reader()
         .map_err(|e| RunError::SpawnFailed(format!("failed to clone PTY reader: {e}")))?;
 
+    const TAIL_CAPACITY: usize = 8192;
+    let output_tail: Arc<Mutex<VecDeque<u8>>> =
+        Arc::new(Mutex::new(VecDeque::with_capacity(TAIL_CAPACITY)));
+    let drain_tail = Arc::clone(&output_tail);
+
     let drain_thread = thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut reader = drain_reader;
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
-                Ok(_) => {}
+                Ok(n) => {
+                    if let Ok(mut tail) = drain_tail.lock() {
+                        tail.extend(&buf[..n]);
+                        while tail.len() > TAIL_CAPACITY {
+                            tail.pop_front();
+                        }
+                    }
+                }
             }
         }
     });
@@ -344,6 +406,7 @@ fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), Ru
             child,
             guard: ProcessGuard::new(pid),
             _drain_thread: drain_thread,
+            output_tail,
         },
         pid,
     ))
@@ -454,8 +517,8 @@ fn build_settings_file(
 
     let settings = serde_json::json!({
         "hooks": {
-            "Stop": [{"matcher": "", "command": stop_cmd}],
-            "SessionEnd": [{"matcher": "", "command": session_end_cmd}]
+            "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": stop_cmd}]}],
+            "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": session_end_cmd}]}]
         }
     });
 
@@ -484,6 +547,7 @@ fn compute_transcript_path(home_dir: &Path, working_dir: &Path, session_id: &str
 }
 
 /// Poll until the given file exists or the deadline is reached.
+#[cfg(test)]
 fn poll_for_file(path: &Path, timeout: Duration) -> bool {
     let deadline = std::time::Instant::now() + timeout;
     loop {
@@ -575,6 +639,52 @@ fn read_and_parse_transcript(
     (full_output, line_count)
 }
 
+/// Strip ANSI escape sequences from text for human-readable error messages.
+///
+/// Handles CSI sequences (`\x1b[...letter`) and OSC sequences (`\x1b]...BEL/ST`).
+/// Duplicated from `orkestra-networking::ci_log_parser::strip_ansi_codes` —
+/// `orkestra-agent` cannot depend on `orkestra-networking`.
+fn strip_ansi_codes(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            match chars.peek() {
+                Some('[') => {
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next == '\x07' {
+                            break;
+                        }
+                        if next == '\x1b' {
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    chars.next();
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -594,9 +704,17 @@ mod tests {
         let content = std::fs::read_to_string(file.path()).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
 
+        // Assert nested hook schema: {"matcher": "", "hooks": [{"type": "command", "command": ...}]}
         let stop_hooks = &parsed["hooks"]["Stop"];
         assert!(stop_hooks.is_array(), "Stop hooks should be an array");
-        let stop_cmd = stop_hooks[0]["command"].as_str().unwrap();
+        assert_eq!(
+            parsed["hooks"]["Stop"][0]["hooks"][0]["type"].as_str(),
+            Some("command"),
+            "Stop hook must use nested hooks array with type=command"
+        );
+        let stop_cmd = parsed["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
         assert!(
             stop_cmd.contains("nc -U /tmp/hooks.sock"),
             "Stop cmd missing socket path"
@@ -613,7 +731,14 @@ mod tests {
 
         let se_hooks = &parsed["hooks"]["SessionEnd"];
         assert!(se_hooks.is_array(), "SessionEnd hooks should be an array");
-        let se_cmd = se_hooks[0]["command"].as_str().unwrap();
+        assert_eq!(
+            parsed["hooks"]["SessionEnd"][0]["hooks"][0]["type"].as_str(),
+            Some("command"),
+            "SessionEnd hook must use nested hooks array with type=command"
+        );
+        let se_cmd = parsed["hooks"]["SessionEnd"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
         assert!(
             se_cmd.contains("nc -U /tmp/hooks.sock"),
             "SessionEnd cmd missing socket path"

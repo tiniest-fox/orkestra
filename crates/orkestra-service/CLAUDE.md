@@ -36,7 +36,7 @@ let escaped = value.replace('\\', "\\\\").replace('"', "\\\"")
     .replace('\n', "\\n").replace('\r', "\\r").replace('\0', "\\0");
 ```
 
-**Known gap:** `GH_TOKEN` and git identity values (`git_email`, `git_name`) at lines 505-508 and 518-519 of `start_container.rs` are written into double-quoted YAML strings without this escaping. Secrets and `CLAUDE_ACCESS_TOKEN` apply it correctly. A future cleanup should extract an `escape_yaml_double_quoted` helper and apply it uniformly to all injection sites.
+**Known gap:** `GH_TOKEN` and git identity values (`git_email`, `git_name`) at lines 505-508 and 518-519 of `start_container.rs` are written into double-quoted YAML strings without this escaping. Secrets and `CLAUDE_CODE_OAUTH_TOKEN` apply it correctly. A future cleanup should extract an `escape_yaml_double_quoted` helper and apply it uniformly to all injection sites.
 
 ## Router Middleware Ordering (`extra_routes`)
 

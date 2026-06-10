@@ -25,7 +25,7 @@ The system splits responsibility across two binaries:
 
 | Variable | Purpose |
 |----------|---------|
-| `CLAUDE_ACCESS_TOKEN` | Long-lived OAuth token from `claude setup-token`. Injected into project containers as an environment variable. Per-project override: set a `CLAUDE_ACCESS_TOKEN` secret for the project. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Long-lived OAuth token from `claude setup-token`. Injected into project containers as an environment variable. Per-project override: set a `CLAUDE_CODE_OAUTH_TOKEN` secret for the project. |
 | `GIT_USER_EMAIL` / `GIT_USER_NAME` | Commit author identity forwarded into project containers via git env vars. |
 | `GH_TOKEN` | GitHub token forwarded into project containers for HTTPS pushes via the git credential helper. |
 | `ORKESTRA_SECRETS_KEY` | 64-char hex string (32 bytes). AES-256-GCM key for encrypting project secrets at rest. Optional — if absent, secret get/set/inject endpoints return 503; list and delete still work. Read once at startup (`service/src/main.rs`) and stored in `AppState.secrets_key: Option<String>`. Passed explicitly through the provision call chain, never re-read from the environment at runtime. |
@@ -62,7 +62,7 @@ stopped → cloning → starting → running
    - Workspace bind-mount: `{repo_path}:/workspace`
    - Port binding: `127.0.0.1:{port}:{port}`
    - Toolbox volume: `orkestra-toolbox:/opt/orkestra:ro`
-   - Environment: `HOME=/home/orkestra`, git author vars, `GH_TOKEN`, `CLAUDE_ACCESS_TOKEN`
+   - Environment: `HOME=/home/orkestra`, git author vars, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`
    - Command: `sleep infinity`
 
 8. **Inject orkd and ork** — `docker cp /usr/local/bin/orkd {container}:/usr/local/bin/orkd` then `docker cp /usr/local/bin/ork {container}:/usr/local/bin/ork`. Both binaries are copied from the service container filesystem and made executable. Avoids bind-mounting (see DooD section). If a third binary needs injection, extract a shared `inject_binary::execute(container_id, src_path, dest_name)` helper at that point.

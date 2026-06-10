@@ -120,7 +120,7 @@ fn extract_git_identity(secrets: &[(String, String)]) -> (String, String, Vec<(S
     (resolved_email, resolved_name, remaining)
 }
 
-/// Separate the `CLAUDE_ACCESS_TOKEN` secret from regular secrets and resolve
+/// Separate the `CLAUDE_CODE_OAUTH_TOKEN` secret from regular secrets and resolve
 /// the final value. Returns `(resolved_token, remaining_secrets)`. Unlike git
 /// identity there is no hardcoded default — `None` means no token is available.
 /// Found key is removed from the returned secrets vec to prevent double-injection.
@@ -128,13 +128,13 @@ fn extract_claude_token(secrets: &[(String, String)]) -> (Option<String>, Vec<(S
     let mut token = None;
     let mut remaining = Vec::with_capacity(secrets.len());
     for (key, value) in secrets {
-        if key == "CLAUDE_ACCESS_TOKEN" {
+        if key == "CLAUDE_CODE_OAUTH_TOKEN" {
             token = Some(value.clone());
         } else {
             remaining.push((key.clone(), value.clone()));
         }
     }
-    let resolved = token.or_else(|| std::env::var("CLAUDE_ACCESS_TOKEN").ok());
+    let resolved = token.or_else(|| std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok());
     (resolved, remaining)
 }
 
@@ -145,9 +145,9 @@ struct DockerRunConfig {
     port_bind: String,
     git_email: String,
     git_name: String,
-    /// OAuth token injected as `CLAUDE_ACCESS_TOKEN` env var. `None` when
+    /// OAuth token injected as `CLAUDE_CODE_OAUTH_TOKEN` env var. `None` when
     /// neither a per-project secret nor the service env var is set.
-    claude_access_token: Option<String>,
+    claude_code_oauth_token: Option<String>,
     gh_token: Option<String>,
     secret_envs: Vec<String>,
     image: String,
@@ -205,9 +205,9 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
     args.push("HOME=/home/orkestra".to_string());
 
     // Inject Claude OAuth token so the agent can authenticate.
-    if let Some(ref token) = config.claude_access_token {
+    if let Some(ref token) = config.claude_code_oauth_token {
         args.push("-e".to_string());
-        args.push(format!("CLAUDE_ACCESS_TOKEN={token}"));
+        args.push(format!("CLAUDE_CODE_OAUTH_TOKEN={token}"));
     }
 
     // Forward GH_TOKEN so the git credential helper can authenticate pushes.
@@ -267,7 +267,7 @@ fn docker_run(
         port_bind,
         git_email,
         git_name,
-        claude_access_token: claude_token,
+        claude_code_oauth_token: claude_token,
         gh_token,
         secret_envs,
         image: image.to_string(),
@@ -468,15 +468,15 @@ fn is_named_volume(mount_spec: &str) -> bool {
 ///
 /// Mirrors the mounts and environment variables that `docker_run` sets for
 /// non-compose containers: toolbox volume, git identity, `HOME`, `GH_TOKEN`,
-/// and `CLAUDE_ACCESS_TOKEN`.
+/// and `CLAUDE_CODE_OAUTH_TOKEN`.
 ///
-/// `claude_access_token` — when `Some`, injects the token as `CLAUDE_ACCESS_TOKEN`
+/// `claude_code_oauth_token` — when `Some`, injects the token as `CLAUDE_CODE_OAUTH_TOKEN`
 ///   in the service environment. Resolved by the caller (secret → service env var).
 fn build_compose_override(
     service: &str,
     port: u16,
     secrets: &[(String, String)],
-    claude_access_token: Option<&str>,
+    claude_code_oauth_token: Option<&str>,
     resource_limits: &ResourceLimits,
     extra_mounts: &[String],
 ) -> String {
@@ -486,7 +486,7 @@ fn build_compose_override(
     // service-wide env vars. They are removed from the regular secrets list
     // to prevent double-injection as plain env vars.
     let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
-    // CLAUDE_ACCESS_TOKEN is handled via the claude_access_token parameter;
+    // CLAUDE_CODE_OAUTH_TOKEN is handled via the claude_code_oauth_token parameter;
     // strip it from remaining secrets to prevent double-injection.
     let (_, filtered_secrets) = extract_claude_token(&filtered_secrets);
     let gh_token = std::env::var("GH_TOKEN").ok();
@@ -506,14 +506,14 @@ fn build_compose_override(
     let _ = writeln!(environment, "{I}GIT_COMMITTER_EMAIL: \"{git_email}\"");
     let _ = writeln!(environment, "{I}GIT_AUTHOR_NAME: \"{git_name}\"");
     let _ = writeln!(environment, "{I}GIT_COMMITTER_NAME: \"{git_name}\"");
-    if let Some(token) = claude_access_token {
+    if let Some(token) = claude_code_oauth_token {
         let escaped = token
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('\n', "\\n")
             .replace('\r', "\\r")
             .replace('\t', "\\t");
-        let _ = writeln!(environment, "{I}CLAUDE_ACCESS_TOKEN: \"{escaped}\"");
+        let _ = writeln!(environment, "{I}CLAUDE_CODE_OAUTH_TOKEN: \"{escaped}\"");
     }
     if let Some(ref token) = gh_token {
         let _ = writeln!(environment, "{I}GH_TOKEN: \"{token}\"");
@@ -704,7 +704,7 @@ mod tests {
     fn extract_claude_token_from_secrets() {
         let secrets = vec![
             (
-                "CLAUDE_ACCESS_TOKEN".to_string(),
+                "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
                 "sk-ant-abc123".to_string(),
             ),
             ("API_KEY".to_string(), "mykey".to_string()),
@@ -719,17 +719,17 @@ mod tests {
 
     #[test]
     fn extract_claude_token_falls_back_to_env() {
-        let saved = std::env::var("CLAUDE_ACCESS_TOKEN").ok();
+        let saved = std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok();
         unsafe {
-            std::env::set_var("CLAUDE_ACCESS_TOKEN", "env-token-xyz");
+            std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", "env-token-xyz");
         }
 
         let (token, remaining) = extract_claude_token(&[]);
 
         unsafe {
             match saved {
-                Some(v) => std::env::set_var("CLAUDE_ACCESS_TOKEN", v),
-                None => std::env::remove_var("CLAUDE_ACCESS_TOKEN"),
+                Some(v) => std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", v),
+                None => std::env::remove_var("CLAUDE_CODE_OAUTH_TOKEN"),
             }
         }
 
@@ -739,16 +739,16 @@ mod tests {
 
     #[test]
     fn extract_claude_token_returns_none_when_absent() {
-        let saved = std::env::var("CLAUDE_ACCESS_TOKEN").ok();
+        let saved = std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok();
         unsafe {
-            std::env::remove_var("CLAUDE_ACCESS_TOKEN");
+            std::env::remove_var("CLAUDE_CODE_OAUTH_TOKEN");
         }
 
         let (token, remaining) = extract_claude_token(&[]);
 
         unsafe {
             if let Some(v) = saved {
-                std::env::set_var("CLAUDE_ACCESS_TOKEN", v);
+                std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", v);
             }
         }
 
@@ -813,7 +813,7 @@ mod tests {
             port_bind: "127.0.0.1:9000:9000".to_string(),
             git_email: "agent@orkestra.local".to_string(),
             git_name: "Orkestra Agent".to_string(),
-            claude_access_token: None,
+            claude_code_oauth_token: None,
             gh_token: None,
             secret_envs: vec![],
             image: "myimage:latest".to_string(),
@@ -995,13 +995,13 @@ mod tests {
     #[test]
     fn build_docker_run_args_includes_claude_token_when_set() {
         let config = DockerRunConfig {
-            claude_access_token: Some("sk-ant-test-token".to_string()),
+            claude_code_oauth_token: Some("sk-ant-test-token".to_string()),
             ..default_run_config()
         };
         let args = build_docker_run_args(&config);
         assert!(
-            args.contains(&"CLAUDE_ACCESS_TOKEN=sk-ant-test-token".to_string()),
-            "CLAUDE_ACCESS_TOKEN must be injected when set"
+            args.contains(&"CLAUDE_CODE_OAUTH_TOKEN=sk-ant-test-token".to_string()),
+            "CLAUDE_CODE_OAUTH_TOKEN must be injected when set"
         );
     }
 
@@ -1010,8 +1010,10 @@ mod tests {
         let config = default_run_config();
         let args = build_docker_run_args(&config);
         assert!(
-            !args.iter().any(|a| a.starts_with("CLAUDE_ACCESS_TOKEN=")),
-            "CLAUDE_ACCESS_TOKEN must be absent when None"
+            !args
+                .iter()
+                .any(|a| a.starts_with("CLAUDE_CODE_OAUTH_TOKEN=")),
+            "CLAUDE_CODE_OAUTH_TOKEN must be absent when None"
         );
     }
 
@@ -1071,8 +1073,8 @@ mod tests {
     fn build_compose_override_includes_claude_token_when_set() {
         let yaml = build_compose_override("app", 3000, &[], Some("sk-ant-abc"), &no_limits(), &[]);
         assert!(
-            yaml.contains("CLAUDE_ACCESS_TOKEN: \"sk-ant-abc\""),
-            "CLAUDE_ACCESS_TOKEN must appear in environment when set"
+            yaml.contains("CLAUDE_CODE_OAUTH_TOKEN: \"sk-ant-abc\""),
+            "CLAUDE_CODE_OAUTH_TOKEN must appear in environment when set"
         );
     }
 
@@ -1080,22 +1082,25 @@ mod tests {
     fn build_compose_override_omits_claude_token_when_none() {
         let yaml = build_compose_override("app", 3000, &[], None, &no_limits(), &[]);
         assert!(
-            !yaml.contains("CLAUDE_ACCESS_TOKEN"),
-            "CLAUDE_ACCESS_TOKEN must be absent when None"
+            !yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"),
+            "CLAUDE_CODE_OAUTH_TOKEN must be absent when None"
         );
     }
 
     #[test]
     fn build_compose_override_strips_claude_token_from_secrets_env_vars() {
-        // CLAUDE_ACCESS_TOKEN in secrets must not be double-injected as a bare env var.
+        // CLAUDE_CODE_OAUTH_TOKEN in secrets must not be double-injected as a bare env var.
         let secrets = vec![
-            ("CLAUDE_ACCESS_TOKEN".to_string(), "from-secret".to_string()),
+            (
+                "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+                "from-secret".to_string(),
+            ),
             ("OTHER_KEY".to_string(), "value".to_string()),
         ];
         let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
         // Should not appear as a plain key-value secret injection.
         // (The param is None so it won't appear at all in this call.)
-        assert!(!yaml.contains("CLAUDE_ACCESS_TOKEN"));
+        assert!(!yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"));
         // Other secrets still appear.
         assert!(yaml.contains("OTHER_KEY: \"value\""));
     }

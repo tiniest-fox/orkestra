@@ -55,6 +55,8 @@ pub struct WorkflowApi {
     pub(crate) agent_killer: Option<Arc<dyn AgentKiller>>,
     pub(crate) provider_registry: Option<Arc<ProviderRegistry>>,
     pub(crate) project_root: Option<PathBuf>,
+    /// Home directory used to locate Claude Code JSONL transcript files.
+    pub(crate) home_dir: PathBuf,
     /// Optional channel for push-based log notifications from stage chat.
     pub(crate) log_notify_tx: Option<std::sync::mpsc::Sender<LogNotification>>,
 }
@@ -88,6 +90,7 @@ impl WorkflowApi {
             agent_killer: None,
             provider_registry: None,
             project_root: None,
+            home_dir: dirs::home_dir().unwrap_or_default(),
             log_notify_tx: None,
         }
     }
@@ -125,6 +128,7 @@ impl WorkflowApi {
             agent_killer: None,
             provider_registry: None,
             project_root: None,
+            home_dir: dirs::home_dir().unwrap_or_default(),
             log_notify_tx: None,
         }
     }
@@ -179,6 +183,14 @@ impl WorkflowApi {
     /// Set the log notification channel (used by stage chat to push log events).
     pub fn set_log_notify_tx(&mut self, tx: std::sync::mpsc::Sender<LogNotification>) {
         self.log_notify_tx = Some(tx);
+    }
+
+    /// Override the home directory used to locate Claude Code JSONL transcript files.
+    ///
+    /// Tests use this to point at a temp directory instead of the real `~/.claude/`.
+    #[cfg(feature = "testutil")]
+    pub fn set_home_dir(&mut self, home_dir: PathBuf) {
+        self.home_dir = home_dir;
     }
 
     /// Set the provider registry (required for stage chat).

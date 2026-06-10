@@ -805,3 +805,32 @@ export interface AssistantSession {
   /** When the session was last updated. */
   updated_at: string;
 }
+
+// =============================================================================
+// Token Usage
+// =============================================================================
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+}
+
+export interface SessionTokenUsage {
+  session_id: string;
+  stage: string;
+  usage: TokenUsage | null;
+}
+
+export interface StageTokenUsage {
+  stage: string;
+  sessions: SessionTokenUsage[];
+  total: TokenUsage;
+}
+
+export interface TaskTokenUsage {
+  task_id: string;
+  stages: StageTokenUsage[];
+  total: TokenUsage;
+}

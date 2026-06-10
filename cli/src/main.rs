@@ -15,7 +15,7 @@ use orkestra_core::{
     workflow::{
         adapters::GhPrService,
         create_pr_sync,
-        domain::{IterationTrigger, LogEntry, PrCheckData},
+        domain::{IterationTrigger, LogEntry, PrCheckData, TaskTokenUsage},
         load_workflow_for_project,
         runtime::Outcome,
         CreateTaskOptions, Git2GitService, GitService, Iteration, SqliteWorkflowStore,
@@ -234,6 +234,11 @@ enum TaskAction {
         #[arg(short, long)]
         message: String,
     },
+    /// Show token usage for a Trak
+    Usage {
+        /// Trak ID
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -440,6 +445,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             handle_send_to_stage(&api, &id, &stage, &message, pretty);
         }
         TaskAction::Restart { id, message } => handle_restart_stage(&api, &id, &message, pretty),
+        TaskAction::Usage { id } => handle_token_usage(&api, &id, pretty),
     }
 }
 
@@ -671,6 +677,67 @@ fn handle_restart_stage(api: &WorkflowApi, id: &str, message: &str, pretty: bool
     } else {
         output_json(&task);
     }
+}
+
+fn handle_token_usage(api: &WorkflowApi, id: &str, pretty: bool) {
+    let usage = match api.get_token_usage(id) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("Error fetching token usage: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        print_token_usage_pretty(&usage);
+    } else {
+        output_json(&usage);
+    }
+}
+
+fn print_token_usage_pretty(usage: &TaskTokenUsage) {
+    println!("Token Usage: {}", usage.task_id);
+    println!();
+
+    for stage in &usage.stages {
+        for session in &stage.sessions {
+            let label = format!("  {} ({}):", stage.stage, session.session_id);
+            match &session.usage {
+                None => println!("{label}\n    (unavailable)"),
+                Some(u) => {
+                    println!("{label}");
+                    println!("    Input:          {:>10}", format_num(u.input_tokens));
+                    println!("    Output:         {:>10}", format_num(u.output_tokens));
+                    println!(
+                        "    Cache creation: {:>10}",
+                        format_num(u.cache_creation_input_tokens)
+                    );
+                    println!(
+                        "    Cache read:     {:>10}",
+                        format_num(u.cache_read_input_tokens)
+                    );
+                    println!("    Stage total:    {:>10}", format_num(u.total()));
+                }
+            }
+        }
+        println!();
+    }
+
+    println!("  Trak total:     {:>10}", format_num(usage.total.total()));
+}
+
+fn format_num(n: u64) -> String {
+    // Insert thousands separators
+    let s = n.to_string();
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    for (i, c) in chars.iter().enumerate() {
+        if i > 0 && (chars.len() - i).is_multiple_of(3) {
+            result.push(',');
+        }
+        result.push(*c);
+    }
+    result
 }
 
 fn handle_list_tasks(

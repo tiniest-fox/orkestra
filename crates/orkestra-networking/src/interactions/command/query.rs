@@ -57,6 +57,16 @@ pub fn get_iterations(ctx: &CommandContext, params: &Value) -> Result<Value, Err
     Ok(serde_json::to_value(iterations).unwrap_or(Value::Array(vec![])))
 }
 
+/// Returns token usage for a task by reading its Claude Code JSONL session files.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub fn get_token_usage(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let usage = api.get_token_usage(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(usage).unwrap_or(Value::Null))
+}
+
 /// Returns a named artifact for a task.
 ///
 /// Expected params: `{ "task_id": "<id>", "name": "<artifact_name>" }`

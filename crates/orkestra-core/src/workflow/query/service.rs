@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::{
-    DifferentialTaskResponse, Iteration, LogEntry, Question, StageSession, TaskView,
-    WorkflowArtifact,
+    DifferentialTaskResponse, Iteration, LogEntry, Question, StageSession, TaskTokenUsage,
+    TaskView, WorkflowArtifact,
 };
 use crate::workflow::ports::{SyncStatus, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::Artifact;
@@ -99,6 +99,11 @@ impl WorkflowApi {
     /// Get all stage sessions for a task.
     pub fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
         query::sessions::get_stage_sessions(self.store.as_ref(), task_id)
+    }
+
+    /// Get token usage for a task by reading its Claude Code JSONL session files.
+    pub fn get_token_usage(&self, task_id: &str) -> WorkflowResult<TaskTokenUsage> {
+        query::token_usage::execute(self.store.as_ref(), task_id, &self.home_dir)
     }
 
     /// Get all running agent processes as (`task_id`, stage, pid) tuples.

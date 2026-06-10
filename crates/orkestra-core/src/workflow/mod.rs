@@ -94,8 +94,8 @@ pub use config::{
 pub use domain::{
     AssistantSession, DerivedTaskState, Iteration, LogEntry, LogNotification, OrkAction,
     PrCheckData, PrCommentData, Question, QuestionAnswer, QuestionOption, SessionLogInfo,
-    SessionState, StageLogInfo, StageSession, Task, TaskCreationMode, TaskView, TodoItem,
-    ToolInput,
+    SessionState, StageLogInfo, StageSession, Task, TaskCreationMode, TaskTokenUsage, TaskView,
+    TodoItem, TokenUsage, ToolInput,
 };
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
 pub use ports::{

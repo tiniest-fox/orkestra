@@ -18,6 +18,7 @@ src/
 ├── domain/
 │   ├── mod.rs          # Re-exports domain types
 │   ├── task.rs         # Task, TaskHeader, TickSnapshot
+│   ├── token_usage.rs  # TokenUsage, compute_transcript_path (pub — needed cross-crate by orkestra-agent)
 │   ├── iteration.rs    # Iteration, IterationTrigger
 │   ├── question.rs     # Question, QuestionOption, QuestionAnswer
 │   ├── log_entry.rs    # LogEntry, OrkAction, ToolInput

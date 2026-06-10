@@ -215,6 +215,8 @@ Tests that verify lock contention (e.g., "second orchestrator is blocked") must 
 
 ## Anti-Patterns
 
+- **Test-only `WorkflowApi` methods must carry `#[cfg(feature = "testutil")]`** — Methods on `WorkflowApi` (or any service struct) that are only called from tests must be gated with this attribute to keep them out of production binaries. The pattern is established in `workflow/api.rs` under the `// Test helpers (testutil feature only)` section. `set_home_dir`, `clear_session_id`, and `set_session_id` are canonical examples. Missing the attribute compiles silently but violates isolation.
+
 - **Don't embed test-only configuration in production constructors** — If a production `new()` delegates to a shared builder method (e.g., `with_runner()`), any feature added to that shared method silently applies to production. Instead, expose test-only configuration as a separate opt-in builder callable *after* construction (e.g., `StageExecutionService::with_skip_env_resolution()`). Use `Arc::get_mut()` when the builder needs mutable access — safe as long as tests call it immediately after construction before any clones exist.
 
 - **Don't bypass WorkflowApi** — Store access should go through API methods or interactions

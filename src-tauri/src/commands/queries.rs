@@ -213,3 +213,16 @@ pub fn workflow_list_project_files(
         query::list_project_files(state.command_context(), &Value::Null).map_err(Into::into)
     })
 }
+
+/// Get token usage for a task by reading its Claude Code JSONL session files.
+#[tauri::command]
+pub fn workflow_get_token_usage(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Value, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id });
+        query::get_token_usage(state.command_context(), &params).map_err(Into::into)
+    })
+}

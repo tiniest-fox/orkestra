@@ -412,16 +412,8 @@ impl OrchestratorLoop {
         // Spawn gate scripts for tasks awaiting gate validation
         self.spawn_pending_gates(&snapshot, &mut events)?;
 
-        // Integrate next done task (one at a time)
-        let workflow = {
-            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-            api.workflow.clone()
-        };
-        if let Some(candidate) =
-            integration_interactions::find_next_candidate::execute(&snapshot, &workflow)
-        {
-            self.start_integration(candidate, &mut events)?;
-        }
+        // Integrate or auto-PR the next done task (one at a time)
+        self.tick_integration_or_pr(&snapshot, &mut events)?;
 
         // Periodic maintenance
         let due = {
@@ -737,6 +729,31 @@ impl OrchestratorLoop {
 
     // -- Integration --
 
+    /// Integrate or auto-PR the next done task, whichever applies first.
+    ///
+    /// Extracts the workflow snapshot check and candidate lookup from `tick()` to
+    /// keep `tick()` within the line limit.
+    fn tick_integration_or_pr(
+        &self,
+        snapshot: &crate::workflow::domain::TickSnapshot,
+        events: &mut Vec<OrchestratorEvent>,
+    ) -> WorkflowResult<()> {
+        let workflow = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            api.workflow.clone()
+        };
+        if let Some(candidate) =
+            integration_interactions::find_next_candidate::execute(snapshot, &workflow)
+        {
+            self.start_integration(candidate, events)?;
+        } else if let Some(candidate) =
+            integration_interactions::find_pr_candidate::execute(snapshot)
+        {
+            self.start_pr_creation(candidate, events);
+        }
+        Ok(())
+    }
+
     /// Start integration for a candidate task.
     ///
     /// Marks the task as integrating, then either records immediate success
@@ -836,6 +853,47 @@ impl OrchestratorLoop {
         }
 
         Ok(())
+    }
+
+    /// Start PR creation for a candidate task with `auto_pr=true`.
+    ///
+    /// Always emits `PrCreationStarted`. In sync mode, also emits
+    /// `PrCreationCompleted` or `PrCreationFailed` inline. In async mode, only
+    /// emits `PrCreationFailed` if spawning itself fails; completion events come
+    /// from the background thread.
+    fn start_pr_creation(&self, header: &TaskHeader, events: &mut Vec<OrchestratorEvent>) {
+        let task_id = header.id.clone();
+        let branch = header.branch_name.clone().unwrap_or_default();
+        let api = Arc::clone(&self.api);
+
+        events.push(OrchestratorEvent::PrCreationStarted {
+            task_id: task_id.clone(),
+            branch,
+        });
+
+        if self.sync_background {
+            match crate::workflow::integration::pr_creation::create_pr_sync(api, &task_id) {
+                Ok(task) => {
+                    events.push(OrchestratorEvent::PrCreationCompleted {
+                        task_id,
+                        pr_url: task.pr_url.unwrap_or_default(),
+                    });
+                }
+                Err(e) => {
+                    events.push(OrchestratorEvent::PrCreationFailed {
+                        task_id,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        } else if let Err(e) =
+            crate::workflow::integration::pr_creation::spawn_pr_creation(api, &task_id)
+        {
+            events.push(OrchestratorEvent::PrCreationFailed {
+                task_id,
+                error: e.to_string(),
+            });
+        }
     }
 }
 

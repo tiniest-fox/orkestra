@@ -14,6 +14,7 @@ use orkestra_core::workflow::{
     execution::SubtaskOutput,
     merge_task_sync,
     runtime::TaskState,
+    CreateTaskOptions,
 };
 
 use crate::helpers::{disable_auto_merge, enable_auto_merge, workflows, MockAgentOutput, TestEnv};
@@ -34,13 +35,14 @@ fn test_play_happy_path() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Implement feature",
-            "Build it",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Implement feature".into(),
+            description: "Build it".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -105,13 +107,14 @@ fn test_play_with_subtasks() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Build feature",
-            "Complex task needing breakdown",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Build feature".into(),
+            description: "Complex task needing breakdown".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -251,13 +254,14 @@ fn test_play_questions_auto_answered() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Plan task",
-            "Needs planning",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Plan task".into(),
+            description: "Needs planning".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -317,13 +321,14 @@ fn test_play_agent_blocked() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Blocked task",
-            "Will block",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Blocked task".into(),
+            description: "Will block".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -361,13 +366,14 @@ fn test_play_agent_failed() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Failed task",
-            "Will fail",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Failed task".into(),
+            description: "Will fail".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -420,13 +426,14 @@ fn test_play_gate_failure_requeues_agent() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Gate test",
-            "Test gate retry with auto_mode",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Gate test".into(),
+            description: "Test gate retry with auto_mode".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -524,13 +531,14 @@ fn test_play_integration_after_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Integration test",
-            "Test post-loop merge",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Integration test".into(),
+            description: "Test post-loop merge".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -580,13 +588,14 @@ fn test_play_pr_creation_after_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "PR test",
-            "Test PR creation path",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "PR test".into(),
+            description: "Test PR creation path".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -654,13 +663,14 @@ fn test_play_with_flow() {
     // Create task with flow="quick" — should skip planning
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Quick task",
-            "No planning needed",
-            None,
-            TaskCreationMode::AutoMode,
-            Some("quick"),
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Quick task".into(),
+            description: "No planning needed".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: Some("quick".into()),
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -707,13 +717,14 @@ fn test_play_auto_merge_completes_to_archived() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Auto merge task",
-            "Test auto_merge path",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Auto merge task".into(),
+            description: "Test auto_merge path".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -762,13 +773,14 @@ fn test_play_no_integrate_stays_done() {
 
     let task = ctx
         .api()
-        .create_task_with_options(
-            "No-integrate task",
-            "Test no-integrate path",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "No-integrate task".into(),
+            description: "Test no-integrate path".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 

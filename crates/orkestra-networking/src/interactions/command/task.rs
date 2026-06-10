@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use orkestra_core::workflow::TaskCreationMode;
+use orkestra_core::workflow::{CreateTaskOptions, TaskCreationMode};
 use serde_json::Value;
 
 use crate::types::ErrorPayload;
@@ -73,6 +73,11 @@ pub fn create_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorP
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
+    let auto_pr = params
+        .get("auto_pr")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
     let flow = params
         .get("flow")
         .and_then(|v| v.as_str())
@@ -80,17 +85,18 @@ pub fn create_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorP
 
     let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
     let task = api
-        .create_task_with_options(
-            &title,
-            &description,
-            base_branch.as_deref(),
-            if auto_mode {
+        .create_task_with_options(&CreateTaskOptions {
+            title,
+            description,
+            base_branch,
+            mode: if auto_mode {
                 TaskCreationMode::AutoMode
             } else {
                 TaskCreationMode::Normal
             },
-            flow.as_deref(),
-        )
+            flow,
+            auto_pr,
+        })
         .map_err(ErrorPayload::from)?;
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }

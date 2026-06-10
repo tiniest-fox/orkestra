@@ -12,7 +12,8 @@ use orkestra_core::workflow::domain::{LogEntry, Task};
 use orkestra_core::workflow::ports::WorkflowStore;
 use orkestra_core::workflow::runtime::{Outcome, TaskState};
 use orkestra_core::workflow::{
-    Git2GitService, GitService, SqliteWorkflowStore, TaskCreationMode, WorkflowApi,
+    CreateTaskOptions, Git2GitService, GitService, SqliteWorkflowStore, TaskCreationMode,
+    WorkflowApi,
 };
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -239,13 +240,14 @@ fn test_task_create_with_flow() {
 
     // Create task with valid flow
     let task = api
-        .create_task_with_options(
-            "Test task",
-            "Description",
-            None,
-            TaskCreationMode::Normal,
-            Some("quick"),
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Test task".into(),
+            description: "Description".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: Some("quick".into()),
+            auto_pr: false,
+        })
         .expect("create task with flow");
 
     // Verify task has flow set and starts at flow's first stage
@@ -254,13 +256,14 @@ fn test_task_create_with_flow() {
     assert!(matches!(task.state, TaskState::AwaitingSetup { .. }));
 
     // Test invalid flow name
-    let result = api.create_task_with_options(
-        "Test task",
-        "Description",
-        None,
-        TaskCreationMode::Normal,
-        Some("nonexistent"),
-    );
+    let result = api.create_task_with_options(&CreateTaskOptions {
+        title: "Test task".into(),
+        description: "Description".into(),
+        base_branch: None,
+        mode: TaskCreationMode::Normal,
+        flow: Some("nonexistent".into()),
+        auto_pr: false,
+    });
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("Unknown flow"));
@@ -608,13 +611,14 @@ fn test_create_task_with_auto_mode() {
 
     // Create task with AutoMode
     let auto_task = api
-        .create_task_with_options(
-            "Auto task",
-            "Description",
-            None,
-            TaskCreationMode::AutoMode,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Auto task".into(),
+            description: "Description".into(),
+            base_branch: None,
+            mode: TaskCreationMode::AutoMode,
+            flow: None,
+            auto_pr: false,
+        })
         .expect("create auto task");
     assert!(
         auto_task.auto_mode,
@@ -623,13 +627,14 @@ fn test_create_task_with_auto_mode() {
 
     // Create task with Normal mode — should default to false
     let normal_task = api
-        .create_task_with_options(
-            "Normal task",
-            "Description",
-            None,
-            TaskCreationMode::Normal,
-            None,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Normal task".into(),
+            description: "Description".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: false,
+        })
         .expect("create normal task");
     assert!(
         !normal_task.auto_mode,

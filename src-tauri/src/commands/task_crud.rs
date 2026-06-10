@@ -29,6 +29,7 @@ pub fn workflow_get_tasks(
 /// `auto_mode` enables autonomous execution through all stages.
 /// `flow` selects an alternate workflow flow (e.g., `"quick_fix"`). Omit for default full pipeline.
 /// `task_id` is optional — when provided, adopts the prewarmed worktree for that ID.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn workflow_create_task(
     registry: State<ProjectRegistry>,

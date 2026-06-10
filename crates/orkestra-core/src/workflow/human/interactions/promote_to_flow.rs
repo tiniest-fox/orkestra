@@ -112,6 +112,16 @@ pub fn execute(
         }
     }
 
+    // Fall back to artifact content as description
+    if task.description.is_empty() {
+        if let Some(content) = artifact_content {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                task.description = trimmed.to_string();
+            }
+        }
+    }
+
     // Store initial artifact if content provided
     if let Some(content) = artifact_content {
         let artifact = Artifact::new(

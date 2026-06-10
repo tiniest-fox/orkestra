@@ -301,6 +301,49 @@ fn test_promote_to_flow_applies_description() {
 }
 
 #[test]
+fn test_promote_to_flow_falls_back_to_content_as_description() {
+    let env = TestEnv::with_workflow(one_stage_workflow());
+
+    let chat = env.api().create_chat_task("Chat").unwrap();
+    assert!(chat.description.is_empty());
+
+    let promoted = env
+        .api()
+        .promote_to_flow(
+            &chat.id,
+            None,
+            None,
+            None,
+            None,
+            Some("Fix the login redirect bug"),
+        )
+        .unwrap();
+
+    assert_eq!(promoted.description, "Fix the login redirect bug");
+}
+
+#[test]
+fn test_promote_to_flow_explicit_description_wins_over_content() {
+    let env = TestEnv::with_workflow(one_stage_workflow());
+
+    let chat = env.api().create_chat_task("Chat").unwrap();
+
+    let promoted = env
+        .api()
+        .promote_to_flow(
+            &chat.id,
+            None,
+            None,
+            None,
+            Some("Explicit desc"),
+            Some("Content here"),
+        )
+        .unwrap();
+
+    assert_eq!(promoted.description, "Explicit desc");
+}
+
+#[test]
 fn test_promote_to_flow_whitespace_description_does_not_overwrite() {
     let env = TestEnv::with_workflow(one_stage_workflow());
 

@@ -16,16 +16,23 @@ use crate::types::StagePromptContext;
 
 /// Build the system prompt from agent definition and output format.
 ///
-/// Renders the `system_prompt.md` template with agent definition and output format.
-/// The system prompt contains instructions that survive session compaction.
+/// Renders the `system_prompt.md` template with agent definition, optional project
+/// instructions, and output format. The system prompt contains instructions that
+/// survive session compaction.
 pub fn execute(
     templates: &Handlebars<'static>,
     agent_definition: &str,
+    universal_prompt: Option<&str>,
     ctx: &StagePromptContext<'_>,
 ) -> String {
     let rendered_definition = render_agent_definition(agent_definition, ctx);
     let output_format = render_output_format(templates, ctx);
-    render_system_prompt(templates, &rendered_definition, &output_format)
+    render_system_prompt(
+        templates,
+        &rendered_definition,
+        universal_prompt,
+        &output_format,
+    )
 }
 
 // -- Helpers --
@@ -34,16 +41,19 @@ pub fn execute(
 fn render_system_prompt(
     templates: &Handlebars<'static>,
     agent_definition: &str,
+    universal_prompt: Option<&str>,
     output_format: &str,
 ) -> String {
     #[derive(Serialize)]
     struct SystemPromptContext<'a> {
         agent_definition: &'a str,
+        universal_prompt: Option<&'a str>,
         output_format: &'a str,
     }
 
     let ctx = SystemPromptContext {
         agent_definition,
+        universal_prompt,
         output_format,
     };
 
@@ -198,7 +208,7 @@ mod tests {
         let agent_def = "You are a planner agent. Create implementation plans.";
         let output_format = "## Output Format\n\nProduce JSON with a `plan` field.";
 
-        let system_prompt = render_system_prompt(&templates, agent_def, output_format);
+        let system_prompt = render_system_prompt(&templates, agent_def, None, output_format);
 
         assert!(system_prompt.contains(agent_def));
         assert!(system_prompt.contains(output_format));
@@ -210,7 +220,7 @@ mod tests {
         let agent_def = "You are a worker agent.";
         let output_format = "## Output Format\n\nProduce JSON.";
 
-        let system_prompt = render_system_prompt(&templates, agent_def, output_format);
+        let system_prompt = render_system_prompt(&templates, agent_def, None, output_format);
 
         assert!(
             system_prompt.contains("Visual Communication"),
@@ -219,6 +229,43 @@ mod tests {
         assert!(system_prompt.contains("wireframe"));
         assert!(system_prompt.contains("mermaid"));
         assert!(system_prompt.contains("Tailwind"));
+    }
+
+    #[test]
+    fn test_system_prompt_with_universal_prompt() {
+        let templates = test_templates();
+        let agent_def = "You are a planner agent.";
+        let output_format = "## Output Format\n\nProduce JSON.";
+
+        let system_prompt = render_system_prompt(
+            &templates,
+            agent_def,
+            Some("Always use snake_case."),
+            output_format,
+        );
+
+        assert!(system_prompt.contains("Project Instructions"));
+        assert!(system_prompt.contains("Always use snake_case."));
+        // Verify ordering: agent_def before Project Instructions before output_format
+        let pos_def = system_prompt.find(agent_def).unwrap();
+        let pos_instructions = system_prompt.find("Project Instructions").unwrap();
+        let pos_output = system_prompt.find("Output Format").unwrap();
+        assert!(pos_def < pos_instructions);
+        assert!(pos_instructions < pos_output);
+    }
+
+    #[test]
+    fn test_system_prompt_without_universal_prompt() {
+        let templates = test_templates();
+        let agent_def = "You are a worker agent.";
+        let output_format = "## Output Format\n\nProduce JSON.";
+
+        let system_prompt = render_system_prompt(&templates, agent_def, None, output_format);
+
+        assert!(
+            !system_prompt.contains("Project Instructions"),
+            "Project Instructions section should not appear when universal_prompt is None"
+        );
     }
 
     #[test]

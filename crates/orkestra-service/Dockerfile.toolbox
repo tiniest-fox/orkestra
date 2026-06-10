@@ -87,9 +87,6 @@ fi
 mkdir -p /home/orkestra
 chown 1000:1000 /home/orkestra
 
-# Allow uid 1000 to access bind-mounted auth dirs under /root (e.g. /root/.claude).
-chmod 755 /root
-
 # -- Configure git --
 #
 # Write .gitconfig to /home/orkestra directly, because HOME=/home/orkestra is
@@ -105,21 +102,6 @@ cat > /home/orkestra/.gitconfig << 'GITCONFIG'
 	helper = gh-token
 GITCONFIG
 chown 1000:1000 /home/orkestra/.gitconfig
-
-# -- Sync Claude credentials into the per-project named volume --
-# /home/orkestra/.claude is a Docker named volume, isolated per project.
-# On every container start, overwrite top-level auth files from the read-only
-# global auth dir so re-logging in on the host is automatically picked up on
-# the next restart without manual intervention.
-# Plugin state (subdirectory) is intentionally excluded — it contains
-# host-absolute paths that would be wrong inside the container.
-
-if [ -d "/run/claude-global" ]; then
-    mkdir -p /home/orkestra/.claude
-    find /run/claude-global -maxdepth 1 -type f \
-        -exec cp {} /home/orkestra/.claude/ \;
-    chown -R 1000:1000 /home/orkestra/.claude
-fi
 
 # -- Install project-declared Claude Code plugins --
 # ORKESTRA_PLUGINS is a comma-separated list passed by run_toolbox_setup::execute().

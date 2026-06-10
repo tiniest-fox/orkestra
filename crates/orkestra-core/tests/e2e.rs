@@ -58,3 +58,5 @@ mod agent_helpers;
 mod claudecode;
 #[path = "e2e/agents/opencode.rs"]
 mod opencode;
+#[path = "e2e/agents/pty.rs"]
+mod pty;

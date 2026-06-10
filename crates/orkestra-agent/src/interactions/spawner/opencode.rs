@@ -47,9 +47,9 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         config: ProcessConfig,
     ) -> Result<ProcessHandle, ProcessError> {
         // Note: OpenCode does NOT support system prompts via CLI flags.
-        // The fallback concatenation (prepending system prompt to user message)
-        // already happened in agent_execution.rs, so config.system_prompt will be None.
-        // We simply ignore the field here as per the design.
+        // On initial spawn, the system prompt is inserted into the user message
+        // (after the marker line) upstream in execute_agent.rs, so
+        // config.system_prompt will be None here. We simply ignore the field.
         if config.system_prompt.is_some() {
             orkestra_debug!(
                 "opencode",

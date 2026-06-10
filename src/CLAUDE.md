@@ -422,6 +422,26 @@ The `FeedRowActions.tsx` "View" button demonstrates this pattern. All new action
 
 `useTaskDrawerState.ts` contains a pre-existing `invokeAndClose` helper that silently swallows backend errors (logs to `console.error` but does not update any error state). **Do not use `invokeAndClose` for new action handlers that need to surface errors to the user.**
 
+**Blob URL revocation ordering in error recovery**: When an async operation does cleanup (e.g., `URL.revokeObjectURL`) as part of optimistic UI and must restore state on failure, revoke blob URLs *after* the operation succeeds — not before. Revoking before the `await` means a failed request leaves restored state (e.g., re-populated `pendingImages`) with invalid/expired URLs, so thumbnails that appear to render can no longer load.
+
+```ts
+// Wrong — URLs revoked before await; error recovery restores invalid URLs
+for (const img of imagesToSend) URL.revokeObjectURL(img.blobUrl);
+try {
+  await sendAndRefresh(message);
+} catch {
+  setPendingImages(snapshot); // snapshot URLs were just revoked — thumbnails broken
+}
+
+// Correct — revoke only after success; error path sees valid URLs
+try {
+  await sendAndRefresh(message);
+  for (const img of imagesToSend) URL.revokeObjectURL(img.blobUrl);
+} catch {
+  setPendingImages(snapshot); // snapshot URLs still valid
+}
+```
+
 <!-- compound: seasonally-sensual-guineapig -->
 **Always guard action handler `.catch()` calls with `isDisconnectError`** — Any action handler that calls `transport.call()` and shows a toast on error must filter through `isDisconnectError(err)` before calling `showError`. Without this guard, dead-socket reconnection produces spurious "Request timed out" toasts — the exact scenario these transport-layer fixes are meant to make silent.
 
@@ -529,6 +549,8 @@ const summary = toolSummary(entry, projectRoot);
   {label}
 </div>
 ```
+
+**`noNonNullAssertion` fixes are "unsafe" and won't auto-apply**: Biome's `noNonNullAssertion` rule flags `!` non-null assertions (e.g., `foo!.bar`) and suggests replacing them with optional chaining (`foo?.bar`). Biome marks this fix as **unsafe**, so `biome check --fix` skips it entirely. When the gate reports `noNonNullAssertion` errors, you must replace each `!` with `?.` (or an appropriate null-safe alternative) manually. There is no automated path.
 
 <!-- compound: lengthily-enchanted-fieldfare -->
 
@@ -1055,3 +1077,14 @@ When adding a `connectionState === "connected"` guard to a polling hook, the gua
 **Components using `usePolling` that still lack connection guards** (known follow-up):
 - `src/components/Feed/LatestLogSummary.tsx`
 - `src/service/components/ProjectLatestLog.tsx`
+
+## OrkBlock Proposal Parser Tests
+
+When adding a new optional field to the OrkBlock proposal parser (`src/lib/orkBlocks.ts`), **always update both test cases in `orkBlocks.test.ts`**:
+
+1. **"all fields" test** — add the new field to the input JSON and assert it appears in the parsed output
+2. **"missing optional fields" test** — add `fieldName: undefined` to the expected output assertion
+
+TypeScript won't catch missing test updates — the parser compiles and all existing tests pass even when a new field has no coverage. The omission only surfaces during review.
+
+This pattern is symmetric with the Rust backend changes: when a new optional field is threaded through `promote_to_flow`, both the Rust tests (`test_promote_to_flow_applies_*`) and the TypeScript parser tests need updating. Neither set is complete without the other.

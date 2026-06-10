@@ -125,8 +125,7 @@ pub fn get_project_info(ctx: &CommandContext, _params: &Value) -> Result<Value, 
         .arg("--version")
         .stdin(std::process::Stdio::null())
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
     let has_run_script = ctx
         .project_root
         .join(orkestra_types::config::RUN_SCRIPT_RELATIVE_PATH)

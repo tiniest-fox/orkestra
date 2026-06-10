@@ -14,14 +14,8 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::adapters::{
-    ClaudeProcessSpawner, GhPrService, Git2GitService, OpenCodeProcessSpawner, SqliteWorkflowStore,
-};
-use orkestra_core::workflow::execution::{
-    claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    ProviderRegistry,
-};
-use orkestra_core::workflow::ports::ProcessSpawner;
+use orkestra_core::workflow::adapters::{GhPrService, Git2GitService, SqliteWorkflowStore};
+use orkestra_core::workflow::execution::build_production_registry;
 use orkestra_core::workflow::{
     AgentKiller, LogNotification, OrchestratorLoop, StageExecutionService, WorkflowApi,
     WorkflowStore,
@@ -222,22 +216,7 @@ async fn run(
     // A standalone registry separate from the one used by StageExecutionService
     // (which creates its own internally). The registry is stateless, so having
     // two instances is fine.
-    let provider_registry = {
-        let mut registry = ProviderRegistry::new("claudecode");
-        registry.register(
-            "claudecode",
-            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            claudecode_capabilities(),
-            claudecode_aliases(),
-        );
-        registry.register(
-            "opencode",
-            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            opencode_capabilities(),
-            opencode_aliases(),
-        );
-        Arc::new(registry)
-    };
+    let provider_registry = Arc::new(build_production_registry());
 
     // -- WorkflowApi --
     let api = if let Some(git) = git_service {
@@ -275,7 +254,8 @@ async fn run(
         project_root.clone(),
         Arc::clone(&store),
         iteration_service,
-    );
+    )
+    .map_err(|e| format!("Failed to start hook server: {e}"))?;
     stage_executor_inner.set_log_notify_tx(log_tx.clone());
     let stage_executor = Arc::new(stage_executor_inner);
 

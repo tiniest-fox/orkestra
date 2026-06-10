@@ -1,6 +1,9 @@
 // Text symbol indicating task status with signal color, background chip, and optional pulse.
 
+import { AlertTriangle, CircleCheck, CircleX, Clock } from "lucide-react";
+import type { ReactNode } from "react";
 import type { PrStatus, WorkflowTaskView } from "../../types/workflow";
+import { hasConflicts } from "../../utils/prStatus";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 
 interface StatusSymbolProps {
@@ -16,13 +19,24 @@ interface StatusColors {
 }
 
 const TRANSPARENT = "bg-transparent";
+const PR_ICON_SIZE = 14;
+
+function derivePrHealth(prStatus: PrStatus): "passing" | "pending" | "failing" | "conflicts" {
+  if (hasConflicts(prStatus)) {
+    return "conflicts";
+  }
+  const meaningful = prStatus.checks.filter((c) => c.status !== "skipped");
+  if (meaningful.some((c) => c.status === "failure")) return "failing";
+  if (meaningful.some((c) => c.status === "pending")) return "pending";
+  return "passing";
+}
 
 function resolveColors(
   task: WorkflowTaskView,
-  prState: string | undefined,
+  prStatus: PrStatus | undefined,
 ): {
   colors: StatusColors;
-  symbol: string;
+  symbol: string | ReactNode;
   extraClass: string;
 } {
   const { derived, state } = task;
@@ -40,7 +54,7 @@ function resolveColors(
     if (p.interrupted > 0) {
       return {
         colors: { bg: "bg-accent-soft", icon: "text-accent" },
-        symbol: "\u2016",
+        symbol: "‖",
         extraClass,
       };
     }
@@ -87,7 +101,7 @@ function resolveColors(
     };
   }
   if (derived.is_interrupted) {
-    return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "\u2016", extraClass };
+    return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "‖", extraClass };
   }
   if (isActivelyProgressing(task) || derived.assistant_active) {
     extraClass = "animate-spin-bounce";
@@ -101,22 +115,51 @@ function resolveColors(
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "*", extraClass };
   }
   if (derived.is_done) {
-    if (prState === "merged") {
+    if (prStatus?.state === "merged") {
       return {
         colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
         symbol: "✓",
         extraClass,
       };
     }
-    if (prState === "closed") {
+    if (prStatus?.state === "closed") {
       return {
         colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
         symbol: "✕",
         extraClass,
       };
     }
+    if (task.pr_url && prStatus) {
+      const health = derivePrHealth(prStatus);
+      switch (health) {
+        case "conflicts":
+          return {
+            colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
+            symbol: <AlertTriangle data-testid="icon-conflicts" size={PR_ICON_SIZE} />,
+            extraClass,
+          };
+        case "failing":
+          return {
+            colors: { bg: "bg-status-error-bg", icon: "text-status-error" },
+            symbol: <CircleX data-testid="icon-failing" size={PR_ICON_SIZE} />,
+            extraClass,
+          };
+        case "pending":
+          return {
+            colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
+            symbol: <Clock data-testid="icon-pending" size={PR_ICON_SIZE} />,
+            extraClass,
+          };
+        case "passing":
+          return {
+            colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
+            symbol: <CircleCheck data-testid="icon-passing" size={PR_ICON_SIZE} />,
+            extraClass,
+          };
+      }
+    }
     if (task.pr_url) {
-      // PR exists but not merged/closed — it's open
+      // PR exists but status not yet fetched
       return {
         colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
         symbol: "↑",
@@ -135,7 +178,7 @@ function resolveColors(
   }
   if (state.type === "integrating") {
     extraClass = "animate-spin-bounce";
-    return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "\u25C7", extraClass };
+    return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "◇", extraClass };
   }
   const idleSymbol = task.is_chat ? "◉" : "~";
   return {
@@ -146,14 +189,14 @@ function resolveColors(
 }
 
 export function StatusSymbol({ task, waiting, prStatus }: StatusSymbolProps) {
-  const prState = task.derived.is_done && task.pr_url ? prStatus?.state : undefined;
+  const activePrStatus = task.derived.is_done && task.pr_url ? prStatus : undefined;
   const { colors, symbol, extraClass } = waiting
     ? {
         colors: { bg: "bg-transparent", icon: "text-text-tertiary" },
-        symbol: "\u25CC",
+        symbol: "◌",
         extraClass: "",
       }
-    : resolveColors(task, prState);
+    : resolveColors(task, activePrStatus);
 
   return (
     <span

@@ -77,7 +77,7 @@ describe("applyOptimisticTransition — approve", () => {
     expect(result?.derived.phase_icon).toBe("queued");
   });
 
-  it("transitions to done when approving the last stage", () => {
+  it("transitions to finishing when approving the last stage", () => {
     const config = createConfig();
     const task = createMockWorkflowTaskView({
       state: { type: "awaiting_approval", stage: "review" },
@@ -86,12 +86,13 @@ describe("applyOptimisticTransition — approve", () => {
     const result = applyOptimisticTransition(task, { type: "approve" }, config);
 
     expect(result).not.toBeNull();
-    expect(result?.state).toEqual({ type: "done" });
-    expect(result?.derived.current_stage).toBeNull();
+    expect(result?.state).toEqual({ type: "finishing", stage: "review" });
+    expect(result?.derived.current_stage).toBe("review");
     expect(result?.derived.needs_review).toBe(false);
-    expect(result?.derived.is_done).toBe(true);
-    expect(result?.derived.is_terminal).toBe(true);
-    expect(result?.derived.phase_icon).toBeNull();
+    expect(result?.derived.is_done).toBe(false);
+    expect(result?.derived.is_terminal).toBe(false);
+    expect(result?.derived.is_system_active).toBe(true);
+    expect(result?.derived.phase_icon).toBe("git");
   });
 
   it("respects flow stage ordering when approving", () => {

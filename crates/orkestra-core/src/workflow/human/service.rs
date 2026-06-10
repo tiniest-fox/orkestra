@@ -151,6 +151,7 @@ impl WorkflowApi {
     /// resolves `base_branch`, enters `AwaitingSetup`, and creates the initial iteration.
     /// Optional `starting_stage` selects the initial stage (defaults to first stage).
     /// Optional `title` overrides the task title if non-empty.
+    /// Optional `description` overrides the task description if non-empty.
     /// Optional `artifact_content` pre-populates the target stage's artifact.
     pub fn promote_to_flow(
         &self,
@@ -158,6 +159,7 @@ impl WorkflowApi {
         flow: Option<&str>,
         starting_stage: Option<&str>,
         title: Option<&str>,
+        description: Option<&str>,
         artifact_content: Option<&str>,
     ) -> WorkflowResult<Task> {
         human::promote_to_flow::execute(
@@ -169,6 +171,7 @@ impl WorkflowApi {
             flow,
             starting_stage,
             title,
+            description,
             artifact_content,
         )
     }
@@ -987,7 +990,7 @@ mod tests {
         let (api, task) = api_with_chat_task();
 
         let promoted = api
-            .promote_to_flow(&task.id, None, Some("work"), None, None)
+            .promote_to_flow(&task.id, None, Some("work"), None, None, None)
             .unwrap();
 
         // Should enter AwaitingSetup at "work", not "planning"
@@ -999,7 +1002,7 @@ mod tests {
     fn test_promote_to_flow_invalid_starting_stage_returns_error() {
         let (api, task) = api_with_chat_task();
 
-        let result = api.promote_to_flow(&task.id, None, Some("nonexistent"), None, None);
+        let result = api.promote_to_flow(&task.id, None, Some("nonexistent"), None, None, None);
 
         assert!(
             matches!(result, Err(WorkflowError::InvalidTransition(_))),
@@ -1012,7 +1015,7 @@ mod tests {
         let (api, task) = api_with_chat_task();
 
         let promoted = api
-            .promote_to_flow(&task.id, None, None, Some("New Title"), None)
+            .promote_to_flow(&task.id, None, None, Some("New Title"), None, None)
             .unwrap();
 
         assert_eq!(promoted.title, "New Title");
@@ -1024,7 +1027,7 @@ mod tests {
         let original_title = task.title.clone();
 
         let promoted = api
-            .promote_to_flow(&task.id, None, None, Some("   "), None)
+            .promote_to_flow(&task.id, None, None, Some("   "), None, None)
             .unwrap();
 
         assert_eq!(promoted.title, original_title);
@@ -1039,6 +1042,7 @@ mod tests {
                 &task.id,
                 None,
                 Some("work"),
+                None,
                 None,
                 Some("## Summary\n\nContent"),
             )
@@ -1059,7 +1063,7 @@ mod tests {
         let original_title = task.title.clone();
 
         let promoted = api
-            .promote_to_flow(&task.id, None, None, None, None)
+            .promote_to_flow(&task.id, None, None, None, None, None)
             .unwrap();
 
         // Defaults: first stage, title unchanged, no artifact

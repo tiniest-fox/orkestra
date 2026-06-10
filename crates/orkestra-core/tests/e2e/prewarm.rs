@@ -74,6 +74,7 @@ fn test_prewarm_adopt_happy_path() {
             None,
             orkestra_core::workflow::domain::TaskCreationMode::Normal,
             None,
+            false,
         )
         .expect("create should succeed");
 
@@ -108,6 +109,7 @@ fn test_prewarm_fallback_no_record() {
             None,
             orkestra_core::workflow::domain::TaskCreationMode::Normal,
             None,
+            false,
         )
         .expect("create should succeed");
 
@@ -158,6 +160,7 @@ fn test_prewarm_pending_fallback() {
             None,
             orkestra_core::workflow::domain::TaskCreationMode::Normal,
             None,
+            false,
         )
         .expect("create should succeed");
 
@@ -225,6 +228,7 @@ fn test_cancel_prewarm_causes_task_to_fallback() {
             None,
             orkestra_core::workflow::domain::TaskCreationMode::Normal,
             None,
+            false,
         )
         .expect("create should succeed");
 
@@ -335,6 +339,7 @@ fn test_startup_recovery_cleans_worktree_records() {
             None,
             orkestra_core::workflow::domain::TaskCreationMode::Normal,
             None,
+            false,
         )
         .expect("create should succeed");
 
@@ -369,6 +374,7 @@ fn test_prewarm_adopt_task_merges_at_integration() {
             None,
             orkestra_core::workflow::domain::TaskCreationMode::Normal,
             None,
+            false,
         )
         .expect("create should succeed");
 

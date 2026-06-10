@@ -18,8 +18,8 @@ use orkestra_core::{
         domain::{IterationTrigger, LogEntry, PrCheckData},
         load_workflow_for_project,
         runtime::Outcome,
-        Git2GitService, GitService, Iteration, SqliteWorkflowStore, StageSession, Task,
-        TaskCreationMode, TaskState, TaskView, WorkflowApi,
+        CreateTaskOptions, Git2GitService, GitService, Iteration, SqliteWorkflowStore,
+        StageSession, Task, TaskCreationMode, TaskState, TaskView, WorkflowApi,
     },
 };
 use orkestra_types::config::workflow::WorkflowConfig;
@@ -149,6 +149,9 @@ enum TaskAction {
         /// Set auto mode — Trak runs through stages without pausing for approval. Use `ork play` to also run it in the foreground.
         #[arg(long)]
         auto: bool,
+        /// Automatically create a GitHub PR when the Trak reaches Done.
+        #[arg(long)]
+        pr: bool,
     },
     /// Approve the current stage artifact
     Approve {
@@ -402,15 +405,23 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             base_branch,
             flow,
             auto,
-        } => handle_create_task(
-            &api,
-            &title,
-            &description,
-            base_branch.as_deref(),
-            flow.as_deref(),
-            auto,
-            pretty,
-        ),
+            pr,
+        } => {
+            let mode = if auto {
+                TaskCreationMode::AutoMode
+            } else {
+                TaskCreationMode::Normal
+            };
+            let opts = CreateTaskOptions {
+                title,
+                description,
+                base_branch,
+                mode,
+                flow,
+                auto_pr: pr,
+            };
+            handle_create_task(&api, &opts, pretty);
+        }
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
         TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
@@ -542,21 +553,8 @@ fn print_log_entry_pretty(entry: &LogEntry) {
     }
 }
 
-fn handle_create_task(
-    api: &WorkflowApi,
-    title: &str,
-    description: &str,
-    base_branch: Option<&str>,
-    flow: Option<&str>,
-    auto: bool,
-    pretty: bool,
-) {
-    let mode = if auto {
-        TaskCreationMode::AutoMode
-    } else {
-        TaskCreationMode::Normal
-    };
-    let task = match api.create_task_with_options(title, description, base_branch, mode, flow) {
+fn handle_create_task(api: &WorkflowApi, opts: &CreateTaskOptions, pretty: bool) {
+    let task = match api.create_task_with_options(opts) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error creating trak: {e}");

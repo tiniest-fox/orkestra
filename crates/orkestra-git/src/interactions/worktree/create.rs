@@ -34,8 +34,15 @@ pub fn execute(
     // Ensure worktrees directory exists
     std::fs::create_dir_all(worktrees_dir)?;
 
-    // Get the commit OID to branch from
-    let commit_oid = crate::interactions::branch::get_commit_oid::execute(repo, base_branch)?;
+    // Prefer origin/{branch} so worktrees start from the remote tip even when
+    // the local branch ref is stale. Falls back to local resolution for repos
+    // with no remote (test repos).
+    let commit_oid = match base_branch {
+        Some(branch) => resolve_remote_commit_oid(repo, branch).or_else(|_| {
+            crate::interactions::branch::get_commit_oid::execute(repo, Some(branch))
+        })?,
+        None => crate::interactions::branch::get_commit_oid::execute(repo, None)?,
+    };
 
     // Create the branch
     crate::interactions::branch::create_from_oid::execute(repo, &branch_name, commit_oid)?;
@@ -48,4 +55,27 @@ pub fn execute(
         worktree_path,
         base_commit: commit_oid.to_string(),
     })
+}
+
+// -- Helpers --
+
+fn resolve_remote_commit_oid(
+    repo: &Mutex<Repository>,
+    base_branch: &str,
+) -> Result<git2::Oid, GitError> {
+    let repo = repo
+        .lock()
+        .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
+    let remote_name = format!("origin/{base_branch}");
+    let branch_ref = repo
+        .find_branch(&remote_name, git2::BranchType::Remote)
+        .map_err(|e| {
+            GitError::BranchError(format!("Failed to find remote branch '{remote_name}': {e}"))
+        })?;
+    let commit = branch_ref.get().peel_to_commit().map_err(|e| {
+        GitError::BranchError(format!(
+            "Failed to get commit for remote branch '{remote_name}': {e}"
+        ))
+    })?;
+    Ok(commit.id())
 }

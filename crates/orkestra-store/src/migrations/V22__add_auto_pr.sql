@@ -1,0 +1,1 @@
+ALTER TABLE workflow_tasks ADD COLUMN auto_pr INTEGER NOT NULL DEFAULT 0;

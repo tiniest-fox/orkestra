@@ -41,6 +41,8 @@ pub struct MockGitService {
     branch_commits_results: Mutex<std::collections::VecDeque<Result<Vec<CommitInfo>, GitError>>>,
     commit_log_at_results: Mutex<std::collections::VecDeque<Result<Vec<CommitInfo>, GitError>>>,
     next_list_files_result: Mutex<Option<Result<Vec<String>, GitError>>>,
+    fetch_origin_call_count: Mutex<u32>,
+    fetch_origin_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
 }
 
 impl MockGitService {
@@ -75,6 +77,8 @@ impl MockGitService {
             branch_commits_results: Mutex::new(std::collections::VecDeque::new()),
             commit_log_at_results: Mutex::new(std::collections::VecDeque::new()),
             next_list_files_result: Mutex::new(None),
+            fetch_origin_call_count: Mutex::new(0),
+            fetch_origin_results: Mutex::new(std::collections::VecDeque::new()),
         }
     }
 
@@ -166,6 +170,16 @@ impl MockGitService {
     /// Get the list of `sync_base_branch` calls for verification.
     pub fn get_sync_base_branch_calls(&self) -> Vec<String> {
         self.sync_base_branch_calls.lock().unwrap().clone()
+    }
+
+    /// Queue a result for the next `fetch_origin` call.
+    pub fn set_next_fetch_result(&self, result: Result<(), GitError>) {
+        self.fetch_origin_results.lock().unwrap().push_back(result);
+    }
+
+    /// Get the number of times `fetch_origin` was called.
+    pub fn get_fetch_origin_call_count(&self) -> u32 {
+        *self.fetch_origin_call_count.lock().unwrap()
     }
 
     /// Get the list of `push_branch` calls for verification.
@@ -526,7 +540,12 @@ impl GitService for MockGitService {
     }
 
     fn fetch_origin(&self) -> Result<(), GitError> {
-        Ok(())
+        *self.fetch_origin_call_count.lock().unwrap() += 1;
+        self.fetch_origin_results
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(()))
     }
 
     fn force_push_branch(&self, branch: &str) -> Result<(), GitError> {

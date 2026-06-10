@@ -16,6 +16,7 @@ use orkestra_core::workflow::ports::{
     MockProcessSpawner, ProcessSpawner, WorkflowError, WorkflowStore,
 };
 use orkestra_core::workflow::runtime::TaskState;
+use orkestra_core::workflow::CreateTaskOptions;
 use orkestra_core::workflow::{AssistantService, SqliteWorkflowStore, WorkflowApi};
 use tempfile::TempDir;
 
@@ -222,7 +223,7 @@ fn test_promote_to_flow_converts_chat_task() {
 
     let promoted = env
         .api()
-        .promote_to_flow(&chat.id, None, None, None, None)
+        .promote_to_flow(&chat.id, None, None, None, None, None)
         .unwrap();
 
     assert!(!promoted.is_chat, "promoted task must have is_chat=false");
@@ -241,12 +242,19 @@ fn test_promote_to_flow_rejected_for_non_chat_task() {
     // create_task creates a normal (non-chat) task via sync setup.
     let normal_task = env
         .api()
-        .create_task_with_options("Normal", "desc", None, TaskCreationMode::Normal, None)
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Normal".into(),
+            description: "desc".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: false,
+        })
         .unwrap();
 
     let result = env
         .api()
-        .promote_to_flow(&normal_task.id, None, None, None, None);
+        .promote_to_flow(&normal_task.id, None, None, None, None, None);
 
     assert!(
         matches!(result, Err(WorkflowError::InvalidTransition(_))),
@@ -260,7 +268,7 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
 
     let chat = env.api().create_chat_task("Will be promoted").unwrap();
     env.api()
-        .promote_to_flow(&chat.id, None, None, None, None)
+        .promote_to_flow(&chat.id, None, None, None, None, None)
         .unwrap();
 
     // Advance to trigger setup (sync setup enabled).
@@ -275,6 +283,36 @@ fn test_promote_to_flow_task_enters_orchestrator_pipeline() {
         "promoted task should have completed setup after one tick, got: {:?}",
         task.state
     );
+}
+
+#[test]
+fn test_promote_to_flow_applies_description() {
+    let env = TestEnv::with_workflow(one_stage_workflow());
+
+    let chat = env.api().create_chat_task("Chat").unwrap();
+    assert!(chat.description.is_empty());
+
+    let promoted = env
+        .api()
+        .promote_to_flow(&chat.id, None, None, None, Some("Bug fix for login"), None)
+        .unwrap();
+
+    assert_eq!(promoted.description, "Bug fix for login");
+}
+
+#[test]
+fn test_promote_to_flow_whitespace_description_does_not_overwrite() {
+    let env = TestEnv::with_workflow(one_stage_workflow());
+
+    let chat = env.api().create_chat_task("Chat").unwrap();
+
+    let promoted = env
+        .api()
+        .promote_to_flow(&chat.id, None, None, None, Some("   "), None)
+        .unwrap();
+
+    // Whitespace-only description must not be applied; original (empty) description unchanged.
+    assert!(promoted.description.is_empty());
 }
 
 // =============================================================================

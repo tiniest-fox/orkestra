@@ -2,7 +2,7 @@
 
 import { GitBranch } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
-import { useToast, useWorkflowConfig } from "../../../../providers";
+import { useTasks, useToast, useWorkflowConfig } from "../../../../providers";
 import { useTransport } from "../../../../transport";
 import type { WorkflowTaskView } from "../../../../types/workflow";
 import type {
@@ -89,6 +89,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
   const transport = useTransport();
   const config = useWorkflowConfig();
   const { showError } = useToast();
+  const { applyOptimistic } = useTasks();
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const children = useMemo(
@@ -122,11 +123,12 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
 
   const handleApproveChild = useCallback(
     (taskId: string) => {
+      applyOptimistic(taskId, { type: "approve" });
       transport.call("approve", { task_id: taskId }).catch((err) => {
         if (!isDisconnectError(err)) showError(String(err));
       });
     },
-    [transport, showError],
+    [transport, showError, applyOptimistic],
   );
 
   const { focusedId, setFocusedId, scrollSeq } = useFeedNavigation(

@@ -19,6 +19,7 @@ mod human_actions;
 mod project;
 mod queries;
 mod run_script;
+mod save_image;
 pub(crate) mod setup;
 mod task_crud;
 
@@ -31,5 +32,6 @@ pub use human_actions::*;
 pub use project::*;
 pub use queries::*;
 pub use run_script::*;
+pub use save_image::*;
 pub use setup::*;
 pub use task_crud::*;

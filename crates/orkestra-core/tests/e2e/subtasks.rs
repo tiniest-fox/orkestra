@@ -1527,7 +1527,7 @@ fn manual_subtask_inherits_parent_flow() {
     use orkestra_core::workflow::config::{
         FlowConfig, IntegrationConfig, StageConfig, WorkflowConfig,
     };
-    use orkestra_core::workflow::TaskCreationMode;
+    use orkestra_core::workflow::{CreateTaskOptions, TaskCreationMode};
 
     // Build a workflow with "default" (planning → work) and "hotfix" (work only)
     let hotfix_stages = vec![StageConfig::new("work", "summary").with_prompt("worker.md")];
@@ -1553,13 +1553,14 @@ fn manual_subtask_inherits_parent_flow() {
     let parent = {
         let task = ctx
             .api()
-            .create_task_with_options(
-                "Hotfix parent",
-                "A parent task on the hotfix flow",
-                None,
-                TaskCreationMode::Normal,
-                Some("hotfix"),
-            )
+            .create_task_with_options(&CreateTaskOptions {
+                title: "Hotfix parent".into(),
+                description: "A parent task on the hotfix flow".into(),
+                base_branch: None,
+                mode: TaskCreationMode::Normal,
+                flow: Some("hotfix".into()),
+                auto_pr: false,
+            })
             .expect("Should create parent task");
         let task_id = task.id.clone();
         ctx.advance(); // trigger setup

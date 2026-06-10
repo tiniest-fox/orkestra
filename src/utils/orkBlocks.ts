@@ -6,7 +6,14 @@ const ORK_BLOCK_REGEX = /```(?:ork|orkestra-questions)\s*\n([\s\S]*?)\n\s*```/g;
 
 export type OrkBlock =
   | { type: "questions"; questions: WorkflowQuestion[] }
-  | { type: "proposal"; flow?: string; stage?: string; title?: string; content?: string };
+  | {
+      type: "proposal";
+      flow?: string;
+      stage?: string;
+      title?: string;
+      description?: string;
+      content?: string;
+    };
 
 /**
  * Removes ork and orkestra-questions fenced code blocks from text content.
@@ -66,6 +73,7 @@ function parseOrkBlockJson(json: string): OrkBlock | null {
         flow: typeof parsed.flow === "string" ? parsed.flow : undefined,
         stage: typeof parsed.stage === "string" ? parsed.stage : undefined,
         title: typeof parsed.title === "string" ? parsed.title : undefined,
+        description: typeof parsed.description === "string" ? parsed.description : undefined,
         content: typeof parsed.content === "string" ? parsed.content : undefined,
       };
     }

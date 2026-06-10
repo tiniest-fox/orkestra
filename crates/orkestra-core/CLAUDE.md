@@ -97,9 +97,11 @@ The orchestrator is a thin sequencer that dispatches to domain interactions:
 3. **Process completed executions** → `agent::dispatch_completion::execute()`
 4. **Commit pipeline** → `stage::advance_all_committed::execute()`
 5. **Find spawn candidates** → `task::find_spawn_candidates::execute()`
-6. **Integration** → `integration::find_next_candidate::execute()`
+6. **Integration OR PR creation** → `tick_integration_or_pr()` helper — `else if` mutual exclusion: at most one of these runs per tick.
 
 Business logic lives in interactions; orchestrator handles I/O plumbing (locks, threads, events).
+
+**`auto_pr` vs `auto_merge` precedence**: `find_next_candidate` (merge) skips tasks with `auto_pr=true` via a `!h.auto_pr` guard; `find_pr_candidate` then picks them up in the `else if` branch. Subtasks are always merged via `auto_merge` regardless of `auto_pr`. Result: for top-level tasks, `auto_pr` wins over `auto_merge` — they never both apply to the same task.
 
 ### Narrow Mutex Scopes
 
@@ -130,9 +132,20 @@ Merge and PR creation run on background threads to avoid blocking the tick loop:
 
 These threads take cloned inputs (no lock held) and call back via `Arc<Mutex<WorkflowApi>>`.
 
+**Known gap in `run_pr_creation`**: lock-poison and save errors inside the callback are silently dropped (`if let Ok(api) = api.lock() { let _ = ... }`). The merge path logs lock-poison via `workflow_warn!`; the PR path doesn't. This won't cause incorrect behavior but makes PR creation failures harder to diagnose. If you're debugging a PR creation issue and see no log output, add `workflow_warn!` calls on the error arms to match the merge path.
+
 ### Title/Commit Generators Are Internal
 
 Title generation (`title.rs`) and commit message generation (`commit_message.rs`) use internal templates, not configurable agent prompts. They're utility functions, not workflow stages.
+
+### Optional vs. Required Config File Loading
+
+Functions in `execution/prompt.rs` that load config files follow two distinct patterns:
+
+- **Required** (e.g., `load_agent_definition`): returns `std::io::Result<T>`. All errors — including `NotFound` — propagate.
+- **Optional** (e.g., `load_universal_prompt`): returns `std::io::Result<Option<T>>`. `io::ErrorKind::NotFound` becomes `Ok(None)`; all other I/O errors propagate.
+
+Don't collapse optional loaders to `Option<T>` — that silently swallows real I/O errors and violates Fail Fast.
 
 ## Critical Documentation
 
@@ -154,6 +167,7 @@ Chat tasks are a distinct task type that live outside the normal workflow pipeli
 - **Promotion**: `promote_to_flow` transitions a chat task to `AwaitingSetup` with `flow` set to the target flow, killing any active assistant sessions. After promotion it behaves identically to a normal task.
 - **`is_chat` on `TaskHeader`**: This flag enables cheap filtering in `find_spawn_candidates` without loading full task artifacts. When adding new orchestrator filters, `TaskHeader` (not `Task`) is the right type to check.
 - **Working directory**: Chat tasks receive a worktree via prewarm — the worktree is created the moment the user opens the New Chat dialog and adopted into the task on creation. `AssistantService::send_task_scoped_message` falls back to `project_root` when `task.worktree_path` is `None` (e.g., a task created before prewarm was introduced), but for newly created chat tasks the worktree path will be set.
+- **System prompt injection flags differ by spawner**: The assistant spawner (`workflow/assistant/service.rs`) passes `--system-prompt` on every invocation (initial and resume). The agent spawner (`crates/orkestra-agent/src/interactions/spawner/claude.rs`) passes `--append-system-prompt` unconditionally. Both are intentional — `--system-prompt` replaces the full system prompt, while `--append-system-prompt` appends to Claude Code's built-in prompt. Don't conflate them when modifying prompt injection logic.
 
 ### `DerivedTaskState::build()` — Approval vs. Rejection Detection
 
@@ -166,7 +180,7 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 
 `DerivedTaskState::build()` requires `WorkflowConfig` as a parameter for this config lookup. When adding new call sites, ensure the workflow config is available — don't try to detect approval state without it.
 
-**`build()` signature evolution**: The function takes individual primitive params for values that require external computation (process liveness, network state) and can't be derived from `Task` alone. Currently only `assistant_active: bool` fits this category. If a second such field is needed, replace the accumulating bools with a single `DerivedTaskContext` struct to keep the signature stable.
+**`build()` signature evolution**: The function takes individual primitive params for values that require external computation (process liveness, network state) and can't be derived from `Task` alone. Currently `assistant_active: bool` and `chat_needs_review: bool` both fit this category — two trailing bools is the documented threshold. The next time a new external input is needed, replace the accumulating bools with a single `DerivedTaskContext` struct to keep the signature stable.
 
 ### Stage Session Supersession Rules
 
@@ -312,6 +326,12 @@ api.iteration_service.create_iteration(&task.id, "review", None).unwrap();
 ```
 
 Forgetting this used to produce a silent fallback artifact ID. Now it surfaces as an error, exposing the gap.
+
+### PTY E2E Tests
+
+PTY orchestrator-level tests live in `tests/e2e/agents/pty.rs`. Two tests (`pty_full_orchestrator_run`, `pty_session_resume_after_rejection`) use `AgentTestEnv::new_pty_mock()` with a `mock_claude_pty.sh` injected via PATH. Both are `#[ignore]` — run with `--ignored` on a developer machine (require PTY support and Python3).
+
+**Remaining gap**: no test exercises the error path where `claude` is absent from PATH (task should fail with a clear error rather than hang).
 
 ### Known Test Gaps in `init.rs`
 

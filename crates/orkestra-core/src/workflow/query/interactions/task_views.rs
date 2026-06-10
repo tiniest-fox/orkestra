@@ -75,12 +75,18 @@ pub fn list_active(
         .map(|t| t.id.as_str())
         .collect();
     let mut chat_assistant_active: HashMap<String, bool> = HashMap::new();
+    let mut chat_needs_review: HashMap<String, bool> = HashMap::new();
     for task_id in chat_task_ids {
         if let Ok(Some(session)) =
             store.get_assistant_session_for_task(task_id, &SessionType::Assistant)
         {
             let active = session.agent_pid.is_some_and(is_process_running);
             chat_assistant_active.insert(task_id.to_string(), active);
+            // Chat task "needs review" when session has been used but agent is not running.
+            // This means the assistant produced a response and the human should read it.
+            if !active && session.spawn_count > 0 {
+                chat_needs_review.insert(task_id.to_string(), true);
+            }
         }
     }
 
@@ -90,6 +96,7 @@ pub fn list_active(
             .get(&task.id)
             .copied()
             .unwrap_or(false);
+        let needs_review = chat_needs_review.get(&task.id).copied().unwrap_or(false);
         let view = build_single_top_level_view(
             task,
             &iterations_by_task,
@@ -97,6 +104,7 @@ pub fn list_active(
             &subtask_derived_by_parent,
             workflow,
             assistant_active,
+            needs_review,
         );
         views.push(view);
     }
@@ -180,8 +188,15 @@ pub fn list_subtasks(
     for task in sorted {
         let iterations = store.get_iterations(&task.id)?;
         let stage_sessions = store.get_stage_sessions(&task.id)?;
-        let derived =
-            DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow, false);
+        let derived = DerivedTaskState::build(
+            &task,
+            &iterations,
+            &stage_sessions,
+            &[],
+            workflow,
+            false,
+            false,
+        );
         views.push(TaskView {
             task,
             iterations,
@@ -255,6 +270,7 @@ pub fn list_archived(
             &subtask_derived_by_parent,
             workflow,
             false, // archived tasks never have an active assistant agent
+            false, // archived tasks never need review
         ));
     }
 
@@ -308,8 +324,15 @@ fn build_subtask_derived_data(
             .cloned()
             .unwrap_or_default();
         let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-        let derived =
-            DerivedTaskState::build(&task, &iterations, &stage_sessions, &[], workflow, false);
+        let derived = DerivedTaskState::build(
+            &task,
+            &iterations,
+            &stage_sessions,
+            &[],
+            workflow,
+            false,
+            false,
+        );
         derived_states.push(derived.clone());
 
         if include_view(&task.id) {
@@ -333,6 +356,7 @@ fn build_single_top_level_view(
     subtask_derived_by_parent: &HashMap<String, Vec<DerivedTaskState>>,
     workflow: &WorkflowConfig,
     assistant_active: bool,
+    chat_needs_review: bool,
 ) -> TaskView {
     let iterations = iterations_by_task
         .get(&task.id)
@@ -349,6 +373,7 @@ fn build_single_top_level_view(
         subtask_states,
         workflow,
         assistant_active,
+        chat_needs_review,
     );
     TaskView {
         task,

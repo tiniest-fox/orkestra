@@ -17,6 +17,16 @@ const ACQUIRE_TIMEOUT_SECS: u64 = 30;
 #[cfg(test)]
 const ACQUIRE_TIMEOUT_SECS: u64 = 2;
 
+/// How long `steal_lock` waits after writing before verifying ownership.
+///
+/// Longer in tests to give concurrent steal attempts enough polling cycles
+/// to overwrite within the window — prevents the rival thread from only detecting
+/// our PID after verify completes when OS scheduling delays its wakeup.
+#[cfg(not(test))]
+const VERIFY_SLEEP_MS: u64 = 10;
+#[cfg(test)]
+const VERIFY_SLEEP_MS: u64 = 50;
+
 // ============================================================================
 // Lock Error
 // ============================================================================
@@ -100,7 +110,7 @@ impl OrchestratorLock {
     ///    - Timestamp stale (>30s) → steal regardless of PID liveness.
     ///    - Timestamp fresh, alive PID → retry with exponential backoff
     ///      (250ms → 500ms → 1s → 2s cap) until `ACQUIRE_TIMEOUT_SECS`, then `TimedOut`.
-    /// 3. After every steal: verify-after-write (10ms sleep + re-read) to prevent races.
+    /// 3. After every steal: verify-after-write (sleep + re-read) to prevent races.
     pub(super) fn acquire(project_root: &Path) -> Result<Self, LockError> {
         let lock_path = project_root.join(".orkestra/orchestrator.lock");
         let current_pid = std::process::id();
@@ -234,13 +244,10 @@ fn read_lock_state(lock_path: &Path) -> LockState {
 }
 
 fn now_secs() -> u64 {
+    // u64::MAX on pre-epoch clocks: treated as a fresh lock timestamp, preventing stale-lock theft
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        // If the system clock is before UNIX_EPOCH, use u64::MAX so the lock
-        // appears maximally fresh (age = 0 via saturating_sub) rather than
-        // maximally stale (age = current_time via unwrap_or(0)).
-        .unwrap_or(u64::MAX)
+        .map_or(u64::MAX, |d| d.as_secs())
 }
 
 /// Write `{pid}:{timestamp}` to `lock_path` via an atomic rename.
@@ -255,7 +262,7 @@ fn write_lock_atomic(lock_path: &Path, pid: u32, timestamp: u64) -> std::io::Res
     std::fs::rename(&tmp_path, lock_path)
 }
 
-/// Write `{our_pid}:{timestamp}` to `lock_path` atomically, then verify we still own it after 10ms.
+/// Write `{our_pid}:{timestamp}` to `lock_path` atomically, then verify we still own it after `VERIFY_SLEEP_MS`.
 ///
 /// The post-write sleep + re-read prevents two processes from both believing they
 /// acquired a stale lock simultaneously: whichever wrote last wins, and the loser
@@ -265,7 +272,7 @@ fn steal_lock(lock_path: &Path, our_pid: u32) -> Result<OrchestratorLock, LockEr
     write_lock_atomic(lock_path, our_pid, timestamp).map_err(LockError::Io)?;
 
     // Verify-after-write: give concurrent stealers time to overwrite us
-    std::thread::sleep(Duration::from_millis(10));
+    std::thread::sleep(Duration::from_millis(VERIFY_SLEEP_MS));
 
     match read_lock_state(lock_path) {
         LockState::Timestamped { pid, .. } if pid == our_pid => Ok(OrchestratorLock {

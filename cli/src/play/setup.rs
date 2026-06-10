@@ -6,8 +6,9 @@ use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
     ensure_orkestra_project, find_project_root,
     workflow::{
-        adapters::GhPrService, domain::TaskCreationMode, load_workflow_for_project, Git2GitService,
-        GitService, OrchestratorLoop, SqliteWorkflowStore, WorkflowApi, WorkflowStore,
+        adapters::GhPrService, domain::TaskCreationMode, load_workflow_for_project,
+        CreateTaskOptions, Git2GitService, GitService, OrchestratorLoop, SqliteWorkflowStore,
+        WorkflowApi, WorkflowStore,
     },
 };
 
@@ -58,20 +59,22 @@ pub fn execute(
     let api = Arc::new(Mutex::new(base_api));
 
     let mut orchestrator =
-        OrchestratorLoop::for_project(Arc::clone(&api), workflow_config, project_root, store);
+        OrchestratorLoop::for_project(Arc::clone(&api), workflow_config, project_root, store)
+            .map_err(|e| format!("Failed to start hook server: {e}"))?;
     orchestrator.set_sync_background(true);
 
     let title_str = title.unwrap_or_else(|| description.chars().take(60).collect());
     let task = api
         .lock()
         .map_err(|_| "Workflow API lock poisoned".to_string())?
-        .create_task_with_options(
-            &title_str,
-            description,
-            base_branch,
-            TaskCreationMode::AutoMode,
-            flow,
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: title_str.clone(),
+            description: description.to_string(),
+            base_branch: base_branch.map(ToString::to_string),
+            mode: TaskCreationMode::AutoMode,
+            flow: flow.map(ToString::to_string),
+            auto_pr: false,
+        })
         .map_err(|e| format!("Failed to create trak: {e}"))?;
     let task_id = task.id.clone();
     eprintln!("Created trak: {task_id}");

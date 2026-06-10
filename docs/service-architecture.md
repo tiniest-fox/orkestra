@@ -25,7 +25,7 @@ The system splits responsibility across two binaries:
 
 | Variable | Purpose |
 |----------|---------|
-| `CLAUDE_AUTH_DIR` | Host-side path to Claude CLI auth dir. Mounted into project containers at `/home/orkestra/.claude`. Must be a **host** path, not a service-container path (see DooD section). |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Long-lived OAuth token from `claude setup-token`. Injected into project containers as an environment variable. Per-project override: set a `CLAUDE_CODE_OAUTH_TOKEN` secret for the project. |
 | `GIT_USER_EMAIL` / `GIT_USER_NAME` | Commit author identity forwarded into project containers via git env vars. |
 | `GH_TOKEN` | GitHub token forwarded into project containers for HTTPS pushes via the git credential helper. |
 | `ORKESTRA_SECRETS_KEY` | 64-char hex string (32 bytes). AES-256-GCM key for encrypting project secrets at rest. Optional — if absent, secret get/set/inject endpoints return 503; list and delete still work. Read once at startup (`service/src/main.rs`) and stored in `AppState.secrets_key: Option<String>`. Passed explicitly through the provision call chain, never re-read from the environment at runtime. |
@@ -62,8 +62,7 @@ stopped → cloning → starting → running
    - Workspace bind-mount: `{repo_path}:/workspace`
    - Port binding: `127.0.0.1:{port}:{port}`
    - Toolbox volume: `orkestra-toolbox:/opt/orkestra:ro`
-   - Environment: `HOME=/home/orkestra`, git author vars, `GH_TOKEN`
-   - Optional Claude auth bind-mount from `CLAUDE_AUTH_DIR`
+   - Environment: `HOME=/home/orkestra`, git author vars, `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`
    - Command: `sleep infinity`
 
 8. **Inject orkd and ork** — `docker cp /usr/local/bin/orkd {container}:/usr/local/bin/orkd` then `docker cp /usr/local/bin/ork {container}:/usr/local/bin/ork`. Both binaries are copied from the service container filesystem and made executable. Avoids bind-mounting (see DooD section). If a third binary needs injection, extract a shared `inject_binary::execute(container_id, src_path, dest_name)` helper at that point.
@@ -131,8 +130,7 @@ Contents:
 2. Writes `/etc/profile.d/orkestra-env.sh` with `PATH` and `NODE_PATH` (for login shells).
 3. Resolves or creates uid 1000 user (creates `orkestra` if no uid 1000 exists).
 4. Ensures `/home/orkestra` exists and is owned by uid 1000.
-5. Grants uid 1000 access to `/root` (for bind-mounted Claude auth at `/root/.claude`).
-6. Configures git identity (`user.email`, `user.name`, `credential.helper gh-token`) for uid 1000.
+5. Configures git identity (`user.email`, `user.name`, `credential.helper gh-token`) for uid 1000.
 7. Writes `store-dir=/opt/pnpm-store` to `/home/orkestra/.npmrc` so pnpm uses the pre-created world-writable store.
 
 ## Devcontainer / Toolbox Boundary
@@ -155,7 +153,7 @@ See [`docs/solutions/2026-03-09-devcontainer-toolbox-boundary.md`](solutions/202
 
 The service container communicates with the host Docker daemon via socket mount. Project containers are siblings on the host daemon — not nested inside the service container. This creates several constraints:
 
-**Bind-mount paths must be host paths.** When the service does `docker run -v {path}:/workspace`, `{path}` is resolved by the host daemon against the host filesystem, not the service container's filesystem. The `CLAUDE_AUTH_DIR` env var must hold the host-side path for this reason.
+**Bind-mount paths must be host paths.** When the service does `docker run -v {path}:/workspace`, `{path}` is resolved by the host daemon against the host filesystem, not the service container's filesystem.
 
 **Dockerfiles are piped via stdin.** `docker build -` receives the Dockerfile content on stdin, requiring no build context path. This is why `Dockerfile.base` and `Dockerfile.toolbox` can be built from a service container without a shared filesystem.
 

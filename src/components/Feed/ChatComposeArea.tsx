@@ -1,10 +1,16 @@
 // Shared compose area — textarea with auto-resize + send/stop button.
 // Used in AssistantDrawer (project/task chat) and AgentTab (agent timeline).
 
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Square, X } from "lucide-react";
 import type React from "react";
 import { memo, useEffect, useRef } from "react";
 import { useIsMobile } from "../../hooks/useIsMobile";
+
+export interface PendingImage {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
 
 interface ChatComposeAreaProps {
   value: string;
@@ -22,6 +28,12 @@ interface ChatComposeAreaProps {
   className?: string;
   /** Called after the textarea height has been set (auto-resize settled). */
   onResize?: () => void;
+  /** Pending images to display as thumbnail chips (Tauri only). */
+  pendingImages?: PendingImage[];
+  /** Called when images are pasted or dropped onto the compose area. */
+  onImagesAdded?: (images: PendingImage[]) => void;
+  /** Called when a thumbnail chip's remove button is clicked. */
+  onImageRemoved?: (id: string) => void;
 }
 
 export const ChatComposeArea = memo(function ChatComposeArea({
@@ -36,6 +48,9 @@ export const ChatComposeArea = memo(function ChatComposeArea({
   error,
   className = "",
   onResize,
+  pendingImages,
+  onImagesAdded,
+  onImageRemoved,
 }: ChatComposeAreaProps) {
   const isMobile = useIsMobile();
   const prevHeightRef = useRef(0);
@@ -56,10 +71,45 @@ export const ChatComposeArea = memo(function ChatComposeArea({
     }
   }, [value, onResize]);
 
+  function handlePaste(e: React.ClipboardEvent) {
+    if (!onImagesAdded) return;
+    const items = Array.from(e.clipboardData.items);
+    const imageItems = items.filter((item) => item.type.startsWith("image/"));
+    if (imageItems.length === 0) return;
+    e.preventDefault();
+    const newImages: PendingImage[] = imageItems.flatMap((item) => {
+      const file = item.getAsFile();
+      if (!file) return [];
+      return [{ id: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) }];
+    });
+    onImagesAdded(newImages);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (!onImagesAdded) return;
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    if (!onImagesAdded) return;
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+    if (files.length === 0) return;
+    const newImages: PendingImage[] = files.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+    onImagesAdded(newImages);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
-      if (!agentActive && value.trim() && !sending) onSend();
+      if (!agentActive && (value.trim() || pendingImages?.length) && !sending) onSend();
     }
     if (e.key === "." && e.metaKey && agentActive) {
       e.preventDefault();
@@ -72,13 +122,42 @@ export const ChatComposeArea = memo(function ChatComposeArea({
   }
 
   return (
-    <div className={className}>
+    <section
+      className={className}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      aria-label="Compose message"
+    >
+      {pendingImages && pendingImages.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-2">
+          {pendingImages.map((img) => (
+            <div key={img.id} className="relative group">
+              <img
+                src={img.previewUrl}
+                alt=""
+                className="h-16 w-16 object-cover rounded-lg border border-border"
+              />
+              {onImageRemoved && (
+                <button
+                  type="button"
+                  onClick={() => onImageRemoved(img.id)}
+                  className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-surface-3 border border-border flex items-center justify-center text-text-tertiary hover:text-text-primary transition-colors"
+                  aria-label="Remove image"
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2">
         <textarea
           ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={sending}
           placeholder={placeholder}
           rows={1}
@@ -102,7 +181,7 @@ export const ChatComposeArea = memo(function ChatComposeArea({
           <button
             type="button"
             onClick={onSend}
-            disabled={!value.trim() || sending}
+            disabled={(!value.trim() && !pendingImages?.length) || sending}
             aria-label="Send"
             className={`shrink-0 h-10 rounded-full bg-accent hover:bg-accent-hover flex items-center justify-center text-white transition-colors disabled:opacity-30 gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
           >
@@ -118,6 +197,6 @@ export const ChatComposeArea = memo(function ChatComposeArea({
       {error && (
         <p className="font-sans text-forge-mono-sm text-status-error mt-1.5 px-0.5">{error}</p>
       )}
-    </div>
+    </section>
   );
 });

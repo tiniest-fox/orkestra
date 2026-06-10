@@ -99,8 +99,7 @@ pub fn is_git_repo(path: &Path) -> bool {
         .args(["rev-parse", "--git-dir"])
         .current_dir(path)
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Make a commit in a repository with the given message.

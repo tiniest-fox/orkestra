@@ -41,6 +41,7 @@ fn build_orchestrator(project_root: std::path::PathBuf) -> OrchestratorLoop {
     )));
 
     OrchestratorLoop::for_project(api, workflow, project_root, store)
+        .expect("failed to start hook server")
 }
 
 /// Collect events and exit reason from `run()` with a stop-after duration.

@@ -23,7 +23,7 @@ use orkestra_core::workflow::{
     config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
     domain::{LogEntry, Question, QuestionAnswer, QuestionOption},
     runtime::{Outcome, TaskState},
-    TaskCreationMode,
+    CreateTaskOptions, TaskCreationMode,
 };
 
 use crate::helpers::{enable_auto_merge, MockAgentOutput, TestEnv};
@@ -973,13 +973,14 @@ fn test_integration_failure_uses_flow_on_failure_override() {
     // Create task with the "quick" flow
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Test flow override",
-            "Test description",
-            None,
-            TaskCreationMode::Normal,
-            Some("quick"),
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Test flow override".into(),
+            description: "Test description".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: Some("quick".into()),
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -5167,13 +5168,14 @@ fn test_disallowed_tools_flow_override() {
     // Create task with "hotfix" flow
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Hotfix task",
-            "Fix it",
-            None,
-            TaskCreationMode::Normal,
-            Some("hotfix"),
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Hotfix task".into(),
+            description: "Fix it".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: Some("hotfix".into()),
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -7937,13 +7939,14 @@ fn test_flow_gate_override_disables_gate() {
     // Create task with the no-gate flow
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Flow no-gate test",
-            "Test flow disables gate",
-            None,
-            TaskCreationMode::Normal,
-            Some("no-gate"),
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Flow no-gate test".into(),
+            description: "Test flow disables gate".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: Some("no-gate".into()),
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
 
@@ -8724,13 +8727,14 @@ fn test_send_to_stage_respects_flow() {
     // Create task with "quick" flow (no review stage)
     let task = ctx
         .api()
-        .create_task_with_options(
-            "Test flow",
-            "Description",
-            None,
-            TaskCreationMode::Normal,
-            Some("quick"),
-        )
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Test flow".into(),
+            description: "Description".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: Some("quick".into()),
+            auto_pr: false,
+        })
         .unwrap();
     let task_id = task.id.clone();
     ctx.advance(); // complete sync setup
@@ -10267,5 +10271,56 @@ fn test_plain_text_sets_activity_flag() {
     assert!(
         session.has_activity,
         "has_activity must be true after plain text so future respawns resume the session"
+    );
+}
+
+/// Test that `ORKESTRA.md` content is injected into the agent system prompt.
+///
+/// Creates a project with a `.orkestra/ORKESTRA.md` file, drives a task through
+/// a single stage, and asserts the captured system prompt includes the file's
+/// content under a "Project Instructions" heading.
+#[test]
+fn test_universal_prompt_injected_into_system_prompt() {
+    let workflow = test_default_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["planner"]);
+
+    // Write ORKESTRA.md into the test project's .orkestra directory
+    let orkestra_md = ctx.repo_path().join(".orkestra/ORKESTRA.md");
+    std::fs::write(
+        &orkestra_md,
+        "Always use snake_case for variable names.\nPrefer functional patterns.",
+    )
+    .unwrap();
+
+    let task = ctx.create_task("Test universal prompt", "Check ORKESTRA.md injection", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan here".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+
+    ctx.advance(); // spawns planner
+
+    let system_prompt = ctx
+        .last_system_prompt()
+        .expect("Should have a system prompt");
+
+    assert!(
+        system_prompt.contains("Project Instructions"),
+        "System prompt should contain 'Project Instructions' heading from ORKESTRA.md injection"
+    );
+    assert!(
+        system_prompt.contains("Always use snake_case"),
+        "System prompt should contain ORKESTRA.md content"
+    );
+    assert!(
+        system_prompt.contains("Prefer functional patterns"),
+        "System prompt should contain full ORKESTRA.md content"
     );
 }

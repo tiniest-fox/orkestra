@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use crate::workflow::ports::{GitService, WorkflowStore};
 
-/// Create a task's worktree: sync base branch, create worktree, save info, run setup script.
+/// Create a task's worktree: fetch origin, create worktree, save info, run setup script.
 ///
 /// The worktree is created in phases:
-/// 1. Sync base branch from remote (warn-and-continue on failure)
+/// 1. `fetch_origin` — updates remote-tracking refs so worktree branches from origin tip
 /// 2. `ensure_worktree` — creates branch + worktree (fast, rarely fails)
 /// 3. Save worktree info to DB immediately (so retry can skip step 2)
 /// 4. `run_setup_script` — runs project-specific setup (may fail)
@@ -20,18 +20,15 @@ pub(crate) fn execute(
     task_id: &str,
     base_branch: &str,
 ) -> Result<(), String> {
-    // Sync base branch from remote (warn-and-continue on failure)
-    // Skip for task/* branches (subtask branches are never on origin)
+    // Fetch origin so remote-tracking refs are current before branching.
+    // Best-effort: failures are warned and ignored (no-remote repos, network issues).
     if let Some(git) = git {
-        if !base_branch.is_empty() && !base_branch.starts_with("task/") {
-            if let Err(e) = git.sync_base_branch(base_branch) {
-                crate::orkestra_debug!(
-                    "setup",
-                    "WARNING: Failed to sync {} from origin: {}. Proceeding with local state.",
-                    base_branch,
-                    e
-                );
-            }
+        if let Err(e) = git.fetch_origin() {
+            crate::orkestra_debug!(
+                "setup",
+                "WARNING: Failed to fetch origin: {}. Proceeding with local state.",
+                e
+            );
         }
     }
 

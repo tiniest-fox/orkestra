@@ -782,4 +782,73 @@ mod tests {
         let log_text = String::from_utf8_lossy(&log_output.stdout);
         assert!(log_text.contains("New commit from other clone"));
     }
+
+    #[test]
+    fn test_create_worktree_from_remote_tip() {
+        // Verifies that worktree creation branches from origin/main even when
+        // the local main ref is stale (user hasn't pulled).
+        let (remote_dir, _clone_dir, repo_path) = create_test_repo_with_remote();
+
+        // Advance origin via a second clone — first clone never sees this commit.
+        let other_clone = TempDir::new().unwrap();
+        Command::new("git")
+            .args(["clone", remote_dir.path().to_str().unwrap(), "."])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "other@example.com"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Other User"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        std::fs::write(other_clone.path().join("remote_advance.txt"), "new content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "commit",
+                "-m",
+                "Commit from remote — first clone never pulled",
+            ])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["push"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+
+        // Capture origin's tip SHA for assertion.
+        let origin_tip_output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        let origin_tip = String::from_utf8_lossy(&origin_tip_output.stdout)
+            .trim()
+            .to_string();
+
+        // First clone has NOT pulled — its local main is stale.
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+        // fetch_origin updates remote-tracking refs; in production this is called by
+        // setup_worktree.rs before ensure_worktree.
+        git.fetch_origin().expect("Failed to fetch origin");
+        let result = git
+            .ensure_worktree("TEST-REMOTE", Some("main"))
+            .expect("Failed to create worktree");
+
+        assert_eq!(
+            result.base_commit, origin_tip,
+            "Worktree should branch from origin/main tip, not stale local main"
+        );
+    }
 }

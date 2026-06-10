@@ -334,7 +334,7 @@ pub fn send_message(ctx: &CommandContext, params: &Value) -> Result<Value, Error
 
 /// Promotes a chat task to a full workflow flow.
 ///
-/// Expected params: `{ "task_id": "<id>", "flow": "<flow_name>", "starting_stage": "<stage>", "title": "<title>", "artifact_content": "<content>" }`
+/// Expected params: `{ "task_id": "<id>", "flow": "<flow_name>", "starting_stage": "<stage>", "title": "<title>", "description": "<desc>", "artifact_content": "<content>" }`
 /// All fields except `task_id` are optional.
 pub fn promote_to_flow(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(params)?;
@@ -350,6 +350,10 @@ pub fn promote_to_flow(ctx: &CommandContext, params: &Value) -> Result<Value, Er
         .get("title")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
+    let description = params
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
     let artifact_content = params
         .get("artifact_content")
         .and_then(|v| v.as_str())
@@ -361,6 +365,7 @@ pub fn promote_to_flow(ctx: &CommandContext, params: &Value) -> Result<Value, Er
             flow.as_deref(),
             starting_stage.as_deref(),
             title.as_deref(),
+            description.as_deref(),
             artifact_content.as_deref(),
         )
         .map_err(ErrorPayload::from)?;

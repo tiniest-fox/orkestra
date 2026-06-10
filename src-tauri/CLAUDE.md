@@ -57,6 +57,15 @@ Commands now fall into two categories: **shared** (same logic on Tauri and WebSo
 1. Add the Tauri command normally — direct API or shell call, no shared handler needed
 2. Add it to `DESKTOP_ONLY_COMMANDS` in `registry.rs` — tests verify it's absent from WebSocket dispatch
 3. Re-export and register as above
+4. No `METHOD_MAP` entry needed — `TauriTransport` falls back to the raw method name, which matches the command fn name directly
+
+### Struct field names and serde camelCase
+
+When a Tauri command receives a struct parameter, serde maps Rust `snake_case` field names to JS `camelCase`. `image_data: String` in Rust → `imageData` on the frontend. A mismatch is silent at the JS call site — the struct field deserializes as its default value (empty string / zero / `None`) and the command appears to succeed while ignoring the input. Verify the JS camelCase name matches what the frontend passes before wiring up the command.
+
+### base64 decode of empty input returns `Ok(vec![])`
+
+`base64::engine::general_purpose::STANDARD.decode("")` returns `Ok(vec![])`, not an error. Always add an explicit `if bytes.is_empty()` guard after decoding user-supplied base64 at a system boundary — a missing guard allows 0-byte files or other silent no-ops without any error surface.
 
 ## State Management
 

@@ -150,7 +150,7 @@ Before considering any code change complete, run the full verification suite. Al
 
 ```bash
 cargo fmt --all -- --check   # Formatting (fix with: cargo fmt --all)
-cargo clippy --workspace     # Lints — zero warnings required
+cargo clippy --workspace --tests  # Lints — zero warnings required (--tests includes #[cfg(test)] blocks and e2e test files)
 cargo test --workspace       # All tests pass
 ```
 

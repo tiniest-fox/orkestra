@@ -46,6 +46,8 @@ mod subtasks;
 mod sync;
 #[path = "e2e/task_creation.rs"]
 mod task_creation;
+#[path = "e2e/token_usage.rs"]
+mod token_usage;
 #[path = "e2e/workflow.rs"]
 mod workflow;
 

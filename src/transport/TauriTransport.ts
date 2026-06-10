@@ -65,6 +65,7 @@ const METHOD_MAP: Record<string, string> = {
   get_rejection_feedback: "workflow_get_rejection_feedback",
   list_branches: "workflow_list_branches",
   list_project_files: "workflow_list_project_files",
+  get_token_usage: "workflow_get_token_usage",
   get_logs: "workflow_get_logs",
   get_latest_log: "workflow_get_latest_log",
   get_pr_status: "workflow_get_pr_status",

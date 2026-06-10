@@ -167,6 +167,7 @@ pub async fn execute(
         "get_latest_log" => run_sync(ctx, params, query::get_latest_log).await,
         "get_pr_status" => run_sync(ctx, params, query::get_pr_status).await,
         "get_project_info" => run_sync(ctx, params, query::get_project_info).await,
+        "get_token_usage" => run_sync(ctx, params, query::get_token_usage).await,
 
         // -- Diffs --
         "get_task_diff" => diff::handle_get_task_diff(ctx, params).await,

@@ -5,7 +5,7 @@
 //! and emits `RunEvents` matching the (u32, Receiver<RunEvent>) contract.
 
 use std::collections::{HashMap, VecDeque};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -247,32 +247,26 @@ fn drive_pty_session(
         return;
     }
 
-    // Wait for Stop hook (turn completion signal from Claude Code)
-    let hook_result = hook_rx.recv_timeout(Duration::from_hours(1));
+    // Tail transcript during execution, emitting LogLine events as lines arrive.
+    // Non-blocking: polls transcript file every 150ms while waiting for Stop hook.
+    let (hook_event, mut full_output, tail_file_pos) =
+        tail_transcript_until_stop(&fallback_transcript_path, hook_rx, &mut *parser, tx);
 
-    let hook_event = match hook_result {
-        Ok(event) => {
-            orkestra_debug!(
-                "runner",
-                "run_pty: got hook event {:?} for session {}",
-                event.event_type,
-                event.session_id
-            );
-            Some(event)
-        }
-        Err(e) => {
-            orkestra_debug!("runner", "run_pty: hook recv failed: {e:?}");
-            None
-        }
-    };
-
-    // Use transcript path from hook event if available, else computed fallback
+    // Use transcript path from hook event if available, else computed fallback.
+    // In practice these match — the divergence path is a safety net.
     let transcript_path = hook_event
         .as_ref()
         .and_then(|e| e.transcript_path.clone())
-        .unwrap_or(fallback_transcript_path);
+        .unwrap_or_else(|| fallback_transcript_path.clone());
 
-    // Wait for transcript file size to stabilize before reading; the Stop hook fires
+    // Resume final read from where tail left off (same file) or from 0 (diverged file).
+    let final_read_pos = if transcript_path == fallback_transcript_path {
+        tail_file_pos
+    } else {
+        0
+    };
+
+    // Wait for transcript file size to stabilize before final read; the Stop hook fires
     // before Claude finishes flushing the final bytes to disk.
     wait_for_stable_size(
         &transcript_path,
@@ -280,8 +274,16 @@ fn drive_pty_session(
         Duration::from_secs(5),
     );
 
-    // Read and parse JSONL transcript, emit log events
-    let (full_output, _line_count) = read_and_parse_transcript(&transcript_path, &mut *parser, tx);
+    // Final read: catch any lines written between the last tail poll and stabilization.
+    let mut _trailing_count = 0usize;
+    read_new_lines(
+        &transcript_path,
+        final_read_pos,
+        &mut *parser,
+        tx,
+        &mut full_output,
+        &mut _trailing_count,
+    );
 
     // Kill PTY process — ProcessGuard fires SIGTERM on drop (not disarmed)
     drop(pty_handle);
@@ -572,7 +574,7 @@ fn build_settings_file(
 /// Wait until the file size stops changing for `stable_for`, up to `timeout`.
 ///
 /// Polls at 50ms intervals. Returns immediately if the file does not exist (the
-/// caller will get a zero-line result from `read_and_parse_transcript`).
+/// final `read_new_lines` call will return 0 entries).
 fn wait_for_stable_size(path: &Path, stable_for: Duration, timeout: Duration) {
     let deadline = std::time::Instant::now() + timeout;
     let mut last_size: Option<u64> = None;
@@ -596,55 +598,111 @@ fn wait_for_stable_size(path: &Path, stable_for: Duration, timeout: Duration) {
     }
 }
 
-/// Read a JSONL transcript, pass each line through the parser to emit log events,
-/// and return `(full_output, line_count)`.
-fn read_and_parse_transcript(
+/// Read new complete lines from `path` starting at `file_pos` (byte offset), parse each
+/// through `parser`, emit `LogLine` events, append to `full_output`, and return the updated
+/// byte position. Incomplete trailing lines (no terminating `\n`) are not parsed — the position
+/// stops at the last complete line boundary so the next call picks them up once they finish.
+fn read_new_lines(
     path: &Path,
+    file_pos: usize,
     parser: &mut dyn AgentParser,
     tx: &Sender<RunEvent>,
-) -> (String, usize) {
-    let file = match std::fs::File::open(path) {
+    full_output: &mut String,
+    line_count: &mut usize,
+) -> usize {
+    let mut file = match std::fs::File::open(path) {
         Ok(f) => f,
-        Err(e) => {
-            orkestra_debug!("runner", "run_pty: could not open transcript {path:?}: {e}");
-            return (String::new(), 0);
-        }
+        Err(_) => return file_pos,
     };
 
+    if file.seek(SeekFrom::Start(file_pos as u64)).is_err() {
+        return file_pos;
+    }
+
+    let mut buf = String::new();
+    if BufReader::new(file).read_to_string(&mut buf).is_err() {
+        return file_pos;
+    }
+
+    // Only process up to the last newline — trailing partial lines are not yet complete.
+    let complete_end = match buf.rfind('\n') {
+        Some(pos) => pos + 1,
+        None => return file_pos,
+    };
+
+    for line in buf[..complete_end].lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        *line_count += 1;
+
+        let update = parser.parse_line(line);
+
+        if let Some(sid) = update.session_id {
+            let _ = tx.send(RunEvent::SessionId(sid));
+        }
+
+        for entry in update.log_entries {
+            if tx.send(RunEvent::LogLine(entry)).is_err() {
+                return file_pos + complete_end;
+            }
+        }
+
+        full_output.push_str(line);
+        full_output.push('\n');
+    }
+
+    file_pos + complete_end
+}
+
+/// Poll the transcript file for new lines every 150ms while waiting for the Stop hook.
+///
+/// Returns `(hook_event, full_output, file_pos)`. `full_output` contains all content
+/// parsed so far; `file_pos` is the byte offset for the subsequent final read.
+fn tail_transcript_until_stop(
+    transcript_path: &Path,
+    hook_rx: &HookReceiver,
+    parser: &mut dyn AgentParser,
+    tx: &Sender<RunEvent>,
+) -> (
+    Option<crate::interactions::hooks::types::HookEvent>,
+    String,
+    usize,
+) {
+    use std::sync::mpsc::TryRecvError;
+
+    let mut file_pos = 0usize;
     let mut full_output = String::new();
     let mut line_count = 0usize;
 
-    for line_result in BufReader::new(file).lines() {
-        match line_result {
-            Ok(line) => {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                line_count += 1;
-
-                let update = parser.parse_line(&line);
-
-                if let Some(sid) = update.session_id {
-                    let _ = tx.send(RunEvent::SessionId(sid));
-                }
-
-                for entry in update.log_entries {
-                    if tx.send(RunEvent::LogLine(entry)).is_err() {
-                        return (full_output, line_count);
-                    }
-                }
-
-                full_output.push_str(&line);
-                full_output.push('\n');
+    loop {
+        match hook_rx.receiver.try_recv() {
+            Ok(event) => {
+                orkestra_debug!(
+                    "runner",
+                    "run_pty: got hook event {:?} for session {}",
+                    event.event_type,
+                    event.session_id
+                );
+                return (Some(event), full_output, file_pos);
             }
-            Err(e) => {
-                orkestra_debug!("runner", "run_pty: error reading transcript line: {e}");
-                break;
+            Err(TryRecvError::Empty) => {
+                file_pos = read_new_lines(
+                    transcript_path,
+                    file_pos,
+                    parser,
+                    tx,
+                    &mut full_output,
+                    &mut line_count,
+                );
+                thread::sleep(Duration::from_millis(150));
+            }
+            Err(TryRecvError::Disconnected) => {
+                orkestra_debug!("runner", "run_pty: hook receiver disconnected");
+                return (None, full_output, file_pos);
             }
         }
     }
-
-    (full_output, line_count)
 }
 
 /// Strip ANSI escape sequences from text for human-readable error messages.
@@ -877,51 +935,175 @@ mod tests {
     }
 
     #[test]
-    fn read_and_parse_transcript_returns_empty_for_missing_file() {
-        use std::sync::mpsc;
-
-        let (tx, _rx) = mpsc::channel();
-        let mut parser = make_null_parser();
-        let (output, count) =
-            read_and_parse_transcript(&PathBuf::from("/nonexistent/path.jsonl"), &mut parser, &tx);
-        assert_eq!(output, "");
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn read_and_parse_transcript_happy_path() {
+    fn read_new_lines_returns_entries_and_advances_position() {
         use std::sync::mpsc;
 
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("session.jsonl");
-        // Three JSONL lines with a blank line in between — blank lines are skipped.
-        std::fs::write(
-            &path,
-            b"{\"type\":\"text\",\"text\":\"line1\"}\n\n{\"type\":\"text\",\"text\":\"line2\"}\n{\"type\":\"text\",\"text\":\"line3\"}\n",
-        )
-        .unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        std::fs::write(&path, b"line1\nline2\n").unwrap();
 
         let (tx, rx) = mpsc::channel();
         let mut parser = make_null_parser();
-        let (full_output, line_count) = read_and_parse_transcript(&path, &mut parser, &tx);
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
 
-        assert_eq!(line_count, 3, "blank lines must not be counted");
-        assert!(
-            full_output.contains("line1"),
-            "full_output must contain first line"
-        );
-        assert!(
-            full_output.contains("line3"),
-            "full_output must contain last line"
+        let pos = read_new_lines(
+            &path,
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
         );
 
-        // Each non-blank line emits one LogLine event.
-        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(line_count, 2, "should parse both complete lines");
         assert_eq!(
-            events.len(),
-            3,
-            "expected one LogLine per non-blank line, got {events:?}"
+            pos, 12,
+            "position should advance past both lines (12 bytes)"
         );
+        assert!(full_output.contains("line1") && full_output.contains("line2"));
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(events.len(), 2, "one LogLine per line");
+
+        // Append a third line and re-read from the returned position.
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            std::io::Write::write_all(&mut f, b"line3\n").unwrap();
+        }
+
+        let pos2 = read_new_lines(
+            &path,
+            pos,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        assert_eq!(line_count, 3, "only new line should be counted");
+        assert_eq!(pos2, 18, "position should advance by 6 more bytes");
+        let new_events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(new_events.len(), 1, "only the new line emits an event");
+    }
+
+    #[test]
+    fn read_new_lines_handles_partial_trailing_line() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("partial.jsonl");
+        // Last line has no trailing newline — incomplete write in progress.
+        std::fs::write(&path, b"line1\nline2").unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let mut parser = make_null_parser();
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
+
+        let pos = read_new_lines(
+            &path,
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        assert_eq!(line_count, 1, "incomplete line must not be parsed");
+        assert_eq!(pos, 6, "position stops after the last complete line");
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(events.len(), 1);
+
+        // Complete the line by appending the terminating newline.
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            std::io::Write::write_all(&mut f, b"\n").unwrap();
+        }
+
+        let pos2 = read_new_lines(
+            &path,
+            pos,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        assert_eq!(line_count, 2, "now-complete line should be parsed");
+        assert_eq!(pos2, 12);
+        let new_events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(new_events.len(), 1);
+    }
+
+    #[test]
+    fn read_new_lines_returns_zero_entries_for_unchanged_file() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("stable.jsonl");
+        std::fs::write(&path, b"line1\n").unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let mut parser = make_null_parser();
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
+
+        let pos = read_new_lines(
+            &path,
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+        // Drain the channel so we start fresh.
+        let _ = rx.try_iter().collect::<Vec<_>>();
+
+        // Second call at the same position — file unchanged.
+        let mut second_count = 0usize;
+        let pos2 = read_new_lines(
+            &path,
+            pos,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut second_count,
+        );
+
+        assert_eq!(second_count, 0, "no new lines should be parsed");
+        assert_eq!(pos2, pos, "position must not change");
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn read_new_lines_handles_missing_file() {
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel();
+        let mut parser = make_null_parser();
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
+
+        let pos = read_new_lines(
+            &PathBuf::from("/nonexistent/path.jsonl"),
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        assert_eq!(pos, 0, "position must stay at 0 for missing file");
+        assert_eq!(line_count, 0);
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(events.len(), 0);
     }
 
     #[test]

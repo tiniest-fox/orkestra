@@ -61,20 +61,7 @@ pub fn execute(
 
     // Check for a prewarmed worktree; adopt it if ready.
     if let Some(record) = super::adopt_worktree::execute(store, &id)? {
-        if let Some(path) = record.worktree_path {
-            task.worktree_path = Some(path);
-        }
-        if let Some(branch) = record.base_branch {
-            if task.base_branch.is_empty() {
-                task.base_branch = branch;
-            }
-        }
-        if let Some(branch_name) = record.branch_name {
-            task.branch_name = Some(branch_name);
-        }
-        if let Some(base_commit) = record.base_commit {
-            task.base_commit = base_commit;
-        }
+        super::adopt_worktree::apply_to_task(&mut task, record);
         // Start directly in Queued — worktree is already ready.
         task.state = TaskState::queued(&first_stage.name);
     } else {

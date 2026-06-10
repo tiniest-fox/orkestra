@@ -2,6 +2,7 @@
 
 use orkestra_store::{WorktreeRecord, WorktreeStatus};
 
+use crate::workflow::domain::Task;
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 
 /// Return the Ready worktree record for `task_id` and delete it, or return None.
@@ -17,6 +18,27 @@ pub fn execute(store: &dyn WorkflowStore, task_id: &str) -> WorkflowResult<Optio
         Ok(Some(record))
     } else {
         Ok(None)
+    }
+}
+
+/// Transfer all fields from a ready `WorktreeRecord` into the task.
+///
+/// `base_branch` is only written when the task's field is empty, so an
+/// already-resolved value (from a CLI flag or git) is never overwritten.
+pub fn apply_to_task(task: &mut Task, record: WorktreeRecord) {
+    if let Some(path) = record.worktree_path {
+        task.worktree_path = Some(path);
+    }
+    if let Some(branch) = record.base_branch {
+        if task.base_branch.is_empty() {
+            task.base_branch = branch;
+        }
+    }
+    if let Some(branch_name) = record.branch_name {
+        task.branch_name = Some(branch_name);
+    }
+    if let Some(base_commit) = record.base_commit {
+        task.base_commit = base_commit;
     }
 }
 

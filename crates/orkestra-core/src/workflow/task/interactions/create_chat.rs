@@ -26,27 +26,14 @@ pub fn execute(
     task.is_chat = true;
     task.flow = String::new();
 
-    // Check for a prewarmed worktree; adopt it if ready.
-    if let Some(record) = super::adopt_worktree::execute(store, &id)? {
-        if let Some(path) = record.worktree_path {
-            task.worktree_path = Some(path);
-        }
-        if let Some(branch) = record.base_branch {
-            task.base_branch = branch;
-        }
-        if let Some(branch_name) = record.branch_name {
-            task.branch_name = Some(branch_name);
-        }
-        if let Some(base_commit) = record.base_commit {
-            task.base_commit = base_commit;
-        }
+    // Apply explicit base_branch first so worktree adoption doesn't override it.
+    if let Some(b) = base_branch {
+        task.base_branch = b.to_string();
     }
 
-    // Also apply base_branch if provided and worktree adoption didn't set one.
-    if let Some(b) = base_branch {
-        if task.base_branch.is_empty() {
-            task.base_branch = b.to_string();
-        }
+    // Check for a prewarmed worktree; adopt it if ready.
+    if let Some(record) = super::adopt_worktree::execute(store, &id)? {
+        super::adopt_worktree::apply_to_task(&mut task, record);
     }
 
     store.save_task(&task)?;

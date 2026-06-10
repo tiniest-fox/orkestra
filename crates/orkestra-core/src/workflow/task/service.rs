@@ -70,7 +70,7 @@ impl WorkflowApi {
         )
     }
 
-    /// Create a new chat task (no flow, no worktree, starts in Queued).
+    /// Create a new chat task (no flow, starts in Queued).
     pub fn create_chat_task(&self, title: &str) -> WorkflowResult<Task> {
         task_interactions::create_chat::execute(self.store.as_ref(), None, title, None)
     }

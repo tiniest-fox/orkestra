@@ -129,6 +129,8 @@ Async execution emits events through a channel:
 - **System prompt fallback**: When `supports_system_prompt` is false, the system prompt is inserted into the user message *after the first line* (the `<!orkestra:spawn:STAGE>` marker) so `parse_resume_marker` still detects the marker at position 0. On resume, the injection is skipped entirely — the session already has the system prompt from the initial spawn.
 - **Disallowed tools fallback**: OpenCode doesn't support `--disallowedTools`, so restriction messages are injected into the system prompt only.
 - **Disallowed tools are duplicated across paths**: The headless path (`spawner/claude.rs`) and the PTY path (`run_pty.rs::build_pty_command()`) each assemble `--disallowedTools` independently. When adding a new default-disallowed tool, update both.
+- **`build_settings_file` ↔ mock script coupling**: `tests/fixtures/mock_claude_pty.sh` parses the hook settings JSON by navigating `hooks.Stop[0].hooks[0].command` (the nested Claude Code v2.1.170+ schema). When you change the shape emitted by `build_settings_file()`, update the mock to match — a shape mismatch causes PTY integration tests to hang silently rather than fail fast.
+- **Three ANSI-stripping implementations**: `run_pty.rs` (hand-rolled, see cross-reference comment), `orkestra-networking::ci_log_parser` (hand-rolled), `orkestra-core` (via `strip_ansi_escapes` crate). When adding ANSI handling to a new crate, consider extracting a shared utility rather than adding a fourth copy.
 - **Marker parser asymmetry**: `parse_resume_marker` only recognizes `continue`, `integration`, `answers`, and `initial`. Build_prompt emits `malformed_output` and `pr_comments` markers that the parser doesn't recognize, so `run_async.rs`'s else branch will log them as `resume_type: "user_message"` — mislabeled but logging-only. If the mislabeling becomes a problem, guard the else branch with `!prompt.trim_start().starts_with("<!orkestra:")` or extend `parse_resume_marker` with the missing variants.
 
 ## Anti-patterns
@@ -160,3 +162,11 @@ let parser = MockParser { extract_result: ExtractionResult::NotFound };
 ```
 
 The `test_support` module is `#[cfg(test)] pub(crate)` — only visible in test builds within the crate.
+
+**Dead-code lint vs test references**: Rust's lib dead_code lint fires even for functions that are only called from `#[cfg(test)]` blocks. Marking the function itself `#[cfg(test)]` is required to silence the warning — test references alone don't suppress it.
+
+The PTY integration tests in `tests/pty_integration.rs` use `mock_claude_pty.sh` and are `#[ignore]`d by default (no real `claude` binary required in CI). Run them locally to verify the settings schema and hook protocol:
+
+```bash
+cargo test -p orkestra-agent --test pty_integration -- --ignored
+```

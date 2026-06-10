@@ -214,35 +214,26 @@ fn drive_pty_session(
     let fallback_transcript_path =
         compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
     let poll_deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let mut polls_since_enter = 0u32;
-    let mut transcript_found = false;
-    loop {
-        if fallback_transcript_path.exists() {
-            transcript_found = true;
-            break;
+
+    let poll_outcome = poll_for_transcript_with_enter_retry(
+        &fallback_transcript_path,
+        poll_deadline,
+        &mut pty_handle.writer,
+    );
+
+    let transcript_found = match poll_outcome {
+        PollOutcome::Found => true,
+        PollOutcome::Timeout => false,
+        PollOutcome::WriteFailed(e) => {
+            // PTY process died — fail fast instead of waiting 30s
+            let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
+                format!("PTY process died during startup — failed to write Enter: {e}"),
+            ))));
+            drop(pty_handle);
+            hook_server.unregister_task(ctx.task_id);
+            return;
         }
-        if std::time::Instant::now() >= poll_deadline {
-            break;
-        }
-        polls_since_enter += 1;
-        if polls_since_enter >= 6 {
-            polls_since_enter = 0;
-            if let Err(e) = pty_handle
-                .writer
-                .write_all(b"\r")
-                .and_then(|()| pty_handle.writer.flush())
-            {
-                // PTY process died — fail fast instead of waiting 30s
-                let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
-                    format!("PTY process died during startup — failed to write Enter: {e}"),
-                ))));
-                drop(pty_handle);
-                hook_server.unregister_task(ctx.task_id);
-                return;
-            }
-        }
-        thread::sleep(Duration::from_millis(500));
-    }
+    };
 
     if transcript_found {
         let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
@@ -255,11 +246,13 @@ fn drive_pty_session(
         // Transcript never appeared — Claude Code did not start (binary missing, crash on
         // startup, permissions, or settings error). Surface the PTY output tail for diagnosis.
         let tail_text = {
-            let raw = pty_handle
-                .output_tail
-                .lock()
-                .map(|tail| tail.iter().copied().collect::<Vec<u8>>())
-                .unwrap_or_default();
+            let raw = if let Ok(tail) = pty_handle.output_tail.lock() { tail.iter().copied().collect::<Vec<u8>>() } else {
+                orkestra_debug!(
+                    "runner",
+                    "run_pty: output_tail mutex poisoned — PTY drain thread panicked; no diagnostic output available"
+                );
+                Vec::new()
+            };
             strip_ansi_codes(&String::from_utf8_lossy(&raw))
         };
         drop(pty_handle);
@@ -340,6 +333,41 @@ fn drive_pty_session(
 // Helpers
 // ============================================================================
 
+/// Outcome of the transcript poll loop in `drive_pty_session`.
+enum PollOutcome {
+    Found,
+    Timeout,
+    WriteFailed(String),
+}
+
+/// Poll for the JSONL transcript file, re-sending Enter every ~3s to handle the TUI startup race.
+///
+/// Returns `Found` when the file appears, `Timeout` when the deadline passes, or
+/// `WriteFailed` when the PTY writer returns an error (process died).
+fn poll_for_transcript_with_enter_retry(
+    path: &Path,
+    deadline: std::time::Instant,
+    writer: &mut Box<dyn Write + Send>,
+) -> PollOutcome {
+    let mut polls_since_enter = 0u32;
+    loop {
+        if path.exists() {
+            return PollOutcome::Found;
+        }
+        if std::time::Instant::now() >= deadline {
+            return PollOutcome::Timeout;
+        }
+        polls_since_enter += 1;
+        if polls_since_enter >= 6 {
+            polls_since_enter = 0;
+            if let Err(e) = writer.write_all(b"\r").and_then(|()| writer.flush()) {
+                return PollOutcome::WriteFailed(e.to_string());
+            }
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
 /// Open a PTY, spawn the Claude Code command, and return a `PtyHandle` with the child PID.
 fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), RunError> {
     let cmd = build_pty_command(cfg)?;
@@ -386,8 +414,9 @@ fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), Ru
                 Ok(n) => {
                     if let Ok(mut tail) = drain_tail.lock() {
                         tail.extend(&buf[..n]);
-                        while tail.len() > TAIL_CAPACITY {
-                            tail.pop_front();
+                        let excess = tail.len().saturating_sub(TAIL_CAPACITY);
+                        if excess > 0 {
+                            tail.drain(..excess);
                         }
                     }
                 }
@@ -546,21 +575,6 @@ fn compute_transcript_path(home_dir: &Path, working_dir: &Path, session_id: &str
         .join(format!("{session_id}.jsonl"))
 }
 
-/// Poll until the given file exists or the deadline is reached.
-#[cfg(test)]
-fn poll_for_file(path: &Path, timeout: Duration) -> bool {
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        if path.exists() {
-            return true;
-        }
-        if std::time::Instant::now() >= deadline {
-            return false;
-        }
-        thread::sleep(Duration::from_millis(500));
-    }
-}
-
 /// Wait until the file size stops changing for `stable_for`, up to `timeout`.
 ///
 /// Polls at 50ms intervals. Returns immediately if the file does not exist (the
@@ -697,6 +711,49 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    fn poll_for_file(path: &Path, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if path.exists() {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+    }
+
+    #[test]
+    fn strip_ansi_codes_plain_text_passthrough() {
+        assert_eq!(
+            strip_ansi_codes("hello world\nline 2"),
+            "hello world\nline 2"
+        );
+    }
+
+    #[test]
+    fn strip_ansi_codes_csi_sequences() {
+        assert_eq!(strip_ansi_codes("\x1b[1mhello\x1b[0m world"), "hello world");
+        assert_eq!(strip_ansi_codes("\x1b[31mred\x1b[0m"), "red");
+    }
+
+    #[test]
+    fn strip_ansi_codes_osc_with_bel_terminator() {
+        assert_eq!(
+            strip_ansi_codes("\x1b]0;window title\x07visible text"),
+            "visible text"
+        );
+    }
+
+    #[test]
+    fn strip_ansi_codes_osc_with_st_terminator() {
+        assert_eq!(
+            strip_ansi_codes("\x1b]2;title\x1b\\visible text"),
+            "visible text"
+        );
+    }
 
     #[test]
     fn settings_file_contains_stop_and_session_end_hooks() {

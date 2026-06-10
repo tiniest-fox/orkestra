@@ -45,7 +45,8 @@ settings_file, task_id, session_id, transcript_path = sys.argv[1:]
 try:
     with open(settings_file) as f:
         d = json.load(f)
-    cmd = d.get("hooks", {}).get("Stop", [{}])[0].get("command", "")
+    hook_entry = d.get("hooks", {}).get("Stop", [{}])[0]
+    cmd = hook_entry.get("hooks", [{}])[0].get("command", "")
     m = re.search(r"nc -U (\S+)", cmd)
     if not m:
         sys.exit(0)

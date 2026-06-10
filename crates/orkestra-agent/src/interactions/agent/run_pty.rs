@@ -1113,6 +1113,63 @@ mod tests {
     }
 
     #[test]
+    fn read_new_lines_handles_invalid_utf8() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("invalid_utf8.jsonl");
+
+        // Write: valid line, line with invalid bytes, valid line.
+        let mut content = b"good\n".to_vec();
+        content.extend_from_slice(b"\xff\xfebad\n");
+        content.extend_from_slice(b"after\n");
+        std::fs::write(&path, &content).unwrap();
+
+        let (tx, _rx) = mpsc::channel();
+        let mut parser = make_null_parser();
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
+
+        let pos = read_new_lines(
+            &path,
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        // Position must track raw bytes (5 + 6 + 6 = 17), not the lossy-expanded length.
+        // \xff and \xfe each expand to the 3-byte U+FFFD sequence in from_utf8_lossy,
+        // so the lossy byte length is 5 + 10 + 6 = 21 — but file_pos must stay at 17.
+        assert_eq!(
+            pos, 17,
+            "position must track raw bytes, not lossy-expanded bytes"
+        );
+        assert_eq!(line_count, 3);
+        assert!(
+            full_output.contains('\u{FFFD}'),
+            "invalid bytes should produce replacement chars"
+        );
+
+        // A subsequent call from pos must return 0 new lines (file unchanged).
+        let (tx2, _rx2) = mpsc::channel();
+        let mut parser2 = make_null_parser();
+        let mut full_output2 = String::new();
+        let mut line_count2 = 0usize;
+        let pos2 = read_new_lines(
+            &path,
+            pos,
+            &mut parser2,
+            &tx2,
+            &mut full_output2,
+            &mut line_count2,
+        );
+        assert_eq!(pos2, pos, "subsequent call must not advance position");
+        assert_eq!(line_count2, 0, "subsequent call must find no new lines");
+    }
+
+    #[test]
     fn build_settings_file_rejects_shell_unsafe_socket_path() {
         let result = build_settings_file("ses-1", "/tmp/hooks.sock; rm -rf /");
         assert!(

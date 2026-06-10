@@ -2,10 +2,12 @@
 
 import type { RefCallback } from "react";
 import type { UseRunScriptResult } from "../../../hooks/useRunScript";
+import { useTokenUsage } from "../../../hooks/useTokenUsage";
 import type { LogEntry, WorkflowTaskView } from "../../../types/workflow";
 import { ActivityLog } from "../ActivityLog";
 import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerPrTab } from "../DrawerPrTab";
+import { TokenUsageSummary } from "../TokenUsageSummary";
 import { AgentTab } from "./AgentTab/AgentTab";
 import type { DrawerTabId } from "./drawerTabs";
 import { ResourcesTab } from "./Sections/ResourcesTab";
@@ -47,6 +49,7 @@ export function DrawerTabContent({
   onOpenTask,
   runScript,
 }: DrawerTabContentProps) {
+  const { tokenUsage } = useTokenUsage(task.id, activeTab === "history");
   if (activeTab === "agent") {
     const splashLabel = getSplashLabel(task.state);
     if (splashLabel) {
@@ -79,7 +82,10 @@ export function DrawerTabContent({
   if (activeTab === "history") {
     return (
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
-        <ActivityLog iterations={task.iterations} />
+        {tokenUsage && tokenUsage.stages.length > 0 && (
+          <TokenUsageSummary tokenUsage={tokenUsage} />
+        )}
+        <ActivityLog iterations={task.iterations} tokenUsage={tokenUsage} />
       </div>
     );
   }

@@ -43,6 +43,60 @@ export function createMockTransport(): Transport {
           return resolve({ files: [] });
         case "get_batch_file_counts":
           return resolve({});
+        case "get_token_usage":
+          return resolve({
+            task_id: "mock-task",
+            stages: [
+              {
+                stage: "planning",
+                sessions: [
+                  {
+                    session_id: "ses-1",
+                    stage: "planning",
+                    usage: {
+                      input_tokens: 5000,
+                      output_tokens: 1200,
+                      cache_creation_input_tokens: 800,
+                      cache_read_input_tokens: 3000,
+                    },
+                  },
+                ],
+                total: {
+                  input_tokens: 5000,
+                  output_tokens: 1200,
+                  cache_creation_input_tokens: 800,
+                  cache_read_input_tokens: 3000,
+                },
+              },
+              {
+                stage: "work",
+                sessions: [
+                  {
+                    session_id: "ses-2",
+                    stage: "work",
+                    usage: {
+                      input_tokens: 25000,
+                      output_tokens: 8000,
+                      cache_creation_input_tokens: 3700,
+                      cache_read_input_tokens: 9000,
+                    },
+                  },
+                ],
+                total: {
+                  input_tokens: 25000,
+                  output_tokens: 8000,
+                  cache_creation_input_tokens: 3700,
+                  cache_read_input_tokens: 9000,
+                },
+              },
+            ],
+            total: {
+              input_tokens: 30000,
+              output_tokens: 9200,
+              cache_creation_input_tokens: 4500,
+              cache_read_input_tokens: 12000,
+            },
+          });
         default:
           return new Promise(() => {});
       }

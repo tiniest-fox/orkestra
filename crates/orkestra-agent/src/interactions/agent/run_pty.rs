@@ -275,14 +275,14 @@ fn drive_pty_session(
     );
 
     // Final read: catch any lines written between the last tail poll and stabilization.
-    let mut _trailing_count = 0usize;
+    let mut trailing_count = 0usize;
     read_new_lines(
         &transcript_path,
         final_read_pos,
         &mut *parser,
         tx,
         &mut full_output,
-        &mut _trailing_count,
+        &mut trailing_count,
     );
 
     // Kill PTY process — ProcessGuard fires SIGTERM on drop (not disarmed)
@@ -610,9 +610,8 @@ fn read_new_lines(
     full_output: &mut String,
     line_count: &mut usize,
 ) -> usize {
-    let mut file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return file_pos,
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return file_pos;
     };
 
     if file.seek(SeekFrom::Start(file_pos as u64)).is_err() {

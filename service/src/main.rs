@@ -123,6 +123,12 @@ async fn run(args: Args) -> Result<(), String> {
 
     let secrets_key = std::env::var("ORKESTRA_SECRETS_KEY").ok();
 
+    if std::env::var("CLAUDE_ACCESS_TOKEN").is_err() {
+        tracing::warn!(
+            "CLAUDE_ACCESS_TOKEN not set — projects can still override via per-project secrets"
+        );
+    }
+
     let config = Arc::new(ServiceConfig {
         data_dir: data_dir.clone(),
         port: args.port,

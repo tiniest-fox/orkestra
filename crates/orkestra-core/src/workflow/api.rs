@@ -188,6 +188,7 @@ impl WorkflowApi {
     /// Override the home directory used to locate Claude Code JSONL transcript files.
     ///
     /// Tests use this to point at a temp directory instead of the real `~/.claude/`.
+    #[cfg(feature = "testutil")]
     pub fn set_home_dir(&mut self, home_dir: PathBuf) {
         self.home_dir = home_dir;
     }

@@ -246,7 +246,9 @@ fn drive_pty_session(
         // Transcript never appeared — Claude Code did not start (binary missing, crash on
         // startup, permissions, or settings error). Surface the PTY output tail for diagnosis.
         let tail_text = {
-            let raw = if let Ok(tail) = pty_handle.output_tail.lock() { tail.iter().copied().collect::<Vec<u8>>() } else {
+            let raw = if let Ok(tail) = pty_handle.output_tail.lock() {
+                tail.iter().copied().collect::<Vec<u8>>()
+            } else {
                 orkestra_debug!(
                     "runner",
                     "run_pty: output_tail mutex poisoned — PTY drain thread panicked; no diagnostic output available"

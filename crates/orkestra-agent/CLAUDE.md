@@ -163,7 +163,7 @@ let parser = MockParser { extract_result: ExtractionResult::NotFound };
 
 The `test_support` module is `#[cfg(test)] pub(crate)` — only visible in test builds within the crate.
 
-The PTY integration tests in `tests/pty_integration.rs` use `mock_claude_pty.sh` and are `#[ignore]`d by default (no real `claude` binary required in CI). Run them as a canary after `claude` auto-updates to catch schema or protocol regressions:
+The PTY integration tests in `tests/pty_integration.rs` use `mock_claude_pty.sh` and are `#[ignore]`d by default (no real `claude` binary required in CI). Run them locally to verify the settings schema and hook protocol:
 
 ```bash
 cargo test -p orkestra-agent --test pty_integration -- --ignored

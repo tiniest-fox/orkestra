@@ -120,6 +120,24 @@ fn extract_git_identity(secrets: &[(String, String)]) -> (String, String, Vec<(S
     (resolved_email, resolved_name, remaining)
 }
 
+/// Separate the `CLAUDE_CODE_OAUTH_TOKEN` secret from regular secrets and resolve
+/// the final value. Returns `(resolved_token, remaining_secrets)`. Unlike git
+/// identity there is no hardcoded default — `None` means no token is available.
+/// Found key is removed from the returned secrets vec to prevent double-injection.
+fn extract_claude_token(secrets: &[(String, String)]) -> (Option<String>, Vec<(String, String)>) {
+    let mut token = None;
+    let mut remaining = Vec::with_capacity(secrets.len());
+    for (key, value) in secrets {
+        if key == "CLAUDE_CODE_OAUTH_TOKEN" {
+            token = Some(value.clone());
+        } else {
+            remaining.push((key.clone(), value.clone()));
+        }
+    }
+    let resolved = token.or_else(|| std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok());
+    (resolved, remaining)
+}
+
 /// All resolved inputs needed to build `docker run` arguments.
 struct DockerRunConfig {
     container_name: String,
@@ -127,12 +145,9 @@ struct DockerRunConfig {
     port_bind: String,
     git_email: String,
     git_name: String,
-    /// Named Docker volume for per-project Claude state, mounted at `/home/orkestra/.claude`.
-    /// Docker creates it automatically on first use; setup.sh bootstraps auth on first start.
-    claude_volume_name: String,
-    /// Read-only bind-mount of the global auth dir at `/run/claude-global:ro`.
-    /// Present when `CLAUDE_AUTH_DIR` is set; used by setup.sh to seed credentials.
-    claude_global_dir_mount: Option<String>,
+    /// OAuth token injected as `CLAUDE_CODE_OAUTH_TOKEN` env var. `None` when
+    /// neither a per-project secret nor the service env var is set.
+    claude_code_oauth_token: Option<String>,
     gh_token: Option<String>,
     secret_envs: Vec<String>,
     image: String,
@@ -174,21 +189,6 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
         git_committer_name,
     ];
 
-    // Per-project named volume — always present, Docker creates it on first use.
-    // setup.sh bootstraps credentials from claude_global_dir on first start.
-    args.push("-v".to_string());
-    args.push(format!(
-        "{}:/home/orkestra/.claude",
-        config.claude_volume_name
-    ));
-
-    // Read-only global auth dir for credential bootstrapping (present in DooD
-    // when CLAUDE_AUTH_DIR is set to a host-side path).
-    if let Some(ref mount) = config.claude_global_dir_mount {
-        args.push("-v".to_string());
-        args.push(mount.clone());
-    }
-
     // Mount the shared toolbox volume read-only so agents have access to
     // the claude CLI, gh, and other pre-built tools without baking them
     // into the per-project image.
@@ -201,9 +201,14 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
         args.push(mount.clone());
     }
 
-    // Ensure the claude CLI finds auth tokens under /home/orkestra/.claude.
     args.push("-e".to_string());
     args.push("HOME=/home/orkestra".to_string());
+
+    // Inject Claude OAuth token so the agent can authenticate.
+    if let Some(ref token) = config.claude_code_oauth_token {
+        args.push("-e".to_string());
+        args.push(format!("CLAUDE_CODE_OAUTH_TOKEN={token}"));
+    }
 
     // Forward GH_TOKEN so the git credential helper can authenticate pushes.
     if let Some(ref token) = config.gh_token {
@@ -242,20 +247,6 @@ fn docker_run(
     extra_mounts: &[String],
 ) -> Result<String, ServiceError> {
     let container_name = format!("orkestra-{project_id}");
-
-    // Per-project named volume for Claude state — works in both DooD and non-DooD.
-    // Docker creates it automatically on first use; setup.sh bootstraps auth on
-    // first start from the read-only global auth mount below.
-    let claude_volume_name = format!("orkestra-claude-{project_id}");
-
-    // Global auth dir: mounted read-only at /run/claude-global so
-    // setup.sh can seed the per-project volume with credentials on first start.
-    // In DooD, CLAUDE_AUTH_DIR must be the host-side path (bind mounts require
-    // host paths; the service-container path is inaccessible to the Docker daemon).
-    let claude_global_dir_mount = std::env::var("CLAUDE_AUTH_DIR")
-        .ok()
-        .map(|dir| format!("{dir}:/run/claude-global:ro"));
-
     let workspace_mount = format!("{}:/workspace", repo_path.display());
     let port_bind = format!("127.0.0.1:{port}:{port}");
 
@@ -263,8 +254,9 @@ fn docker_run(
     // Project secrets GIT_USER_EMAIL / GIT_USER_NAME take precedence; falls back
     // to service-wide env vars, then the hardcoded defaults.
     let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
+    let (claude_token, final_secrets) = extract_claude_token(&filtered_secrets);
     let gh_token = std::env::var("GH_TOKEN").ok();
-    let secret_envs: Vec<String> = filtered_secrets
+    let secret_envs: Vec<String> = final_secrets
         .iter()
         .map(|(k, v)| format!("{k}={v}"))
         .collect();
@@ -275,8 +267,7 @@ fn docker_run(
         port_bind,
         git_email,
         git_name,
-        claude_volume_name,
-        claude_global_dir_mount,
+        claude_code_oauth_token: claude_token,
         gh_token,
         secret_envs,
         image: image.to_string(),
@@ -325,14 +316,12 @@ fn compose_up(
         .map_err(|e| ServiceError::Other(format!("Failed to create override dir: {e}")))?;
 
     let override_path = override_dir.join("orkestra-override.yml");
-    let claude_volume_name = format!("orkestra-claude-{project_id}");
-    let claude_global_dir = std::env::var("CLAUDE_AUTH_DIR").ok();
+    let (claude_token, _) = extract_claude_token(secrets);
     let override_content = build_compose_override(
         service,
         port,
         secrets,
-        &claude_volume_name,
-        claude_global_dir.as_deref(),
+        claude_token.as_deref(),
         resource_limits,
         extra_mounts,
     );
@@ -478,19 +467,16 @@ fn is_named_volume(mount_spec: &str) -> bool {
 /// requirements into the project's app service.
 ///
 /// Mirrors the mounts and environment variables that `docker_run` sets for
-/// non-compose containers: toolbox volume, per-project Claude volume, git
-/// identity, `HOME`, and `GH_TOKEN`.
+/// non-compose containers: toolbox volume, git identity, `HOME`, `GH_TOKEN`,
+/// and `CLAUDE_CODE_OAUTH_TOKEN`.
 ///
-/// `claude_volume_name` — Docker named volume for per-project Claude state.
-///   Mounted at `/home/orkestra/.claude`; Docker creates it on first use.
-/// `claude_global_dir` — when `Some`, mounts this host path read-only at
-///   `/run/claude-global` so setup.sh can seed credentials on first start.
+/// `claude_code_oauth_token` — when `Some`, injects the token as `CLAUDE_CODE_OAUTH_TOKEN`
+///   in the service environment. Resolved by the caller (secret → service env var).
 fn build_compose_override(
     service: &str,
     port: u16,
     secrets: &[(String, String)],
-    claude_volume_name: &str,
-    claude_global_dir: Option<&str>,
+    claude_code_oauth_token: Option<&str>,
     resource_limits: &ResourceLimits,
     extra_mounts: &[String],
 ) -> String {
@@ -500,6 +486,9 @@ fn build_compose_override(
     // service-wide env vars. They are removed from the regular secrets list
     // to prevent double-injection as plain env vars.
     let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
+    // CLAUDE_CODE_OAUTH_TOKEN is handled via the claude_code_oauth_token parameter;
+    // strip it from remaining secrets to prevent double-injection.
+    let (_, filtered_secrets) = extract_claude_token(&filtered_secrets);
     let gh_token = std::env::var("GH_TOKEN").ok();
 
     let mut volumes = String::new();
@@ -507,10 +496,6 @@ fn build_compose_override(
         volumes,
         "{I}- {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro"
     );
-    let _ = writeln!(volumes, "{I}- {claude_volume_name}:/home/orkestra/.claude");
-    if let Some(dir) = claude_global_dir {
-        let _ = writeln!(volumes, "{I}- \"{dir}:/run/claude-global:ro\"");
-    }
     for mount in extra_mounts {
         let _ = writeln!(volumes, "{I}- \"{mount}\"");
     }
@@ -521,6 +506,15 @@ fn build_compose_override(
     let _ = writeln!(environment, "{I}GIT_COMMITTER_EMAIL: \"{git_email}\"");
     let _ = writeln!(environment, "{I}GIT_AUTHOR_NAME: \"{git_name}\"");
     let _ = writeln!(environment, "{I}GIT_COMMITTER_NAME: \"{git_name}\"");
+    if let Some(token) = claude_code_oauth_token {
+        let escaped = token
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        let _ = writeln!(environment, "{I}CLAUDE_CODE_OAUTH_TOKEN: \"{escaped}\"");
+    }
     if let Some(ref token) = gh_token {
         let _ = writeln!(environment, "{I}GH_TOKEN: \"{token}\"");
     }
@@ -548,8 +542,6 @@ fn build_compose_override(
     let _ = writeln!(root_volumes, "volumes:");
     let _ = writeln!(root_volumes, "  {TOOLBOX_VOLUME_NAME}:");
     let _ = writeln!(root_volumes, "    external: true");
-    // Per-project Claude volume — Docker creates it automatically; not external.
-    let _ = writeln!(root_volumes, "  {claude_volume_name}:");
     for mount in extra_mounts {
         if is_named_volume(mount) {
             let name = mount.split(':').next().unwrap_or("");
@@ -593,8 +585,8 @@ fn pipe_to_log(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_compose_override, build_docker_run_args, extract_git_identity, is_named_volume,
-        DockerRunConfig,
+        build_compose_override, build_docker_run_args, extract_claude_token, extract_git_identity,
+        is_named_volume, DockerRunConfig,
     };
     use crate::types::ResourceLimits;
 
@@ -615,15 +607,7 @@ mod tests {
             ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
         ];
 
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &secrets,
-            "orkestra-claude-test",
-            None,
-            &no_limits(),
-            &[],
-        );
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
 
         // Plain value is quoted but not escaped.
         assert!(yaml.contains("PLAIN: \"simple_value\""));
@@ -643,15 +627,7 @@ mod tests {
             "PEM_KEY".to_string(),
             "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
         )];
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &secrets,
-            "orkestra-claude-test",
-            None,
-            &no_limits(),
-            &[],
-        );
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
         // Literal newlines must be escaped as \n in the YAML double-quoted string.
         assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
         // The value must NOT contain unescaped literal newlines.
@@ -660,15 +636,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_no_secrets_produces_valid_structure() {
-        let yaml = build_compose_override(
-            "myservice",
-            8080,
-            &[],
-            "orkestra-claude-test",
-            None,
-            &no_limits(),
-            &[],
-        );
+        let yaml = build_compose_override("myservice", 8080, &[], None, &no_limits(), &[]);
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("myservice:"));
@@ -733,6 +701,62 @@ mod tests {
     }
 
     #[test]
+    fn extract_claude_token_from_secrets() {
+        let secrets = vec![
+            (
+                "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+                "sk-ant-abc123".to_string(),
+            ),
+            ("API_KEY".to_string(), "mykey".to_string()),
+        ];
+
+        let (token, remaining) = extract_claude_token(&secrets);
+
+        assert_eq!(token.as_deref(), Some("sk-ant-abc123"));
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0, "API_KEY");
+    }
+
+    #[test]
+    fn extract_claude_token_falls_back_to_env() {
+        let saved = std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok();
+        unsafe {
+            std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", "env-token-xyz");
+        }
+
+        let (token, remaining) = extract_claude_token(&[]);
+
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", v),
+                None => std::env::remove_var("CLAUDE_CODE_OAUTH_TOKEN"),
+            }
+        }
+
+        assert_eq!(token.as_deref(), Some("env-token-xyz"));
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn extract_claude_token_returns_none_when_absent() {
+        let saved = std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok();
+        unsafe {
+            std::env::remove_var("CLAUDE_CODE_OAUTH_TOKEN");
+        }
+
+        let (token, remaining) = extract_claude_token(&[]);
+
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var("CLAUDE_CODE_OAUTH_TOKEN", v);
+            }
+        }
+
+        assert!(token.is_none());
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
     fn build_compose_override_uses_secret_git_identity() {
         let secrets = vec![
             (
@@ -743,15 +767,7 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
 
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &secrets,
-            "orkestra-claude-test",
-            None,
-            &no_limits(),
-            &[],
-        );
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
 
         // Git identity env vars use the secret values.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -774,15 +790,7 @@ mod tests {
             "project@example.com".to_string(),
         )];
 
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &secrets,
-            "orkestra-claude-test",
-            None,
-            &no_limits(),
-            &[],
-        );
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
 
         // Email uses the secret value.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -805,8 +813,7 @@ mod tests {
             port_bind: "127.0.0.1:9000:9000".to_string(),
             git_email: "agent@orkestra.local".to_string(),
             git_name: "Orkestra Agent".to_string(),
-            claude_volume_name: "orkestra-claude-test".to_string(),
-            claude_global_dir_mount: None,
+            claude_code_oauth_token: None,
             gh_token: None,
             secret_envs: vec![],
             image: "myimage:latest".to_string(),
@@ -843,10 +850,11 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
         let (git_email, git_name, filtered_secrets) = extract_git_identity(&secrets);
+        let (_, final_secrets) = extract_claude_token(&filtered_secrets);
         let config = DockerRunConfig {
             git_email,
             git_name,
-            secret_envs: filtered_secrets
+            secret_envs: final_secrets
                 .iter()
                 .map(|(k, v)| format!("{k}={v}"))
                 .collect(),
@@ -874,10 +882,11 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
         let (git_email, git_name, filtered_secrets) = extract_git_identity(&secrets);
+        let (_, final_secrets) = extract_claude_token(&filtered_secrets);
         let config = DockerRunConfig {
             git_email,
             git_name,
-            secret_envs: filtered_secrets
+            secret_envs: final_secrets
                 .iter()
                 .map(|(k, v)| format!("{k}={v}"))
                 .collect(),
@@ -930,7 +939,6 @@ mod tests {
             "app",
             3000,
             &[],
-            "orkestra-claude-test",
             None,
             &ResourceLimits {
                 cpu_limit: Some(2.0),
@@ -947,15 +955,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_resource_limits_when_none() {
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &[],
-            "orkestra-claude-test",
-            None,
-            &no_limits(),
-            &[],
-        );
+        let yaml = build_compose_override("app", 3000, &[], None, &no_limits(), &[]);
         assert!(!yaml.contains("cpus:"), "cpus should be absent");
         assert!(!yaml.contains("mem_limit:"), "mem_limit should be absent");
     }
@@ -987,43 +987,33 @@ mod tests {
     fn build_docker_run_args_no_extra_mounts_when_empty() {
         let config = default_run_config();
         let args = build_docker_run_args(&config);
-        // Exactly 3 -v flags: workspace + claude volume + toolbox.
+        // Exactly 2 -v flags: workspace + toolbox.
         let v_count = args.iter().filter(|a| *a == "-v").count();
-        assert_eq!(
-            v_count, 3,
-            "expect workspace, claude volume, and toolbox -v flags"
-        );
+        assert_eq!(v_count, 2, "expect workspace and toolbox -v flags");
     }
 
     #[test]
-    fn build_docker_run_args_always_includes_claude_volume() {
-        let config = default_run_config();
-        let args = build_docker_run_args(&config);
-        let v_positions: Vec<usize> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| *a == "-v")
-            .map(|(i, _)| i)
-            .collect();
-        let mounts: Vec<&String> = v_positions.iter().map(|&i| &args[i + 1]).collect();
-        assert!(
-            mounts
-                .iter()
-                .any(|m| m.ends_with(":/home/orkestra/.claude")),
-            "claude named volume must always be mounted"
-        );
-    }
-
-    #[test]
-    fn build_docker_run_args_includes_global_auth_when_set() {
+    fn build_docker_run_args_includes_claude_token_when_set() {
         let config = DockerRunConfig {
-            claude_global_dir_mount: Some("/host/.claude:/run/claude-global:ro".to_string()),
+            claude_code_oauth_token: Some("sk-ant-test-token".to_string()),
             ..default_run_config()
         };
         let args = build_docker_run_args(&config);
         assert!(
-            args.contains(&"/host/.claude:/run/claude-global:ro".to_string()),
-            "global auth mount must be passed through"
+            args.contains(&"CLAUDE_CODE_OAUTH_TOKEN=sk-ant-test-token".to_string()),
+            "CLAUDE_CODE_OAUTH_TOKEN must be injected when set"
+        );
+    }
+
+    #[test]
+    fn build_docker_run_args_omits_claude_token_when_none() {
+        let config = default_run_config();
+        let args = build_docker_run_args(&config);
+        assert!(
+            !args
+                .iter()
+                .any(|a| a.starts_with("CLAUDE_CODE_OAUTH_TOKEN=")),
+            "CLAUDE_CODE_OAUTH_TOKEN must be absent when None"
         );
     }
 
@@ -1033,7 +1023,6 @@ mod tests {
             "app",
             3000,
             &[],
-            "orkestra-claude-test",
             None,
             &no_limits(),
             &[
@@ -1051,7 +1040,6 @@ mod tests {
             "app",
             3000,
             &[],
-            "orkestra-claude-test",
             None,
             &no_limits(),
             &["cache-vol:/root/.cache".to_string()],
@@ -1072,75 +1060,49 @@ mod tests {
             "app",
             3000,
             &[],
-            "orkestra-claude-test",
             None,
             &no_limits(),
             &["/host/path:/container/path:ro".to_string()],
         );
-        // Only toolbox + claude volume should appear in the root-level volumes section.
+        // Only the toolbox volume should appear in the root-level volumes section.
         let root_section = yaml.rsplit("volumes:\n").next().unwrap_or("");
         assert!(!root_section.contains("/host/path"));
     }
 
     #[test]
-    fn build_compose_override_includes_claude_volume_and_declares_at_root() {
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &[],
-            "orkestra-claude-proj1",
-            None,
-            &no_limits(),
-            &[],
-        );
-        // Named volume mounted in service.
+    fn build_compose_override_includes_claude_token_when_set() {
+        let yaml = build_compose_override("app", 3000, &[], Some("sk-ant-abc"), &no_limits(), &[]);
         assert!(
-            yaml.contains("orkestra-claude-proj1:/home/orkestra/.claude"),
-            "claude volume must be in service mounts"
-        );
-        // Declared in root volumes section (without external: true).
-        assert!(
-            yaml.contains("  orkestra-claude-proj1:\n"),
-            "claude volume must be declared in root volumes"
-        );
-        assert!(
-            !yaml.contains("orkestra-claude-proj1:\n    external: true"),
-            "claude volume must not be external"
+            yaml.contains("CLAUDE_CODE_OAUTH_TOKEN: \"sk-ant-abc\""),
+            "CLAUDE_CODE_OAUTH_TOKEN must appear in environment when set"
         );
     }
 
     #[test]
-    fn build_compose_override_includes_global_auth_when_provided() {
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &[],
-            "orkestra-claude-test",
-            Some("/data/.claude"),
-            &no_limits(),
-            &[],
-        );
+    fn build_compose_override_omits_claude_token_when_none() {
+        let yaml = build_compose_override("app", 3000, &[], None, &no_limits(), &[]);
         assert!(
-            yaml.contains("/data/.claude:/run/claude-global:ro"),
-            "global auth mount must appear in service volumes"
+            !yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"),
+            "CLAUDE_CODE_OAUTH_TOKEN must be absent when None"
         );
     }
 
     #[test]
-    fn build_compose_override_omits_global_auth_when_absent() {
-        let yaml = build_compose_override(
-            "app",
-            3000,
-            &[],
-            "orkestra-claude-test",
-            None,
-            &no_limits(),
-            &[],
-        );
-        assert!(
-            !yaml.contains(".claude-global"),
-            "global auth mount must be absent when not provided"
-        );
+    fn build_compose_override_strips_claude_token_from_secrets_env_vars() {
+        // CLAUDE_CODE_OAUTH_TOKEN in secrets must not be double-injected as a bare env var.
+        let secrets = vec![
+            (
+                "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+                "from-secret".to_string(),
+            ),
+            ("OTHER_KEY".to_string(), "value".to_string()),
+        ];
+        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        // Should not appear as a plain key-value secret injection.
+        // (The param is None so it won't appear at all in this call.)
+        assert!(!yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"));
+        // Other secrets still appear.
+        assert!(yaml.contains("OTHER_KEY: \"value\""));
     }
 
     #[test]

@@ -27,6 +27,17 @@ Per-project git author identity is injected into containers via `extract_git_ide
 
 **Wrapper limitation:** The `devcontainer_start_container` convenience function in `lib.rs` always passes `&[]` for secrets. Callers using this wrapper will never get per-project git identity from secrets — only the env-var fallback applies. If you add a caller that expects secret-based identity, call the underlying interaction (`start_container::execute`) directly with the decrypted secrets.
 
+## YAML Escaping in `build_compose_override`
+
+When injecting values into compose override YAML, strings written inside double-quoted YAML scalars must be escaped. The current codebase applies a 5-step `.replace()` chain for this:
+
+```rust
+let escaped = value.replace('\\', "\\\\").replace('"', "\\\"")
+    .replace('\n', "\\n").replace('\r', "\\r").replace('\0', "\\0");
+```
+
+**Known gap:** `GH_TOKEN` and git identity values (`git_email`, `git_name`) at lines 505-508 and 518-519 of `start_container.rs` are written into double-quoted YAML strings without this escaping. Secrets and `CLAUDE_CODE_OAUTH_TOKEN` apply it correctly. A future cleanup should extract an `escape_yaml_double_quoted` helper and apply it uniformly to all injection sites.
+
 ## Router Middleware Ordering (`extra_routes`)
 
 Axum layers apply only to routes already merged into the router at the point the layer is added — they do not retroactively cover routes merged afterward. `build_router` in `server.rs` uses `extra_routes` (injected by callers like `service/src/main.rs`) to attach PWA/SPA routes. These **must be merged before** the security header and CORS layers are applied, or PWA routes silently bypass all security headers.

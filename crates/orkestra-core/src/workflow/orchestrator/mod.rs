@@ -906,6 +906,8 @@ mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
     use crate::workflow::config::StageConfig;
+    use crate::workflow::execution::default_test_registry;
+    use orkestra_agent::MockAgentRunner;
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
@@ -925,10 +927,20 @@ mod tests {
         let iteration_service = api.lock().unwrap().iteration_service().clone();
         let project_root = PathBuf::from("/tmp");
 
-        let stage_executor = Arc::new(
-            StageExecutionService::new(workflow, project_root, store, iteration_service)
-                .expect("failed to start hook server in test"),
-        );
+        // Use MockAgentRunner + with_runner to avoid starting a real hook server.
+        // All tests in this module share the same PID, so the PID-based socket path
+        // collides when tests run in parallel.
+        let runner: Arc<dyn crate::workflow::execution::AgentRunnerTrait> =
+            Arc::new(MockAgentRunner::new());
+        let registry = Arc::new(default_test_registry());
+        let stage_executor = Arc::new(StageExecutionService::with_runner(
+            workflow,
+            project_root,
+            store,
+            iteration_service,
+            runner,
+            registry,
+        ));
 
         OrchestratorLoop::new(api, stage_executor)
     }

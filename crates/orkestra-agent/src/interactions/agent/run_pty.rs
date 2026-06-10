@@ -263,6 +263,7 @@ fn drive_pty_session(
     let final_read_pos = if transcript_path == fallback_transcript_path {
         tail_file_pos
     } else {
+        full_output.clear();
         0
     };
 
@@ -618,10 +619,11 @@ fn read_new_lines(
         return file_pos;
     }
 
-    let mut buf = String::new();
-    if BufReader::new(file).read_to_string(&mut buf).is_err() {
+    let mut raw = Vec::new();
+    if BufReader::new(file).read_to_end(&mut raw).is_err() {
         return file_pos;
     }
+    let buf = String::from_utf8_lossy(&raw);
 
     // Only process up to the last newline — trailing partial lines are not yet complete.
     let complete_end = match buf.rfind('\n') {

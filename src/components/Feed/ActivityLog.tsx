@@ -4,6 +4,8 @@ import { History } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type {
   IterationTrigger,
+  StageTokenUsage,
+  TaskTokenUsage,
   WorkflowIteration,
   WorkflowOutcome,
   WorkflowQuestionAnswer,
@@ -19,9 +21,10 @@ import { OutcomeBadge } from "./OutcomeBadge";
 
 interface ActivityLogProps {
   iterations: WorkflowIteration[];
+  tokenUsage?: TaskTokenUsage | null;
 }
 
-export function ActivityLog({ iterations }: ActivityLogProps) {
+export function ActivityLog({ iterations, tokenUsage }: ActivityLogProps) {
   if (iterations.length === 0) {
     return <EmptyState icon={History} message="No activity yet." className="h-full" />;
   }
@@ -30,19 +33,23 @@ export function ActivityLog({ iterations }: ActivityLogProps) {
 
   return (
     <div className="px-5 py-5 space-y-5">
-      {runs.map((run, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: run order is stable
-        <div key={i}>
-          <div className="font-mono text-forge-mono-label text-text-quaternary uppercase tracking-widest mb-2">
-            {run.stage}
+      {runs.map((run, i) => {
+        const stageUsage = tokenUsage?.stages.find((s) => s.stage === run.stage);
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: run order is stable
+          <div key={i}>
+            <div className="font-mono text-forge-mono-label text-text-quaternary uppercase tracking-widest mb-2">
+              {run.stage}
+            </div>
+            <div className="border-l-2 border-canvas ml-[3px] pl-4 space-y-4">
+              {run.iterations.map((iter) => (
+                <IterationEntry key={iter.id} iteration={iter} />
+              ))}
+            </div>
+            {stageUsage && <StageTokenLine usage={stageUsage} />}
           </div>
-          <div className="border-l-2 border-canvas ml-[3px] pl-4 space-y-4">
-            {run.iterations.map((iter) => (
-              <IterationEntry key={iter.id} iteration={iter} />
-            ))}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -60,6 +67,22 @@ function consecutiveRuns(
     }
   }
   return runs;
+}
+
+// ============================================================================
+// Stage token summary
+// ============================================================================
+
+function StageTokenLine({ usage }: { usage: StageTokenUsage }) {
+  const { input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens } =
+    usage.total;
+  const cache = cache_creation_input_tokens + cache_read_input_tokens;
+  return (
+    <div className="mt-2 font-mono text-forge-mono-label text-text-quaternary">
+      Tokens — In: {input_tokens.toLocaleString()} · Out: {output_tokens.toLocaleString()} · Cache:{" "}
+      {cache.toLocaleString()}
+    </div>
+  );
 }
 
 // ============================================================================

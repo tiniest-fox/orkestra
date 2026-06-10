@@ -139,6 +139,7 @@ fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Res
             Ok(()) => {
                 let stage = task.current_stage().unwrap_or("unknown").to_string();
                 task.state = TaskState::queued(stage);
+                task.updated_at = chrono::Utc::now().to_rfc3339();
                 crate::orkestra_debug!(
                     "task",
                     "{} setup complete: state={}, worktree={:?}, branch={:?}",
@@ -155,6 +156,7 @@ fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Res
                 crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
                 let stage = task.current_stage().unwrap_or("unknown").to_string();
                 task.state = TaskState::failed_at(stage, &error);
+                task.updated_at = chrono::Utc::now().to_rfc3339();
                 // Worktree info is already saved - retry will skip creation
                 if let Err(e) = store.save_task(&task) {
                     crate::orkestra_debug!(
@@ -170,5 +172,57 @@ fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Res
         Err(e) => {
             crate::orkestra_debug!("setup", "CRITICAL: Failed to load task {task_id}: {e}");
         }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::title::mock::MockTitleGenerator;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::domain::Task;
+
+    fn make_setting_up_task(id: &str) -> Task {
+        let mut task = Task::new(id, "Test", "desc", "work", "2020-01-01T00:00:00Z");
+        task.updated_at = "2020-01-01T00:00:00Z".to_string();
+        task.state = TaskState::setting_up("work");
+        task
+    }
+
+    fn make_service(store: Arc<dyn WorkflowStore>) -> TaskSetupService {
+        let title_gen: Arc<dyn TitleGenerator> = Arc::new(MockTitleGenerator::succeeding());
+        TaskSetupService::new(Arc::clone(&store), None, title_gen)
+    }
+
+    /// Both setup paths (success → Queued, failure → Failed) must bump `updated_at`.
+    ///
+    /// With git=None, `setup_worktree` returns `Ok(None)` immediately, so this
+    /// exercises the success path. Both paths share the same `updated_at` bump
+    /// in `apply_setup_result`.
+    #[test]
+    fn apply_setup_result_bumps_updated_at() {
+        let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
+        let service = make_service(Arc::clone(&store));
+        service.set_sync(true); // run inline so we can check state after
+
+        let task = make_setting_up_task("task-1");
+        store.save_task(&task).unwrap();
+
+        let before = store.get_task("task-1").unwrap().unwrap().updated_at;
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        // With git=None, setup_worktree returns Ok(None) → success path (Queued).
+        service.spawn_setup("task-1".to_string(), "main".to_string(), None);
+
+        let after = store.get_task("task-1").unwrap().unwrap().updated_at;
+        assert_ne!(
+            after, before,
+            "apply_setup_result must bump updated_at on both success and failure paths"
+        );
     }
 }

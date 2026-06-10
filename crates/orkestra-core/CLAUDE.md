@@ -182,6 +182,8 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 
 **`build()` signature evolution**: The function takes individual primitive params for values that require external computation (process liveness, network state) and can't be derived from `Task` alone. Currently `assistant_active: bool` and `chat_needs_review: bool` both fit this category — two trailing bools is the documented threshold. The next time a new external input is needed, replace the accumulating bools with a single `DerivedTaskContext` struct to keep the signature stable.
 
+**`build_single_top_level_view()` in `task_views.rs`**: Already at 8 parameters (`#[allow(clippy::too_many_arguments)]`). Do not add more parameters — the next addition should replace the individual params with a context struct instead.
+
 ### Stage Session Supersession Rules
 
 `should_supersede::execute()` in `stage/interactions/session/` decides whether to wipe the existing session before spawning. The canonical rule table (keep this in sync with the doc comment in that file):

@@ -300,7 +300,7 @@ fn test_promote_chat_with_worktree_skips_awaiting_setup() {
     // Promote to flow.
     let promoted = ctx
         .api()
-        .promote_to_flow(task_id, None, None, None, None)
+        .promote_to_flow(task_id, None, None, None, None, None)
         .expect("promote should succeed");
 
     // Should skip AwaitingSetup and go directly to Queued.

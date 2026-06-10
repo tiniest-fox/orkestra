@@ -52,6 +52,7 @@ impl WorkflowApi {
     }
 
     /// Create a new task with a prewarmed worktree ID and options.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_task_with_prewarm(
         &self,
         task_id: &str,

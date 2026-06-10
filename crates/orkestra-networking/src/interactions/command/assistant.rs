@@ -100,8 +100,10 @@ pub fn assistant_send_task_message(
 
 /// Creates a chat task and sends the first message.
 ///
-/// Expected params: `{ "message": "<message>" }`
+/// Expected params: `{ "message": "<message>", "task_id": "<id>" (optional),
+/// "base_branch": "<branch>" (optional) }`
 ///
+/// When `task_id` is provided, adopts the prewarmed worktree for that ID.
 /// Returns `{ "task": WorkflowTask, "session": AssistantSession }`.
 ///
 /// The API lock is held only for task creation, then released before spawning
@@ -117,13 +119,27 @@ pub fn create_chat_and_send(ctx: &CommandContext, params: &Value) -> Result<Valu
         return Err(ErrorPayload::invalid_params("message cannot be empty"));
     }
 
+    let task_id = params
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
+    let base_branch = params
+        .get("base_branch")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
     // Lock briefly for task creation only.
-    let task = ctx
-        .api
-        .lock()
-        .map_err(|_| ErrorPayload::lock_error())?
-        .create_chat_task(&generate_fallback_title(&message))
-        .map_err(ErrorPayload::from)?;
+    let title = generate_fallback_title(&message);
+    let task = {
+        let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        if let Some(id) = task_id.as_deref() {
+            api.create_chat_task_with_prewarm(id, &title, base_branch.as_deref())
+        } else {
+            api.create_chat_task(&title)
+        }
+        .map_err(ErrorPayload::from)?
+    };
 
     // Send message without holding the API lock — agent spawning happens here.
     let service = ctx.create_assistant_service();

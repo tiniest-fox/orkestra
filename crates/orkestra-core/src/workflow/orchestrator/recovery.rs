@@ -37,6 +37,13 @@ impl OrchestratorLoop {
 
         let git_service = api.git_service.as_deref();
 
+        // Clean up orphaned prewarm records from previous session
+        if let Err(e) =
+            task_interactions::cleanup_orphaned_worktree_records::execute(api.store.as_ref())
+        {
+            orkestra_debug!("recovery", "Failed to clean orphaned worktree records: {e}");
+        }
+
         // Recover tasks stuck in transient phases
         task_interactions::recover_stale_setup::execute(api.store.as_ref(), git_service, &headers);
         task_interactions::recover_stale_agents::execute(api.store.as_ref(), &headers);

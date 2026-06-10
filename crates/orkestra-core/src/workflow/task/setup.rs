@@ -9,8 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
+use chrono::Utc;
+use orkestra_store::{WorktreeRecord, WorktreeStatus};
+
 use crate::title::TitleGenerator;
-use crate::workflow::ports::{GitService, WorkflowStore};
+use crate::workflow::ports::{GitService, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
 
 /// Handles background setup for newly created tasks.
@@ -47,6 +50,99 @@ impl TaskSetupService {
     /// Used by tests for deterministic execution.
     pub fn set_sync(&self, sync: bool) {
         self.sync.store(sync, Ordering::Relaxed);
+    }
+
+    /// Spawn background prewarm for an anticipated task.
+    ///
+    /// Saves a Pending worktree record synchronously, then creates the worktree
+    /// in the background. On success, updates the record to Ready. On failure,
+    /// deletes the record so normal task creation can handle setup.
+    pub fn spawn_prewarm(
+        &self,
+        task_id: String,
+        base_branch: Option<String>,
+    ) -> WorkflowResult<()> {
+        // Fail fast if a task or prewarm record with this ID already exists.
+        if self.store.get_task(&task_id)?.is_some() {
+            return Err(crate::workflow::ports::WorkflowError::InvalidState(
+                format!("task {task_id} already exists"),
+            ));
+        }
+        if self.store.get_worktree_record(&task_id)?.is_some() {
+            return Err(crate::workflow::ports::WorkflowError::InvalidState(
+                format!("prewarm record for {task_id} already exists"),
+            ));
+        }
+
+        let record = WorktreeRecord {
+            task_id: task_id.clone(),
+            status: WorktreeStatus::Pending,
+            base_branch: base_branch.clone(),
+            worktree_path: None,
+            branch_name: None,
+            base_commit: None,
+            created_at: Utc::now().to_rfc3339(),
+        };
+        self.store.save_worktree_record(&record)?;
+
+        let store = Arc::clone(&self.store);
+        let git_service = match self.git.as_ref() {
+            Some(g) => Arc::clone(g),
+            None => {
+                return Err(crate::workflow::ports::WorkflowError::GitError(
+                    "No git service configured".into(),
+                ))
+            }
+        };
+
+        let run = move || {
+            let branch = base_branch.as_deref();
+            match git_service.ensure_worktree(&task_id, branch) {
+                Ok(result) => {
+                    let updated = WorktreeRecord {
+                        task_id: task_id.clone(),
+                        status: WorktreeStatus::Ready,
+                        base_branch: record.base_branch.clone(),
+                        worktree_path: Some(result.worktree_path.to_string_lossy().into_owned()),
+                        branch_name: Some(result.branch_name.clone()),
+                        base_commit: Some(result.base_commit.clone()),
+                        created_at: record.created_at.clone(),
+                    };
+                    if let Err(e) = store.save_worktree_record(&updated) {
+                        crate::orkestra_debug!(
+                            "setup",
+                            "CRITICAL: Failed to save ready worktree record for {task_id}: {e}"
+                        );
+                    }
+                }
+                Err(e) => {
+                    crate::orkestra_debug!(
+                        "setup",
+                        "CRITICAL: Prewarm worktree creation failed for {task_id}: {e}"
+                    );
+                    if let Err(e2) = store.delete_worktree_record(&task_id) {
+                        crate::orkestra_debug!(
+                            "setup",
+                            "CRITICAL: Failed to delete failed prewarm record for {task_id}: {e2}"
+                        );
+                    }
+                }
+            }
+        };
+        if self.sync.load(Ordering::Relaxed) {
+            run();
+        } else {
+            thread::spawn(run);
+        }
+        Ok(())
+    }
+
+    /// Delete a prewarm worktree record.
+    ///
+    /// Any worktree directory already created will be cleaned up by
+    /// `cleanup_orphaned_worktrees` on next startup.
+    pub fn cancel_prewarm(&self, task_id: &str) -> WorkflowResult<()> {
+        self.store.delete_worktree_record(task_id)
     }
 
     /// Spawn background setup for a new task.

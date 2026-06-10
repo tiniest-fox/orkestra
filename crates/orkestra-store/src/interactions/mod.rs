@@ -10,3 +10,4 @@ pub mod iteration;
 pub mod log_entry;
 pub mod session;
 pub mod task;
+pub mod worktree;

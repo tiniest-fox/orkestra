@@ -1060,6 +1060,62 @@ async fn test_cors_restricted_origin() {
     );
 }
 
+/// `prewarm_worktree` is wired in the dispatch table (not `METHOD_NOT_FOUND`).
+///
+/// No git service configured — we get an error for that reason, not for unknown method.
+#[tokio::test]
+async fn test_prewarm_worktree_wiring() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+    let mut ws = connect(addr).await;
+
+    let response = request(
+        &mut ws,
+        serde_json::json!({
+            "id": "req-prewarm",
+            "method": "prewarm_worktree",
+            "params": { "task_id": "test-petname-id" }
+        }),
+    )
+    .await;
+
+    assert_eq!(response["id"], "req-prewarm");
+    let code = response["error"]["code"].as_str().unwrap_or("");
+    assert_ne!(
+        code, "METHOD_NOT_FOUND",
+        "prewarm_worktree must be wired in dispatch"
+    );
+}
+
+/// `cancel_prewarm` is wired in the dispatch table (not `METHOD_NOT_FOUND`).
+///
+/// DELETE of a nonexistent row is a no-op in `SQLite` — returns `{ ok: true }`.
+#[tokio::test]
+async fn test_cancel_prewarm_wiring() {
+    let (api, store, conn) = test_api();
+    let (addr, _tx) = start_test_server(api, store, conn).await;
+    let mut ws = connect(addr).await;
+
+    let response = request(
+        &mut ws,
+        serde_json::json!({
+            "id": "req-cancel",
+            "method": "cancel_prewarm",
+            "params": { "task_id": "nonexistent-id" }
+        }),
+    )
+    .await;
+
+    assert_eq!(response["id"], "req-cancel");
+    assert_ne!(
+        response["error"]["code"].as_str().unwrap_or(""),
+        "METHOD_NOT_FOUND",
+        "cancel_prewarm must be wired in dispatch"
+    );
+    // DELETE of a nonexistent row is a no-op — should succeed.
+    assert_eq!(response["result"]["ok"], true);
+}
+
 /// `get_uncommitted_diff` is wired in the dispatch table (not `METHOD_NOT_FOUND`).
 ///
 /// Verifies end-to-end WebSocket routing for the shared handler.

@@ -41,6 +41,7 @@ impl WorkflowApi {
             &self.workflow,
             self.git_service.as_deref(),
             &self.iteration_service,
+            None,
             &options.title,
             &options.description,
             options.base_branch.as_deref(),
@@ -50,9 +51,67 @@ impl WorkflowApi {
         )
     }
 
-    /// Create a new chat task (no flow, no worktree, starts in Queued).
+    /// Create a new task with a prewarmed worktree ID and options.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_task_with_prewarm(
+        &self,
+        task_id: &str,
+        title: &str,
+        description: &str,
+        base_branch: Option<&str>,
+        mode: TaskCreationMode,
+        flow: Option<&str>,
+        auto_pr: bool,
+    ) -> WorkflowResult<Task> {
+        task_interactions::create::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            self.git_service.as_deref(),
+            &self.iteration_service,
+            Some(task_id),
+            title,
+            description,
+            base_branch,
+            mode,
+            flow,
+            auto_pr,
+        )
+    }
+
+    /// Create a new chat task (no flow, starts in Queued).
     pub fn create_chat_task(&self, title: &str) -> WorkflowResult<Task> {
-        task_interactions::create_chat::execute(self.store.as_ref(), title)
+        task_interactions::create_chat::execute(self.store.as_ref(), None, title, None)
+    }
+
+    /// Create a new chat task with a prewarmed worktree ID and optional base branch.
+    pub fn create_chat_task_with_prewarm(
+        &self,
+        task_id: &str,
+        title: &str,
+        base_branch: Option<&str>,
+    ) -> WorkflowResult<Task> {
+        task_interactions::create_chat::execute(
+            self.store.as_ref(),
+            Some(task_id),
+            title,
+            base_branch,
+        )
+    }
+
+    /// Spawn a prewarmed worktree for an anticipated task.
+    ///
+    /// Saves a Pending worktree record and creates the worktree in the background.
+    /// When task creation uses the same `task_id`, it will adopt the ready worktree.
+    pub fn prewarm_worktree(&self, task_id: &str, base_branch: Option<&str>) -> WorkflowResult<()> {
+        self.setup_service
+            .spawn_prewarm(task_id.to_string(), base_branch.map(str::to_string))
+    }
+
+    /// Cancel a pending prewarm and delete its worktree record.
+    ///
+    /// Any worktree directory already created is cleaned up on next startup.
+    pub fn cancel_prewarm(&self, task_id: &str) -> WorkflowResult<()> {
+        self.setup_service.cancel_prewarm(task_id)
     }
 
     /// Create a new subtask under a parent task.

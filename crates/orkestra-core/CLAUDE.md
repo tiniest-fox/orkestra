@@ -166,7 +166,7 @@ Chat tasks are a distinct task type that live outside the normal workflow pipeli
 - **Orchestrator filtering**: `find_spawn_candidates` filters out chat tasks via `.filter(|h| !h.is_chat())`. Chat tasks are never spawned into the stage pipeline while they remain chat tasks.
 - **Promotion**: `promote_to_flow` transitions a chat task to `AwaitingSetup` with `flow` set to the target flow, killing any active assistant sessions. After promotion it behaves identically to a normal task.
 - **`is_chat` on `TaskHeader`**: This flag enables cheap filtering in `find_spawn_candidates` without loading full task artifacts. When adding new orchestrator filters, `TaskHeader` (not `Task`) is the right type to check.
-- **Working directory**: Chat tasks have no worktree. `AssistantService::send_task_scoped_message` falls back to `project_root` when `task.is_chat` — don't add worktree assumptions to assistant message paths.
+- **Working directory**: Chat tasks receive a worktree via prewarm — the worktree is created the moment the user opens the New Chat dialog and adopted into the task on creation. `AssistantService::send_task_scoped_message` falls back to `project_root` when `task.worktree_path` is `None` (e.g., a task created before prewarm was introduced), but for newly created chat tasks the worktree path will be set.
 - **System prompt injection flags differ by spawner**: The assistant spawner (`workflow/assistant/service.rs`) passes `--system-prompt` on every invocation (initial and resume). The agent spawner (`crates/orkestra-agent/src/interactions/spawner/claude.rs`) passes `--append-system-prompt` unconditionally. Both are intentional — `--system-prompt` replaces the full system prompt, while `--append-system-prompt` appends to Claude Code's built-in prompt. Don't conflate them when modifying prompt injection logic.
 
 ### `DerivedTaskState::build()` — Approval vs. Rejection Detection
@@ -277,6 +277,21 @@ if name.starts_with('/') || name.contains('\\') || name.contains("..") || name.c
 
 This is a HIGH-severity security finding.
 
+### `apply_to_task()` is the Single Source of Truth for WorktreeRecord Adoption
+
+When a prewarm `WorktreeRecord` is adopted into a task, **always** use `apply_to_task()` in `workflow/task/interactions/adopt_worktree.rs`. Do not copy `WorktreeRecord` fields (worktree path, branch name, base commit, base branch) inline — that pattern caused a HIGH-severity bug where `branch_name`/`base_commit` were never set, making the integration step silently skip the merge and discard all agent work.
+
+```rust
+// Good — canonical, all fields in one place
+apply_to_task(&mut task, record);
+
+// Bad — inline field copies diverge across create.rs and create_chat.rs
+task.worktree_path = Some(record.worktree_path.clone());
+// (branch_name, base_commit often forgotten here)
+```
+
+The `is_empty()` guard on `base_branch` is intentional: explicit constructor parameters win over worktree record values.
+
 ### Trace all downstream requirements when enabling a new state
 
 When a Trak says "enable operation X from state Y (it's just a gating change)", trace the full execution path of X — not just the gate. Even when the gate change is one line, the operation itself may read fields from the task object (e.g., `task.current_stage()`, `task.branch_name()`) that are `Option<T>` and return `None` for the new state.
@@ -296,6 +311,10 @@ The crate has extensive e2e tests in `tests/e2e/`:
 - `workflows` module — Pre-built workflow configs
 
 For unit tests, use `InMemoryWorkflowStore` and mock generators.
+
+### `with_git` Takes Stage Names, Not Artifact Names
+
+`TestEnv::with_git(&["planning", "work"])` expects **stage names** (matching keys in `workflow.yaml`), not artifact names. The stage name determines the prompt file — e.g., stage `"planning"` loads `planning.md`. Passing artifact names like `&["plan", "summary"]` silently loads the wrong prompt or hits a missing file and causes confusing test failures.
 
 ### Manual State Advancement Requires a Matching Iteration
 

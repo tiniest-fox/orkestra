@@ -1,5 +1,7 @@
 //! Task interactions: CRUD, setup, recovery.
 
+pub mod adopt_worktree;
+pub mod cleanup_orphaned_worktree_records;
 pub mod cleanup_orphaned_worktrees;
 pub mod create;
 pub mod create_chat;

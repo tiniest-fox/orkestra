@@ -34,6 +34,8 @@ mod multi_project;
 mod play;
 #[path = "e2e/pr_description_audit.rs"]
 mod pr_description_audit;
+#[path = "e2e/prewarm.rs"]
+mod prewarm;
 #[path = "e2e/resources.rs"]
 mod resources;
 #[path = "e2e/squash_commits.rs"]

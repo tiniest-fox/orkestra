@@ -13,6 +13,7 @@ pub fn execute(
     workflow: &WorkflowConfig,
     git_service: Option<&dyn GitService>,
     iteration_service: &IterationService,
+    task_id: Option<&str>,
     title: &str,
     description: &str,
     base_branch: Option<&str>,
@@ -34,7 +35,10 @@ pub fn execute(
         .or_else(|| workflow.first_flow_name())
         .unwrap_or("default");
 
-    let id = store.next_task_id()?;
+    let id = match task_id {
+        Some(id) => id.to_string(),
+        None => store.next_task_id()?,
+    };
     let first_stage = workflow
         .first_stage(flow_name)
         .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
@@ -57,8 +61,15 @@ pub fn execute(
     task.auto_pr = auto_pr;
     task.flow = flow_name.to_string();
 
-    // Start in AwaitingSetup - orchestrator will pick this up and trigger setup
-    task.state = TaskState::awaiting_setup(&first_stage.name);
+    // Check for a prewarmed worktree; adopt it if ready.
+    if let Some(record) = super::adopt_worktree::execute(store, &id)? {
+        super::adopt_worktree::apply_to_task(&mut task, record);
+        // Start directly in Queued — worktree is already ready.
+        task.state = TaskState::queued(&first_stage.name);
+    } else {
+        // Start in AwaitingSetup - orchestrator will pick this up and trigger setup.
+        task.state = TaskState::awaiting_setup(&first_stage.name);
+    }
 
     // Save task immediately (non-blocking UI)
     store.save_task(&task)?;

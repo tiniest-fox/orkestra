@@ -66,6 +66,9 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "git_fetch",
     "task_sync_status",
     "force_push_pr_changes",
+    // Prewarm
+    "prewarm_worktree",
+    "cancel_prewarm",
 ];
 
 /// Commands that only exist in Tauri (desktop-only).

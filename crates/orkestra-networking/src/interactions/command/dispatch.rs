@@ -15,7 +15,7 @@ use crate::highlight::SyntaxHighlighter;
 use crate::interactions::auth::{generate_pairing_code, list_devices, revoke_device};
 use crate::types::{ErrorPayload, Event};
 
-use super::{action, assistant, diff, git, query, task};
+use super::{action, assistant, diff, git, prewarm, query, task};
 
 // ============================================================================
 // Command Context
@@ -179,6 +179,10 @@ pub async fn execute(
         "get_commit_log" => diff::handle_get_commit_log(ctx, params).await,
         "get_batch_file_counts" => diff::handle_get_batch_file_counts(ctx, params).await,
         "get_commit_diff" => diff::handle_get_commit_diff(ctx, params).await,
+
+        // -- Prewarm --
+        "prewarm_worktree" => run_sync(ctx, params, prewarm::prewarm_worktree).await,
+        "cancel_prewarm" => run_sync(ctx, params, prewarm::cancel_prewarm).await,
 
         // -- Git sync --
         "git_sync_status" => run_sync(ctx, params, git::git_sync_status).await,

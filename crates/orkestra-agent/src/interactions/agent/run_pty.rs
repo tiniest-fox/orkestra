@@ -33,8 +33,8 @@ use super::classify_output::{self, OutputClassification};
 /// Owns the PTY process lifecycle. `ProcessGuard` fires SIGTERM on drop.
 ///
 /// `child` is polled via `try_wait()` to detect crashes; it also keeps the PTY
-/// slave open. `guard` is disarmed on clean completion then dropped (SIGTERM-only);
-/// on crash it drops without disarming (SIGTERM + SIGKILL escalation).
+/// slave open. `guard` is disarmed after the process is confirmed done (both
+/// clean completion and detected crash), then dropped.
 /// `_drain_thread` continuously reads PTY master output to prevent the classic
 /// output-buffer deadlock: if the slave process fills the master output buffer,
 /// it blocks on stdout and stops reading stdin, which in turn blocks our prompt

@@ -181,7 +181,10 @@ fn dispatch_payload(payload: &str, senders: &Arc<Mutex<HashMap<String, mpsc::Sen
         event_type,
         task_id: parsed.task_id.clone(),
         session_id: parsed.session_id,
-        transcript_path: parsed.transcript_path.map(PathBuf::from),
+        transcript_path: parsed
+            .transcript_path
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from),
         reason: parsed.reason,
     };
 
@@ -359,6 +362,24 @@ mod tests {
         assert!(
             !socket_path.exists(),
             "socket should be removed after shutdown"
+        );
+    }
+
+    #[test]
+    fn test_empty_transcript_path_becomes_none() {
+        let dir = TempDir::new().unwrap();
+        let server = execute(dir.path()).unwrap();
+        let rx = server.register_task("task-1");
+
+        send_payload(
+            server.socket_path(),
+            r#"{"event":"stop","task_id":"task-1","session_id":"ses-abc","transcript_path":""}"#,
+        );
+
+        let event = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            event.transcript_path, None,
+            "empty transcript_path should be treated as absent"
         );
     }
 

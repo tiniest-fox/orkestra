@@ -163,6 +163,8 @@ let parser = MockParser { extract_result: ExtractionResult::NotFound };
 
 The `test_support` module is `#[cfg(test)] pub(crate)` — only visible in test builds within the crate.
 
+**Dead-code lint vs test references**: Rust's lib dead_code lint fires even for functions that are only called from `#[cfg(test)]` blocks. Marking the function itself `#[cfg(test)]` is required to silence the warning — test references alone don't suppress it.
+
 The PTY integration tests in `tests/pty_integration.rs` use `mock_claude_pty.sh` and are `#[ignore]`d by default (no real `claude` binary required in CI). Run them locally to verify the settings schema and hook protocol:
 
 ```bash

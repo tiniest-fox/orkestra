@@ -243,29 +243,7 @@ fn drive_pty_session(
             content: "PTY session confirmed".to_string(),
         }));
     } else {
-        // Transcript never appeared — Claude Code did not start (binary missing, crash on
-        // startup, permissions, or settings error). Surface the PTY output tail for diagnosis.
-        let tail_text = {
-            let raw = if let Ok(tail) = pty_handle.output_tail.lock() {
-                tail.iter().copied().collect::<Vec<u8>>()
-            } else {
-                orkestra_debug!(
-                    "runner",
-                    "run_pty: output_tail mutex poisoned — PTY drain thread panicked; no diagnostic output available"
-                );
-                Vec::new()
-            };
-            strip_ansi_codes(&String::from_utf8_lossy(&raw))
-        };
-        drop(pty_handle);
-        hook_server.unregister_task(ctx.task_id);
-        let mut msg =
-            "PTY session failed to start — transcript file not found after 30s".to_string();
-        if !tail_text.is_empty() {
-            msg.push_str("\n\n--- PTY output tail ---\n");
-            msg.push_str(&tail_text);
-        }
-        let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(msg))));
+        handle_transcript_not_found(pty_handle, hook_server, tx, ctx.task_id);
         return;
     }
 
@@ -370,8 +348,41 @@ fn poll_for_transcript_with_enter_retry(
     }
 }
 
+/// Handle the case where the transcript never appeared within the startup deadline.
+///
+/// Builds a diagnostic message from the PTY output tail, cleans up resources, and
+/// sends a `Crash` completion event.
+fn handle_transcript_not_found(
+    pty_handle: PtyHandle,
+    hook_server: &HookServer,
+    tx: &Sender<RunEvent>,
+    task_id: &str,
+) {
+    let tail_text = {
+        let raw = if let Ok(tail) = pty_handle.output_tail.lock() {
+            tail.iter().copied().collect::<Vec<u8>>()
+        } else {
+            orkestra_debug!(
+                "runner",
+                "run_pty: output_tail mutex poisoned — PTY drain thread panicked; no diagnostic output available"
+            );
+            Vec::new()
+        };
+        strip_ansi_codes(&String::from_utf8_lossy(&raw))
+    };
+    drop(pty_handle);
+    hook_server.unregister_task(task_id);
+    let mut msg = "PTY session failed to start — transcript file not found after 30s".to_string();
+    if !tail_text.is_empty() {
+        msg.push_str("\n\n--- PTY output tail ---\n");
+        msg.push_str(&tail_text);
+    }
+    let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(msg))));
+}
+
 /// Open a PTY, spawn the Claude Code command, and return a `PtyHandle` with the child PID.
 fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), RunError> {
+    const TAIL_CAPACITY: usize = 8192;
     let cmd = build_pty_command(cfg)?;
 
     let pty_system = portable_pty::native_pty_system();
@@ -402,7 +413,6 @@ fn open_and_spawn_pty(cfg: &PtyCommandConfig<'_>) -> Result<(PtyHandle, u32), Ru
         .try_clone_reader()
         .map_err(|e| RunError::SpawnFailed(format!("failed to clone PTY reader: {e}")))?;
 
-    const TAIL_CAPACITY: usize = 8192;
     let output_tail: Arc<Mutex<VecDeque<u8>>> =
         Arc::new(Mutex::new(VecDeque::with_capacity(TAIL_CAPACITY)));
     let drain_tail = Arc::clone(&output_tail);

@@ -623,15 +623,20 @@ fn read_new_lines(
     if BufReader::new(file).read_to_end(&mut raw).is_err() {
         return file_pos;
     }
-    let buf = String::from_utf8_lossy(&raw);
 
-    // Only process up to the last newline — trailing partial lines are not yet complete.
-    let complete_end = match buf.rfind('\n') {
+    // Find the last newline in raw bytes. 0x0A cannot appear as a UTF-8 continuation
+    // byte, so this is always a correct line boundary regardless of encoding.
+    let complete_end = match raw.iter().rposition(|&b| b == b'\n') {
         Some(pos) => pos + 1,
         None => return file_pos,
     };
 
-    for line in buf[..complete_end].lines() {
+    // Convert only the complete portion so that `complete_end` remains a valid raw
+    // byte offset — lossy replacement expands invalid bytes (1 byte → 3 bytes) which
+    // would make the returned file position overshoot the actual file position.
+    let buf = String::from_utf8_lossy(&raw[..complete_end]);
+
+    for line in buf.lines() {
         if line.trim().is_empty() {
             continue;
         }

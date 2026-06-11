@@ -20,6 +20,7 @@ use crate::workflow::execution::{
     AgentCompletionError, AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput,
 };
 use crate::workflow::ports::WorkflowStore;
+use orkestra_types::domain::TokenUsage;
 
 use super::agents::{AgentExecutionService, ExecutionHandle};
 use super::scripts::{ScriptExecutionService, ScriptPollResult};
@@ -50,6 +51,7 @@ enum AgentPoll {
 const AGENT_STARTUP_TIMEOUT: Duration = Duration::from_mins(5);
 
 /// Internal wrapper for tracking an active agent execution.
+#[allow(clippy::struct_excessive_bools)]
 struct ActiveAgent {
     handle: ExecutionHandle,
     /// Stage session ID for persisting log entries to the database.
@@ -74,6 +76,12 @@ struct ActiveAgent {
     /// Session ID extracted from the stream (for providers like `OpenCode` that
     /// generate their own session IDs). Set once, consumed by `take_extracted_session_id`.
     extracted_session_id: Option<String>,
+    /// Accumulated token usage from `RunEvent::TokenUsage` events.
+    accumulated_tokens: TokenUsage,
+    /// Accumulated cost from `RunEvent::TokenUsage` events.
+    accumulated_cost: f64,
+    /// Whether accumulated tokens have changed since last persistence.
+    tokens_dirty: bool,
 }
 
 impl ActiveAgent {
@@ -88,6 +96,9 @@ impl ActiveAgent {
             session_activity_written: false,
             received_text_entry_count: 0,
             extracted_session_id: None,
+            accumulated_tokens: TokenUsage::default(),
+            accumulated_cost: 0.0,
+            tokens_dirty: false,
         }
     }
 
@@ -130,6 +141,12 @@ impl ActiveAgent {
                         _ => {}
                     }
                     log_entries.push(entry);
+                }
+                Ok(RunEvent::TokenUsage { usage, cost }) => {
+                    self.has_any_output = true;
+                    self.accumulated_tokens.add(&usage);
+                    self.accumulated_cost += cost;
+                    self.tokens_dirty = true;
                 }
                 Ok(RunEvent::SessionId(id)) => {
                     self.has_any_output = true;
@@ -695,6 +712,8 @@ impl StageExecutionService {
         let mut session_id_updates: Vec<(String, String, String)> = Vec::new(); // (task_id, stage, session_id)
                                                                                 // Collect (task_id, stage) for agents with newly confirmed activity to persist.
         let mut activity_to_persist: Vec<(String, String)> = Vec::new(); // (task_id, stage)
+                                                                         // Collect dirty token updates to persist outside the lock.
+        let mut token_updates: Vec<(String, String, TokenUsage, f64)> = Vec::new(); // (task_id, stage, tokens, cost)
 
         if let Ok(mut agents) = self.active_agents.lock() {
             for (task_id, agent) in agents.iter_mut() {
@@ -759,6 +778,17 @@ impl StageExecutionService {
                 if let Some(sid) = agent.take_extracted_session_id() {
                     session_id_updates.push((task_id.clone(), agent.stage().to_string(), sid));
                 }
+
+                // Collect dirty token updates for persistence outside the lock.
+                if agent.tokens_dirty {
+                    token_updates.push((
+                        task_id.clone(),
+                        agent.stage().to_string(),
+                        agent.accumulated_tokens.clone(),
+                        agent.accumulated_cost,
+                    ));
+                    agent.tokens_dirty = false;
+                }
             }
 
             for task_id in to_remove {
@@ -777,6 +807,9 @@ impl StageExecutionService {
         // Persist provider-generated session IDs (e.g. OpenCode's ses_...) so that
         // future resume attempts use the correct value.
         self.persist_extracted_session_ids(session_id_updates);
+
+        // Persist accumulated token usage from RunEvent::TokenUsage events.
+        self.persist_token_usage(token_updates);
 
         completed
     }
@@ -859,6 +892,25 @@ impl StageExecutionService {
                     crate::orkestra_debug!(
                         "stage_execution",
                         "Failed to load stage session for {}/{}: {}",
+                        task_id,
+                        stage,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    /// Persist accumulated token usage to stage sessions.
+    fn persist_token_usage(&self, updates: Vec<(String, String, TokenUsage, f64)>) {
+        for (task_id, stage, tokens, cost) in updates {
+            if let Ok(Some(mut session)) = self.store.get_stage_session(&task_id, &stage) {
+                session.token_usage = Some(tokens);
+                session.total_cost = Some(cost);
+                if let Err(e) = self.store.save_stage_session(&session) {
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "Failed to save token usage for {}/{}: {}",
                         task_id,
                         stage,
                         e

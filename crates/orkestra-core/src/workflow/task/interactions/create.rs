@@ -12,7 +12,7 @@ use crate::workflow::runtime::TaskState;
 
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
-    store: Arc<dyn WorkflowStore>,
+    store: &Arc<dyn WorkflowStore>,
     workflow: &WorkflowConfig,
     git_service: Option<&dyn GitService>,
     iteration_service: &IterationService,
@@ -88,7 +88,7 @@ pub fn execute(
     // skipped. Spawn title generation here so the UI gets a real title.
     if prewarm_adopted && task.title.trim().is_empty() && !task.description.trim().is_empty() {
         if let Some(tg) = title_gen {
-            let store_clone = Arc::clone(&store);
+            let store_clone = Arc::clone(store);
             let desc = task.description.clone();
             let tid = task.id.clone();
             std::thread::spawn(move || {
@@ -157,7 +157,7 @@ mod tests {
         let workflow = test_workflow();
 
         super::execute(
-            Arc::clone(&store),
+            &store,
             &workflow,
             None,
             &iteration_service,
@@ -197,7 +197,7 @@ mod tests {
         let workflow = test_workflow();
 
         let task = super::execute(
-            Arc::clone(&store),
+            &store,
             &workflow,
             None,
             &iteration_service,

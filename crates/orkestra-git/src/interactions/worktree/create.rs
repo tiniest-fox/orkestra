@@ -39,9 +39,9 @@ pub fn execute(
     let commit_oid = match base_branch {
         Some(branch) => resolve_remote_commit_oid(repo, branch)
             .or_else(|_| crate::interactions::branch::get_commit_oid::execute(repo, Some(branch)))
-            .map_err(|_| {
+            .map_err(|e| {
                 GitError::BranchError(format!(
-                    "Base branch '{branch}' not found (remote or local) — the parent task's branch may have been deleted"
+                    "Base branch '{branch}' not found (remote or local) — the parent task's branch may have been deleted. Underlying error: {e}"
                 ))
             })?,
         None => crate::interactions::branch::get_commit_oid::execute(repo, None)?,

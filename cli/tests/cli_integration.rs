@@ -247,6 +247,7 @@ fn test_task_create_with_flow() {
             mode: TaskCreationMode::Normal,
             flow: Some("quick".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("create task with flow");
 
@@ -263,6 +264,7 @@ fn test_task_create_with_flow() {
         mode: TaskCreationMode::Normal,
         flow: Some("nonexistent".into()),
         auto_pr: false,
+        auto_resolve: false,
     });
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -618,6 +620,7 @@ fn test_create_task_with_auto_mode() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("create auto task");
     assert!(
@@ -634,6 +637,7 @@ fn test_create_task_with_auto_mode() {
             mode: TaskCreationMode::Normal,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("create normal task");
     assert!(

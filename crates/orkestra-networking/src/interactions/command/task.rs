@@ -105,6 +105,7 @@ pub fn create_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorP
             mode,
             flow.as_deref(),
             auto_pr,
+            false,
         )
     } else {
         api.create_task_with_options(&CreateTaskOptions {
@@ -114,6 +115,7 @@ pub fn create_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorP
             mode,
             flow,
             auto_pr,
+            auto_resolve: false,
         })
     }
     .map_err(ErrorPayload::from)?;

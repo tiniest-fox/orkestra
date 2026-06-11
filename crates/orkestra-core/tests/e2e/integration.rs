@@ -1226,6 +1226,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
             mode: TaskCreationMode::Normal,
             flow: Some("default".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("Should create default task")
         .id;
@@ -1239,6 +1240,7 @@ fn per_flow_auto_merge_resolved_per_candidate() {
             mode: TaskCreationMode::Normal,
             flow: Some("hotfix".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("Should create hotfix task")
         .id;
@@ -1334,6 +1336,7 @@ fn auto_pr_creates_pr_on_done() {
             mode: TaskCreationMode::Normal,
             flow: None,
             auto_pr: true,
+            auto_resolve: false,
         })
         .expect("Should create task");
     let task_id = task.id.clone();
@@ -1377,6 +1380,7 @@ fn auto_pr_takes_precedence_over_auto_merge() {
             mode: TaskCreationMode::Normal,
             flow: None,
             auto_pr: true,
+            auto_resolve: false,
         })
         .expect("Should create task");
     let task_id = task.id.clone();
@@ -1425,6 +1429,7 @@ fn find_pr_candidate_skips_subtasks() {
         pr_url: None,
         auto_mode: false,
         auto_pr: true, // auto_pr=true, but it's a subtask so should be ignored
+        auto_resolve: false,
         flow: "default".to_string(),
         is_chat: false,
         created_at: String::new(),
@@ -1462,6 +1467,7 @@ fn auto_pr_without_pr_service_fails_gracefully() {
             mode: TaskCreationMode::Normal,
             flow: None,
             auto_pr: true,
+            auto_resolve: false,
         })
         .expect("Should create task");
     let task_id = task.id.clone();

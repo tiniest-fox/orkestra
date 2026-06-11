@@ -23,6 +23,7 @@ pub fn execute(
     mode: TaskCreationMode,
     flow: Option<&str>,
     auto_pr: bool,
+    auto_resolve: bool,
     title_gen: Option<Arc<dyn TitleGenerator>>,
 ) -> WorkflowResult<Task> {
     // Validate flow exists if specified
@@ -62,7 +63,8 @@ pub fn execute(
     let mut task = Task::new(&id, title, description, &first_stage.name, &now);
     task.base_branch = resolved_base_branch;
     task.auto_mode = matches!(mode, TaskCreationMode::AutoMode);
-    task.auto_pr = auto_pr;
+    task.auto_pr = auto_pr || auto_resolve;
+    task.auto_resolve = auto_resolve;
     task.flow = flow_name.to_string();
 
     // Check for a prewarmed worktree; adopt it if ready.
@@ -168,6 +170,7 @@ mod tests {
             TaskCreationMode::Normal,
             None,
             false,
+            false,
             Some(title_gen_clone),
         )
         .unwrap();
@@ -207,6 +210,7 @@ mod tests {
             None,
             TaskCreationMode::Normal,
             None,
+            false,
             false,
             Some(title_gen),
         )

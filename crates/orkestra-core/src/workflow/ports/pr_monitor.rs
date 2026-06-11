@@ -15,7 +15,7 @@ pub enum PrState {
 
 impl PrState {
     /// Parse from the GitHub API string value.
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_gh_api_str(s: &str) -> Self {
         match s {
             "OPEN" => Self::Open,
             "CLOSED" => Self::Closed,
@@ -37,7 +37,7 @@ pub enum ReviewState {
 
 impl ReviewState {
     /// Parse from the GitHub API string value.
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_gh_api_str(s: &str) -> Self {
         match s {
             "APPROVED" => Self::Approved,
             "CHANGES_REQUESTED" => Self::ChangesRequested,

@@ -70,33 +70,12 @@ impl GhPrMonitor {
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
-}
 
-impl Default for GhPrMonitor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PrMonitor for GhPrMonitor {
-    fn authenticated_user(&self) -> Result<String, PrError> {
-        if let Some(user) = self.cached_user.get() {
-            return Ok(user.clone());
-        }
-
-        let login = Self::run_gh(&["api", "user", "--jq", ".login"], None)?;
-        let _ = self.cached_user.set(login.clone());
-        Ok(login)
-    }
-
-    fn fetch_auto_resolve_status(
+    fn fetch_pr_state_and_checks(
         &self,
         repo_root: &Path,
         pr_url: &str,
-    ) -> Result<AutoResolveStatus, PrError> {
-        let (owner, repo, number) = Self::parse_pr_url(pr_url)?;
-
-        // Step 1: Get PR state and check statuses
+    ) -> Result<(PrState, Vec<AutoResolveCheckRun>, bool), PrError> {
         let pr_json = Self::run_gh(
             &["pr", "view", pr_url, "--json", "state,statusCheckRollup"],
             Some(repo_root),
@@ -105,9 +84,8 @@ impl PrMonitor for GhPrMonitor {
         let pr_data: serde_json::Value = serde_json::from_str(&pr_json)
             .map_err(|e| PrError::ReadFailed(format!("Failed to parse pr view output: {e}")))?;
 
-        let pr_state = PrState::from_str(pr_data["state"].as_str().unwrap_or("UNKNOWN"));
+        let pr_state = PrState::from_gh_api_str(pr_data["state"].as_str().unwrap_or("UNKNOWN"));
 
-        // Parse check statuses
         let mut failed_checks = Vec::new();
         let mut all_checks_concluded = true;
 
@@ -133,7 +111,15 @@ impl PrMonitor for GhPrMonitor {
             }
         }
 
-        // Step 2: Get review comments
+        Ok((pr_state, failed_checks, all_checks_concluded))
+    }
+
+    fn fetch_comments(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<Vec<AutoResolveComment>, PrError> {
         let comments_json = Self::run_gh(
             &[
                 "api",
@@ -168,7 +154,15 @@ impl PrMonitor for GhPrMonitor {
             }
         }
 
-        // Step 3: Get reviews
+        Ok(comments)
+    }
+
+    fn fetch_reviews(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<Vec<AutoResolveReview>, PrError> {
         let reviews_json = Self::run_gh(
             &[
                 "api",
@@ -187,10 +181,43 @@ impl PrMonitor for GhPrMonitor {
                     continue;
                 };
                 let author = r["user"]["login"].as_str().unwrap_or("").to_string();
-                let state = ReviewState::from_str(r["state"].as_str().unwrap_or("COMMENTED"));
+                let state =
+                    ReviewState::from_gh_api_str(r["state"].as_str().unwrap_or("COMMENTED"));
                 reviews.push(AutoResolveReview { id, author, state });
             }
         }
+
+        Ok(reviews)
+    }
+}
+
+impl Default for GhPrMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PrMonitor for GhPrMonitor {
+    fn authenticated_user(&self) -> Result<String, PrError> {
+        if let Some(user) = self.cached_user.get() {
+            return Ok(user.clone());
+        }
+
+        let login = Self::run_gh(&["api", "user", "--jq", ".login"], None)?;
+        let _ = self.cached_user.set(login.clone());
+        Ok(login)
+    }
+
+    fn fetch_auto_resolve_status(
+        &self,
+        repo_root: &Path,
+        pr_url: &str,
+    ) -> Result<AutoResolveStatus, PrError> {
+        let (owner, repo, number) = Self::parse_pr_url(pr_url)?;
+        let (pr_state, failed_checks, all_checks_concluded) =
+            self.fetch_pr_state_and_checks(repo_root, pr_url)?;
+        let comments = self.fetch_comments(&owner, &repo, number)?;
+        let reviews = self.fetch_reviews(&owner, &repo, number)?;
 
         Ok(AutoResolveStatus {
             pr_state,

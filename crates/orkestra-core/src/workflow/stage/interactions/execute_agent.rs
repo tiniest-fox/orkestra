@@ -360,6 +360,10 @@ fn is_bot_author(author: &str) -> bool {
         || lower == "sonarcloud"
 }
 
+const RESPONDING_TO_COMMENTS_INSTRUCTIONS: &str = "## Responding to Comments\n\nAfter addressing each comment above, post an inline reply to the comment thread.\n\nFor comments you addressed (fixed the issue):\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Fixed: <brief description>\" -F in_reply_to=COMMENT_ID\n```\n\nFor bot comments you chose not to address:\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Chose not to address.\" -F in_reply_to=COMMENT_ID\n```\n\nFor human comments you chose not to address (explain your reasoning):\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Chose not to address: <brief explanation>\" -F in_reply_to=COMMENT_ID\n```\n\nPrioritize human comments over bot comments. Address reasonable bot findings. Explain all dismissals.\n\nParse the owner, repo, and PR number from the PR URL in the task context.";
+
+const SUMMARY_COMMENT_INSTRUCTIONS: &str = "## Summary Comment\n\nAfter you have addressed all comments and fixed any CI failures, post a summary comment.\n\nUse: `gh pr comment <pr_url> --body \"<summary>\"`\n\nSummary format:\n- If all comments addressed: \"I've addressed all the feedback above — I think this is ready to merge.\"\n- If some dismissed: \"I addressed X comments and chose not to address Y (see replies above) — I think this is ready to merge.\"\n\nOnly post the summary when CI is also passing. Check with `gh pr checks <pr_url>` first. If CI is still failing, fix the failures before posting.";
+
 /// Format PR feedback data as text for inclusion in the full prompt.
 ///
 /// Returns `None` if the trigger is not `PrFeedback`. When it is, formats
@@ -413,14 +417,8 @@ fn format_pr_feedback(trigger: Option<&IterationTrigger>) -> Option<String> {
         // Inline-reply and summary instructions only when comments carry real IDs.
         let any_with_id = comments.iter().any(|c| c.id.is_some());
         if any_with_id {
-            parts.push(
-                "## Responding to Comments\n\nAfter addressing each comment above, post an inline reply to the comment thread.\n\nFor comments you addressed (fixed the issue):\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Fixed: <brief description>\" -F in_reply_to=COMMENT_ID\n```\n\nFor bot comments you chose not to address:\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Chose not to address.\" -F in_reply_to=COMMENT_ID\n```\n\nFor human comments you chose not to address (explain your reasoning):\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Chose not to address: <brief explanation>\" -F in_reply_to=COMMENT_ID\n```\n\nPrioritize human comments over bot comments. Address reasonable bot findings. Explain all dismissals.\n\nParse the owner, repo, and PR number from the PR URL in the task context."
-                    .to_string(),
-            );
-            parts.push(
-                "## Summary Comment\n\nAfter you have addressed all comments and fixed any CI failures, post a summary comment.\n\nUse: `gh pr comment <pr_url> --body \"<summary>\"`\n\nSummary format:\n- If all comments addressed: \"I've addressed all the feedback above — I think this is ready to merge.\"\n- If some dismissed: \"I addressed X comments and chose not to address Y (see replies above) — I think this is ready to merge.\"\n\nOnly post the summary when CI is also passing. Check with `gh pr checks <pr_url>` first. If CI is still failing, fix the failures before posting."
-                    .to_string(),
-            );
+            parts.push(RESPONDING_TO_COMMENTS_INSTRUCTIONS.to_string());
+            parts.push(SUMMARY_COMMENT_INSTRUCTIONS.to_string());
         }
     }
 

@@ -9,7 +9,8 @@ use std::sync::Arc;
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::domain::IterationTrigger;
 use orkestra_core::workflow::ports::{
-    AutoResolveCheckRun, AutoResolveComment, AutoResolveStatus, PrState,
+    AutoResolveCheckRun, AutoResolveComment, AutoResolveReview, AutoResolveStatus, PrState,
+    ReviewState,
 };
 use orkestra_core::workflow::ports::{MockPrMonitor, PrMonitor};
 use orkestra_core::workflow::runtime::TaskState;
@@ -467,5 +468,105 @@ fn test_auto_resolve_candidate_filtering() {
         mock.call_count(),
         0,
         "Monitor should not have been polled for non-candidates"
+    );
+}
+
+/// When a `CHANGES_REQUESTED` review ID is already in the resolved set, `auto_resolve` is
+/// disabled and no new iteration is created (SC#10).
+#[test]
+fn test_auto_resolve_escalates_on_stale_changes_requested() {
+    let workflow = disable_auto_merge(test_default_workflow());
+    let mut ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Escalation test", "Test CHANGES_REQUESTED escalation", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+    set_pr_url(&ctx, &task_id, "https://github.com/acme/repo/pull/10");
+    set_auto_resolve(&ctx, &task_id, true);
+
+    // Simulate that review ID 500 was previously seen (it's already in the resolved set).
+    let mut task = ctx.api().get_task(&task_id).unwrap();
+    task.resolved_feedback_ids.review_ids.push(500);
+    ctx.api().save_task(&task).unwrap();
+
+    let mock = Arc::new(MockPrMonitor::new());
+    // Same CHANGES_REQUESTED review ID 500 is still present — this is a stale review.
+    mock.set_next_status(AutoResolveStatus {
+        pr_state: PrState::Open,
+        failed_checks: vec![],
+        comments: vec![],
+        reviews: vec![AutoResolveReview {
+            id: 500,
+            author: "reviewer".to_string(),
+            state: ReviewState::ChangesRequested,
+        }],
+        all_checks_concluded: true,
+    });
+    ctx.set_pr_monitor(mock.clone() as Arc<dyn PrMonitor>);
+
+    let iterations_before = ctx.api().get_iterations(&task_id).unwrap().len();
+    ctx.force_auto_resolve_check();
+    ctx.tick();
+
+    // auto_resolve should be disabled; no new iteration created; task stays Done.
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        !task.auto_resolve,
+        "auto_resolve should be disabled after stale CHANGES_REQUESTED review"
+    );
+    assert!(
+        task.state.is_done(),
+        "Task should remain Done after escalation, got: {:?}",
+        task.state
+    );
+    let iterations_after = ctx.api().get_iterations(&task_id).unwrap().len();
+    assert_eq!(
+        iterations_after, iterations_before,
+        "No new iteration should be created on escalation"
+    );
+}
+
+/// Failed checks with `all_checks_concluded: false` do not trigger an iteration.
+#[test]
+fn test_auto_resolve_skips_pending_checks() {
+    let workflow = disable_auto_merge(test_default_workflow());
+    let mut ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Pending CI test", "CI not concluded yet", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+    set_pr_url(&ctx, &task_id, "https://github.com/acme/repo/pull/11");
+    set_auto_resolve(&ctx, &task_id, true);
+
+    let mock = Arc::new(MockPrMonitor::new());
+    // Failed checks present but CI is not yet fully concluded — should not trigger.
+    mock.set_next_status(AutoResolveStatus {
+        pr_state: PrState::Open,
+        failed_checks: vec![AutoResolveCheckRun {
+            id: 600,
+            name: "CI / test".to_string(),
+            log_excerpt: Some("timeout".to_string()),
+        }],
+        comments: vec![],
+        reviews: vec![],
+        all_checks_concluded: false,
+    });
+    ctx.set_pr_monitor(mock.clone() as Arc<dyn PrMonitor>);
+
+    let iterations_before = ctx.api().get_iterations(&task_id).unwrap().len();
+    ctx.force_auto_resolve_check();
+    ctx.tick();
+    let iterations_after = ctx.api().get_iterations(&task_id).unwrap().len();
+
+    assert_eq!(
+        iterations_after, iterations_before,
+        "No iteration should be created when CI checks are not yet concluded"
+    );
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.state.is_done(),
+        "Task should remain Done while CI is pending"
     );
 }

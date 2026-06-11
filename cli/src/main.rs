@@ -428,7 +428,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
                 base_branch,
                 mode,
                 flow,
-                auto_pr: pr || auto_resolve,
+                auto_pr: pr,
                 auto_resolve,
             };
             handle_create_task(&api, &opts, pretty);

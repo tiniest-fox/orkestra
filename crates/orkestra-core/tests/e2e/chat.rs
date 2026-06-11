@@ -249,6 +249,7 @@ fn test_promote_to_flow_rejected_for_non_chat_task() {
             mode: TaskCreationMode::Normal,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
 

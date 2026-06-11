@@ -10,6 +10,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::runtime::{ArtifactStore, ResourceStore, TaskState};
 
+/// IDs of PR comments and CI check runs already processed by auto-resolve (dedup guard).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ResolvedFeedbackIds {
+    #[serde(default)]
+    pub comment_ids: Vec<i64>,
+    #[serde(default)]
+    pub check_run_ids: Vec<i64>,
+}
+
 /// How a task was created — determines initial state after setup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskCreationMode {
@@ -24,6 +33,7 @@ pub enum TaskCreationMode {
 /// Represents a unit of work that progresses through workflow stages.
 /// Artifacts are stored generically rather than in stage-specific fields.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Task {
     // === Identity ===
     /// Unique identifier for this task.
@@ -95,6 +105,18 @@ pub struct Task {
     #[serde(default)]
     pub auto_pr: bool,
 
+    /// Whether to automatically monitor the PR and resolve feedback.
+    #[serde(default)]
+    pub auto_resolve: bool,
+
+    /// Number of auto-resolve-triggered iterations for convergence tracking.
+    #[serde(default)]
+    pub auto_resolve_count: i32,
+
+    /// IDs of comments and check runs already triggered on (dedup).
+    #[serde(default)]
+    pub resolved_feedback_ids: ResolvedFeedbackIds,
+
     /// Named flow for this task (e.g., "quick"). Defaults to "default" (full pipeline).
     #[serde(default = "default_flow_name")]
     pub flow: String,
@@ -146,6 +168,9 @@ impl Task {
             pr_url: None,
             auto_mode: false,
             auto_pr: false,
+            auto_resolve: false,
+            auto_resolve_count: 0,
+            resolved_feedback_ids: ResolvedFeedbackIds::default(),
             flow: "default".to_string(),
             is_chat: false,
             created_at: created.clone(),
@@ -181,6 +206,13 @@ impl Task {
     #[must_use]
     pub fn with_auto_pr(mut self, auto_pr: bool) -> Self {
         self.auto_pr = auto_pr;
+        self
+    }
+
+    /// Builder: enable auto-resolve (implies `auto_pr`).
+    #[must_use]
+    pub fn with_auto_resolve(mut self, auto_resolve: bool) -> Self {
+        self.auto_resolve = auto_resolve;
         self
     }
 
@@ -317,6 +349,7 @@ impl Task {
 /// deserializing artifact data when the orchestrator only needs to categorize
 /// tasks by state for dispatch.
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct TaskHeader {
     pub id: String,
     pub title: String,
@@ -332,6 +365,7 @@ pub struct TaskHeader {
     pub pr_url: Option<String>,
     pub auto_mode: bool,
     pub auto_pr: bool,
+    pub auto_resolve: bool,
     pub flow: String,
     pub is_chat: bool,
     pub created_at: String,
@@ -388,6 +422,7 @@ impl From<&Task> for TaskHeader {
             pr_url: task.pr_url.clone(),
             auto_mode: task.auto_mode,
             auto_pr: task.auto_pr,
+            auto_resolve: task.auto_resolve,
             flow: task.flow.clone(),
             is_chat: task.is_chat,
             created_at: task.created_at.clone(),
@@ -718,6 +753,7 @@ mod tests {
             pr_url: None,
             auto_mode: false,
             auto_pr: false,
+            auto_resolve: false,
             flow: "default".to_string(),
             is_chat: false,
             created_at: String::new(),
@@ -758,6 +794,7 @@ mod tests {
             pr_url: None,
             auto_mode: false,
             auto_pr: false,
+            auto_resolve: false,
             flow: "default".to_string(),
             is_chat: false,
             created_at: String::new(),

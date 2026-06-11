@@ -959,6 +959,7 @@ mod tests {
     fn format_pr_feedback_mixed_comments_checks_guidance() {
         let trigger = IterationTrigger::PrFeedback {
             comments: vec![PrCommentData {
+                id: None,
                 author: "reviewer".to_string(),
                 body: "Please fix this".to_string(),
                 path: Some("src/lib.rs".to_string()),

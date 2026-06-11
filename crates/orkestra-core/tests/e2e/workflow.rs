@@ -980,6 +980,7 @@ fn test_integration_failure_uses_flow_on_failure_override() {
             mode: TaskCreationMode::Normal,
             flow: Some("quick".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -5175,6 +5176,7 @@ fn test_disallowed_tools_flow_override() {
             mode: TaskCreationMode::Normal,
             flow: Some("hotfix".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -5923,12 +5925,14 @@ fn test_address_pr_feedback_returns_to_work_stage() {
     // Create test comments
     let comments = vec![
         PrCommentData {
+            id: None,
             author: "reviewer1".to_string(),
             body: "Fix formatting in main.rs".to_string(),
             path: Some("src/main.rs".to_string()),
             line: Some(42),
         },
         PrCommentData {
+            id: None,
             author: "reviewer2".to_string(),
             body: "General feedback".to_string(),
             path: None,
@@ -6100,6 +6104,7 @@ fn test_address_pr_feedback_with_checks() {
     advance_to_done_no_integration(&ctx, &task_id);
 
     let comments = vec![PrCommentData {
+        id: None,
         author: "reviewer1".to_string(),
         body: "Fix this method".to_string(),
         path: Some("src/lib.rs".to_string()),
@@ -7946,6 +7951,7 @@ fn test_flow_gate_override_disables_gate() {
             mode: TaskCreationMode::Normal,
             flow: Some("no-gate".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -8077,6 +8083,7 @@ fn test_reject_with_comments_normal() {
 
     // Submit line comments
     let comments = vec![PrCommentData {
+        id: None,
         author: "You".to_string(),
         body: "Fix this".to_string(),
         path: Some("src/main.rs".to_string()),
@@ -8167,6 +8174,7 @@ fn test_reject_with_comments_wrong_state_returns_error() {
 
     // Task is in Queued/Idle state, not AwaitingApproval
     let comments = vec![PrCommentData {
+        id: None,
         author: "You".to_string(),
         body: "Fix this".to_string(),
         path: None,
@@ -8232,6 +8240,7 @@ fn test_reject_with_comments_pending_rejection_review() {
 
     // Human submits line comments — overrides the pending rejection review
     let comments = vec![PrCommentData {
+        id: None,
         author: "You".to_string(),
         body: "Fix this specific line".to_string(),
         path: Some("src/lib.rs".to_string()),
@@ -8288,6 +8297,7 @@ fn test_pr_comments_context_reaches_agent_prompt() {
 
     // Submit line comments to route the task back to the work stage
     let comments = vec![PrCommentData {
+        id: None,
         author: "reviewer".to_string(),
         body: "Fix this implementation".to_string(),
         path: Some("src/lib.rs".to_string()),
@@ -8734,6 +8744,7 @@ fn test_send_to_stage_respects_flow() {
             mode: TaskCreationMode::Normal,
             flow: Some("quick".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();

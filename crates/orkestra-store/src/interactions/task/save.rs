@@ -14,6 +14,8 @@ pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
     let depends_json = serde_json::to_string(&task.depends_on)
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+    let resolved_feedback_ids_json = serde_json::to_string(&task.resolved_feedback_ids)
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
     conn.execute(
         "INSERT OR REPLACE INTO workflow_tasks (
@@ -21,8 +23,9 @@ pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
             parent_id, depends_on, branch_name, worktree_path,
             auto_mode, created_at, updated_at, completed_at,
             base_branch, flow, short_id, base_commit, pr_url, interactive,
-            resources, is_chat, auto_pr
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            resources, is_chat, auto_pr,
+            auto_resolve, auto_resolve_count, resolved_feedback_ids
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             task.id,
             task.title,
@@ -46,6 +49,9 @@ pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
             resources_json,
             task.is_chat,
             task.auto_pr,
+            task.auto_resolve,
+            task.auto_resolve_count,
+            resolved_feedback_ids_json,
         ],
     )
     .map_err(|e| WorkflowError::Storage(e.to_string()))?;

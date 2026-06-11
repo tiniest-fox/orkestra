@@ -74,6 +74,7 @@ pub fn execute(
             mode: TaskCreationMode::AutoMode,
             flow: flow.map(ToString::to_string),
             auto_pr: false,
+            auto_resolve: false,
         })
         .map_err(|e| format!("Failed to create trak: {e}"))?;
     let task_id = task.id.clone();

@@ -586,12 +586,14 @@ mod tests {
     fn test_comments() -> Vec<PrCommentData> {
         vec![
             PrCommentData {
+                id: None,
                 author: "reviewer1".to_string(),
                 body: "Fix this formatting".to_string(),
                 path: Some("src/main.rs".to_string()),
                 line: Some(42),
             },
             PrCommentData {
+                id: None,
                 author: "reviewer2".to_string(),
                 body: "PR-level comment".to_string(),
                 path: None,

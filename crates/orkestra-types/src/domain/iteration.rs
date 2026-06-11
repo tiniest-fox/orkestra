@@ -35,6 +35,9 @@ pub struct GateResult {
 /// data shape and prompt rendering path — the naming reflects the original use case.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PrCommentData {
+    /// GitHub comment ID for dedup tracking in auto-resolve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
     /// The author of the comment.
     pub author: String,
     /// The comment body text.
@@ -408,12 +411,14 @@ mod tests {
         let trigger = IterationTrigger::PrFeedback {
             comments: vec![
                 PrCommentData {
+                    id: None,
                     author: "reviewer1".to_string(),
                     body: "Fix this bug".to_string(),
                     path: Some("src/main.rs".to_string()),
                     line: Some(42),
                 },
                 PrCommentData {
+                    id: None,
                     author: "reviewer2".to_string(),
                     body: "Add tests".to_string(),
                     path: None,
@@ -438,6 +443,7 @@ mod tests {
     fn test_iteration_trigger_pr_feedback_no_guidance() {
         let trigger = IterationTrigger::PrFeedback {
             comments: vec![PrCommentData {
+                id: None,
                 author: "reviewer".to_string(),
                 body: "Please fix".to_string(),
                 path: Some("lib.rs".to_string()),
@@ -474,6 +480,7 @@ mod tests {
         let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
             IterationTrigger::PrFeedback {
                 comments: vec![PrCommentData {
+                    id: None,
                     author: "lead".to_string(),
                     body: "Address all comments".to_string(),
                     path: None,

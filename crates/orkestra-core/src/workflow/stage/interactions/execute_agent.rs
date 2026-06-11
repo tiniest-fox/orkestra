@@ -349,10 +349,23 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
     })
 }
 
+/// Returns `true` if `author` matches known bot account patterns.
+fn is_bot_author(author: &str) -> bool {
+    let lower = author.to_lowercase();
+    lower.contains("[bot]")
+        || lower == "dependabot"
+        || lower == "renovate"
+        || lower == "github-actions"
+        || lower == "codecov"
+        || lower == "sonarcloud"
+}
+
 /// Format PR feedback data as text for inclusion in the full prompt.
 ///
 /// Returns `None` if the trigger is not `PrFeedback`. When it is, formats
-/// comments, checks, and guidance into a human-readable feedback block.
+/// comments (human first, then bot), checks, and guidance into a human-readable
+/// feedback block. When comments carry IDs, appends inline-reply and summary
+/// instructions so the agent can post threaded replies.
 fn format_pr_feedback(trigger: Option<&IterationTrigger>) -> Option<String> {
     let Some(IterationTrigger::PrFeedback {
         comments,
@@ -371,16 +384,43 @@ fn format_pr_feedback(trigger: Option<&IterationTrigger>) -> Option<String> {
 
     if !comments.is_empty() {
         parts.push("## PR Comments\n\nThe following PR comments need to be addressed:".to_string());
-        for c in comments {
+
+        // Human comments first, then bot comments; within each group preserve order.
+        let mut ordered: Vec<&orkestra_types::domain::PrCommentData> = comments
+            .iter()
+            .filter(|c| !is_bot_author(&c.author))
+            .collect();
+        ordered.extend(comments.iter().filter(|c| is_bot_author(&c.author)));
+
+        for c in &ordered {
+            let label = if is_bot_author(&c.author) {
+                "[BOT]"
+            } else {
+                "[HUMAN]"
+            };
+            let id_part = c.id.map(|id| format!(" #{id}")).unwrap_or_default();
             let location = match (&c.path, c.line) {
                 (Some(path), Some(line)) => format!(" on `{path}` (line {line})"),
                 (Some(path), None) => format!(" on `{path}`"),
                 _ => String::new(),
             };
             parts.push(format!(
-                "### Comment by {}{location}\n\n{}",
+                "### {label} Comment{id_part} by @{}{location}\n\n{}",
                 c.author, c.body
             ));
+        }
+
+        // Inline-reply and summary instructions only when comments carry real IDs.
+        let any_with_id = comments.iter().any(|c| c.id.is_some());
+        if any_with_id {
+            parts.push(
+                "## Responding to Comments\n\nAfter addressing each comment above, post an inline reply to the comment thread.\n\nFor comments you addressed (fixed the issue):\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Fixed: <brief description>\" -F in_reply_to=COMMENT_ID\n```\n\nFor bot comments you chose not to address:\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Chose not to address.\" -F in_reply_to=COMMENT_ID\n```\n\nFor human comments you chose not to address (explain your reasoning):\n```\ngh api repos/OWNER/REPO/pulls/NUMBER/comments --method POST -f body=\"Chose not to address: <brief explanation>\" -F in_reply_to=COMMENT_ID\n```\n\nPrioritize human comments over bot comments. Address reasonable bot findings. Explain all dismissals.\n\nParse the owner, repo, and PR number from the PR URL in the task context."
+                    .to_string(),
+            );
+            parts.push(
+                "## Summary Comment\n\nAfter you have addressed all comments and fixed any CI failures, post a summary comment.\n\nUse: `gh pr comment <pr_url> --body \"<summary>\"`\n\nSummary format:\n- If all comments addressed: \"I've addressed all the feedback above — I think this is ready to merge.\"\n- If some dismissed: \"I addressed X comments and chose not to address Y (see replies above) — I think this is ready to merge.\"\n\nOnly post the summary when CI is also passing. Check with `gh pr checks <pr_url>` first. If CI is still failing, fix the failures before posting."
+                    .to_string(),
+            );
         }
     }
 
@@ -923,6 +963,202 @@ mod tests {
     // -------------------------------------------------------------------------
 
     use crate::workflow::domain::{PrCheckData, PrCommentData};
+
+    // -- is_bot_author --
+
+    #[test]
+    fn is_bot_author_detects_bracket_bot_suffix() {
+        assert!(is_bot_author("dependabot[bot]"));
+        assert!(is_bot_author("some-app[bot]"));
+    }
+
+    #[test]
+    fn is_bot_author_detects_known_bot_names() {
+        assert!(is_bot_author("dependabot"));
+        assert!(is_bot_author("renovate"));
+        assert!(is_bot_author("github-actions"));
+        assert!(is_bot_author("codecov"));
+        assert!(is_bot_author("sonarcloud"));
+    }
+
+    #[test]
+    fn is_bot_author_returns_false_for_human() {
+        assert!(!is_bot_author("reviewer"));
+        assert!(!is_bot_author("alice"));
+    }
+
+    // -- format_pr_feedback: comment IDs --
+
+    #[test]
+    fn test_format_pr_feedback_includes_comment_ids() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![PrCommentData {
+                id: Some(42),
+                author: "reviewer".to_string(),
+                body: "Please fix this".to_string(),
+                path: Some("src/main.rs".to_string()),
+                line: Some(10),
+            }],
+            checks: vec![],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(result.contains("Comment #42"), "should include comment ID");
+    }
+
+    #[test]
+    fn test_format_pr_feedback_omits_id_when_none() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![PrCommentData {
+                id: None,
+                author: "reviewer".to_string(),
+                body: "Please fix this".to_string(),
+                path: None,
+                line: None,
+            }],
+            checks: vec![],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(
+            !result.contains("Comment #"),
+            "should not include # when id is None"
+        );
+    }
+
+    // -- format_pr_feedback: bot/human labels --
+
+    #[test]
+    fn test_format_pr_feedback_bot_human_labels() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![
+                PrCommentData {
+                    id: None,
+                    author: "alice".to_string(),
+                    body: "human comment".to_string(),
+                    path: None,
+                    line: None,
+                },
+                PrCommentData {
+                    id: None,
+                    author: "dependabot[bot]".to_string(),
+                    body: "bot comment".to_string(),
+                    path: None,
+                    line: None,
+                },
+            ],
+            checks: vec![],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(result.contains("[HUMAN]"), "should label human comments");
+        assert!(result.contains("[BOT]"), "should label bot comments");
+    }
+
+    // -- format_pr_feedback: ordering --
+
+    #[test]
+    fn test_format_pr_feedback_human_comments_first() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![
+                PrCommentData {
+                    id: None,
+                    author: "dependabot[bot]".to_string(),
+                    body: "bot first in list".to_string(),
+                    path: None,
+                    line: None,
+                },
+                PrCommentData {
+                    id: None,
+                    author: "alice".to_string(),
+                    body: "human second in list".to_string(),
+                    path: None,
+                    line: None,
+                },
+            ],
+            checks: vec![],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        let bot_pos = result.find("bot first in list").unwrap();
+        let human_pos = result.find("human second in list").unwrap();
+        assert!(
+            human_pos < bot_pos,
+            "human comments should appear before bot comments"
+        );
+    }
+
+    // -- format_pr_feedback: reply instructions --
+
+    #[test]
+    fn test_format_pr_feedback_reply_instructions_present() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![PrCommentData {
+                id: Some(89),
+                author: "reviewer".to_string(),
+                body: "fix it".to_string(),
+                path: None,
+                line: None,
+            }],
+            checks: vec![],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(
+            result.contains("Responding to Comments"),
+            "should include reply instructions when IDs present"
+        );
+        assert!(
+            result.contains("in_reply_to"),
+            "should include in_reply_to template"
+        );
+    }
+
+    #[test]
+    fn test_format_pr_feedback_no_reply_instructions_without_ids() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![PrCommentData {
+                id: None,
+                author: "reviewer".to_string(),
+                body: "fix it".to_string(),
+                path: None,
+                line: None,
+            }],
+            checks: vec![],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(
+            !result.contains("Responding to Comments"),
+            "should not include reply instructions when IDs absent"
+        );
+    }
+
+    // -- format_pr_feedback: summary section --
+
+    #[test]
+    fn test_format_pr_feedback_summary_section_present() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![PrCommentData {
+                id: Some(1),
+                author: "reviewer".to_string(),
+                body: "fix it".to_string(),
+                path: None,
+                line: None,
+            }],
+            checks: vec![],
+            guidance: None,
+        };
+        let result = format_pr_feedback(Some(&trigger)).unwrap();
+        assert!(
+            result.contains("Summary Comment"),
+            "should include summary comment section when IDs present"
+        );
+        assert!(
+            result.contains("gh pr comment"),
+            "should include gh pr comment command"
+        );
+    }
 
     #[test]
     fn format_pr_feedback_checks_without_log_excerpt() {

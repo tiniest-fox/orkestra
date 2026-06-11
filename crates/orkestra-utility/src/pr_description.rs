@@ -189,24 +189,71 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
     use super::{format_pr_footer, PrDescriptionGenerator};
 
     /// Mock PR description generator for testing.
     ///
-    /// Can simulate success (returns formatted PR description) or failure (returns error).
+    /// Supports configuring specific return values for each method via builder
+    /// methods (`with_generate_body`, `push_fix_response`).
     pub struct MockPrDescriptionGenerator {
         fail: bool,
+        /// Override body returned by `generate_pr_description` (title still comes from ctx).
+        generate_body: Option<String>,
+        /// Queued responses for `fix_pr_description`; pops front on each call.
+        /// Falls back to default behaviour when queue is empty.
+        fix_responses: Mutex<VecDeque<Result<String, String>>>,
+        /// Running count of `fix_pr_description` calls.
+        fix_call_count: Mutex<usize>,
     }
 
     impl MockPrDescriptionGenerator {
         /// Creates a mock that succeeds with a deterministic description.
         pub fn succeeding() -> Self {
-            Self { fail: false }
+            Self {
+                fail: false,
+                generate_body: None,
+                fix_responses: Mutex::new(VecDeque::new()),
+                fix_call_count: Mutex::new(0),
+            }
         }
 
         /// Creates a mock that fails, triggering the caller's fallback path.
         pub fn failing() -> Self {
-            Self { fail: true }
+            Self {
+                fail: true,
+                generate_body: None,
+                fix_responses: Mutex::new(VecDeque::new()),
+                fix_call_count: Mutex::new(0),
+            }
+        }
+
+        /// Override the body returned by `generate_pr_description`.
+        ///
+        /// Useful for injecting broken mermaid into the PR body so validation
+        /// tests can exercise the retry loop.
+        #[must_use]
+        pub fn with_generate_body(mut self, body: impl Into<String>) -> Self {
+            self.generate_body = Some(body.into());
+            self
+        }
+
+        /// Queue a specific result for the next `fix_pr_description` call.
+        ///
+        /// Calls dequeue in order; once the queue is empty the mock falls back
+        /// to its default behaviour (success with `_Fixed by mock_` suffix, or
+        /// error when `fail = true`).
+        #[must_use]
+        pub fn push_fix_response(self, response: Result<String, String>) -> Self {
+            self.fix_responses.lock().unwrap().push_back(response);
+            self
+        }
+
+        /// Returns the total number of `fix_pr_description` calls made so far.
+        pub fn fix_call_count(&self) -> usize {
+            *self.fix_call_count.lock().unwrap()
         }
     }
 
@@ -218,10 +265,13 @@ pub mod mock {
             if self.fail {
                 Err("Mock PR description generation failed".into())
             } else {
-                let body = format!(
-                    "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Change Walkthrough\n\n- Mock walkthrough of changes{}",
-                    format_pr_footer(ctx.model_names, ctx.token_usage)
-                );
+                let body = match &self.generate_body {
+                    Some(b) => b.clone(),
+                    None => format!(
+                        "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Change Walkthrough\n\n- Mock walkthrough of changes{}",
+                        format_pr_footer(ctx.model_names, ctx.token_usage)
+                    ),
+                };
                 Ok((ctx.task_title.to_string(), body))
             }
         }
@@ -246,6 +296,11 @@ pub mod mock {
             broken_body: &str,
             _errors: &[String],
         ) -> Result<String, String> {
+            *self.fix_call_count.lock().unwrap() += 1;
+            // Use queued response if available.
+            if let Some(queued) = self.fix_responses.lock().unwrap().pop_front() {
+                return queued;
+            }
             if self.fail {
                 Err("Mock PR description fix failed".into())
             } else {

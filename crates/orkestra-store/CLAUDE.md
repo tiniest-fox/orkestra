@@ -161,6 +161,8 @@ This allows using the last word as a readable short display ID in the UI.
 
 5. **`sequence_number` integer widths** — The log entry `sequence_number` column is `i64` in SQLite. When fetching it, use `.get::<_, i64>(col)`. When exposing it in the public API (e.g., as a cursor), convert with `u64::try_from(seq).map_err(...)` — never `.cast_unsigned()` or `seq as u64`, which silently wrap negative values. The `InMemoryWorkflowStore` mock should use `i64` internally for sequence tracking to match SQLite's type; tests that need the cursor value should apply the same `try_from` conversion as the real store.
 
+6. **Token field casts are intentionally asymmetric** — `session/save.rs` writes token counts with `u64 as i64` under a function-level `#[allow(clippy::cast_possible_wrap)]`. This is intentional: token counts from the runtime can never be negative, so the wrap risk is theoretical. The read side (`from_row.rs`) uses `u64::try_from(...).unwrap_or(0)` defensively against DB corruption. Don't "fix" the write-side casts to `try_from` — the asymmetry is deliberate.
+
 ## Known Gaps in `connection.rs`
 
 These are intentional or constrained limitations — don't try to "fix" them without understanding the constraint:

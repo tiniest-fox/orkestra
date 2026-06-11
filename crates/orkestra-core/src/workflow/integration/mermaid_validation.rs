@@ -1,8 +1,17 @@
 //! Heuristic Mermaid block validator — extracts mermaid code blocks from markdown and checks for known syntax issues.
 
 use std::fmt;
+use std::sync::LazyLock;
 
 use regex::Regex;
+
+static MERMAID_BLOCK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"```mermaid\r?\n([\s\S]*?)```").expect("valid regex"));
+
+static NODE_LABEL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"[A-Za-z0-9_]+(?:\[\(|\[\[|\[|\(\[|\(\(|\(|\{)("[^"]*"|[^\]\)\}\n]*?)[\]\)\}]"#)
+        .expect("valid regex")
+});
 
 // ============================================================================
 // Types
@@ -48,9 +57,8 @@ pub fn validate_mermaid_in_markdown(content: &str) -> Result<(), Vec<MermaidErro
 // ============================================================================
 
 fn extract_mermaid_blocks(content: &str) -> Vec<String> {
-    // Match ```mermaid\n...(content)...``` allowing \r\n line endings
-    let re = Regex::new(r"```mermaid\r?\n([\s\S]*?)```").expect("valid regex");
-    re.captures_iter(content)
+    MERMAID_BLOCK_RE
+        .captures_iter(content)
         .map(|cap| cap[1].to_string())
         .collect()
 }
@@ -63,15 +71,7 @@ fn validate_block(block_index: usize, block: &str) -> Option<MermaidError> {
         return None;
     }
 
-    // Match node label expressions: id[label], id(label), id{label} and multi-char openers.
-    // The label capture (group 1) tries the quoted-string alternative first so that
-    // `"text (with parens)"` is consumed whole — inner `)` never triggers the closer.
-    let node_label_re = Regex::new(
-        r#"[A-Za-z0-9_]+(?:\[\(|\[\[|\[|\(\[|\(\(|\(|\{)("[^"]*"|[^\]\)\}\n]*?)[\]\)\}]"#,
-    )
-    .expect("valid regex");
-
-    for caps in node_label_re.captures_iter(block) {
+    for caps in NODE_LABEL_RE.captures_iter(block) {
         let label = &caps[1];
 
         // Quoted labels are safe — the quoted alternative captures the whole "..." string.

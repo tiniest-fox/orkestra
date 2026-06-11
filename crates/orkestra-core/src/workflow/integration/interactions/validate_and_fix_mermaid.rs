@@ -19,7 +19,7 @@ pub(crate) fn execute(
     };
 
     let original_body = body.to_string();
-    let mut current_body = body.to_string();
+    let mut current_body = original_body.clone();
     let mut current_errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
 
     for _attempt in 0..max_retries {
@@ -111,5 +111,31 @@ mod tests {
         let result = execute(BROKEN_MERMAID, "title", &gen, 3);
         assert_eq!(result, BROKEN_MERMAID);
         assert_eq!(gen.fix_call_count(), 1, "should stop after first error");
+    }
+
+    #[test]
+    fn fix_receives_validation_error_text() {
+        let gen = MockPrDescriptionGenerator::succeeding()
+            .push_fix_response(Ok(VALID_MERMAID_BODY.to_string()));
+        execute(BROKEN_MERMAID, "title", &gen, 3);
+
+        let received_errors = gen.fix_received_errors();
+        assert_eq!(received_errors.len(), 1, "should have one fix call");
+        let errors = &received_errors[0];
+        assert!(
+            !errors.is_empty(),
+            "should pass at least one error to fix agent"
+        );
+        assert!(
+            errors[0].contains("unquoted special characters"),
+            "error should describe the validation issue, got: {:?}",
+            errors[0]
+        );
+
+        let received_bodies = gen.fix_received_bodies();
+        assert_eq!(
+            received_bodies[0], BROKEN_MERMAID,
+            "should pass the broken body"
+        );
     }
 }

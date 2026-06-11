@@ -207,6 +207,10 @@ pub mod mock {
         fix_responses: Mutex<VecDeque<Result<String, String>>>,
         /// Running count of `fix_pr_description` calls.
         fix_call_count: Mutex<usize>,
+        /// Recorded `broken_body` args from each `fix_pr_description` call.
+        fix_received_bodies: Mutex<Vec<String>>,
+        /// Recorded `errors` args from each `fix_pr_description` call.
+        fix_received_errors: Mutex<Vec<Vec<String>>>,
     }
 
     impl MockPrDescriptionGenerator {
@@ -217,6 +221,8 @@ pub mod mock {
                 generate_body: None,
                 fix_responses: Mutex::new(VecDeque::new()),
                 fix_call_count: Mutex::new(0),
+                fix_received_bodies: Mutex::new(Vec::new()),
+                fix_received_errors: Mutex::new(Vec::new()),
             }
         }
 
@@ -227,6 +233,8 @@ pub mod mock {
                 generate_body: None,
                 fix_responses: Mutex::new(VecDeque::new()),
                 fix_call_count: Mutex::new(0),
+                fix_received_bodies: Mutex::new(Vec::new()),
+                fix_received_errors: Mutex::new(Vec::new()),
             }
         }
 
@@ -254,6 +262,16 @@ pub mod mock {
         /// Returns the total number of `fix_pr_description` calls made so far.
         pub fn fix_call_count(&self) -> usize {
             *self.fix_call_count.lock().unwrap()
+        }
+
+        /// Returns the `broken_body` argument from each `fix_pr_description` call, in order.
+        pub fn fix_received_bodies(&self) -> Vec<String> {
+            self.fix_received_bodies.lock().unwrap().clone()
+        }
+
+        /// Returns the `errors` argument from each `fix_pr_description` call, in order.
+        pub fn fix_received_errors(&self) -> Vec<Vec<String>> {
+            self.fix_received_errors.lock().unwrap().clone()
         }
     }
 
@@ -294,9 +312,17 @@ pub mod mock {
             &self,
             _task_title: &str,
             broken_body: &str,
-            _errors: &[String],
+            errors: &[String],
         ) -> Result<String, String> {
             *self.fix_call_count.lock().unwrap() += 1;
+            self.fix_received_bodies
+                .lock()
+                .unwrap()
+                .push(broken_body.to_string());
+            self.fix_received_errors
+                .lock()
+                .unwrap()
+                .push(errors.to_vec());
             // Use queued response if available.
             if let Some(queued) = self.fix_responses.lock().unwrap().pop_front() {
                 return queued;

@@ -39,6 +39,7 @@ handlebars = "6"
 strip-ansi-escapes = "0.2"
 uuid = { version = "1", features = ["v4"] }
 libc = "0.2"
+regex = "1"
 
 [dev-dependencies]
 tempfile = "3"

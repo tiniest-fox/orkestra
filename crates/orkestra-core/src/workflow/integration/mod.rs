@@ -2,6 +2,7 @@
 
 pub mod interactions;
 pub(crate) mod merge;
+pub(crate) mod mermaid_validation;
 pub(crate) mod pr_creation;
 pub(crate) mod pr_description_audit;
 pub(crate) mod service;

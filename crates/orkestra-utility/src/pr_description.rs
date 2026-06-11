@@ -6,6 +6,7 @@
 
 use std::fmt::Write;
 
+use orkestra_types::domain::TokenUsage;
 use serde_json::json;
 
 use crate::runner::UtilityRunner;
@@ -42,6 +43,7 @@ pub struct PrDescriptionContext<'a> {
     pub base_branch: &'a str,
     pub worktree_path: &'a str,
     pub model_names: &'a [String],
+    pub token_usage: Option<&'a TokenUsage>,
 }
 
 // =============================================================================
@@ -81,16 +83,34 @@ pub trait PrDescriptionGenerator: Send + Sync {
 }
 
 /// Append model attribution footer to a PR body.
-pub fn format_pr_footer(model_names: &[String]) -> String {
-    if model_names.is_empty() {
-        return "\n\n---\n\n⚡ Powered by Orkestra\n".to_string();
-    }
+pub fn format_pr_footer(model_names: &[String], token_usage: Option<&TokenUsage>) -> String {
     let mut footer = String::from("\n\n---\n\n");
     for model in model_names {
         let _ = writeln!(footer, "Co-authored-by: {model}");
     }
+    if let Some(usage) = token_usage {
+        if usage.input_tokens > 0 || usage.output_tokens > 0 {
+            let _ = writeln!(
+                footer,
+                "Tokens: {} input · {} output",
+                compact_number(usage.input_tokens),
+                compact_number(usage.output_tokens)
+            );
+        }
+    }
     footer.push_str("⚡ Powered by Orkestra\n");
     footer
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn compact_number(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
 }
 
 // =============================================================================
@@ -122,7 +142,11 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         .map_err(|e| e.to_string())?;
 
         // Append model attribution footer
-        let body_with_footer = format!("{}{}", body, format_pr_footer(ctx.model_names));
+        let body_with_footer = format!(
+            "{}{}",
+            body,
+            format_pr_footer(ctx.model_names, ctx.token_usage)
+        );
         Ok((title, body_with_footer))
     }
 
@@ -175,7 +199,7 @@ pub mod mock {
             } else {
                 let body = format!(
                     "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Change Walkthrough\n\n- Mock walkthrough of changes{}",
-                    format_pr_footer(ctx.model_names)
+                    format_pr_footer(ctx.model_names, ctx.token_usage)
                 );
                 Ok((ctx.task_title.to_string(), body))
             }
@@ -318,6 +342,7 @@ mod tests {
             base_branch: "main",
             worktree_path: "/fake/worktree",
             model_names: &model_names,
+            token_usage: None,
         };
         let result = generator.generate_pr_description(&ctx);
         assert!(result.is_ok());
@@ -342,6 +367,7 @@ mod tests {
             base_branch: "main",
             worktree_path: "/fake/worktree",
             model_names: &[],
+            token_usage: None,
         };
         let result = generator.generate_pr_description(&ctx);
         assert!(result.is_err());
@@ -350,10 +376,13 @@ mod tests {
 
     #[test]
     fn test_format_pr_footer_with_models() {
-        let footer = format_pr_footer(&[
-            "Claude Sonnet 4.5".to_string(),
-            "Claude Haiku 4.5".to_string(),
-        ]);
+        let footer = format_pr_footer(
+            &[
+                "Claude Sonnet 4.5".to_string(),
+                "Claude Haiku 4.5".to_string(),
+            ],
+            None,
+        );
         assert!(footer.contains("Co-authored-by: Claude Sonnet 4.5"));
         assert!(footer.contains("Co-authored-by: Claude Haiku 4.5"));
         assert!(footer.contains("⚡ Powered by Orkestra"));
@@ -361,8 +390,41 @@ mod tests {
 
     #[test]
     fn test_format_pr_footer_empty() {
-        let footer = format_pr_footer(&[]);
+        let footer = format_pr_footer(&[], None);
         assert!(!footer.contains("Co-authored-by"));
         assert!(footer.contains("⚡ Powered by Orkestra"));
+    }
+
+    #[test]
+    fn test_format_pr_footer_with_tokens() {
+        use orkestra_types::domain::TokenUsage;
+        let usage = TokenUsage {
+            input_tokens: 120_432,
+            output_tokens: 45_200,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        };
+        let footer = format_pr_footer(&["Claude Sonnet 4.5".to_string()], Some(&usage));
+        assert!(footer.contains("Tokens: 120.4k input · 45.2k output"));
+        assert!(footer.contains("⚡ Powered by Orkestra"));
+    }
+
+    #[test]
+    fn test_format_pr_footer_zero_tokens() {
+        use orkestra_types::domain::TokenUsage;
+        let usage = TokenUsage::default();
+        let footer = format_pr_footer(&[], Some(&usage));
+        assert!(!footer.contains("Tokens:"));
+        assert!(footer.contains("⚡ Powered by Orkestra"));
+    }
+
+    #[test]
+    fn test_compact_number_formatting() {
+        assert_eq!(compact_number(0), "0");
+        assert_eq!(compact_number(999), "999");
+        assert_eq!(compact_number(1_000), "1.0k");
+        assert_eq!(compact_number(1_500), "1.5k");
+        assert_eq!(compact_number(120_432), "120.4k");
+        assert_eq!(compact_number(1_200_000), "1.2M");
     }
 }

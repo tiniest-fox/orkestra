@@ -19,7 +19,7 @@ use orkestra_types::domain::{compute_transcript_path, LogEntry, PromptSection};
 use portable_pty::{CommandBuilder, PtySize};
 use tempfile::NamedTempFile;
 
-use crate::interactions::hooks::types::{HookReceiver, HookServer};
+use crate::interactions::hooks::types::{HookEvent, HookReceiver, HookServer};
 use crate::orkestra_debug;
 use crate::registry::{ProviderRegistry, ResolvedProvider};
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
@@ -32,8 +32,9 @@ use super::classify_output::{self, OutputClassification};
 
 /// Owns the PTY process lifecycle. `ProcessGuard` fires SIGTERM on drop.
 ///
-/// `child` and `guard` are held for their drop-side effects rather than read
-/// access — `child` keeps the PTY slave open, `guard` sends SIGTERM on drop.
+/// `child` is polled via `try_wait()` to detect crashes; it also keeps the PTY
+/// slave open. `guard` is disarmed after the process is confirmed done (both
+/// clean completion and detected crash), then dropped.
 /// `_drain_thread` continuously reads PTY master output to prevent the classic
 /// output-buffer deadlock: if the slave process fills the master output buffer,
 /// it blocks on stdout and stops reading stdin, which in turn blocks our prompt
@@ -247,24 +248,7 @@ fn drive_pty_session(
         return;
     }
 
-    // Wait for Stop hook (turn completion signal from Claude Code)
-    let hook_result = hook_rx.recv_timeout(Duration::from_hours(1));
-
-    let hook_event = match hook_result {
-        Ok(event) => {
-            orkestra_debug!(
-                "runner",
-                "run_pty: got hook event {:?} for session {}",
-                event.event_type,
-                event.session_id
-            );
-            Some(event)
-        }
-        Err(e) => {
-            orkestra_debug!("runner", "run_pty: hook recv failed: {e:?}");
-            None
-        }
-    };
+    let hook_event = wait_for_hook_or_crash(hook_rx, &mut pty_handle.child);
 
     // Use transcript path from hook event if available, else computed fallback
     let transcript_path = hook_event
@@ -283,7 +267,8 @@ fn drive_pty_session(
     // Read and parse JSONL transcript, emit log events
     let (full_output, _line_count) = read_and_parse_transcript(&transcript_path, &mut *parser, tx);
 
-    // Kill PTY process — ProcessGuard fires SIGTERM on drop (not disarmed)
+    // Process is confirmed done — disarm so Drop sends SIGTERM only (no SIGKILL escalation)
+    pty_handle.guard.disarm();
     drop(pty_handle);
 
     // Cleanup
@@ -312,6 +297,51 @@ fn drive_pty_session(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/// Poll for the Stop hook, checking child liveness every ~3s to detect crashes promptly.
+///
+/// Returns `Some(event)` when the hook fires normally, or `None` when the PTY process
+/// exits without firing the Stop hook (crash / silent exit).
+fn wait_for_hook_or_crash(
+    hook_rx: &HookReceiver,
+    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
+) -> Option<HookEvent> {
+    loop {
+        match hook_rx.recv_timeout(Duration::from_secs(3)) {
+            Ok(event) => {
+                orkestra_debug!(
+                    "runner",
+                    "run_pty: got hook event {:?} for session {}",
+                    event.event_type,
+                    event.session_id
+                );
+                return Some(event);
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => match child.try_wait() {
+                Ok(Some(exit_status)) => {
+                    orkestra_debug!(
+                        "runner",
+                        "run_pty: PTY process exited with {:?} without firing Stop hook",
+                        exit_status
+                    );
+                    return None;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    orkestra_debug!(
+                        "runner",
+                        "run_pty: try_wait failed: {e:?}, assuming process dead"
+                    );
+                    return None;
+                }
+            },
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                orkestra_debug!("runner", "run_pty: hook channel disconnected");
+                return None;
+            }
+        }
+    }
+}
 
 /// Outcome of the transcript poll loop in `drive_pty_session`.
 enum PollOutcome {

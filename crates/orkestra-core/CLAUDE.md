@@ -355,6 +355,20 @@ PTY orchestrator-level tests live in `tests/e2e/agents/pty.rs`. Two tests (`pty_
 
 **Remaining gap**: no test exercises the error path where `claude` is absent from PATH (task should fail with a clear error rather than hang).
 
+**`ORK_CAPTURE_ARGS_FILE` args-capture sidecar**: PTY crash/resume tests verify spawn args (`--session-id` vs `--resume`) by setting this env var to a temp file path. The mock PTY script appends its args to the file on each invocation; the test reads it back after each run to assert spawn behavior across crash/rejection cycles. Example from `pty_crash_recovery_resumes_session`:
+
+```rust
+let args_file = tempfile::NamedTempFile::new()?;
+std::env::set_var("ORK_CAPTURE_ARGS_FILE", args_file.path());
+// ... run test, then:
+let lines: Vec<&str> = std::fs::read_to_string(args_file.path())?.lines().collect();
+assert!(lines[0].starts_with("--session-id"));  // first spawn: fresh session
+assert!(lines[1].starts_with("--session-id"));  // second spawn: Restart clears session
+std::env::remove_var("ORK_CAPTURE_ARGS_FILE");   // clean up — prevent leakage
+```
+
+This pattern is the correct way to verify multi-spawn arg sequences; direct mock inspection can't capture ordering across crash boundaries.
+
 ### Known Test Gaps in `init.rs`
 
 Two gaps exist in `test_checks_script_is_executable` (the `ensure_orkestra_project` test):

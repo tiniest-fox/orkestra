@@ -1,8 +1,5 @@
 //! Heuristic Mermaid block validator — extracts mermaid code blocks from markdown and checks for known syntax issues.
 
-// Callers live in sibling Trak (cicada) and are not wired yet.
-#![allow(dead_code)]
-
 use std::fmt;
 
 use regex::Regex;

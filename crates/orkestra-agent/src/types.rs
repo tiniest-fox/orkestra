@@ -166,6 +166,10 @@ impl std::fmt::Display for AgentCompletionError {
 // ============================================================================
 
 /// Events emitted during async agent execution.
+///
+/// **Ordering invariant**: `TokenUsage` events MUST be emitted before `Completed`.
+/// `poll()` in `ActiveAgent` stops processing after it receives `Completed`, so any
+/// `TokenUsage` events that arrive after it would be silently dropped.
 #[derive(Debug, Clone)]
 pub enum RunEvent {
     /// A parsed log entry from the agent's stdout stream.

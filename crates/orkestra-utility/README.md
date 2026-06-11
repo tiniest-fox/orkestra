@@ -83,8 +83,8 @@ let name = friendly_model_name(Some("claudecode/sonnet")); // "Claude Sonnet 4.5
 ```rust
 use orkestra_utility::format_pr_footer;
 
-// Generate model attribution footer
-let footer = format_pr_footer(&["Claude Sonnet 4.5".to_string()]);
+// Generate model attribution footer (token_usage is None when unavailable)
+let footer = format_pr_footer(&["Claude Sonnet 4.5".to_string()], None);
 // ---
 // Co-authored-by: Claude Sonnet 4.5
 // ⚡ Powered by Orkestra

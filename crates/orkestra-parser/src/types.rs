@@ -36,6 +36,7 @@ where
 }
 
 use orkestra_types::domain::LogEntry;
+use orkestra_types::domain::TokenUsage;
 
 // ============================================================================
 // Stage Output
@@ -344,6 +345,10 @@ pub struct ParsedUpdate {
     /// Session ID extracted from the stream (populated once for providers like
     /// `OpenCode` that generate their own session IDs).
     pub session_id: Option<String>,
+    /// Token usage extracted from a `step_finish` event (`OpenCode` only).
+    pub token_usage: Option<TokenUsage>,
+    /// Cost extracted from a `step_finish` event (`OpenCode` only).
+    pub cost: Option<f64>,
 }
 
 // ============================================================================

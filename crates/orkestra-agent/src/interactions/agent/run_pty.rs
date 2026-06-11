@@ -251,8 +251,13 @@ fn drive_pty_session(
     // Tail transcript during execution, emitting LogLine events as lines arrive.
     // Non-blocking: polls transcript file every 150ms while waiting for Stop hook.
     // Also checks child liveness every ~3s to detect crashes promptly.
-    let (hook_event, mut full_output, tail_file_pos) =
-        tail_transcript_until_stop(&fallback_transcript_path, hook_rx, &mut pty_handle.child, &mut *parser, tx);
+    let (hook_event, mut full_output, tail_file_pos) = tail_transcript_until_stop(
+        &fallback_transcript_path,
+        hook_rx,
+        &mut pty_handle.child,
+        &mut *parser,
+        tx,
+    );
 
     // Use transcript path from hook event if available, else computed fallback.
     // In practice these match — the divergence path is a safety net.

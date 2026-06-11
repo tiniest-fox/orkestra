@@ -151,6 +151,8 @@ Before considering any code change complete, run the full verification suite. Al
 ```bash
 cargo fmt --all -- --check   # Formatting (fix with: cargo fmt --all)
 cargo clippy --workspace --tests  # Lints — zero warnings required (--tests includes #[cfg(test)] blocks and e2e test files)
+# Pedantic lints are enabled workspace-wide (including too_many_lines at 100-line threshold).
+# When adding to an existing function, verify it stays under 100 lines.
 cargo test --workspace       # All tests pass
 ```
 

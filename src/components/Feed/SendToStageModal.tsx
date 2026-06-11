@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { Transport } from "../../transport";
 import type { StageConfig } from "../../types/workflow";
+import { extractErrorMessage } from "../../utils/errors";
 import { titleCase } from "../../utils/titleCase";
 import { Button } from "../ui/Button";
 import { ModalPanel } from "../ui/ModalPanel";
@@ -59,7 +60,7 @@ export function SendToStageModal({
       }
       onSuccess();
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
       setLoading(false);
     }
   }

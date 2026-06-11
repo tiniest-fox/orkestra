@@ -1,6 +1,7 @@
 // Modal for skipping the current stage, advancing to the next without agent review.
 import { useState } from "react";
 import type { Transport } from "../../transport";
+import { extractErrorMessage } from "../../utils/errors";
 import { Button } from "../ui/Button";
 import { ModalPanel } from "../ui/ModalPanel";
 
@@ -37,7 +38,7 @@ export function SkipStageModal({
       await transport.call("skip_stage", { task_id: taskId, message: message.trim() });
       onSuccess();
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
       setLoading(false);
     }
   }

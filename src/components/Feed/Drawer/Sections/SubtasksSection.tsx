@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useTasks, useToast, useWorkflowConfig } from "../../../../providers";
 import { useTransport } from "../../../../transport";
 import type { WorkflowTaskView } from "../../../../types/workflow";
+import { extractErrorMessage } from "../../../../utils/errors";
 import type {
   FeedSection as FeedSectionData,
   FeedSectionName,
@@ -125,7 +126,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
     (taskId: string) => {
       applyOptimistic(taskId, { type: "approve" });
       transport.call("approve", { task_id: taskId }).catch((err) => {
-        if (!isDisconnectError(err)) showError(String(err));
+        if (!isDisconnectError(err)) showError(extractErrorMessage(err));
       });
     },
     [transport, showError, applyOptimistic],

@@ -82,7 +82,7 @@ let output = runner.run("generate_pr_description", &context)?;
 
 | Function | Purpose |
 |----------|---------|
-| `format_pr_footer(models)` | Generate "Co-authored-by" + "Powered by Orkestra" footer |
+| `format_pr_footer(models, token_usage)` | Generate "Co-authored-by" + token counts + "Powered by Orkestra" footer; `token_usage` is `Option<TaskTokenUsage>` — omit section when `None` or all counts are zero |
 
 ## Gotchas
 

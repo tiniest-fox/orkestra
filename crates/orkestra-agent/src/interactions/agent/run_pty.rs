@@ -149,6 +149,7 @@ pub fn execute(
             prompt: &prompt,
             schema: schema.as_ref(),
             home_dir: &home_dir,
+            is_resume,
         };
         drive_pty_session(pty_handle, &hook_rx, &hook_server_thread, &tx, parser, ctx);
     });
@@ -170,6 +171,7 @@ struct PtySessionParams<'a> {
     schema: Option<&'a serde_json::Value>,
     /// Resolved `$HOME` directory — passed explicitly to avoid hidden env reads in helpers.
     home_dir: &'a Path,
+    is_resume: bool,
 }
 
 fn drive_pty_session(
@@ -214,12 +216,25 @@ fn drive_pty_session(
     // it submits.
     let fallback_transcript_path =
         compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
+
+    // On resume the transcript file already exists. Seed the baseline to its current
+    // size so poll_for_transcript_with_enter_retry waits for *growth* rather than
+    // returning Found immediately on the pre-existing file.
+    let baseline_size = if ctx.is_resume {
+        std::fs::metadata(&fallback_transcript_path)
+            .map_or(0, |m| m.len())
+    } else {
+        0
+    };
+
     let poll_deadline = std::time::Instant::now() + Duration::from_secs(30);
 
     let poll_outcome = poll_for_transcript_with_enter_retry(
         &fallback_transcript_path,
         poll_deadline,
         &mut pty_handle.writer,
+        baseline_size,
+        ctx.prompt.as_bytes(),
     );
 
     let transcript_found = match poll_outcome {
@@ -251,12 +266,15 @@ fn drive_pty_session(
     // Tail transcript during execution, emitting LogLine events as lines arrive.
     // Non-blocking: polls transcript file every 150ms while waiting for Stop hook.
     // Also checks child liveness every ~3s to detect crashes promptly.
+    // On resume, start reading from baseline_size so prior-run content is not
+    // re-parsed as new output.
     let (hook_event, mut full_output, tail_file_pos) = tail_transcript_until_stop(
         &fallback_transcript_path,
         hook_rx,
         &mut pty_handle.child,
         &mut *parser,
         tx,
+        baseline_size as usize,
     );
 
     // Use transcript path from hook event if available, else computed fallback.
@@ -331,18 +349,31 @@ enum PollOutcome {
     WriteFailed(String),
 }
 
-/// Poll for the JSONL transcript file, re-sending Enter every ~3s to handle the TUI startup race.
+/// Poll for the JSONL transcript file to grow past `baseline_size`, re-sending the
+/// full prompt + Enter every ~3s to handle the TUI startup race.
 ///
-/// Returns `Found` when the file appears, `Timeout` when the deadline passes, or
+/// `baseline_size = 0` covers fresh sessions (file doesn't exist yet — Found once it
+/// appears with any content). `baseline_size > 0` covers resumes (file exists from the
+/// prior run — Found only after new bytes are appended past the baseline).
+///
+/// On each retry the full `prompt` bytes followed by `\r` are written, not just `\r`,
+/// because on resume the TUI is replaying the old transcript and may have discarded
+/// the initial prompt write.
+///
+/// Returns `Found` when readiness is confirmed, `Timeout` when the deadline passes, or
 /// `WriteFailed` when the PTY writer returns an error (process died).
 fn poll_for_transcript_with_enter_retry(
     path: &Path,
     deadline: std::time::Instant,
     writer: &mut Box<dyn Write + Send>,
+    baseline_size: u64,
+    prompt: &[u8],
 ) -> PollOutcome {
     let mut polls_since_enter = 0u32;
     loop {
-        if path.exists() {
+        // Found when the file has grown past baseline (or exists at all for baseline=0).
+        let current_size = std::fs::metadata(path).map_or(0, |m| m.len());
+        if current_size > baseline_size {
             return PollOutcome::Found;
         }
         if std::time::Instant::now() >= deadline {
@@ -351,7 +382,13 @@ fn poll_for_transcript_with_enter_retry(
         polls_since_enter += 1;
         if polls_since_enter >= 6 {
             polls_since_enter = 0;
-            if let Err(e) = writer.write_all(b"\r").and_then(|()| writer.flush()) {
+            // Re-deliver the full prompt on resume in case the initial write was
+            // swallowed while the TUI was replaying the prior transcript.
+            let write_result = writer
+                .write_all(prompt)
+                .and_then(|()| writer.write_all(b"\r"))
+                .and_then(|()| writer.flush());
+            if let Err(e) = write_result {
                 return PollOutcome::WriteFailed(e.to_string());
             }
         }
@@ -674,6 +711,9 @@ fn read_new_lines(
 /// Returns `(hook_event, full_output, file_pos)`. `full_output` contains all content
 /// parsed so far; `file_pos` is the byte offset for the subsequent final read.
 ///
+/// `initial_file_pos` seeds the starting byte offset — pass the pre-existing file size
+/// on resume so prior-run lines are not re-parsed as new output.
+///
 /// `child` is polled every ~3s (20 × 150ms) to detect PTY process exits without
 /// a Stop hook (crashes / silent exits).
 fn tail_transcript_until_stop(
@@ -682,6 +722,7 @@ fn tail_transcript_until_stop(
     child: &mut Box<dyn portable_pty::Child + Send + Sync>,
     parser: &mut dyn AgentParser,
     tx: &Sender<RunEvent>,
+    initial_file_pos: usize,
 ) -> (
     Option<crate::interactions::hooks::types::HookEvent>,
     String,
@@ -689,7 +730,7 @@ fn tail_transcript_until_stop(
 ) {
     use std::sync::mpsc::TryRecvError;
 
-    let mut file_pos = 0usize;
+    let mut file_pos = initial_file_pos;
     let mut full_output = String::new();
     let mut line_count = 0usize;
     let mut polls_since_crash_check = 0u32;
@@ -1228,6 +1269,58 @@ mod tests {
         assert!(
             result.is_ok(),
             "UUID-formatted session_id should be accepted"
+        );
+    }
+
+    #[test]
+    fn poll_returns_found_only_when_file_grows_past_baseline() {
+        use std::io::Write as _;
+        use std::time::Instant;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+
+        // Pre-create file with some content — simulates a prior-run transcript.
+        std::fs::write(&path, b"old content\n").unwrap();
+        let baseline = std::fs::metadata(&path).unwrap().len();
+
+        let mut writer: Box<dyn Write + Send> = Box::new(std::io::sink());
+
+        // Short deadline — file hasn't grown yet, so poll must timeout.
+        let short_deadline = Instant::now() + Duration::from_millis(600);
+        let outcome = poll_for_transcript_with_enter_retry(
+            &path,
+            short_deadline,
+            &mut writer,
+            baseline,
+            b"Resume prompt",
+        );
+        assert!(
+            matches!(outcome, PollOutcome::Timeout),
+            "should timeout when file has not grown past baseline"
+        );
+
+        // Append new content past baseline.
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            f.write_all(b"new line\n").unwrap();
+        }
+
+        // Now poll with generous deadline — should return Found immediately.
+        let long_deadline = Instant::now() + Duration::from_secs(5);
+        let outcome2 = poll_for_transcript_with_enter_retry(
+            &path,
+            long_deadline,
+            &mut writer,
+            baseline,
+            b"Resume prompt",
+        );
+        assert!(
+            matches!(outcome2, PollOutcome::Found),
+            "should return Found once file has grown past baseline"
         );
     }
 

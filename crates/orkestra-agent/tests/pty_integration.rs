@@ -253,6 +253,126 @@ fn pty_fails_fast_when_transcript_missing() {
     }
 }
 
+// ============================================================================
+// Test 5: Resume lifecycle
+// ============================================================================
+
+/// PTY resume lifecycle: pre-existing transcript is not replayed as new output;
+/// new-turn content is captured correctly; stale content never appears in output.
+///
+/// Ignored by default — requires a Unix PTY, bash, and python3.
+///
+/// Run with: `cargo test -p orkestra-agent -- --ignored pty_resume_lifecycle`
+#[test]
+#[ignore = "requires PTY support and Python3; run with --ignored on a developer machine"]
+fn pty_resume_lifecycle() {
+    use std::collections::HashMap;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::mpsc::RecvTimeoutError;
+
+    use orkestra_types::domain::compute_transcript_path;
+
+    let tmp = TempDir::new().unwrap();
+
+    let hook_server = Arc::new(start_hook_server(tmp.path()).unwrap());
+
+    let bin_dir = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let claude_bin = bin_dir.join("claude");
+    std::fs::copy(fixtures_dir.join("mock_claude_pty.sh"), &claude_bin).unwrap();
+    let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&claude_bin, perms).unwrap();
+
+    let mut env_override = HashMap::new();
+    let home_dir = tmp.path().join("home");
+    std::fs::create_dir_all(&home_dir).unwrap();
+    env_override.insert(
+        "PATH".to_string(),
+        format!(
+            "{}:{}",
+            bin_dir.display(),
+            std::env::var("PATH").unwrap_or_default()
+        ),
+    );
+    // Override HOME so the mock and run_pty agree on the transcript location
+    env_override.insert("HOME".to_string(), home_dir.to_str().unwrap().to_string());
+
+    // Pre-create the transcript at the path compute_transcript_path produces.
+    // The test uses tmp.path() as working_dir to match what RunConfig sets.
+    let session_id = "resume-test-session-id";
+    let transcript_path = compute_transcript_path(&home_dir, tmp.path(), session_id);
+    std::fs::create_dir_all(transcript_path.parent().unwrap()).unwrap();
+    let stale_line =
+        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Old output."}]}}"#;
+    let stale_artifact =
+        r#"{"structured_output":{"type":"old_artifact","content":"STALE - should not appear"}}"#;
+    std::fs::write(
+        &transcript_path,
+        format!("{stale_line}\n{stale_artifact}\n"),
+    )
+    .unwrap();
+
+    let registry = Arc::new(default_test_registry());
+    let config = RunConfig::new(
+        tmp.path(),
+        "Resume prompt",
+        r#"{"type":"object","properties":{"type":{"type":"string"},"content":{"type":"string"}},"required":["type","content"]}"#,
+    )
+    .with_task_id("resume-lifecycle-test")
+    .with_model("claude-pty/sonnet")
+    .with_session(session_id, true)
+    .with_env(env_override);
+
+    let resolved = registry.resolve(config.model.as_deref()).unwrap();
+    let (pid, rx) = run_pty::execute(&resolved, &registry, &config, &hook_server).unwrap();
+    assert!(pid > 0, "PTY process must have a valid PID");
+
+    // Collect events until Completed arrives or 60s elapses (resume is slower)
+    let mut events: Vec<RunEvent> = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining.min(Duration::from_millis(500))) {
+            Ok(event) => {
+                let done = matches!(event, RunEvent::Completed(_));
+                events.push(event);
+                if done {
+                    break;
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    let completed = events
+        .iter()
+        .find(|e| matches!(e, RunEvent::Completed(_)))
+        .expect("no Completed event within 60s");
+
+    if let RunEvent::Completed(result) = completed {
+        assert!(
+            result.is_ok(),
+            "expected Completed(Ok), got Completed(Err({result:?}))"
+        );
+        let output = result.as_ref().unwrap();
+        let output_str = format!("{output:?}");
+        assert!(
+            !output_str.contains("STALE") && !output_str.contains("old_artifact"),
+            "stale prior-run content must not appear in resume output: {output_str}"
+        );
+        assert!(
+            output_str.contains("Test output from mock claude"),
+            "new-turn output must be present in resume output: {output_str}"
+        );
+    }
+}
+
 /// `HookServer` routes a Stop hook payload to the correct per-task receiver.
 #[test]
 fn hook_triggers_correct_event() {

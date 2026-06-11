@@ -447,12 +447,13 @@ try {
 
 ```tsx
 import { isDisconnectError } from "../transport/transportErrors";
+import { extractErrorMessage } from "../utils/errors";
 
 onApprove: async (taskId) => {
   try {
     await transport.call("approve", { task_id: taskId });
   } catch (err) {
-    if (!isDisconnectError(err)) showError(String(err)); // suppress disconnect/timeout noise
+    if (!isDisconnectError(err)) showError(extractErrorMessage(err)); // suppress disconnect/timeout noise
   }
 },
 ```
@@ -462,6 +463,8 @@ This applies to every `.catch()` or `catch (err)` block in `FeedView.tsx`, `Assi
 For new handlers that users care about (e.g., submitting feedback, line comments), handle the error explicitly and store it in a `useState` error variable that the UI renders:
 
 ```tsx
+import { extractErrorMessage } from "../utils/errors";
+
 const [error, setError] = useState<string | null>(null);
 
 const handleAction = useCallback(async () => {
@@ -472,7 +475,7 @@ const handleAction = useCallback(async () => {
     await invoke("workflow_action", { taskId: task.id });
     onClose();
   } catch (err) {
-    setError(String(err));
+    setError(extractErrorMessage(err));
     setLoading(false);
   }
 }, [task.id, loading, onClose]);

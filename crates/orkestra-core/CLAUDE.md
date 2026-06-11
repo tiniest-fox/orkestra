@@ -277,6 +277,24 @@ if name.starts_with('/') || name.contains('\\') || name.contains("..") || name.c
 
 This is a HIGH-severity security finding.
 
+### Store parameter convention for interactions
+
+Synchronous interactions take `&dyn WorkflowStore`. Interactions that spawn a background thread take `&Arc<dyn WorkflowStore>` and clone internally — the clone is an implementation detail, not a caller concern:
+
+```rust
+// Good — caller borrows; interaction clones internally for the thread
+pub fn execute(store: &Arc<dyn WorkflowStore>, ...) -> Result<()> {
+    let store = Arc::clone(store);
+    std::thread::spawn(move || { store.do_something(); });
+    Ok(())
+}
+
+// Bad — caller must move; leaks the thread-spawn detail into the signature
+pub fn execute(store: Arc<dyn WorkflowStore>, ...) -> Result<()> { ... }
+```
+
+Never take an owned `Arc<dyn WorkflowStore>` — it forces the caller to move rather than borrow and misleads readers about lifetime requirements. See `setup_worktree.rs` for the canonical example.
+
 ### `apply_to_task()` is the Single Source of Truth for WorktreeRecord Adoption
 
 When a prewarm `WorktreeRecord` is adopted into a task, **always** use `apply_to_task()` in `workflow/task/interactions/adopt_worktree.rs`. Do not copy `WorktreeRecord` fields (worktree path, branch name, base commit, base branch) inline — that pattern caused a HIGH-severity bug where `branch_name`/`base_commit` were never set, making the integration step silently skip the merge and discard all agent work.

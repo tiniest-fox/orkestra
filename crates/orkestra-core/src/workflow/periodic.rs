@@ -9,6 +9,8 @@ struct ScheduledTask {
     name: &'static str,
     interval: Duration,
     last_run: Instant,
+    /// When true, fires on the next `poll_due` regardless of elapsed time.
+    force_due: bool,
 }
 
 /// A simple scheduler that tracks named tasks with intervals.
@@ -35,7 +37,21 @@ impl PeriodicScheduler {
             last_run: Instant::now()
                 .checked_sub(interval)
                 .unwrap_or_else(Instant::now),
+            force_due: false,
         });
+    }
+
+    /// Force a named task to be due on the next `poll_due` call regardless of elapsed time.
+    ///
+    /// No-op if the name is not registered. Used in tests to trigger a specific
+    /// periodic job without waiting for its interval to elapse.
+    pub fn force_due(&mut self, name: &str) {
+        for task in &mut self.tasks {
+            if task.name == name {
+                task.force_due = true;
+                break;
+            }
+        }
     }
 
     /// Returns names of tasks that are due, in registration order.
@@ -46,9 +62,10 @@ impl PeriodicScheduler {
         let mut due = Vec::new();
 
         for task in &mut self.tasks {
-            if now.duration_since(task.last_run) >= task.interval {
+            if task.force_due || now.duration_since(task.last_run) >= task.interval {
                 due.push(task.name);
                 task.last_run = now;
+                task.force_due = false;
             }
         }
 

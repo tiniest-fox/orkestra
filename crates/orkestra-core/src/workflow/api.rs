@@ -10,7 +10,9 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{LogNotification, Task};
 use crate::workflow::execution::ProviderRegistry;
 use crate::workflow::iteration::IterationService;
-use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{
+    GitService, PrMonitor, PrService, WorkflowError, WorkflowResult, WorkflowStore,
+};
 #[cfg(feature = "testutil")]
 use crate::workflow::runtime::TaskState;
 use crate::workflow::task::setup::TaskSetupService;
@@ -51,6 +53,7 @@ pub struct WorkflowApi {
     pub(crate) commit_message_generator: Arc<dyn CommitMessageGenerator>,
     pub(crate) pr_description_generator: Arc<dyn PrDescriptionGenerator>,
     pub(crate) pr_service: Option<Arc<dyn PrService>>,
+    pub(crate) pr_monitor: Option<Arc<dyn PrMonitor>>,
     pub(crate) setup_service: Arc<TaskSetupService>,
     pub(crate) agent_killer: Option<Arc<dyn AgentKiller>>,
     pub(crate) provider_registry: Option<Arc<ProviderRegistry>>,
@@ -86,6 +89,7 @@ impl WorkflowApi {
             commit_message_generator,
             pr_description_generator,
             pr_service: None,
+            pr_monitor: None,
             setup_service,
             agent_killer: None,
             provider_registry: None,
@@ -124,6 +128,7 @@ impl WorkflowApi {
             commit_message_generator,
             pr_description_generator,
             pr_service: None,
+            pr_monitor: None,
             setup_service,
             agent_killer: None,
             provider_registry: None,
@@ -164,6 +169,18 @@ impl WorkflowApi {
     pub fn with_pr_service(mut self, service: Arc<dyn PrService>) -> Self {
         self.pr_service = Some(service);
         self
+    }
+
+    /// Set the PR monitor (for auto-resolve polling).
+    #[must_use]
+    pub fn with_pr_monitor(mut self, monitor: Arc<dyn PrMonitor>) -> Self {
+        self.pr_monitor = Some(monitor);
+        self
+    }
+
+    /// Get the PR monitor, if configured.
+    pub fn pr_monitor(&self) -> Option<&Arc<dyn PrMonitor>> {
+        self.pr_monitor.as_ref()
     }
 
     /// Run task setup synchronously instead of on background threads.
@@ -377,6 +394,14 @@ impl WorkflowApi {
 
 #[cfg(feature = "testutil")]
 impl WorkflowApi {
+    /// Persist a task directly to the store — test setup only.
+    ///
+    /// Bypasses all business logic. Use to inject test state (e.g., set `pr_url`,
+    /// `auto_resolve`, `auto_resolve_count`) without going through the full workflow.
+    pub fn save_task(&self, task: &Task) -> WorkflowResult<()> {
+        self.store.save_task(task)
+    }
+
     /// Force a task to `Queued { stage }` regardless of current state.
     ///
     /// Used in crash-recovery e2e tests to set up the state that

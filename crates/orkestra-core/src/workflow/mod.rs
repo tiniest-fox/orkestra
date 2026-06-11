@@ -47,6 +47,7 @@ pub mod runtime;
 
 pub mod agent;
 pub mod assistant;
+pub mod auto_resolve;
 pub mod human;
 pub mod integration;
 pub mod query;

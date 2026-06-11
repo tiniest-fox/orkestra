@@ -105,7 +105,7 @@ pub fn create_pr_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowRe
 /// Run the PR creation interaction and record the result.
 ///
 /// Acquires the API lock only briefly to record success/failure.
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 pub(crate) fn run_pr_creation(
     git: Arc<dyn GitService>,
     pr_service: Arc<dyn PrService>,

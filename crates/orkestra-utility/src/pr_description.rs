@@ -80,6 +80,18 @@ pub trait PrDescriptionGenerator: Send + Sync {
         commits_summary: &str,
         diff_summary: &str,
     ) -> Result<String, String>;
+
+    /// Attempt to fix a PR body that failed validation.
+    ///
+    /// Receives the broken PR body and a list of validation error descriptions.
+    /// Returns `Ok(fixed_body)` on success, `Err(reason)` on failure.
+    /// The caller handles fallback (keeping the broken body or skipping the PR).
+    fn fix_pr_description(
+        &self,
+        task_title: &str,
+        broken_body: &str,
+        errors: &[String],
+    ) -> Result<String, String>;
 }
 
 /// Append model attribution footer to a PR body.
@@ -160,6 +172,15 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         update_pr_description_sync(task_title, current_body, commits_summary, diff_summary, 120)
             .map_err(|e| e.to_string())
     }
+
+    fn fix_pr_description(
+        &self,
+        task_title: &str,
+        broken_body: &str,
+        errors: &[String],
+    ) -> Result<String, String> {
+        fix_pr_description_sync(task_title, broken_body, errors, 120).map_err(|e| e.to_string())
+    }
 }
 
 // =============================================================================
@@ -216,6 +237,19 @@ pub mod mock {
                 Err("Mock PR description update failed".into())
             } else {
                 Ok(format!("{current_body}\n\n_Updated by mock_"))
+            }
+        }
+
+        fn fix_pr_description(
+            &self,
+            _task_title: &str,
+            broken_body: &str,
+            _errors: &[String],
+        ) -> Result<String, String> {
+            if self.fail {
+                Err("Mock PR description fix failed".into())
+            } else {
+                Ok(format!("{broken_body}\n\n_Fixed by mock_"))
             }
         }
     }
@@ -302,6 +336,34 @@ pub fn update_pr_description_sync(
     });
     let output = runner
         .run("update_pr_description", &context)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    output["body"]
+        .as_str()
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing body"))
+}
+
+/// Fixes a PR description that failed validation, synchronously using a lightweight Claude instance.
+///
+/// Returns the corrected PR body, or an error if the fix fails.
+pub fn fix_pr_description_sync(
+    task_title: &str,
+    broken_body: &str,
+    errors: &[String],
+    timeout_secs: u64,
+) -> std::io::Result<String> {
+    let runner = UtilityRunner::new().with_timeout(timeout_secs);
+    let errors_json: Vec<serde_json::Value> = errors
+        .iter()
+        .map(|e| serde_json::Value::String(e.clone()))
+        .collect();
+    let context = json!({
+        "title": task_title,
+        "broken_body": broken_body,
+        "errors": errors_json,
+    });
+    let output = runner
+        .run("fix_pr_description", &context)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     output["body"]
         .as_str()
@@ -416,6 +478,26 @@ mod tests {
         let footer = format_pr_footer(&[], Some(&usage));
         assert!(!footer.contains("Tokens:"));
         assert!(footer.contains("⚡ Powered by Orkestra"));
+    }
+
+    #[test]
+    fn test_mock_fix_pr_description_succeeding() {
+        let generator = mock::MockPrDescriptionGenerator::succeeding();
+        let broken_body = "## Summary\n\n- graph TD\n  A(broken) --> B";
+        let errors = vec!["Mermaid node label contains parentheses: A(broken)".to_string()];
+        let result = generator.fix_pr_description("Fix something", broken_body, &errors);
+        assert!(result.is_ok());
+        let fixed = result.unwrap();
+        assert!(fixed.contains("_Fixed by mock_"));
+        assert!(fixed.contains(broken_body));
+    }
+
+    #[test]
+    fn test_mock_fix_pr_description_failing() {
+        let generator = mock::MockPrDescriptionGenerator::failing();
+        let result = generator.fix_pr_description("Fix something", "body", &["error".to_string()]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Mock PR description fix failed");
     }
 
     #[test]

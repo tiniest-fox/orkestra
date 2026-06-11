@@ -5,11 +5,11 @@ import { useCallback, useMemo, useRef } from "react";
 import { useTasks, useToast, useWorkflowConfig } from "../../../../providers";
 import { useTransport } from "../../../../transport";
 import type { WorkflowTaskView } from "../../../../types/workflow";
+import { extractErrorMessage } from "../../../../utils/errors";
 import type {
   FeedSection as FeedSectionData,
   FeedSectionName,
 } from "../../../../utils/feedGrouping";
-import { extractErrorMessage } from "../../../../utils/errors";
 import { isDisconnectError } from "../../../../utils/transportErrors";
 import { EmptyState } from "../../../ui/EmptyState";
 import { NavigationScope } from "../../../ui/NavigationScope";

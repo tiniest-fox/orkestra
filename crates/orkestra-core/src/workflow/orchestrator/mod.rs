@@ -466,91 +466,7 @@ impl OrchestratorLoop {
                     std::thread::spawn(run);
                 }
             } else if name == "check_auto_resolve" {
-                let Some(monitor) = self.pr_monitor.clone() else {
-                    continue;
-                };
-
-                // Collect candidate IDs from the snapshot (not the full tasks)
-                let candidate_ids: Vec<(String, String, String)> =
-                    auto_resolve_interactions::find_candidates::execute(&snapshot)
-                        .into_iter()
-                        .filter_map(|h| {
-                            let pr_url = h.pr_url.clone()?;
-                            let worktree = h.worktree_path.clone()?;
-                            Some((h.id.clone(), pr_url, worktree))
-                        })
-                        .collect();
-
-                if candidate_ids.is_empty() {
-                    continue;
-                }
-
-                // Gather shared state under lock, then drop
-                let (store, workflow, iteration_service) = {
-                    let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                    (
-                        Arc::clone(&api.store),
-                        api.workflow.clone(),
-                        Arc::clone(&api.iteration_service),
-                    )
-                }; // lock released here
-
-                let run = move || {
-                    let authenticated_user = match monitor.authenticated_user() {
-                        Ok(u) => u,
-                        Err(e) => {
-                            orkestra_debug!(
-                                "auto_resolve",
-                                "failed to get authenticated user: {}",
-                                e
-                            );
-                            return;
-                        }
-                    };
-
-                    for (task_id, pr_url, worktree_path) in &candidate_ids {
-                        let repo_root = std::path::Path::new(worktree_path);
-                        let status = match monitor.fetch_auto_resolve_status(repo_root, pr_url) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                orkestra_debug!(
-                                    "auto_resolve",
-                                    "task {}: fetch_auto_resolve_status failed: {}",
-                                    task_id,
-                                    e
-                                );
-                                continue;
-                            }
-                        };
-
-                        match auto_resolve_interactions::trigger_feedback::execute(
-                            store.as_ref(),
-                            &workflow,
-                            &iteration_service,
-                            task_id,
-                            &status,
-                            &authenticated_user,
-                        ) {
-                            Ok(result) => {
-                                orkestra_debug!("auto_resolve", "task {}: {:?}", task_id, result);
-                            }
-                            Err(e) => {
-                                orkestra_debug!(
-                                    "auto_resolve",
-                                    "task {}: trigger_feedback error: {}",
-                                    task_id,
-                                    e
-                                );
-                            }
-                        }
-                    }
-                };
-
-                if self.sync_background {
-                    run();
-                } else {
-                    std::thread::spawn(run);
-                }
+                self.spawn_auto_resolve_poll(&snapshot)?;
             }
         }
 
@@ -959,6 +875,98 @@ impl OrchestratorLoop {
             run_integration();
         } else {
             std::thread::spawn(run_integration);
+        }
+
+        Ok(())
+    }
+
+    /// Poll all auto-resolve candidates and trigger `PrFeedback` iterations for any with new feedback.
+    ///
+    /// Runs off the API lock: gathers inputs under lock, then drops it before spawning the
+    /// background thread that calls `gh` CLI and mutates task state.
+    fn spawn_auto_resolve_poll(
+        &self,
+        snapshot: &crate::workflow::domain::TickSnapshot,
+    ) -> WorkflowResult<()> {
+        let Some(monitor) = self.pr_monitor.clone() else {
+            return Ok(());
+        };
+
+        let candidate_ids: Vec<(String, String, String)> =
+            auto_resolve_interactions::find_candidates::execute(snapshot)
+                .into_iter()
+                .filter_map(|h| {
+                    let pr_url = h.pr_url.clone()?;
+                    let worktree = h.worktree_path.clone()?;
+                    Some((h.id.clone(), pr_url, worktree))
+                })
+                .collect();
+
+        if candidate_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Gather shared state under lock, then release before background work
+        let (store, workflow, iteration_service) = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            (
+                Arc::clone(&api.store),
+                api.workflow.clone(),
+                Arc::clone(&api.iteration_service),
+            )
+        };
+
+        let run = move || {
+            let authenticated_user = match monitor.authenticated_user() {
+                Ok(u) => u,
+                Err(e) => {
+                    orkestra_debug!("auto_resolve", "failed to get authenticated user: {}", e);
+                    return;
+                }
+            };
+
+            for (task_id, pr_url, worktree_path) in &candidate_ids {
+                let repo_root = std::path::Path::new(worktree_path);
+                let status = match monitor.fetch_auto_resolve_status(repo_root, pr_url) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        orkestra_debug!(
+                            "auto_resolve",
+                            "task {}: fetch_auto_resolve_status failed: {}",
+                            task_id,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+                match auto_resolve_interactions::trigger_feedback::execute(
+                    store.as_ref(),
+                    &workflow,
+                    &iteration_service,
+                    task_id,
+                    &status,
+                    &authenticated_user,
+                ) {
+                    Ok(result) => {
+                        orkestra_debug!("auto_resolve", "task {}: {:?}", task_id, result);
+                    }
+                    Err(e) => {
+                        orkestra_debug!(
+                            "auto_resolve",
+                            "task {}: trigger_feedback error: {}",
+                            task_id,
+                            e
+                        );
+                    }
+                }
+            }
+        };
+
+        if self.sync_background {
+            run();
+        } else {
+            std::thread::spawn(run);
         }
 
         Ok(())

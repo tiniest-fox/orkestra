@@ -14,6 +14,7 @@ pub use orkestra_git::{
 };
 pub use pr_monitor::{
     AutoResolveCheckRun, AutoResolveComment, AutoResolveReview, AutoResolveStatus, PrMonitor,
+    PrState, ReviewState,
 };
 pub use pr_service::{PrError, PrService};
 pub use store::{WorkflowError, WorkflowResult, WorkflowStore};

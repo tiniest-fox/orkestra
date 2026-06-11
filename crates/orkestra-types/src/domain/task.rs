@@ -215,6 +215,9 @@ impl Task {
     #[must_use]
     pub fn with_auto_resolve(mut self, auto_resolve: bool) -> Self {
         self.auto_resolve = auto_resolve;
+        if auto_resolve {
+            self.auto_pr = true;
+        }
         self
     }
 
@@ -834,5 +837,19 @@ mod tests {
 
         let parsed: Task = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.artifact("plan"), Some("Plan content"));
+    }
+
+    #[test]
+    fn with_auto_resolve_implies_auto_pr() {
+        let task = Task::new("t", "T", "d", "work", "now").with_auto_resolve(true);
+        assert!(task.auto_resolve);
+        assert!(task.auto_pr, "auto_resolve must imply auto_pr");
+    }
+
+    #[test]
+    fn with_auto_resolve_false_does_not_set_auto_pr() {
+        let task = Task::new("t", "T", "d", "work", "now").with_auto_resolve(false);
+        assert!(!task.auto_resolve);
+        assert!(!task.auto_pr);
     }
 }

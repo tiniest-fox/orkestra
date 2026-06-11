@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::domain::IterationTrigger;
-use orkestra_core::workflow::ports::{AutoResolveCheckRun, AutoResolveComment, AutoResolveStatus};
+use orkestra_core::workflow::ports::{
+    AutoResolveCheckRun, AutoResolveComment, AutoResolveStatus, PrState,
+};
 use orkestra_core::workflow::ports::{MockPrMonitor, PrMonitor};
 use orkestra_core::workflow::runtime::TaskState;
 
@@ -119,7 +121,7 @@ fn test_auto_resolve_triggers_on_new_failed_checks() {
     // Configure mock monitor to return a failed check
     let mock = Arc::new(MockPrMonitor::new());
     mock.set_next_status(AutoResolveStatus {
-        pr_state: "OPEN".to_string(),
+        pr_state: PrState::Open,
         failed_checks: vec![AutoResolveCheckRun {
             id: 101,
             name: "CI / test".to_string(),
@@ -171,7 +173,7 @@ fn test_auto_resolve_triggers_on_new_comments() {
 
     let mock = Arc::new(MockPrMonitor::new());
     mock.set_next_status(AutoResolveStatus {
-        pr_state: "OPEN".to_string(),
+        pr_state: PrState::Open,
         failed_checks: vec![],
         comments: vec![AutoResolveComment {
             id: 42,
@@ -221,7 +223,7 @@ fn test_auto_resolve_dedup_skips_seen_ids() {
     let mock = Arc::new(MockPrMonitor::new());
     // First poll: new comment ID 99
     mock.set_next_status(AutoResolveStatus {
-        pr_state: "OPEN".to_string(),
+        pr_state: PrState::Open,
         failed_checks: vec![],
         comments: vec![AutoResolveComment {
             id: 99,
@@ -256,7 +258,7 @@ fn test_auto_resolve_dedup_skips_seen_ids() {
     ctx.api().save_task(&task).unwrap();
 
     mock.set_next_status(AutoResolveStatus {
-        pr_state: "OPEN".to_string(),
+        pr_state: PrState::Open,
         failed_checks: vec![],
         comments: vec![AutoResolveComment {
             id: 99, // same ID
@@ -298,7 +300,7 @@ fn test_auto_resolve_limit_pauses() {
 
     let mock = Arc::new(MockPrMonitor::new());
     mock.set_next_status(AutoResolveStatus {
-        pr_state: "OPEN".to_string(),
+        pr_state: PrState::Open,
         failed_checks: vec![],
         comments: vec![AutoResolveComment {
             id: 200,
@@ -338,7 +340,7 @@ fn test_auto_resolve_skips_closed_pr() {
 
     let mock = Arc::new(MockPrMonitor::new());
     mock.set_next_status(AutoResolveStatus {
-        pr_state: "MERGED".to_string(),
+        pr_state: PrState::Merged,
         failed_checks: vec![AutoResolveCheckRun {
             id: 300,
             name: "CI / test".to_string(),
@@ -379,7 +381,7 @@ fn test_auto_resolve_filters_self_comments() {
     let mock = Arc::new(MockPrMonitor::new());
     mock.set_authenticated_user("orkestra-bot");
     mock.set_next_status(AutoResolveStatus {
-        pr_state: "OPEN".to_string(),
+        pr_state: PrState::Open,
         failed_checks: vec![],
         // Only self-comments — these must be filtered out
         comments: vec![AutoResolveComment {

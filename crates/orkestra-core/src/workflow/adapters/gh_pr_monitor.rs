@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use crate::workflow::ports::{
     AutoResolveCheckRun, AutoResolveComment, AutoResolveReview, AutoResolveStatus, PrError,
-    PrMonitor,
+    PrMonitor, PrState, ReviewState,
 };
 use orkestra_types::domain::classify_check;
 
@@ -105,7 +105,7 @@ impl PrMonitor for GhPrMonitor {
         let pr_data: serde_json::Value = serde_json::from_str(&pr_json)
             .map_err(|e| PrError::ReadFailed(format!("Failed to parse pr view output: {e}")))?;
 
-        let pr_state = pr_data["state"].as_str().unwrap_or("UNKNOWN").to_string();
+        let pr_state = PrState::from_str(pr_data["state"].as_str().unwrap_or("UNKNOWN"));
 
         // Parse check statuses
         let mut failed_checks = Vec::new();
@@ -118,7 +118,9 @@ impl PrMonitor for GhPrMonitor {
                 let check_status = classify_check(status, conclusion);
 
                 if check_status.is_failing() {
-                    let id = check["databaseId"].as_i64().unwrap_or(0);
+                    let Some(id) = check["databaseId"].as_i64() else {
+                        continue;
+                    };
                     let name = check["name"].as_str().unwrap_or("unknown").to_string();
                     failed_checks.push(AutoResolveCheckRun {
                         id,
@@ -146,7 +148,9 @@ impl PrMonitor for GhPrMonitor {
         let mut comments = Vec::new();
         if let Some(arr) = comments_data.as_array() {
             for c in arr {
-                let id = c["id"].as_i64().unwrap_or(0);
+                let Some(id) = c["id"].as_i64() else {
+                    continue;
+                };
                 let author = c["user"]["login"].as_str().unwrap_or("").to_string();
                 let body = c["body"].as_str().unwrap_or("").to_string();
                 let path = c["path"].as_str().map(std::string::ToString::to_string);
@@ -179,9 +183,11 @@ impl PrMonitor for GhPrMonitor {
         let mut reviews = Vec::new();
         if let Some(arr) = reviews_data.as_array() {
             for r in arr {
-                let id = r["id"].as_i64().unwrap_or(0);
+                let Some(id) = r["id"].as_i64() else {
+                    continue;
+                };
                 let author = r["user"]["login"].as_str().unwrap_or("").to_string();
-                let state = r["state"].as_str().unwrap_or("COMMENTED").to_string();
+                let state = ReviewState::from_str(r["state"].as_str().unwrap_or("COMMENTED"));
                 reviews.push(AutoResolveReview { id, author, state });
             }
         }

@@ -4,6 +4,50 @@ use std::path::Path;
 
 use super::pr_service::PrError;
 
+/// Open/closed/merged state of a pull request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrState {
+    Open,
+    Closed,
+    Merged,
+    Unknown(String),
+}
+
+impl PrState {
+    /// Parse from the GitHub API string value.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "OPEN" => Self::Open,
+            "CLOSED" => Self::Closed,
+            "MERGED" => Self::Merged,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+}
+
+/// State of a GitHub pull request review.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    Commented,
+    Dismissed,
+    Unknown(String),
+}
+
+impl ReviewState {
+    /// Parse from the GitHub API string value.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "APPROVED" => Self::Approved,
+            "CHANGES_REQUESTED" => Self::ChangesRequested,
+            "COMMENTED" => Self::Commented,
+            "DISMISSED" => Self::Dismissed,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+}
+
 /// A failed or concluded CI check run on a PR.
 pub struct AutoResolveCheckRun {
     pub id: i64,
@@ -24,12 +68,12 @@ pub struct AutoResolveComment {
 pub struct AutoResolveReview {
     pub id: i64,
     pub author: String,
-    pub state: String, // APPROVED, CHANGES_REQUESTED, COMMENTED, etc.
+    pub state: ReviewState,
 }
 
 /// Current PR feedback status fetched for auto-resolve monitoring.
 pub struct AutoResolveStatus {
-    pub pr_state: String, // OPEN, CLOSED, MERGED
+    pub pr_state: PrState,
     pub failed_checks: Vec<AutoResolveCheckRun>,
     pub comments: Vec<AutoResolveComment>,
     pub reviews: Vec<AutoResolveReview>,
@@ -55,7 +99,7 @@ pub trait PrMonitor: Send + Sync {
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
-    use super::{AutoResolveStatus, PrError, PrMonitor};
+    use super::{AutoResolveStatus, PrError, PrMonitor, PrState};
     use std::collections::VecDeque;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
@@ -118,7 +162,7 @@ pub mod mock {
                 .pop_front()
                 .unwrap_or_else(|| {
                     Ok(AutoResolveStatus {
-                        pr_state: "OPEN".to_string(),
+                        pr_state: PrState::Open,
                         failed_checks: Vec::new(),
                         comments: Vec::new(),
                         reviews: Vec::new(),

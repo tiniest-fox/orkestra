@@ -27,7 +27,18 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let resolved_feedback_ids: ResolvedFeedbackIds = row
         .get::<_, String>(24)
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s| {
+            serde_json::from_str(&s)
+                .map_err(|e| {
+                    eprintln!(
+                        "[store] task {}: failed to deserialize resolved_feedback_ids, \
+                     resetting to empty — previously-seen IDs will be re-triggered: {e}",
+                        row.get::<_, String>(0).unwrap_or_default()
+                    );
+                    e
+                })
+                .ok()
+        })
         .unwrap_or_default();
 
     Ok(Task {

@@ -9,6 +9,7 @@ import type {
   FeedSection as FeedSectionData,
   FeedSectionName,
 } from "../../../../utils/feedGrouping";
+import { extractErrorMessage } from "../../../../utils/errors";
 import { isDisconnectError } from "../../../../utils/transportErrors";
 import { EmptyState } from "../../../ui/EmptyState";
 import { NavigationScope } from "../../../ui/NavigationScope";
@@ -125,7 +126,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
     (taskId: string) => {
       applyOptimistic(taskId, { type: "approve" });
       transport.call("approve", { task_id: taskId }).catch((err) => {
-        if (!isDisconnectError(err)) showError(String(err));
+        if (!isDisconnectError(err)) showError(extractErrorMessage(err));
       });
     },
     [transport, showError, applyOptimistic],

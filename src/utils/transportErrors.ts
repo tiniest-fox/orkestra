@@ -1,5 +1,7 @@
 // Identifies errors caused by WebSocket disconnection.
 
+import { extractErrorMessage } from "./errors";
+
 const DISCONNECT_MESSAGES = [
   "WebSocket not connected",
   "WebSocket disconnected",
@@ -12,6 +14,6 @@ const DISCONNECT_MESSAGES = [
  * Used by providers to suppress transient errors during reconnection.
  */
 export function isDisconnectError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = extractErrorMessage(err);
   return DISCONNECT_MESSAGES.some((m) => msg.includes(m));
 }

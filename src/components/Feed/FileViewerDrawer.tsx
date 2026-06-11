@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { HighlightedLine } from "../../hooks/useDiff";
 import { usePolling } from "../../hooks/usePolling";
 import { useConnectionState, useTransport } from "../../transport";
+import { extractErrorMessage } from "../../utils/errors";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { IconButton } from "../ui/IconButton";
@@ -40,7 +41,7 @@ export function FileViewerDrawer({ filePath, onClose }: FileViewerDrawerProps) {
       }
     } catch (err) {
       if (!isDisconnectError(err)) {
-        setError(String(err));
+        setError(extractErrorMessage(err));
       }
     }
   }, [transport, filePath]);

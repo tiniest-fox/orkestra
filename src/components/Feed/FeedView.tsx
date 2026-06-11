@@ -13,6 +13,7 @@ import { useToast } from "../../providers/ToastProvider";
 import { useConnectionState, useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { confirmAction } from "../../utils/confirmAction";
+import { extractErrorMessage } from "../../utils/errors";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { isDisconnectError } from "../../utils/transportErrors";
 import { EmptyState } from "../ui/EmptyState";
@@ -385,30 +386,30 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                 onApprove={(taskId) => {
                   applyOptimistic(taskId, { type: "approve" });
                   transport.call("approve", { task_id: taskId }).catch((err) => {
-                    if (!isDisconnectError(err)) showError(String(err));
+                    if (!isDisconnectError(err)) showError(extractErrorMessage(err));
                   });
                 }}
                 onMerge={(taskId) => {
                   transport.call("merge_task", { task_id: taskId }).catch((err) => {
-                    if (!isDisconnectError(err)) showError(String(err));
+                    if (!isDisconnectError(err)) showError(extractErrorMessage(err));
                   });
                 }}
                 onOpenPr={(taskId) => {
                   transport.call("open_pr", { task_id: taskId }).catch((err) => {
-                    if (!isDisconnectError(err)) showError(String(err));
+                    if (!isDisconnectError(err)) showError(extractErrorMessage(err));
                   });
                 }}
                 onArchive={async (taskId) => {
                   if (!(await confirmAction("Archive this Trak?"))) return;
                   applyOptimistic(taskId, { type: "archive" });
                   transport.call("archive", { task_id: taskId }).catch((err) => {
-                    if (!isDisconnectError(err)) showError(String(err));
+                    if (!isDisconnectError(err)) showError(extractErrorMessage(err));
                   });
                 }}
                 onDelete={async (taskId) => {
                   if (!(await confirmAction("Delete this Trak? This cannot be undone."))) return;
                   transport.call("delete_task", { task_id: taskId }).catch((err) => {
-                    if (!isDisconnectError(err)) showError(String(err));
+                    if (!isDisconnectError(err)) showError(extractErrorMessage(err));
                   });
                 }}
                 onRowClick={onStripRowClick}

@@ -268,37 +268,52 @@ fn drive_pty_session(
     );
 
     finalize_pty_session(
-        pty_handle,
-        hook_server,
-        tx,
-        &mut *parser,
-        ctx.task_id,
-        ctx.schema,
-        &fallback_transcript_path,
-        hook_event,
+        FinalizePtyParams {
+            pty_handle,
+            hook_server,
+            tx,
+            parser: &mut *parser,
+            task_id: ctx.task_id,
+            schema: ctx.schema,
+            fallback_transcript_path: &fallback_transcript_path,
+        },
+        hook_event.as_ref(),
         full_output,
         tail_file_pos,
     );
 }
 
+struct FinalizePtyParams<'a> {
+    pty_handle: PtyHandle,
+    hook_server: &'a HookServer,
+    tx: &'a Sender<RunEvent>,
+    parser: &'a mut dyn AgentParser,
+    task_id: &'a str,
+    schema: Option<&'a serde_json::Value>,
+    fallback_transcript_path: &'a Path,
+}
+
 /// Resolve the transcript path, perform the final stabilized read, clean up the PTY
 /// process, flush the parser, classify output, and emit the completion event.
 fn finalize_pty_session(
-    pty_handle: PtyHandle,
-    hook_server: &HookServer,
-    tx: &Sender<RunEvent>,
-    parser: &mut dyn AgentParser,
-    task_id: &str,
-    schema: Option<&serde_json::Value>,
-    fallback_transcript_path: &Path,
-    hook_event: Option<HookEvent>,
+    params: FinalizePtyParams<'_>,
+    hook_event: Option<&HookEvent>,
     mut full_output: String,
     tail_file_pos: usize,
 ) {
+    let FinalizePtyParams {
+        pty_handle,
+        hook_server,
+        tx,
+        parser,
+        task_id,
+        schema,
+        fallback_transcript_path,
+    } = params;
+
     // Use transcript path from hook event if available, else computed fallback.
     // In practice these match — the divergence path is a safety net.
     let transcript_path = hook_event
-        .as_ref()
         .and_then(|e| e.transcript_path.clone())
         .unwrap_or_else(|| fallback_transcript_path.to_path_buf());
 

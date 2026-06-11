@@ -102,6 +102,7 @@ pub fn format_pr_footer(model_names: &[String], token_usage: Option<&TokenUsage>
     footer
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn compact_number(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)

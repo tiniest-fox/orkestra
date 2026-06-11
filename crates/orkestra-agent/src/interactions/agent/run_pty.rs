@@ -221,8 +221,7 @@ fn drive_pty_session(
     // size so poll_for_transcript_with_enter_retry waits for *growth* rather than
     // returning Found immediately on the pre-existing file.
     let baseline_size = if ctx.is_resume {
-        std::fs::metadata(&fallback_transcript_path)
-            .map_or(0, |m| m.len())
+        std::fs::metadata(&fallback_transcript_path).map_or(0, |m| m.len())
     } else {
         0
     };
@@ -235,6 +234,7 @@ fn drive_pty_session(
         &mut pty_handle.writer,
         baseline_size,
         ctx.prompt.as_bytes(),
+        ctx.is_resume,
     );
 
     let transcript_found = match poll_outcome {
@@ -274,7 +274,7 @@ fn drive_pty_session(
         &mut pty_handle.child,
         &mut *parser,
         tx,
-        baseline_size as usize,
+        usize::try_from(baseline_size).expect("transcript size exceeds platform address space"),
     );
 
     // Use transcript path from hook event if available, else computed fallback.
@@ -349,16 +349,16 @@ enum PollOutcome {
     WriteFailed(String),
 }
 
-/// Poll for the JSONL transcript file to grow past `baseline_size`, re-sending the
-/// full prompt + Enter every ~3s to handle the TUI startup race.
+/// Poll for the JSONL transcript file to grow past `baseline_size`, re-sending Enter
+/// (or the full prompt + Enter on resume) every ~3s to handle the TUI startup race.
 ///
 /// `baseline_size = 0` covers fresh sessions (file doesn't exist yet — Found once it
 /// appears with any content). `baseline_size > 0` covers resumes (file exists from the
 /// prior run — Found only after new bytes are appended past the baseline).
 ///
-/// On each retry the full `prompt` bytes followed by `\r` are written, not just `\r`,
-/// because on resume the TUI is replaying the old transcript and may have discarded
-/// the initial prompt write.
+/// On fresh sessions retries send only `\r` — a no-op on an idle composer, submits on
+/// an unsubmitted one. On resume retries send the full `prompt` followed by `\r` because
+/// the TUI is replaying the old transcript and may have discarded the initial write.
 ///
 /// Returns `Found` when readiness is confirmed, `Timeout` when the deadline passes, or
 /// `WriteFailed` when the PTY writer returns an error (process died).
@@ -368,6 +368,7 @@ fn poll_for_transcript_with_enter_retry(
     writer: &mut Box<dyn Write + Send>,
     baseline_size: u64,
     prompt: &[u8],
+    is_resume: bool,
 ) -> PollOutcome {
     let mut polls_since_enter = 0u32;
     loop {
@@ -382,12 +383,17 @@ fn poll_for_transcript_with_enter_retry(
         polls_since_enter += 1;
         if polls_since_enter >= 6 {
             polls_since_enter = 0;
-            // Re-deliver the full prompt on resume in case the initial write was
+            // On resume re-deliver the full prompt in case the initial write was
             // swallowed while the TUI was replaying the prior transcript.
-            let write_result = writer
-                .write_all(prompt)
-                .and_then(|()| writer.write_all(b"\r"))
-                .and_then(|()| writer.flush());
+            // On fresh sessions send only \r (no-op on idle composer, submits otherwise).
+            let write_result = if is_resume {
+                writer
+                    .write_all(prompt)
+                    .and_then(|()| writer.write_all(b"\r"))
+                    .and_then(|()| writer.flush())
+            } else {
+                writer.write_all(b"\r").and_then(|()| writer.flush())
+            };
             if let Err(e) = write_result {
                 return PollOutcome::WriteFailed(e.to_string());
             }
@@ -1294,6 +1300,7 @@ mod tests {
             &mut writer,
             baseline,
             b"Resume prompt",
+            true, // is_resume
         );
         assert!(
             matches!(outcome, PollOutcome::Timeout),
@@ -1317,6 +1324,7 @@ mod tests {
             &mut writer,
             baseline,
             b"Resume prompt",
+            true, // is_resume
         );
         assert!(
             matches!(outcome2, PollOutcome::Found),

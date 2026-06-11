@@ -286,8 +286,6 @@ fn pty_resume_lifecycle() {
     std::fs::set_permissions(&claude_bin, perms).unwrap();
 
     let mut env_override = HashMap::new();
-    let home_dir = tmp.path().join("home");
-    std::fs::create_dir_all(&home_dir).unwrap();
     env_override.insert(
         "PATH".to_string(),
         format!(
@@ -296,8 +294,13 @@ fn pty_resume_lifecycle() {
             std::env::var("PATH").unwrap_or_default()
         ),
     );
-    // Override HOME so the mock and run_pty agree on the transcript location
-    env_override.insert("HOME".to_string(), home_dir.to_str().unwrap().to_string());
+
+    // Use the real system HOME — run_pty reads HOME from the parent process via
+    // std::env::var_os("HOME"), while the mock inherits the child process env.
+    // Both must agree on the path so the transcript poll finds new content.
+    let home_dir = PathBuf::from(
+        std::env::var_os("HOME").expect("HOME must be set for PTY integration tests"),
+    );
 
     // Pre-create the transcript at the path compute_transcript_path produces.
     // The test uses tmp.path() as working_dir to match what RunConfig sets.

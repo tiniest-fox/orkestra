@@ -21,6 +21,8 @@ pub(crate) mod test_support {
             ParsedUpdate {
                 log_entries: Vec::new(),
                 session_id: None,
+                token_usage: None,
+                cost: None,
             }
         }
         fn finalize(&mut self) -> Vec<LogEntry> {

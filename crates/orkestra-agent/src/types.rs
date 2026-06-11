@@ -10,6 +10,7 @@ use orkestra_parser::StageOutput;
 use orkestra_process::ProcessError;
 use orkestra_types::domain::LogEntry;
 use orkestra_types::domain::PromptSection;
+use orkestra_types::domain::TokenUsage;
 
 // ============================================================================
 // Run Configuration
@@ -172,6 +173,8 @@ pub enum RunEvent {
     /// A session ID extracted from the stream (emitted once for providers like
     /// `OpenCode` that generate their own session IDs).
     SessionId(String),
+    /// Token usage extracted from a `step_finish` event (`OpenCode` only).
+    TokenUsage { usage: TokenUsage, cost: f64 },
     /// Agent completed with parsed output.
     Completed(Result<StageOutput, AgentCompletionError>),
 }

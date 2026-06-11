@@ -3,6 +3,7 @@
 //! Holds stream parsing state and delegates to interactions.
 
 use orkestra_types::domain::LogEntry;
+use orkestra_types::domain::TokenUsage;
 
 use crate::interactions::opencode::{
     classify_buffered_text, extract_text_content, extract_tool_result_event, extract_tool_use_event,
@@ -31,6 +32,10 @@ pub struct OpenCodeParserService {
     /// arrives as a plain text event in `OpenCode`) can be classified in `finalize()`
     /// and suppressed rather than emitted as a spurious `Text` entry.
     pending_text: Option<String>,
+    /// Token usage extracted from the most recent `step_finish` event.
+    last_token_usage: Option<TokenUsage>,
+    /// Cost extracted from the most recent `step_finish` event.
+    last_cost: Option<f64>,
 }
 
 impl Default for OpenCodeParserService {
@@ -46,6 +51,8 @@ impl OpenCodeParserService {
             session_id_emitted: false,
             last_text: None,
             pending_text: None,
+            last_token_usage: None,
+            last_cost: None,
         }
     }
 
@@ -138,11 +145,32 @@ impl OpenCodeParserService {
                 entries
             }
 
-            // Lifecycle events — skip silently.
+            // Lifecycle events — extract token data from step_finish, skip step_start.
             // Do NOT flush pending_text here: the structured output JSON
             // arrives as a text event right before step_finish. Flushing
             // would emit it as plain Text before finalize() can classify it.
-            "step_start" | "step_finish" => Vec::new(),
+            "step_start" | "step_finish" => {
+                if event_type == "step_finish" {
+                    if let Some(tokens) = v.get("part").and_then(|p| p.get("tokens")) {
+                        self.last_token_usage = Some(TokenUsage {
+                            input_tokens: tokens
+                                .get("input")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or(0),
+                            output_tokens: tokens
+                                .get("output")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or(0),
+                            ..TokenUsage::default()
+                        });
+                        self.last_cost = v
+                            .get("part")
+                            .and_then(|p| p.get("cost"))
+                            .and_then(serde_json::Value::as_f64);
+                    }
+                }
+                Vec::new()
+            }
 
             // Unknown event type
             _ => {
@@ -175,6 +203,8 @@ impl AgentParser for OpenCodeParserService {
         ParsedUpdate {
             log_entries,
             session_id,
+            token_usage: self.last_token_usage.take(),
+            cost: self.last_cost.take(),
         }
     }
 
@@ -338,6 +368,91 @@ mod tests {
             }
             other => panic!("Expected ToolResult, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn step_finish_extracts_token_usage() {
+        let mut parser = OpenCodeParserService::new();
+        let line = serde_json::json!({
+            "type": "step_finish",
+            "timestamp": 1_770_052_700_099_i64,
+            "sessionID": "ses_abc",
+            "part": {
+                "id": "prt_456",
+                "type": "step-finish",
+                "reason": "stop",
+                "cost": 0.0042,
+                "tokens": {"input": 13542, "output": 73}
+            }
+        })
+        .to_string();
+        let update = parser.parse_line(&line);
+        assert!(update.log_entries.is_empty());
+        let usage = update.token_usage.expect("token_usage should be populated");
+        assert_eq!(usage.input_tokens, 13542);
+        assert_eq!(usage.output_tokens, 73);
+        assert_eq!(usage.cache_creation_input_tokens, 0);
+        assert_eq!(usage.cache_read_input_tokens, 0);
+    }
+
+    #[test]
+    fn step_finish_without_tokens_emits_none() {
+        let mut parser = OpenCodeParserService::new();
+        let line = serde_json::json!({
+            "type": "step_finish",
+            "sessionID": "ses_abc",
+            "part": {
+                "type": "step-finish",
+                "reason": "stop"
+            }
+        })
+        .to_string();
+        let update = parser.parse_line(&line);
+        assert!(update.token_usage.is_none());
+    }
+
+    #[test]
+    fn step_finish_does_not_flush_pending_text() {
+        let mut parser = OpenCodeParserService::new();
+        let text_line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "some buffered text"}
+        })
+        .to_string();
+        parser.parse_line(&text_line);
+
+        let finish_line = serde_json::json!({
+            "type": "step_finish",
+            "part": {
+                "type": "step-finish",
+                "reason": "stop",
+                "tokens": {"input": 100, "output": 10}
+            }
+        })
+        .to_string();
+        let update = parser.parse_line(&finish_line);
+        assert!(
+            update.log_entries.is_empty(),
+            "step_finish must not flush pending_text"
+        );
+    }
+
+    #[test]
+    fn step_finish_extracts_cost() {
+        let mut parser = OpenCodeParserService::new();
+        let line = serde_json::json!({
+            "type": "step_finish",
+            "part": {
+                "type": "step-finish",
+                "reason": "stop",
+                "cost": 0.0123,
+                "tokens": {"input": 500, "output": 50}
+            }
+        })
+        .to_string();
+        let update = parser.parse_line(&line);
+        let cost = update.cost.expect("cost should be populated");
+        assert!((cost - 0.0123).abs() < 1e-10);
     }
 
     #[test]

@@ -2,8 +2,10 @@
 //!
 //! Adapters implement the port traits for specific backends.
 
+mod gh_pr_monitor;
 mod gh_pr_service;
 
+pub use gh_pr_monitor::GhPrMonitor;
 pub use gh_pr_service::GhPrService;
 pub use orkestra_git::Git2GitService;
 

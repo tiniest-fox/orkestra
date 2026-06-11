@@ -10,13 +10,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::runtime::{ArtifactStore, ResourceStore, TaskState};
 
-/// IDs of PR comments and CI check runs already processed by auto-resolve (dedup guard).
+/// IDs of PR comments, CI check runs, and reviews already processed by auto-resolve (dedup guard).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ResolvedFeedbackIds {
     #[serde(default)]
     pub comment_ids: Vec<i64>,
     #[serde(default)]
     pub check_run_ids: Vec<i64>,
+    #[serde(default)]
+    pub review_ids: Vec<i64>,
 }
 
 /// How a task was created — determines initial state after setup.

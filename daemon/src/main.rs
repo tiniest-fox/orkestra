@@ -14,7 +14,9 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::adapters::{GhPrMonitor, GhPrService, Git2GitService, SqliteWorkflowStore};
+use orkestra_core::workflow::adapters::{
+    GhPrMonitor, GhPrService, Git2GitService, SqliteWorkflowStore,
+};
 use orkestra_core::workflow::execution::build_production_registry;
 use orkestra_core::workflow::{
     AgentKiller, LogNotification, OrchestratorLoop, StageExecutionService, WorkflowApi,

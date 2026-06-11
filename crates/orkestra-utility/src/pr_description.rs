@@ -141,7 +141,11 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         .map_err(|e| e.to_string())?;
 
         // Append model attribution footer
-        let body_with_footer = format!("{}{}", body, format_pr_footer(ctx.model_names, ctx.token_usage));
+        let body_with_footer = format!(
+            "{}{}",
+            body,
+            format_pr_footer(ctx.model_names, ctx.token_usage)
+        );
         Ok((title, body_with_footer))
     }
 

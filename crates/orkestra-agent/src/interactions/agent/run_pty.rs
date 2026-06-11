@@ -32,8 +32,9 @@ use super::classify_output::{self, OutputClassification};
 
 /// Owns the PTY process lifecycle. `ProcessGuard` fires SIGTERM on drop.
 ///
-/// `child` and `guard` are held for their drop-side effects rather than read
-/// access — `child` keeps the PTY slave open, `guard` sends SIGTERM on drop.
+/// `child` is polled via `try_wait()` to detect crashes; it also keeps the PTY
+/// slave open. `guard` is disarmed after the process is confirmed done (both
+/// clean completion and detected crash), then dropped.
 /// `_drain_thread` continuously reads PTY master output to prevent the classic
 /// output-buffer deadlock: if the slave process fills the master output buffer,
 /// it blocks on stdout and stops reading stdin, which in turn blocks our prompt
@@ -249,8 +250,9 @@ fn drive_pty_session(
 
     // Tail transcript during execution, emitting LogLine events as lines arrive.
     // Non-blocking: polls transcript file every 150ms while waiting for Stop hook.
+    // Also checks child liveness every ~3s to detect crashes promptly.
     let (hook_event, mut full_output, tail_file_pos) =
-        tail_transcript_until_stop(&fallback_transcript_path, hook_rx, &mut *parser, tx);
+        tail_transcript_until_stop(&fallback_transcript_path, hook_rx, &mut pty_handle.child, &mut *parser, tx);
 
     // Use transcript path from hook event if available, else computed fallback.
     // In practice these match — the divergence path is a safety net.
@@ -286,7 +288,8 @@ fn drive_pty_session(
         &mut trailing_count,
     );
 
-    // Kill PTY process — ProcessGuard fires SIGTERM on drop (not disarmed)
+    // Process is confirmed done — disarm so Drop sends SIGTERM only (no SIGKILL escalation)
+    pty_handle.guard.disarm();
     drop(pty_handle);
 
     // Cleanup
@@ -665,9 +668,13 @@ fn read_new_lines(
 ///
 /// Returns `(hook_event, full_output, file_pos)`. `full_output` contains all content
 /// parsed so far; `file_pos` is the byte offset for the subsequent final read.
+///
+/// `child` is polled every ~3s (20 × 150ms) to detect PTY process exits without
+/// a Stop hook (crashes / silent exits).
 fn tail_transcript_until_stop(
     transcript_path: &Path,
     hook_rx: &HookReceiver,
+    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
     parser: &mut dyn AgentParser,
     tx: &Sender<RunEvent>,
 ) -> (
@@ -680,6 +687,7 @@ fn tail_transcript_until_stop(
     let mut file_pos = 0usize;
     let mut full_output = String::new();
     let mut line_count = 0usize;
+    let mut polls_since_crash_check = 0u32;
 
     loop {
         match hook_rx.receiver.try_recv() {
@@ -701,6 +709,28 @@ fn tail_transcript_until_stop(
                     &mut full_output,
                     &mut line_count,
                 );
+                polls_since_crash_check += 1;
+                if polls_since_crash_check >= 20 {
+                    polls_since_crash_check = 0;
+                    match child.try_wait() {
+                        Ok(Some(exit_status)) => {
+                            orkestra_debug!(
+                                "runner",
+                                "run_pty: PTY process exited with {:?} without firing Stop hook",
+                                exit_status
+                            );
+                            return (None, full_output, file_pos);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            orkestra_debug!(
+                                "runner",
+                                "run_pty: try_wait failed: {e:?}, assuming process dead"
+                            );
+                            return (None, full_output, file_pos);
+                        }
+                    }
+                }
                 thread::sleep(Duration::from_millis(150));
             }
             Err(TryRecvError::Disconnected) => {

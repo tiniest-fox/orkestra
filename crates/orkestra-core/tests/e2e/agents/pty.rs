@@ -80,3 +80,76 @@ fn pty_session_resume_after_rejection() {
 
     env.assert_has_artifact(&task_id, "summary");
 }
+
+/// Crash recovery and session resume: verify that a PTY process that exits without
+/// firing the Stop hook is detected as dead, transcript is still read, and subsequent
+/// runs after rejection complete normally.
+///
+/// Steps:
+/// 1. Install the crash mock (exits without Stop hook)
+/// 2. Run to `AwaitingApproval` — dead-process detection must fire within the timeout
+/// 3. Verify `has_activity=true` (transcript was read despite no Stop hook)
+/// 4. Verify first spawn used `--session-id` (not `--resume`)
+/// 5. Reject and swap to normal mock
+/// 6. Run to `AwaitingApproval` again — second run completes normally
+/// 7. Verify second spawn used `--session-id` (Restart trigger supersedes session)
+#[test]
+#[ignore = "requires PTY support and Python3; run with --ignored on a developer machine"]
+fn pty_crash_recovery_resumes_session() {
+    // Set up args capture sidecar
+    let args_file = tempfile::NamedTempFile::new().expect("args capture file");
+    let args_path = args_file.path().to_path_buf();
+    std::env::set_var("ORK_CAPTURE_ARGS_FILE", &args_path);
+
+    let env = helpers::AgentTestEnv::new_pty_crash_mock();
+    let task_id = env.create_task("PTY crash test", "Test crash recovery.");
+
+    // First run — crash mock exits without Stop hook; dead-process detection must catch it
+    env.run_to_completion(&task_id, Duration::from_mins(1));
+
+    // Verify has_activity was set (transcript was read despite no Stop hook)
+    let session = env.get_stage_session(&task_id, "work");
+    assert!(
+        session.has_activity,
+        "has_activity should be true after first run — transcript was parsed"
+    );
+
+    // Verify first spawn used --session-id (not --resume)
+    let args_content = std::fs::read_to_string(&args_path).expect("read args file");
+    let first_line = args_content
+        .lines()
+        .next()
+        .expect("should have first spawn args");
+    assert!(
+        first_line.starts_with("--session-id"),
+        "First spawn should use --session-id, got: {first_line}"
+    );
+
+    // Reject and swap to normal mock for second run
+    env.reject(&task_id, "Please try again.");
+    env.swap_to_normal_mock();
+
+    // Second run — normal mock fires Stop hook; should complete normally
+    env.run_to_completion(&task_id, Duration::from_mins(1));
+
+    // Verify second spawn args: Restart trigger supersedes the session, so claude_session_id
+    // is cleared and is_resume=false → second spawn also uses --session-id (fresh session)
+    let args_content = std::fs::read_to_string(&args_path).expect("read args file");
+    let lines: Vec<&str> = args_content.lines().collect();
+    assert!(
+        lines.len() >= 2,
+        "Should have at least 2 spawn records, got {}",
+        lines.len()
+    );
+    let second_line = lines[1];
+    println!("Second spawn args: {second_line}");
+    assert!(
+        second_line.starts_with("--session-id"),
+        "Second spawn should use --session-id (Restart supersedes session), got: {second_line}"
+    );
+
+    env.assert_has_artifact(&task_id, "summary");
+
+    // Clean up env var so it doesn't leak to other tests
+    std::env::remove_var("ORK_CAPTURE_ARGS_FILE");
+}

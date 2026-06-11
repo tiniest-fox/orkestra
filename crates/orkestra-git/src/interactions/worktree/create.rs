@@ -22,8 +22,7 @@ pub fn execute(
     if super::exists::execute(repo, task_id) {
         let base_commit =
             crate::interactions::branch::get_commit_oid::execute(repo, Some(&branch_name))
-                .map(|oid| oid.to_string())
-                .unwrap_or_default();
+                .map(|oid| oid.to_string())?;
         return Ok(WorktreeCreated {
             branch_name,
             worktree_path,
@@ -38,9 +37,13 @@ pub fn execute(
     // the local branch ref is stale. Falls back to local resolution for repos
     // with no remote (test repos).
     let commit_oid = match base_branch {
-        Some(branch) => resolve_remote_commit_oid(repo, branch).or_else(|_| {
-            crate::interactions::branch::get_commit_oid::execute(repo, Some(branch))
-        })?,
+        Some(branch) => resolve_remote_commit_oid(repo, branch)
+            .or_else(|_| crate::interactions::branch::get_commit_oid::execute(repo, Some(branch)))
+            .map_err(|e| {
+                GitError::BranchError(format!(
+                    "Base branch '{branch}' not found (remote or local) — the parent task's branch may have been deleted. Underlying error: {e}"
+                ))
+            })?,
         None => crate::interactions::branch::get_commit_oid::execute(repo, None)?,
     };
 
@@ -78,4 +81,100 @@ fn resolve_remote_commit_oid(
         ))
     })?;
     Ok(commit.id())
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    fn make_repo() -> (TempDir, Mutex<git2::Repository>) {
+        let dir = TempDir::new().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::fs::write(dir.path().join("README.md"), "hello").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["branch", "-M", "main"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        (dir, Mutex::new(repo))
+    }
+
+    /// Bug 1: early-return path must propagate an error when the task branch is
+    /// missing, not silently return `Ok(WorktreeCreated { base_commit: "" })`.
+    #[test]
+    fn early_return_fails_when_task_branch_missing() {
+        let (dir, repo) = make_repo();
+        let worktrees_dir = dir.path().join("worktrees");
+
+        // Create the worktree normally so the registry entry exists.
+        execute(&repo, &worktrees_dir, "t1", None).unwrap();
+
+        // Force-delete the task branch ref so the early-return path can't find it.
+        // Using git CLI with -D (force) because git2 refuses to delete a branch
+        // that is checked out in a linked worktree.
+        Command::new("git")
+            .args(["update-ref", "-d", "refs/heads/task/t1"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+
+        // Calling execute again should return Err, not Ok with empty base_commit.
+        let result = execute(&repo, &worktrees_dir, "t1", None);
+        assert!(
+            result.is_err(),
+            "expected Err when task branch is missing, got Ok"
+        );
+    }
+
+    /// Bug 2: when `base_branch` doesn't exist anywhere, the error message must
+    /// include the branch name and the parent-deleted hint.
+    #[test]
+    fn missing_base_branch_error_includes_context() {
+        let (dir, repo) = make_repo();
+        let worktrees_dir = dir.path().join("worktrees");
+
+        let result = execute(&repo, &worktrees_dir, "t2", Some("task/nonexistent-parent"));
+
+        let err = result.expect_err("expected Err for missing base branch");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("task/nonexistent-parent"),
+            "error should contain branch name, got: {msg}"
+        );
+        assert!(
+            msg.contains("parent task's branch may have been deleted"),
+            "error should include deletion hint, got: {msg}"
+        );
+    }
 }

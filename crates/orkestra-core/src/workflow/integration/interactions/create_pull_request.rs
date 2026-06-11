@@ -1,5 +1,7 @@
 //! PR creation pipeline: commit, push, describe, create PR.
 
+use orkestra_types::domain::TokenUsage;
+
 use crate::pr_description::{PrArtifact, PrDescriptionContext, PrDescriptionGenerator};
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, PrService};
@@ -39,6 +41,7 @@ pub(crate) fn execute(
     task: &Task,
     model_names: &[String],
     artifacts: &[PrArtifact],
+    token_usage: Option<&TokenUsage>,
 ) -> Result<String, PrPipelineError> {
     let branch = task
         .branch_name
@@ -74,6 +77,7 @@ pub(crate) fn execute(
         base_branch,
         worktree_path,
         model_names,
+        token_usage,
     };
     let (pr_title, pr_body) = pr_desc_gen
         .generate_pr_description(&pr_ctx)
@@ -82,7 +86,7 @@ pub(crate) fn execute(
             let body = format!(
                 "## Summary\n\n{}\n\n## Decisions\n\n_AI generation failed_\n\n## Change Walkthrough\n\n_AI generation failed — add walkthrough manually_{}",
                 task.description,
-                crate::pr_description::format_pr_footer(model_names)
+                crate::pr_description::format_pr_footer(model_names, token_usage)
             );
             (task.title.clone(), body)
         });
@@ -114,7 +118,7 @@ mod tests {
         let task = Task::new("t1", "title", "desc", "work", "2025-01-01T00:00:00Z")
             .with_worktree("/some/path");
 
-        let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[]);
+        let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[], None);
 
         match result {
             Err(PrPipelineError::PreconditionFailed(msg)) => {
@@ -136,7 +140,7 @@ mod tests {
         let task =
             Task::new("t1", "title", "desc", "work", "2025-01-01T00:00:00Z").with_branch("task/t1");
 
-        let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[]);
+        let result = execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[], None);
 
         match result {
             Err(PrPipelineError::PreconditionFailed(msg)) => {
@@ -190,6 +194,7 @@ mod tests {
             &task,
             &["Claude Sonnet 4.5".to_string()],
             &[],
+            None,
         );
 
         let url = result.expect("execute should succeed");

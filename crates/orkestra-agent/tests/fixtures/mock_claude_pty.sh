@@ -5,16 +5,26 @@
 
 SESSION_ID=""
 SETTINGS_FILE=""
+IS_RESUME=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --session-id)    SESSION_ID="$2"; shift 2;;
-        --resume)        SESSION_ID="$2"; shift 2;;
+        --resume)        SESSION_ID="$2"; IS_RESUME=true; shift 2;;
         --settings)      SETTINGS_FILE="$2"; shift 2;;
         --permission-mode|--model) shift 2;;
         *) shift;;
     esac
 done
+
+# Write args to sidecar file for test verification
+if [ -n "$ORK_CAPTURE_ARGS_FILE" ]; then
+    if [ "$IS_RESUME" = true ]; then
+        echo "--resume $SESSION_ID" >> "$ORK_CAPTURE_ARGS_FILE"
+    else
+        echo "--session-id $SESSION_ID" >> "$ORK_CAPTURE_ARGS_FILE"
+    fi
+fi
 
 # Encode working dir to match compute_transcript_path in run_pty.rs:
 # replaces every '/' or '.' with '-'.

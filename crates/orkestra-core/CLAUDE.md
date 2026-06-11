@@ -277,6 +277,24 @@ if name.starts_with('/') || name.contains('\\') || name.contains("..") || name.c
 
 This is a HIGH-severity security finding.
 
+### Store parameter convention for interactions
+
+Synchronous interactions take `&dyn WorkflowStore`. Interactions that spawn a background thread take `&Arc<dyn WorkflowStore>` and clone internally — the clone is an implementation detail, not a caller concern:
+
+```rust
+// Good — caller borrows; interaction clones internally for the thread
+pub fn execute(store: &Arc<dyn WorkflowStore>, ...) -> Result<()> {
+    let store = Arc::clone(store);
+    std::thread::spawn(move || { store.do_something(); });
+    Ok(())
+}
+
+// Bad — caller must move; leaks the thread-spawn detail into the signature
+pub fn execute(store: Arc<dyn WorkflowStore>, ...) -> Result<()> { ... }
+```
+
+Never take an owned `Arc<dyn WorkflowStore>` — it forces the caller to move rather than borrow and misleads readers about lifetime requirements. See `setup_worktree.rs` for the canonical example.
+
 ### `apply_to_task()` is the Single Source of Truth for WorktreeRecord Adoption
 
 When a prewarm `WorktreeRecord` is adopted into a task, **always** use `apply_to_task()` in `workflow/task/interactions/adopt_worktree.rs`. Do not copy `WorktreeRecord` fields (worktree path, branch name, base commit, base branch) inline — that pattern caused a HIGH-severity bug where `branch_name`/`base_commit` were never set, making the integration step silently skip the merge and discard all agent work.
@@ -336,6 +354,20 @@ Forgetting this used to produce a silent fallback artifact ID. Now it surfaces a
 PTY orchestrator-level tests live in `tests/e2e/agents/pty.rs`. Two tests (`pty_full_orchestrator_run`, `pty_session_resume_after_rejection`) use `AgentTestEnv::new_pty_mock()` with a `mock_claude_pty.sh` injected via PATH. Both are `#[ignore]` — run with `--ignored` on a developer machine (require PTY support and Python3).
 
 **Remaining gap**: no test exercises the error path where `claude` is absent from PATH (task should fail with a clear error rather than hang).
+
+**`ORK_CAPTURE_ARGS_FILE` args-capture sidecar**: PTY crash/resume tests verify spawn args (`--session-id` vs `--resume`) by setting this env var to a temp file path. The mock PTY script appends its args to the file on each invocation; the test reads it back after each run to assert spawn behavior across crash/rejection cycles. Example from `pty_crash_recovery_resumes_session`:
+
+```rust
+let args_file = tempfile::NamedTempFile::new()?;
+std::env::set_var("ORK_CAPTURE_ARGS_FILE", args_file.path());
+// ... run test, then:
+let lines: Vec<&str> = std::fs::read_to_string(args_file.path())?.lines().collect();
+assert!(lines[0].starts_with("--session-id"));  // first spawn: fresh session
+assert!(lines[1].starts_with("--session-id"));  // second spawn: Restart clears session
+std::env::remove_var("ORK_CAPTURE_ARGS_FILE");   // clean up — prevent leakage
+```
+
+This pattern is the correct way to verify multi-spawn arg sequences; direct mock inspection can't capture ordering across crash boundaries.
 
 ### Known Test Gaps in `init.rs`
 

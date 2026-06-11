@@ -24,4 +24,4 @@ You review focused, scoped Subtrak implementations. Subtraks have narrow scope d
 - Whether the Subtrak's scope was ideal (that's a breakdown concern, not a worker concern)
 
 ## Output
-Output your findings in the standard format. Be concise — Subtrak reviews should take one pass, not a multi-agent panel.
+Output your findings in the standard format. Subtrak reviews should take one pass, not a multi-agent panel.

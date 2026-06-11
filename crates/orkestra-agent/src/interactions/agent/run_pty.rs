@@ -19,7 +19,7 @@ use orkestra_types::domain::{compute_transcript_path, LogEntry, PromptSection};
 use portable_pty::{CommandBuilder, PtySize};
 use tempfile::NamedTempFile;
 
-use crate::interactions::hooks::types::{HookReceiver, HookServer};
+use crate::interactions::hooks::types::{HookEvent, HookReceiver, HookServer};
 use crate::orkestra_debug;
 use crate::registry::{ProviderRegistry, ResolvedProvider};
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
@@ -206,20 +206,14 @@ fn drive_pty_session(
         ctx.prompt.len()
     );
 
-    // Poll for JSONL transcript file to confirm session started.
-    // Two Text entries are required to set `has_confirmed_output` in ActiveAgent::poll(),
-    // persisting `has_activity=true` for crash recovery (one Text only sets `has_any_output`).
-    //
-    // Re-send Enter every ~3s to handle the TUI startup race: when the TUI isn't ready,
-    // the prompt and trailing \r written above are ingested as paste-like input and the \r
-    // doesn't submit. Extra \r on an idle composer is a no-op; on an unsubmitted composer
-    // it submits.
+    // Poll for JSONL transcript file (two Text events needed for `has_confirmed_output`
+    // crash-recovery tracking). Re-send Enter every ~3s to handle TUI startup race:
+    // initial \r may be swallowed during TUI boot; extra \r on idle composer is a no-op,
+    // on an unsubmitted composer it submits.
     let fallback_transcript_path =
         compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
 
-    // On resume the transcript file already exists. Seed the baseline to its current
-    // size so poll_for_transcript_with_enter_retry waits for *growth* rather than
-    // returning Found immediately on the pre-existing file.
+    // On resume, seed baseline to current file size so poll waits for new growth.
     let baseline_size = if ctx.is_resume {
         std::fs::metadata(&fallback_transcript_path).map_or(0, |m| m.len())
     } else {
@@ -227,7 +221,6 @@ fn drive_pty_session(
     };
 
     let poll_deadline = std::time::Instant::now() + Duration::from_secs(30);
-
     let poll_outcome = poll_for_transcript_with_enter_retry(
         &fallback_transcript_path,
         poll_deadline,
@@ -263,12 +256,9 @@ fn drive_pty_session(
         return;
     }
 
-    // Tail transcript during execution, emitting LogLine events as lines arrive.
-    // Non-blocking: polls transcript file every 150ms while waiting for Stop hook.
-    // Also checks child liveness every ~3s to detect crashes promptly.
-    // On resume, start reading from baseline_size so prior-run content is not
-    // re-parsed as new output.
-    let (hook_event, mut full_output, tail_file_pos) = tail_transcript_until_stop(
+    // Tail transcript until Stop hook fires; polls every 150ms, checks liveness every ~3s.
+    // initial_file_pos skips prior-run content on resume.
+    let (hook_event, full_output, tail_file_pos) = tail_transcript_until_stop(
         &fallback_transcript_path,
         hook_rx,
         &mut pty_handle.child,
@@ -277,12 +267,40 @@ fn drive_pty_session(
         usize::try_from(baseline_size).expect("transcript size exceeds platform address space"),
     );
 
+    finalize_pty_session(
+        pty_handle,
+        hook_server,
+        tx,
+        &mut *parser,
+        ctx.task_id,
+        ctx.schema,
+        &fallback_transcript_path,
+        hook_event,
+        full_output,
+        tail_file_pos,
+    );
+}
+
+/// Resolve the transcript path, perform the final stabilized read, clean up the PTY
+/// process, flush the parser, classify output, and emit the completion event.
+fn finalize_pty_session(
+    pty_handle: PtyHandle,
+    hook_server: &HookServer,
+    tx: &Sender<RunEvent>,
+    parser: &mut dyn AgentParser,
+    task_id: &str,
+    schema: Option<&serde_json::Value>,
+    fallback_transcript_path: &Path,
+    hook_event: Option<HookEvent>,
+    mut full_output: String,
+    tail_file_pos: usize,
+) {
     // Use transcript path from hook event if available, else computed fallback.
     // In practice these match — the divergence path is a safety net.
     let transcript_path = hook_event
         .as_ref()
         .and_then(|e| e.transcript_path.clone())
-        .unwrap_or_else(|| fallback_transcript_path.clone());
+        .unwrap_or_else(|| fallback_transcript_path.to_path_buf());
 
     // Resume final read from where tail left off (same file) or from 0 (diverged file).
     let final_read_pos = if transcript_path == fallback_transcript_path {
@@ -305,7 +323,7 @@ fn drive_pty_session(
     read_new_lines(
         &transcript_path,
         final_read_pos,
-        &mut *parser,
+        parser,
         tx,
         &mut full_output,
         &mut trailing_count,
@@ -316,7 +334,7 @@ fn drive_pty_session(
     drop(pty_handle);
 
     // Cleanup
-    hook_server.unregister_task(ctx.task_id);
+    hook_server.unregister_task(task_id);
 
     // Flush finalized parser entries
     for entry in parser.finalize() {
@@ -326,7 +344,7 @@ fn drive_pty_session(
     }
 
     // Classify output and emit completion
-    let result = match classify_output::execute(&*parser, &full_output, ctx.schema) {
+    let result = match classify_output::execute(&*parser, &full_output, schema) {
         OutputClassification::Success(output) => Ok(output),
         OutputClassification::ExtractionFailed(e) => Err(AgentCompletionError::Crash(e)),
         OutputClassification::PlainText(text) => Err(AgentCompletionError::PlainText(text)),

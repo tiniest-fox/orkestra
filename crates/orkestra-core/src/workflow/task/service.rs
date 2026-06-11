@@ -37,7 +37,7 @@ impl WorkflowApi {
     /// Create a new task with options (`mode`, flow, `auto_pr`).
     pub fn create_task_with_options(&self, options: &CreateTaskOptions) -> WorkflowResult<Task> {
         task_interactions::create::execute(
-            self.store.as_ref(),
+            std::sync::Arc::clone(&self.store),
             &self.workflow,
             self.git_service.as_deref(),
             &self.iteration_service,
@@ -48,6 +48,7 @@ impl WorkflowApi {
             options.mode,
             options.flow.as_deref(),
             options.auto_pr,
+            Some(std::sync::Arc::clone(&self.title_generator)),
         )
     }
 
@@ -64,7 +65,7 @@ impl WorkflowApi {
         auto_pr: bool,
     ) -> WorkflowResult<Task> {
         task_interactions::create::execute(
-            self.store.as_ref(),
+            std::sync::Arc::clone(&self.store),
             &self.workflow,
             self.git_service.as_deref(),
             &self.iteration_service,
@@ -75,6 +76,7 @@ impl WorkflowApi {
             mode,
             flow,
             auto_pr,
+            Some(std::sync::Arc::clone(&self.title_generator)),
         )
     }
 

@@ -6,6 +6,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use orkestra_types::domain::TokenUsage;
+
 use crate::pr_description::{PrArtifact, PrDescriptionGenerator};
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::Task;
@@ -25,6 +27,7 @@ enum PrPreparation {
         pr_description_generator: Arc<dyn PrDescriptionGenerator>,
         model_names: Vec<String>,
         artifacts: Vec<PrArtifact>,
+        token_usage: Option<TokenUsage>,
     },
 }
 
@@ -45,6 +48,7 @@ pub fn spawn_pr_creation(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> Workflo
         pr_description_generator,
         model_names,
         artifacts,
+        token_usage,
     } = prepare_pr_creation(&api, task_id)?;
 
     let result_task = (*task).clone();
@@ -59,6 +63,7 @@ pub fn spawn_pr_creation(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> Workflo
             *task,
             model_names,
             artifacts,
+            token_usage,
         );
     });
 
@@ -78,6 +83,7 @@ pub fn create_pr_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowRe
         pr_description_generator,
         model_names,
         artifacts,
+        token_usage,
     } = prepare_pr_creation(&api, task_id)?;
 
     run_pr_creation(
@@ -88,6 +94,7 @@ pub fn create_pr_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowRe
         *task,
         model_names,
         artifacts,
+        token_usage,
     );
 
     // Re-read the task from the store to return the correct final state
@@ -107,6 +114,7 @@ pub(crate) fn run_pr_creation(
     task: Task,
     model_names: Vec<String>,
     artifacts: Vec<PrArtifact>,
+    token_usage: Option<TokenUsage>,
 ) {
     let task_id = task.id.clone();
 
@@ -117,6 +125,7 @@ pub(crate) fn run_pr_creation(
         &task,
         &model_names,
         &artifacts,
+        token_usage.as_ref(),
     ) {
         Ok(pr_url) => {
             if let Ok(api) = api.lock() {
@@ -156,6 +165,15 @@ fn prepare_pr_creation(api: &Mutex<WorkflowApi>, task_id: &str) -> WorkflowResul
     // Collect artifacts with descriptions while holding the lock (workflow is available here).
     let artifacts = super::interactions::collect_pr_artifacts::execute(&api.workflow, &task);
 
+    // Fetch token usage — decorative, never block PR creation on failure.
+    let token_usage = crate::workflow::query::interactions::token_usage::execute(
+        api.store.as_ref(),
+        &task.id,
+        &api.home_dir,
+    )
+    .ok()
+    .map(|u| u.total);
+
     Ok(PrPreparation::NeedsPrWork {
         task: Box::new(task),
         git,
@@ -163,5 +181,6 @@ fn prepare_pr_creation(api: &Mutex<WorkflowApi>, task_id: &str) -> WorkflowResul
         pr_description_generator,
         model_names,
         artifacts,
+        token_usage,
     })
 }

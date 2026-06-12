@@ -6,6 +6,7 @@
 //! 3. Does not contain business logic itself — that lives in interactions
 //!
 //! Each tick phase delegates to an interaction in the appropriate domain:
+//! - `task::retry_pending_adoptions` — adopt prewarm worktrees whose tasks are now Ready
 //! - `task::setup_awaiting` — set up tasks whose deps are satisfied
 //! - `stage::check_parent_completions` — advance parents when subtasks done
 //! - `agent::dispatch_completion` — route completed executions

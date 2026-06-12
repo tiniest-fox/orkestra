@@ -92,12 +92,13 @@ store.save_task(&task)?;  // Only in interactions
 
 The orchestrator is a thin sequencer that dispatches to domain interactions:
 
-1. **Setup awaiting tasks** → `task::setup_awaiting::execute()`
-2. **Check parent completions** → `stage::check_parent_completions::execute()`
-3. **Process completed executions** → `agent::dispatch_completion::execute()`
-4. **Commit pipeline** → `stage::advance_all_committed::execute()`
-5. **Find spawn candidates** → `task::find_spawn_candidates::execute()`
-6. **Integration OR PR creation** → `tick_integration_or_pr()` helper — `else if` mutual exclusion: at most one of these runs per tick.
+1. **Adopt prewarm worktrees** → `task::retry_pending_adoptions::execute()` — adopt any `WorktreeRecord` whose task is now `Ready`
+2. **Setup awaiting tasks** → `task::setup_awaiting::execute()`
+3. **Check parent completions** → `stage::check_parent_completions::execute()`
+4. **Process completed executions** → `agent::dispatch_completion::execute()`
+5. **Commit pipeline** → `stage::advance_all_committed::execute()`
+6. **Find spawn candidates** → `task::find_spawn_candidates::execute()`
+7. **Integration OR PR creation** → `tick_integration_or_pr()` helper — `else if` mutual exclusion: at most one of these runs per tick.
 
 Business logic lives in interactions; orchestrator handles I/O plumbing (locks, threads, events).
 

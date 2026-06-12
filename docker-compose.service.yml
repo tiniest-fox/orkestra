@@ -21,6 +21,9 @@ services:
       # --- Optional: GitHub CLI auth (for PR creation) ---
       GH_TOKEN: "${GH_TOKEN:-}"
 
+      # --- Optional: OpenCode support ---
+      OPENCODE_API_KEY: "${OPENCODE_API_KEY:-}"
+
       # --- Logging ---
       RUST_LOG: "${RUST_LOG:-info}"
 

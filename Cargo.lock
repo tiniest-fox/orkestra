@@ -3519,6 +3519,7 @@ dependencies = [
  "orkestra-store",
  "orkestra-types",
  "orkestra-utility",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",

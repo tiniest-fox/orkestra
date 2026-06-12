@@ -49,6 +49,16 @@ The correct ordering is:
 
 Adding any new blanket middleware (rate limiting, logging, etc.) to `build_router` must follow this same pattern — add the layer after the `extra_routes` merge, not before. A test `security_headers_present_on_extra_routes` in `server.rs` verifies this for security headers.
 
+### Agent API key injection pattern
+
+Agent provider keys (`CLAUDE_CODE_OAUTH_TOKEN`, `OPENCODE_API_KEY`) follow the same pattern in `start_container.rs`:
+
+1. An `extract_<key>()` function mirrors `extract_git_identity()`: secret-store lookup → env-var fallback → remaining secrets filtered.
+2. The extracted value is chained into `DockerRunConfig` and `build_compose_override`.
+3. Both docker-compose files (`docker-compose.daemon.yml`, `docker-compose.service.yml`) declare the var with an empty-string default so the host passes it through.
+
+`build_compose_override` currently takes 7 parameters. **If you add another agent provider key, introduce a config struct** (e.g., `ContainerEnvConfig`) instead of a 8th parameter.
+
 ### decrypt_all vs get/set signatures
 
 `secret::decrypt_all::execute` takes `secrets_key: Option<&str>` and returns an empty vec when the key is absent (graceful degradation for container env-var injection — containers start normally even without secrets configured).

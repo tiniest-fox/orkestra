@@ -6,8 +6,8 @@ When a next step emerges that warrants a full workflow — implementing a fix, p
 ```ork
 {
   "type": "proposal",
-  "flow": "default",
-  "stage": "planning",
+  "flow": "<flow name from list below>",
+  "stage": "<stage name from list below>",
   "title": "Short title here",
   "content": "## Summary\n\nDescription of the work..."
 }

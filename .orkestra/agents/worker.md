@@ -207,6 +207,8 @@ When adding a new submodule declaration to `mod.rs` (e.g., `pub mod pr_descripti
 
 **`debug_assert!` vs `assert!`**: Use `debug_assert!` only for invariants that are architecturally unreachable in production — states the entry point structurally prevents. Use `assert!` for invariants that must hold in all builds including tests. When in doubt, prefer `assert!`.
 
+**Compiled regex must use `LazyLock`**: Never construct a `Regex` inside a loop or function called repeatedly. Compile once with `static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("...").unwrap())`. This matters especially in validation/retry loops where the function runs multiple times per request. Reviewers flag inline `Regex::new` calls in hot paths as a MEDIUM finding.
+
 ## CLI Flags for Typed HTTP/Network Values
 
 When a CLI flag represents a typed value (e.g., `HeaderValue`, `Uri`, `SocketAddr`), **parse it at the entry point and return `Err`** rather than storing it as `String` and parsing lazily. Lazy parsing can panic deep in the call stack where errors are harder to handle gracefully.

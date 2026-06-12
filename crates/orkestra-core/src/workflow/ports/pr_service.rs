@@ -85,6 +85,8 @@ pub mod mock {
         get_body_results: Mutex<VecDeque<Result<String, PrError>>>,
         update_body_results: Mutex<VecDeque<Result<(), PrError>>>,
         update_body_calls: Mutex<Vec<(String, String)>>,
+        /// Recorded (title, body) pairs from `create_pull_request` calls.
+        create_pr_calls: Mutex<Vec<(String, String)>>,
     }
 
     impl MockPrService {
@@ -95,6 +97,7 @@ pub mod mock {
                 get_body_results: Mutex::new(VecDeque::new()),
                 update_body_results: Mutex::new(VecDeque::new()),
                 update_body_calls: Mutex::new(Vec::new()),
+                create_pr_calls: Mutex::new(Vec::new()),
             }
         }
 
@@ -117,6 +120,11 @@ pub mod mock {
         pub fn update_body_calls(&self) -> Vec<(String, String)> {
             self.update_body_calls.lock().unwrap().clone()
         }
+
+        /// Returns all (title, body) pairs passed to `create_pull_request`.
+        pub fn create_pr_calls(&self) -> Vec<(String, String)> {
+            self.create_pr_calls.lock().unwrap().clone()
+        }
     }
 
     impl Default for MockPrService {
@@ -131,9 +139,13 @@ pub mod mock {
             _repo_root: &std::path::Path,
             _branch: &str,
             _base: &str,
-            _title: &str,
-            _body: &str,
+            title: &str,
+            body: &str,
         ) -> Result<String, PrError> {
+            self.create_pr_calls
+                .lock()
+                .unwrap()
+                .push((title.to_string(), body.to_string()));
             self.results
                 .lock()
                 .unwrap()

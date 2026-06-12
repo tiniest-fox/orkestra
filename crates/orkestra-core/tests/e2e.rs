@@ -30,6 +30,8 @@ mod git_sync;
 mod integration;
 #[path = "e2e/lock.rs"]
 mod lock;
+#[path = "e2e/mermaid_validation.rs"]
+mod mermaid_validation;
 #[path = "e2e/multi_project.rs"]
 mod multi_project;
 #[path = "e2e/play.rs"]

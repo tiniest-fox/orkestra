@@ -394,6 +394,13 @@ impl WorkflowApi {
 
 #[cfg(feature = "testutil")]
 impl WorkflowApi {
+    /// Replace the PR description generator.
+    ///
+    /// Used in e2e tests to inject a custom mock before calling `create_pr_sync`.
+    pub fn set_pr_description_generator(&mut self, gen: Arc<dyn PrDescriptionGenerator>) {
+        self.pr_description_generator = gen;
+    }
+
     /// Persist a task directly to the store — test setup only.
     ///
     /// Bypasses all business logic. Use to inject test state (e.g., set `pr_url`,

@@ -446,6 +446,14 @@ impl TestEnv {
         Arc::clone(&self.pr_service)
     }
 
+    /// Replace the PR description generator on the underlying `WorkflowApi`.
+    ///
+    /// Call this before `create_pr_sync` to inject a custom mock that returns
+    /// specific bodies or fix responses.
+    pub fn set_pr_description_generator(&self, gen: Arc<dyn PrDescriptionGenerator>) {
+        self.api.lock().unwrap().set_pr_description_generator(gen);
+    }
+
     /// Inject a PR monitor for auto-resolve tests.
     ///
     /// Call this after construction, before running ticks.

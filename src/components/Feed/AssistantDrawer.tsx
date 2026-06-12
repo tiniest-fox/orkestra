@@ -9,6 +9,7 @@ import { useToast } from "../../providers/ToastProvider";
 import { useConnectionState, useTransport } from "../../transport";
 import type { AssistantSession, WorkflowQuestion, WorkflowTask } from "../../types/workflow";
 import { confirmAction } from "../../utils/confirmAction";
+import { extractErrorMessage } from "../../utils/errors";
 import { type OrkBlock, parseOrkBlocks } from "../../utils/orkBlocks";
 import { relativeTime } from "../../utils/relativeTime";
 import { isDisconnectError } from "../../utils/transportErrors";
@@ -190,7 +191,7 @@ export function AssistantDrawer({
       setChatTask(null);
       onClose();
     } catch (err) {
-      if (!isDisconnectError(err)) showError(String(err));
+      if (!isDisconnectError(err)) showError(extractErrorMessage(err));
     }
   }, [taskId, transport, onClose, showError]);
 
@@ -210,7 +211,7 @@ export function AssistantDrawer({
       setChatTask(null);
       onClose();
     } catch (err) {
-      if (!isDisconnectError(err)) showError(String(err));
+      if (!isDisconnectError(err)) showError(extractErrorMessage(err));
     } finally {
       setAcceptLoading(false);
     }
@@ -224,7 +225,7 @@ export function AssistantDrawer({
       await transport.call("archive", { task_id: taskId });
       onClose();
     } catch (err) {
-      if (!isDisconnectError(err)) showError(String(err));
+      if (!isDisconnectError(err)) showError(extractErrorMessage(err));
     }
   }, [taskId, transport, onClose, showError]);
 
@@ -390,7 +391,7 @@ export function AssistantDrawer({
         URL.revokeObjectURL(img.previewUrl);
       }
     } catch (err) {
-      if (!isDisconnectError(err)) showError(String(err));
+      if (!isDisconnectError(err)) showError(extractErrorMessage(err));
       setOptimisticMessage(null);
       setInputValue(msg);
       setPendingImages(imagesToSend);
@@ -428,7 +429,7 @@ export function AssistantDrawer({
   const handleStop = useCallback(async () => {
     if (!activeSessionId) return;
     await transport.call("assistant_stop", { session_id: activeSessionId }).catch((err) => {
-      if (!isDisconnectError(err)) showError(String(err));
+      if (!isDisconnectError(err)) showError(extractErrorMessage(err));
     });
     if (taskId) {
       const taskSession = await fetchTaskSession();
@@ -667,7 +668,7 @@ export function AssistantDrawer({
                       .call("delete_task", { task_id: taskId })
                       .then(onClose)
                       .catch((err) => {
-                        if (!isDisconnectError(err)) showError(String(err));
+                        if (!isDisconnectError(err)) showError(extractErrorMessage(err));
                       });
                   }}
                 >

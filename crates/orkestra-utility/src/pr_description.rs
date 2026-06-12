@@ -80,6 +80,18 @@ pub trait PrDescriptionGenerator: Send + Sync {
         commits_summary: &str,
         diff_summary: &str,
     ) -> Result<String, String>;
+
+    /// Attempt to fix a PR body that failed validation.
+    ///
+    /// Receives the broken PR body and a list of validation error descriptions.
+    /// Returns `Ok(fixed_body)` on success, `Err(reason)` on failure.
+    /// The caller handles fallback (keeping the broken body or skipping the PR).
+    fn fix_pr_description(
+        &self,
+        task_title: &str,
+        broken_body: &str,
+        errors: &[String],
+    ) -> Result<String, String>;
 }
 
 /// Append model attribution footer to a PR body.
@@ -160,6 +172,15 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
         update_pr_description_sync(task_title, current_body, commits_summary, diff_summary, 120)
             .map_err(|e| e.to_string())
     }
+
+    fn fix_pr_description(
+        &self,
+        task_title: &str,
+        broken_body: &str,
+        errors: &[String],
+    ) -> Result<String, String> {
+        fix_pr_description_sync(task_title, broken_body, errors, 120).map_err(|e| e.to_string())
+    }
 }
 
 // =============================================================================
@@ -168,24 +189,89 @@ impl PrDescriptionGenerator for ClaudePrDescriptionGenerator {
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
     use super::{format_pr_footer, PrDescriptionGenerator};
 
     /// Mock PR description generator for testing.
     ///
-    /// Can simulate success (returns formatted PR description) or failure (returns error).
+    /// Supports configuring specific return values for each method via builder
+    /// methods (`with_generate_body`, `push_fix_response`).
     pub struct MockPrDescriptionGenerator {
         fail: bool,
+        /// Override body returned by `generate_pr_description` (title still comes from ctx).
+        generate_body: Option<String>,
+        /// Queued responses for `fix_pr_description`; pops front on each call.
+        /// Falls back to default behaviour when queue is empty.
+        fix_responses: Mutex<VecDeque<Result<String, String>>>,
+        /// Running count of `fix_pr_description` calls.
+        fix_call_count: Mutex<usize>,
+        /// Recorded `broken_body` args from each `fix_pr_description` call.
+        fix_received_bodies: Mutex<Vec<String>>,
+        /// Recorded `errors` args from each `fix_pr_description` call.
+        fix_received_errors: Mutex<Vec<Vec<String>>>,
     }
 
     impl MockPrDescriptionGenerator {
         /// Creates a mock that succeeds with a deterministic description.
         pub fn succeeding() -> Self {
-            Self { fail: false }
+            Self {
+                fail: false,
+                generate_body: None,
+                fix_responses: Mutex::new(VecDeque::new()),
+                fix_call_count: Mutex::new(0),
+                fix_received_bodies: Mutex::new(Vec::new()),
+                fix_received_errors: Mutex::new(Vec::new()),
+            }
         }
 
         /// Creates a mock that fails, triggering the caller's fallback path.
         pub fn failing() -> Self {
-            Self { fail: true }
+            Self {
+                fail: true,
+                generate_body: None,
+                fix_responses: Mutex::new(VecDeque::new()),
+                fix_call_count: Mutex::new(0),
+                fix_received_bodies: Mutex::new(Vec::new()),
+                fix_received_errors: Mutex::new(Vec::new()),
+            }
+        }
+
+        /// Override the body returned by `generate_pr_description`.
+        ///
+        /// Useful for injecting broken mermaid into the PR body so validation
+        /// tests can exercise the retry loop.
+        #[must_use]
+        pub fn with_generate_body(mut self, body: impl Into<String>) -> Self {
+            self.generate_body = Some(body.into());
+            self
+        }
+
+        /// Queue a specific result for the next `fix_pr_description` call.
+        ///
+        /// Calls dequeue in order; once the queue is empty the mock falls back
+        /// to its default behaviour (success with `_Fixed by mock_` suffix, or
+        /// error when `fail = true`).
+        #[must_use]
+        pub fn push_fix_response(self, response: Result<String, String>) -> Self {
+            self.fix_responses.lock().unwrap().push_back(response);
+            self
+        }
+
+        /// Returns the total number of `fix_pr_description` calls made so far.
+        pub fn fix_call_count(&self) -> usize {
+            *self.fix_call_count.lock().unwrap()
+        }
+
+        /// Returns the `broken_body` argument from each `fix_pr_description` call, in order.
+        pub fn fix_received_bodies(&self) -> Vec<String> {
+            self.fix_received_bodies.lock().unwrap().clone()
+        }
+
+        /// Returns the `errors` argument from each `fix_pr_description` call, in order.
+        pub fn fix_received_errors(&self) -> Vec<Vec<String>> {
+            self.fix_received_errors.lock().unwrap().clone()
         }
     }
 
@@ -197,10 +283,13 @@ pub mod mock {
             if self.fail {
                 Err("Mock PR description generation failed".into())
             } else {
-                let body = format!(
-                    "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Change Walkthrough\n\n- Mock walkthrough of changes{}",
-                    format_pr_footer(ctx.model_names, ctx.token_usage)
-                );
+                let body = match &self.generate_body {
+                    Some(b) => b.clone(),
+                    None => format!(
+                        "## Summary\n\n- Mock PR body\n\n## Decisions\n\n- Used existing patterns\n\n## Change Walkthrough\n\n- Mock walkthrough of changes{}",
+                        format_pr_footer(ctx.model_names, ctx.token_usage)
+                    ),
+                };
                 Ok((ctx.task_title.to_string(), body))
             }
         }
@@ -216,6 +305,32 @@ pub mod mock {
                 Err("Mock PR description update failed".into())
             } else {
                 Ok(format!("{current_body}\n\n_Updated by mock_"))
+            }
+        }
+
+        fn fix_pr_description(
+            &self,
+            _task_title: &str,
+            broken_body: &str,
+            errors: &[String],
+        ) -> Result<String, String> {
+            *self.fix_call_count.lock().unwrap() += 1;
+            self.fix_received_bodies
+                .lock()
+                .unwrap()
+                .push(broken_body.to_string());
+            self.fix_received_errors
+                .lock()
+                .unwrap()
+                .push(errors.to_vec());
+            // Use queued response if available.
+            if let Some(queued) = self.fix_responses.lock().unwrap().pop_front() {
+                return queued;
+            }
+            if self.fail {
+                Err("Mock PR description fix failed".into())
+            } else {
+                Ok(format!("{broken_body}\n\n_Fixed by mock_"))
             }
         }
     }
@@ -302,6 +417,34 @@ pub fn update_pr_description_sync(
     });
     let output = runner
         .run("update_pr_description", &context)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    output["body"]
+        .as_str()
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing body"))
+}
+
+/// Fixes a PR description that failed validation, synchronously using a lightweight Claude instance.
+///
+/// Returns the corrected PR body, or an error if the fix fails.
+pub fn fix_pr_description_sync(
+    task_title: &str,
+    broken_body: &str,
+    errors: &[String],
+    timeout_secs: u64,
+) -> std::io::Result<String> {
+    let runner = UtilityRunner::new().with_timeout(timeout_secs);
+    let errors_json: Vec<serde_json::Value> = errors
+        .iter()
+        .map(|e| serde_json::Value::String(e.clone()))
+        .collect();
+    let context = json!({
+        "title": task_title,
+        "broken_body": broken_body,
+        "errors": errors_json,
+    });
+    let output = runner
+        .run("fix_pr_description", &context)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     output["body"]
         .as_str()
@@ -416,6 +559,26 @@ mod tests {
         let footer = format_pr_footer(&[], Some(&usage));
         assert!(!footer.contains("Tokens:"));
         assert!(footer.contains("⚡ Powered by Orkestra"));
+    }
+
+    #[test]
+    fn test_mock_fix_pr_description_succeeding() {
+        let generator = mock::MockPrDescriptionGenerator::succeeding();
+        let broken_body = "## Summary\n\n- graph TD\n  A(broken) --> B";
+        let errors = vec!["Mermaid node label contains parentheses: A(broken)".to_string()];
+        let result = generator.fix_pr_description("Fix something", broken_body, &errors);
+        assert!(result.is_ok());
+        let fixed = result.unwrap();
+        assert!(fixed.contains("_Fixed by mock_"));
+        assert!(fixed.contains(broken_body));
+    }
+
+    #[test]
+    fn test_mock_fix_pr_description_failing() {
+        let generator = mock::MockPrDescriptionGenerator::failing();
+        let result = generator.fix_pr_description("Fix something", "body", &["error".to_string()]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Mock PR description fix failed");
     }
 
     #[test]

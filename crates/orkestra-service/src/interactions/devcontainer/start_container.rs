@@ -138,6 +138,26 @@ fn extract_claude_token(secrets: &[(String, String)]) -> (Option<String>, Vec<(S
     (resolved, remaining)
 }
 
+/// Separate the `OPENCODE_API_KEY` secret from regular secrets and resolve
+/// the final value. Returns `(resolved_key, remaining_secrets)`. `None` means
+/// no key is available. Found key is removed from the returned secrets vec to
+/// prevent double-injection.
+fn extract_opencode_api_key(
+    secrets: &[(String, String)],
+) -> (Option<String>, Vec<(String, String)>) {
+    let mut token = None;
+    let mut remaining = Vec::with_capacity(secrets.len());
+    for (key, value) in secrets {
+        if key == "OPENCODE_API_KEY" {
+            token = Some(value.clone());
+        } else {
+            remaining.push((key.clone(), value.clone()));
+        }
+    }
+    let resolved = token.or_else(|| std::env::var("OPENCODE_API_KEY").ok());
+    (resolved, remaining)
+}
+
 /// All resolved inputs needed to build `docker run` arguments.
 struct DockerRunConfig {
     container_name: String,
@@ -148,6 +168,9 @@ struct DockerRunConfig {
     /// OAuth token injected as `CLAUDE_CODE_OAUTH_TOKEN` env var. `None` when
     /// neither a per-project secret nor the service env var is set.
     claude_code_oauth_token: Option<String>,
+    /// `OpenCode` API key injected as `OPENCODE_API_KEY` env var. `None` when
+    /// neither a per-project secret nor the service env var is set.
+    opencode_api_key: Option<String>,
     gh_token: Option<String>,
     secret_envs: Vec<String>,
     image: String,
@@ -210,6 +233,12 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
         args.push(format!("CLAUDE_CODE_OAUTH_TOKEN={token}"));
     }
 
+    // Inject OpenCode API key so the opencode agent can authenticate.
+    if let Some(ref key) = config.opencode_api_key {
+        args.push("-e".to_string());
+        args.push(format!("OPENCODE_API_KEY={key}"));
+    }
+
     // Forward GH_TOKEN so the git credential helper can authenticate pushes.
     if let Some(ref token) = config.gh_token {
         args.push("-e".to_string());
@@ -254,7 +283,8 @@ fn docker_run(
     // Project secrets GIT_USER_EMAIL / GIT_USER_NAME take precedence; falls back
     // to service-wide env vars, then the hardcoded defaults.
     let (git_email, git_name, filtered_secrets) = extract_git_identity(secrets);
-    let (claude_token, final_secrets) = extract_claude_token(&filtered_secrets);
+    let (claude_token, filtered_after_claude) = extract_claude_token(&filtered_secrets);
+    let (opencode_key, final_secrets) = extract_opencode_api_key(&filtered_after_claude);
     let gh_token = std::env::var("GH_TOKEN").ok();
     let secret_envs: Vec<String> = final_secrets
         .iter()
@@ -268,6 +298,7 @@ fn docker_run(
         git_email,
         git_name,
         claude_code_oauth_token: claude_token,
+        opencode_api_key: opencode_key,
         gh_token,
         secret_envs,
         image: image.to_string(),
@@ -317,11 +348,13 @@ fn compose_up(
 
     let override_path = override_dir.join("orkestra-override.yml");
     let (claude_token, _) = extract_claude_token(secrets);
+    let (opencode_key, _) = extract_opencode_api_key(secrets);
     let override_content = build_compose_override(
         service,
         port,
         secrets,
         claude_token.as_deref(),
+        opencode_key.as_deref(),
         resource_limits,
         extra_mounts,
     );
@@ -472,11 +505,14 @@ fn is_named_volume(mount_spec: &str) -> bool {
 ///
 /// `claude_code_oauth_token` — when `Some`, injects the token as `CLAUDE_CODE_OAUTH_TOKEN`
 ///   in the service environment. Resolved by the caller (secret → service env var).
+/// `opencode_api_key` — when `Some`, injects the key as `OPENCODE_API_KEY`
+///   in the service environment. Resolved by the caller (secret → service env var).
 fn build_compose_override(
     service: &str,
     port: u16,
     secrets: &[(String, String)],
     claude_code_oauth_token: Option<&str>,
+    opencode_api_key: Option<&str>,
     resource_limits: &ResourceLimits,
     extra_mounts: &[String],
 ) -> String {
@@ -489,6 +525,9 @@ fn build_compose_override(
     // CLAUDE_CODE_OAUTH_TOKEN is handled via the claude_code_oauth_token parameter;
     // strip it from remaining secrets to prevent double-injection.
     let (_, filtered_secrets) = extract_claude_token(&filtered_secrets);
+    // OPENCODE_API_KEY is handled via the opencode_api_key parameter;
+    // strip it from remaining secrets to prevent double-injection.
+    let (_, filtered_secrets) = extract_opencode_api_key(&filtered_secrets);
     let gh_token = std::env::var("GH_TOKEN").ok();
 
     let mut volumes = String::new();
@@ -514,6 +553,15 @@ fn build_compose_override(
             .replace('\r', "\\r")
             .replace('\t', "\\t");
         let _ = writeln!(environment, "{I}CLAUDE_CODE_OAUTH_TOKEN: \"{escaped}\"");
+    }
+    if let Some(key) = opencode_api_key {
+        let escaped = key
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        let _ = writeln!(environment, "{I}OPENCODE_API_KEY: \"{escaped}\"");
     }
     if let Some(ref token) = gh_token {
         let _ = writeln!(environment, "{I}GH_TOKEN: \"{token}\"");
@@ -586,7 +634,7 @@ fn pipe_to_log(
 mod tests {
     use super::{
         build_compose_override, build_docker_run_args, extract_claude_token, extract_git_identity,
-        is_named_volume, DockerRunConfig,
+        extract_opencode_api_key, is_named_volume, DockerRunConfig,
     };
     use crate::types::ResourceLimits;
 
@@ -607,7 +655,7 @@ mod tests {
             ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
 
         // Plain value is quoted but not escaped.
         assert!(yaml.contains("PLAIN: \"simple_value\""));
@@ -627,7 +675,7 @@ mod tests {
             "PEM_KEY".to_string(),
             "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
         )];
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
         // Literal newlines must be escaped as \n in the YAML double-quoted string.
         assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
         // The value must NOT contain unescaped literal newlines.
@@ -636,7 +684,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_no_secrets_produces_valid_structure() {
-        let yaml = build_compose_override("myservice", 8080, &[], None, &no_limits(), &[]);
+        let yaml = build_compose_override("myservice", 8080, &[], None, None, &no_limits(), &[]);
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("myservice:"));
@@ -767,7 +815,7 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
 
         // Git identity env vars use the secret values.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -790,7 +838,7 @@ mod tests {
             "project@example.com".to_string(),
         )];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
 
         // Email uses the secret value.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -814,6 +862,7 @@ mod tests {
             git_email: "agent@orkestra.local".to_string(),
             git_name: "Orkestra Agent".to_string(),
             claude_code_oauth_token: None,
+            opencode_api_key: None,
             gh_token: None,
             secret_envs: vec![],
             image: "myimage:latest".to_string(),
@@ -940,6 +989,7 @@ mod tests {
             3000,
             &[],
             None,
+            None,
             &ResourceLimits {
                 cpu_limit: Some(2.0),
                 memory_limit_mb: Some(4096),
@@ -955,7 +1005,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_resource_limits_when_none() {
-        let yaml = build_compose_override("app", 3000, &[], None, &no_limits(), &[]);
+        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
         assert!(!yaml.contains("cpus:"), "cpus should be absent");
         assert!(!yaml.contains("mem_limit:"), "mem_limit should be absent");
     }
@@ -1024,6 +1074,7 @@ mod tests {
             3000,
             &[],
             None,
+            None,
             &no_limits(),
             &[
                 "cache-vol:/root/.cache".to_string(),
@@ -1040,6 +1091,7 @@ mod tests {
             "app",
             3000,
             &[],
+            None,
             None,
             &no_limits(),
             &["cache-vol:/root/.cache".to_string()],
@@ -1061,6 +1113,7 @@ mod tests {
             3000,
             &[],
             None,
+            None,
             &no_limits(),
             &["/host/path:/container/path:ro".to_string()],
         );
@@ -1071,7 +1124,15 @@ mod tests {
 
     #[test]
     fn build_compose_override_includes_claude_token_when_set() {
-        let yaml = build_compose_override("app", 3000, &[], Some("sk-ant-abc"), &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            Some("sk-ant-abc"),
+            None,
+            &no_limits(),
+            &[],
+        );
         assert!(
             yaml.contains("CLAUDE_CODE_OAUTH_TOKEN: \"sk-ant-abc\""),
             "CLAUDE_CODE_OAUTH_TOKEN must appear in environment when set"
@@ -1080,7 +1141,7 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_claude_token_when_none() {
-        let yaml = build_compose_override("app", 3000, &[], None, &no_limits(), &[]);
+        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
         assert!(
             !yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"),
             "CLAUDE_CODE_OAUTH_TOKEN must be absent when None"
@@ -1097,10 +1158,127 @@ mod tests {
             ),
             ("OTHER_KEY".to_string(), "value".to_string()),
         ];
-        let yaml = build_compose_override("app", 3000, &secrets, None, &no_limits(), &[]);
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
         // Should not appear as a plain key-value secret injection.
         // (The param is None so it won't appear at all in this call.)
         assert!(!yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"));
+        // Other secrets still appear.
+        assert!(yaml.contains("OTHER_KEY: \"value\""));
+    }
+
+    // -- extract_opencode_api_key tests --
+
+    #[test]
+    fn extract_opencode_api_key_from_secrets() {
+        let secrets = vec![
+            ("OPENCODE_API_KEY".to_string(), "oc-key-abc123".to_string()),
+            ("API_KEY".to_string(), "mykey".to_string()),
+        ];
+
+        let (key, remaining) = extract_opencode_api_key(&secrets);
+
+        assert_eq!(key.as_deref(), Some("oc-key-abc123"));
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0, "API_KEY");
+    }
+
+    #[test]
+    fn extract_opencode_api_key_falls_back_to_env() {
+        let saved = std::env::var("OPENCODE_API_KEY").ok();
+        unsafe {
+            std::env::set_var("OPENCODE_API_KEY", "env-oc-key-xyz");
+        }
+
+        let (key, remaining) = extract_opencode_api_key(&[]);
+
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var("OPENCODE_API_KEY", v),
+                None => std::env::remove_var("OPENCODE_API_KEY"),
+            }
+        }
+
+        assert_eq!(key.as_deref(), Some("env-oc-key-xyz"));
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn extract_opencode_api_key_returns_none_when_absent() {
+        let saved = std::env::var("OPENCODE_API_KEY").ok();
+        unsafe {
+            std::env::remove_var("OPENCODE_API_KEY");
+        }
+
+        let (key, remaining) = extract_opencode_api_key(&[]);
+
+        unsafe {
+            if let Some(v) = saved {
+                std::env::set_var("OPENCODE_API_KEY", v);
+            }
+        }
+
+        assert!(key.is_none());
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn build_docker_run_args_includes_opencode_key_when_set() {
+        let config = DockerRunConfig {
+            opencode_api_key: Some("oc-key-test".to_string()),
+            ..default_run_config()
+        };
+        let args = build_docker_run_args(&config);
+        assert!(
+            args.contains(&"OPENCODE_API_KEY=oc-key-test".to_string()),
+            "OPENCODE_API_KEY must be injected when set"
+        );
+    }
+
+    #[test]
+    fn build_docker_run_args_omits_opencode_key_when_none() {
+        let config = default_run_config();
+        let args = build_docker_run_args(&config);
+        assert!(
+            !args.iter().any(|a| a.starts_with("OPENCODE_API_KEY=")),
+            "OPENCODE_API_KEY must be absent when None"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_includes_opencode_key_when_set() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            Some("oc-key-abc"),
+            &no_limits(),
+            &[],
+        );
+        assert!(
+            yaml.contains("OPENCODE_API_KEY: \"oc-key-abc\""),
+            "OPENCODE_API_KEY must appear in environment when set"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_omits_opencode_key_when_none() {
+        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
+        assert!(
+            !yaml.contains("OPENCODE_API_KEY"),
+            "OPENCODE_API_KEY must be absent when None"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_strips_opencode_key_from_secrets_env_vars() {
+        let secrets = vec![
+            ("OPENCODE_API_KEY".to_string(), "from-secret".to_string()),
+            ("OTHER_KEY".to_string(), "value".to_string()),
+        ];
+        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
+        // Should not appear as a plain key-value secret injection.
+        assert!(!yaml.contains("OPENCODE_API_KEY"));
         // Other secrets still appear.
         assert!(yaml.contains("OTHER_KEY: \"value\""));
     }

@@ -6,6 +6,7 @@
 //! 3. Does not contain business logic itself — that lives in interactions
 //!
 //! Each tick phase delegates to an interaction in the appropriate domain:
+//! - `task::retry_pending_adoptions` — adopt prewarm worktrees whose tasks are now Ready
 //! - `task::setup_awaiting` — set up tasks whose deps are satisfied
 //! - `stage::check_parent_completions` — advance parents when subtasks done
 //! - `agent::dispatch_completion` — route completed executions
@@ -351,6 +352,15 @@ impl OrchestratorLoop {
 
         // Load + categorize once
         let snapshot = self.build_snapshot()?;
+
+        // Retry worktree adoption for tasks that missed their prewarm window
+        {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            let adopted = task_interactions::retry_pending_adoptions::execute(api.store.as_ref())?;
+            for id in &adopted {
+                orkestra_debug!("orchestrator", "Deferred worktree adoption for task {id}");
+            }
+        }
 
         // Setup tasks whose dependencies are satisfied
         {

@@ -12,5 +12,6 @@ pub mod generate_title;
 pub mod list;
 pub mod recover_stale_agents;
 pub mod recover_stale_setup;
+pub mod retry_pending_adoptions;
 pub mod setup_awaiting;
 pub mod setup_worktree;

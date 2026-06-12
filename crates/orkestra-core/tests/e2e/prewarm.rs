@@ -351,6 +351,314 @@ fn test_startup_recovery_cleans_worktree_records() {
 }
 
 // =============================================================================
+// Deferred adoption after Pending prewarm
+// =============================================================================
+
+#[test]
+fn test_deferred_adoption_after_pending_prewarm() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+
+    let task_id = "deferred-adopt-pending";
+
+    // Save a Pending record manually — simulates prewarm started but not yet done.
+    let pending_record = WorktreeRecord {
+        task_id: task_id.to_string(),
+        status: WorktreeStatus::Pending,
+        base_branch: None,
+        worktree_path: None,
+        branch_name: None,
+        base_commit: None,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&pending_record)
+        .expect("save pending record");
+
+    // Create chat task — adoption is skipped because record is Pending.
+    let task = ctx
+        .api()
+        .create_chat_task_with_prewarm(task_id, "Deferred adopt chat", None)
+        .expect("create chat should succeed");
+
+    assert!(
+        task.worktree_path.is_none(),
+        "worktree_path should be None when prewarm record is Pending"
+    );
+
+    // Simulate the background prewarm completing: create a real worktree and
+    // upgrade the record to Ready.
+    let wt_result = ctx
+        .api()
+        .git_service()
+        .expect("git service must be configured")
+        .ensure_worktree(task_id, None)
+        .expect("ensure_worktree should succeed");
+
+    let ready_record = WorktreeRecord {
+        task_id: task_id.to_string(),
+        status: WorktreeStatus::Ready,
+        worktree_path: Some(wt_result.worktree_path.to_string_lossy().into()),
+        branch_name: Some(wt_result.branch_name.clone()),
+        base_commit: Some(wt_result.base_commit.clone()),
+        base_branch: Some("main".into()),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&ready_record)
+        .expect("save ready record");
+
+    // One tick runs retry_pending_adoptions and adopts the now-Ready record.
+    ctx.advance();
+
+    let adopted = ctx.api().get_task(task_id).expect("task should exist");
+    assert!(
+        adopted.worktree_path.is_some(),
+        "deferred adoption should set worktree_path after tick"
+    );
+    assert!(
+        matches!(adopted.state, TaskState::Queued { ref stage } if stage == "chat"),
+        "chat task state should remain Queued{{chat}} after adoption, got: {:?}",
+        adopted.state
+    );
+}
+
+// =============================================================================
+// Startup cleanup: Ready record for live task survives (success criterion #3)
+// =============================================================================
+
+/// Verifies the preserve branch in `cleanup_orphaned_worktree_records`:
+/// a Ready record that belongs to an existing task is kept intact so that
+/// `retry_pending_adoptions` can adopt it in the same startup pass.
+///
+/// Scenario: task exists with `worktree_path` = None, a Ready record arrives
+/// (e.g. prewarm completed between session exit and restart), startup recovery
+/// runs — the record must survive cleanup.
+#[test]
+fn test_cleanup_preserves_ready_record_for_live_task() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+
+    // Create a chat task without prewarm — task has no worktree yet.
+    let task = ctx
+        .api()
+        .create_chat_task_with_prewarm("live-task-no-wt", "Chat no wt", None)
+        .expect("create chat should succeed");
+    assert!(
+        task.worktree_path.is_none(),
+        "task should have no worktree when created without prewarm"
+    );
+
+    // Simulate a prewarm that completed after the previous session exited:
+    // save a Ready record directly (not via the API prewarm flow, so adoption
+    // has NOT run yet).
+    let ready_record = WorktreeRecord {
+        task_id: "live-task-no-wt".to_string(),
+        status: WorktreeStatus::Ready,
+        worktree_path: Some("/tmp/prewarm-ready".to_string()),
+        branch_name: Some("task/live-task-no-wt".to_string()),
+        base_commit: Some("abc123".to_string()),
+        base_branch: Some("main".to_string()),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&ready_record)
+        .expect("save ready record");
+
+    // Startup recovery: cleanup preserves the Ready record, then
+    // retry_pending_adoptions adopts it (consuming the record).
+    ctx.run_startup_recovery();
+
+    // If cleanup had incorrectly deleted the record, adoption would never run
+    // and worktree_path would still be None. A set worktree_path proves the
+    // preserve branch fired and adoption succeeded.
+    let task_after = ctx.api().get_task("live-task-no-wt").expect("store query");
+    assert!(
+        task_after.worktree_path.is_some(),
+        "task must have worktree_path after recovery — proves cleanup preserved the Ready record so retry_pending_adoptions could adopt it"
+    );
+}
+
+// =============================================================================
+// Startup cleanup preserves Ready records, deletes Pending records
+// =============================================================================
+
+#[test]
+fn test_cleanup_preserves_ready_records_deletes_pending() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+
+    let task_id_a = "cleanup-task-a";
+    let task_id_b = "cleanup-task-b";
+
+    // Create task_a with a real prewarmed worktree.
+    ctx.api()
+        .prewarm_worktree(task_id_a, None)
+        .expect("prewarm task_a");
+    ctx.api()
+        .create_chat_task_with_prewarm(task_id_a, "Chat A", None)
+        .expect("create chat_a");
+
+    // Create task_b with a real prewarmed worktree.
+    ctx.api()
+        .prewarm_worktree(task_id_b, None)
+        .expect("prewarm task_b");
+    ctx.api()
+        .create_chat_task_with_prewarm(task_id_b, "Chat B", None)
+        .expect("create chat_b");
+
+    // Overwrite with a Pending record for task_b — simulates a dead prewarm thread.
+    let pending_record = WorktreeRecord {
+        task_id: task_id_b.to_string(),
+        status: WorktreeStatus::Pending,
+        base_branch: None,
+        worktree_path: None,
+        branch_name: None,
+        base_commit: None,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&pending_record)
+        .expect("save pending record for task_b");
+
+    // Save a Ready record for a task that doesn't exist — orphaned record.
+    let orphan_record = WorktreeRecord {
+        task_id: "nonexistent-task-id".to_string(),
+        status: WorktreeStatus::Ready,
+        worktree_path: Some("/tmp/ghost".to_string()),
+        branch_name: Some("task/ghost".to_string()),
+        base_commit: Some("abc123".to_string()),
+        base_branch: Some("main".to_string()),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&orphan_record)
+        .expect("save orphan record");
+
+    ctx.run_startup_recovery();
+
+    // Orphaned record (no matching task) must be deleted.
+    assert!(
+        ctx.api()
+            .test_store()
+            .get_worktree_record("nonexistent-task-id")
+            .expect("store query")
+            .is_none(),
+        "Ready record for non-existent task must be deleted by cleanup"
+    );
+
+    // Pending record for an existing task must be deleted (dead prewarm thread).
+    assert!(
+        ctx.api()
+            .test_store()
+            .get_worktree_record(task_id_b)
+            .expect("store query")
+            .is_none(),
+        "Pending record for existing task must be deleted by cleanup"
+    );
+}
+
+// =============================================================================
+// Full deferred-adopt → promote → recovery lifecycle
+// =============================================================================
+
+#[test]
+fn test_deferred_adopt_promote_survives_cleanup() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+
+    let task_id = "deferred-promote-recover";
+
+    // Save a Pending record — prewarm not yet done.
+    let pending_record = WorktreeRecord {
+        task_id: task_id.to_string(),
+        status: WorktreeStatus::Pending,
+        base_branch: None,
+        worktree_path: None,
+        branch_name: None,
+        base_commit: None,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&pending_record)
+        .expect("save pending record");
+
+    // Create chat task — adoption skipped, worktree_path = None.
+    let task = ctx
+        .api()
+        .create_chat_task_with_prewarm(task_id, "Deferred promote chat", None)
+        .expect("create chat should succeed");
+    assert!(
+        task.worktree_path.is_none(),
+        "worktree_path should be None when prewarm is Pending"
+    );
+
+    // Simulate prewarm completing: create real worktree, upgrade record to Ready.
+    let wt_result = ctx
+        .api()
+        .git_service()
+        .expect("git service required")
+        .ensure_worktree(task_id, None)
+        .expect("ensure_worktree should succeed");
+
+    let ready_record = WorktreeRecord {
+        task_id: task_id.to_string(),
+        status: WorktreeStatus::Ready,
+        worktree_path: Some(wt_result.worktree_path.to_string_lossy().into()),
+        branch_name: Some(wt_result.branch_name.clone()),
+        base_commit: Some(wt_result.base_commit.clone()),
+        base_branch: Some("main".into()),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&ready_record)
+        .expect("save ready record");
+
+    // Tick runs deferred adoption.
+    ctx.advance();
+
+    let adopted = ctx.api().get_task(task_id).expect("task should exist");
+    let worktree_path = adopted
+        .worktree_path
+        .clone()
+        .expect("worktree_path should be set after deferred adoption");
+
+    // Promote chat → flow; task has worktree_path so setup is skipped.
+    let promoted = ctx
+        .api()
+        .promote_to_flow(task_id, None, None, None, None, None)
+        .expect("promote should succeed");
+
+    assert!(
+        matches!(promoted.state, TaskState::Queued { .. }),
+        "promoted task with worktree should be Queued, not AwaitingSetup, got: {:?}",
+        promoted.state
+    );
+
+    // Simulate restart: startup recovery should preserve the Ready record for
+    // an existing task and leave the worktree intact.
+    ctx.run_startup_recovery();
+
+    let recovered = ctx
+        .api()
+        .get_task(task_id)
+        .expect("task should survive recovery");
+    assert!(
+        recovered.worktree_path.is_some(),
+        "worktree_path should survive startup recovery"
+    );
+
+    // Worktree directory must still exist on disk.
+    assert!(
+        std::path::Path::new(&worktree_path).exists(),
+        "worktree directory must still exist on disk after recovery"
+    );
+}
+
+// =============================================================================
 // Prewarmed task completes integration (branch_name populated correctly)
 // =============================================================================
 

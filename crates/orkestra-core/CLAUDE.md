@@ -92,12 +92,13 @@ store.save_task(&task)?;  // Only in interactions
 
 The orchestrator is a thin sequencer that dispatches to domain interactions:
 
-1. **Setup awaiting tasks** → `task::setup_awaiting::execute()`
-2. **Check parent completions** → `stage::check_parent_completions::execute()`
-3. **Process completed executions** → `agent::dispatch_completion::execute()`
-4. **Commit pipeline** → `stage::advance_all_committed::execute()`
-5. **Find spawn candidates** → `task::find_spawn_candidates::execute()`
-6. **Integration OR PR creation** → `tick_integration_or_pr()` helper — `else if` mutual exclusion: at most one of these runs per tick.
+1. **Adopt prewarm worktrees** → `task::retry_pending_adoptions::execute()` — adopt any `WorktreeRecord` whose task is now `Ready`
+2. **Setup awaiting tasks** → `task::setup_awaiting::execute()`
+3. **Check parent completions** → `stage::check_parent_completions::execute()`
+4. **Process completed executions** → `agent::dispatch_completion::execute()`
+5. **Commit pipeline** → `stage::advance_all_committed::execute()`
+6. **Find spawn candidates** → `task::find_spawn_candidates::execute()`
+7. **Integration OR PR creation** → `tick_integration_or_pr()` helper — `else if` mutual exclusion: at most one of these runs per tick.
 
 Business logic lives in interactions; orchestrator handles I/O plumbing (locks, threads, events).
 
@@ -368,6 +369,24 @@ std::env::remove_var("ORK_CAPTURE_ARGS_FILE");   // clean up — prevent leakage
 ```
 
 This pattern is the correct way to verify multi-spawn arg sequences; direct mock inspection can't capture ordering across crash boundaries.
+
+### Prewarm Recovery Test Assertions
+
+When testing that `cleanup_orphaned_worktree_records` preserved a `Ready` record so that adoption could succeed, **do not assert the raw store record still exists after `run_startup_recovery`**. The `retry_pending_adoptions` phase runs *inside* the same recovery pass and consumes (adopts + deletes) the record. Asserting the record exists post-recovery always fails.
+
+Instead, assert the observable downstream effect:
+
+```rust
+// Bad — retry_pending_adoptions consumes the record during recovery
+let records = store.list_worktree_records().unwrap();
+assert!(records.iter().any(|r| r.task_id == task.id));
+
+// Good — proves the record was preserved long enough for adoption to succeed
+let task = api.get_task(&task_id).unwrap();
+assert!(task.worktree_path.is_some());
+```
+
+This pattern applies to any assertion about intermediate store state when the recovery pass itself transforms that state.
 
 ### Known Test Gaps in `init.rs`
 

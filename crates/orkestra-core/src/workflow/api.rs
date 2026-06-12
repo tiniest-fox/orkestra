@@ -377,6 +377,11 @@ impl WorkflowApi {
 
 #[cfg(feature = "testutil")]
 impl WorkflowApi {
+    /// Expose the workflow store for direct record manipulation in e2e tests.
+    pub fn test_store(&self) -> &Arc<dyn WorkflowStore> {
+        &self.store
+    }
+
     /// Replace the PR description generator.
     ///
     /// Used in e2e tests to inject a custom mock before calling `create_pr_sync`.

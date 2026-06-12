@@ -3,8 +3,12 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createMockWorkflowTaskView } from "../../test/mocks/fixtures";
-import type { PrStatus } from "../../types/workflow";
+import type { PrStatus, SyncStatus } from "../../types/workflow";
 import { StatusSymbol } from "./StatusSymbol";
+
+function makeSyncStatus(overrides: Partial<SyncStatus>): SyncStatus {
+  return { ahead: 0, behind: 0, diverged: false, ...overrides };
+}
 
 function makePrStatus(overrides: Partial<PrStatus> & Pick<PrStatus, "state">): PrStatus {
   return {
@@ -244,5 +248,78 @@ describe("StatusSymbol — done task", () => {
     const svg = container.querySelector("[data-testid='icon-passing']");
     expect(svg).toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-success");
+  });
+
+  it("renders GitCompareArrows with info colors when done task is ahead of remote", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({ state: "open", checks: [{ name: "ci", status: "success" }] })}
+        syncStatus={makeSyncStatus({ ahead: 2 })}
+      />,
+    );
+    const svg = container.querySelector("[data-testid='icon-needs-push']");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-info");
+    expect(svg?.parentElement?.parentElement).toHaveClass("bg-status-info-bg");
+  });
+
+  it("needs-push takes precedence over failing checks", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({ state: "open", checks: [{ name: "ci", status: "failure" }] })}
+        syncStatus={makeSyncStatus({ ahead: 1 })}
+      />,
+    );
+    const pushSvg = container.querySelector("[data-testid='icon-needs-push']");
+    expect(pushSvg).toBeInTheDocument();
+    expect(container.querySelector("[data-testid='icon-failing']")).not.toBeInTheDocument();
+    expect(pushSvg?.parentElement).toHaveClass("text-status-info");
+    expect(pushSvg?.parentElement).not.toHaveClass("text-status-error");
+  });
+
+  it("conflicts take precedence over needs-push", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({ state: "open", mergeable: false, merge_state_status: "DIRTY" })}
+        syncStatus={makeSyncStatus({ ahead: 3 })}
+      />,
+    );
+    const conflictSvg = container.querySelector("[data-testid='icon-conflicts']");
+    expect(conflictSvg).toBeInTheDocument();
+    expect(container.querySelector("[data-testid='icon-needs-push']")).not.toBeInTheDocument();
+    expect(conflictSvg?.parentElement).toHaveClass("text-status-warning");
+  });
+
+  it("in-sync task shows normal check status (no needs-push override)", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({ state: "open", checks: [{ name: "ci", status: "failure" }] })}
+        syncStatus={makeSyncStatus({ ahead: 0 })}
+      />,
+    );
+    const svg = container.querySelector("[data-testid='icon-failing']");
+    expect(svg).toBeInTheDocument();
+    expect(container.querySelector("[data-testid='icon-needs-push']")).not.toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-error");
   });
 });

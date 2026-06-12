@@ -105,7 +105,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
     draftChatOpen && !taskAssistantId,
   );
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
-  const { getPrStatus } = usePrStatus();
+  const { getPrStatus, getTaskSyncStatus } = usePrStatus();
 
   const drawerOpen = panelOpen || isNewTaskOpen;
   const activeTask = activeTaskId ? (tasks.find((t) => t.id === activeTaskId) ?? null) : null;
@@ -380,6 +380,7 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                 config={config}
                 focusedId={focusedId}
                 getPrStatus={getPrStatus}
+                getTaskSyncStatus={getTaskSyncStatus}
                 onFocusRow={setFocusedId}
                 onReview={setActiveTaskId}
                 onAnswer={setActiveTaskId}

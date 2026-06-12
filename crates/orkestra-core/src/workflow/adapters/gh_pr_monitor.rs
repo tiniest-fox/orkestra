@@ -72,7 +72,6 @@ impl GhPrMonitor {
     }
 
     fn fetch_pr_state_and_checks(
-        &self,
         repo_root: &Path,
         pr_url: &str,
     ) -> Result<(PrState, Vec<AutoResolveCheckRun>, bool), PrError> {
@@ -115,7 +114,6 @@ impl GhPrMonitor {
     }
 
     fn fetch_comments(
-        &self,
         owner: &str,
         repo: &str,
         number: u64,
@@ -158,7 +156,6 @@ impl GhPrMonitor {
     }
 
     fn fetch_reviews(
-        &self,
         owner: &str,
         repo: &str,
         number: u64,
@@ -215,9 +212,9 @@ impl PrMonitor for GhPrMonitor {
     ) -> Result<AutoResolveStatus, PrError> {
         let (owner, repo, number) = Self::parse_pr_url(pr_url)?;
         let (pr_state, failed_checks, all_checks_concluded) =
-            self.fetch_pr_state_and_checks(repo_root, pr_url)?;
-        let comments = self.fetch_comments(&owner, &repo, number)?;
-        let reviews = self.fetch_reviews(&owner, &repo, number)?;
+            Self::fetch_pr_state_and_checks(repo_root, pr_url)?;
+        let comments = Self::fetch_comments(&owner, &repo, number)?;
+        let reviews = Self::fetch_reviews(&owner, &repo, number)?;
 
         Ok(AutoResolveStatus {
             pr_state,

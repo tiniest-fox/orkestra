@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use orkestra_parser::{
-    AgentParser, ClaudeParserService as ClaudeAgentParser,
+    AgentParser, ClaudeParserService as ClaudeAgentParser, CodexParserService as CodexAgentParser,
     OpenCodeParserService as OpenCodeAgentParser,
 };
 
@@ -104,8 +104,6 @@ impl std::fmt::Debug for ResolvedProvider {
 pub enum RegistryError {
     /// The provider name in the model spec is not registered.
     UnknownProvider(String),
-    /// A named provider is recognized but not yet implemented.
-    ProviderNotImplemented(String),
     /// A bare alias (no `/` prefix) had no match in any provider's alias table.
     UnknownAlias {
         alias: String,
@@ -117,9 +115,6 @@ impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnknownProvider(name) => write!(f, "Unknown provider: \"{name}\""),
-            Self::ProviderNotImplemented(name) => {
-                write!(f, "Provider \"{name}\" is not yet implemented")
-            }
             Self::UnknownAlias { alias, available } => {
                 write!(
                     f,
@@ -223,6 +218,7 @@ impl ProviderRegistry {
         match provider_name {
             "claudecode" | "claude-pty" => Ok(Box::new(ClaudeAgentParser::new())),
             "opencode" => Ok(Box::new(OpenCodeAgentParser::new())),
+            "codex" => Ok(Box::new(CodexAgentParser::new())),
             _ => Err(RegistryError::UnknownProvider(provider_name.to_string())),
         }
     }
@@ -364,10 +360,15 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
 pub fn codex_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
         execution_mode: ExecutionMode::Process,
-        supports_json_schema: false,
-        supports_sessions: false,
-        generates_own_session_id: false,
+        // Codex supports --output-schema for structured output via a temp file
+        supports_json_schema: true,
+        // Codex supports session resume via `codex exec resume <id> -`
+        supports_sessions: true,
+        // Session ID is extracted from the thread.started JSONL event
+        generates_own_session_id: true,
+        // Codex outputs plain JSON text, not tool-call format
         requires_direct_structured_output: false,
+        // No --system flag; system prompt is injected into the user message upstream
         supports_system_prompt: false,
     }
 }
@@ -600,8 +601,8 @@ mod tests {
         let resolved = registry.resolve(Some("codex/o4-mini")).unwrap();
         assert_eq!(resolved.provider_name, "codex");
         assert_eq!(resolved.model_id, Some("o4-mini".to_string()));
-        assert!(!resolved.capabilities.supports_json_schema);
-        assert!(!resolved.capabilities.supports_sessions);
+        assert!(resolved.capabilities.supports_json_schema);
+        assert!(resolved.capabilities.supports_sessions);
     }
 
     #[test]
@@ -817,11 +818,17 @@ mod tests {
     #[test]
     fn codex_capabilities_are_correct() {
         let caps = codex_capabilities();
-        assert!(!caps.supports_json_schema);
-        assert!(!caps.supports_sessions);
-        assert!(!caps.generates_own_session_id);
+        assert!(caps.supports_json_schema);
+        assert!(caps.supports_sessions);
+        assert!(caps.generates_own_session_id);
         assert!(!caps.requires_direct_structured_output);
         assert!(!caps.supports_system_prompt);
         assert_eq!(caps.execution_mode, ExecutionMode::Process);
+    }
+
+    #[test]
+    fn codex_parser_is_created() {
+        let registry = test_registry();
+        assert!(registry.create_parser("codex").is_ok());
     }
 }

@@ -1,10 +1,13 @@
-//! Codex process spawner adapter.
+//! Codex CLI process spawner adapter.
 
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+
+use tempfile::NamedTempFile;
 
 use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 
@@ -14,17 +17,18 @@ use crate::orkestra_debug;
 // Codex Process Spawner
 // ============================================================================
 
-/// Spawner for `OpenAI` Codex CLI processes.
+/// Spawner for Codex CLI processes.
 ///
-/// This is the production implementation of `ProcessSpawner` for the
-/// Codex CLI. It spawns `codex` in non-interactive (`--full-auto`) mode.
+/// This is the production implementation of `ProcessSpawner` for the Codex CLI.
+/// It spawns `codex exec` in non-interactive mode with `--json` for structured
+/// JSONL event output.
 ///
-/// Key differences from Claude Code:
-/// - Uses `codex --full-auto` instead of `claude`
-/// - Does not support session resume
-/// - Does not support native `--json-schema` enforcement
-/// - Does not support system prompts via CLI flags
-/// - Does not support disallowed tools via CLI flags
+/// Key differences from Claude Code and `OpenCode`:
+/// - Uses `codex exec` for fresh sessions, `codex exec resume <id> -` to resume
+/// - Session ID is extracted from the `thread.started` JSONL event (like `OpenCode`)
+/// - Structured output uses file-based `--output-schema`, not an inline flag
+/// - No system prompt flag (`--system` is not supported)
+/// - Resume does not use `-C`; CWD is set via `cmd.current_dir()` instead
 pub struct CodexProcessSpawner;
 
 impl CodexProcessSpawner {
@@ -46,7 +50,6 @@ impl ProcessSpawner for CodexProcessSpawner {
         working_dir: &Path,
         config: ProcessConfig,
     ) -> Result<ProcessHandle, ProcessError> {
-        // Codex does NOT support system prompts via CLI flags.
         if config.system_prompt.is_some() {
             orkestra_debug!(
                 "codex",
@@ -54,7 +57,6 @@ impl ProcessSpawner for CodexProcessSpawner {
             );
         }
 
-        // Codex does NOT support disallowed_tools via CLI flags.
         if !config.disallowed_tools.is_empty() {
             orkestra_debug!(
                 "codex",
@@ -62,22 +64,51 @@ impl ProcessSpawner for CodexProcessSpawner {
             );
         }
 
-        // Codex does NOT support session resume.
+        let mut cmd = Command::new("codex");
+        cmd.arg("exec");
+
         if config.is_resume {
-            orkestra_debug!(
-                "codex",
-                "WARNING: is_resume=true but Codex does not support session resume; starting fresh"
-            );
+            // Resume: `codex exec resume <session-id> -`
+            // The `-` tells Codex to read the continuation prompt from stdin.
+            // No `-C` flag — CWD is set via cmd.current_dir() below.
+            if let Some(ref sid) = config.session_id {
+                cmd.args(["resume", sid, "-"]);
+            }
+        } else {
+            // Fresh: set the working directory via the -C flag (in addition to current_dir).
+            cmd.arg("-C");
+            cmd.arg(working_dir);
         }
 
-        let mut cmd = Command::new("codex");
-
-        // Non-interactive full-auto mode (no approval prompts)
-        cmd.arg("--full-auto");
+        // Request JSONL event output
+        cmd.arg("--json");
 
         // Pass model if specified
         if let Some(ref model) = config.model {
-            cmd.args(["--model", model]);
+            cmd.args(["-m", model]);
+        }
+
+        // Bypass approval system and ignore user/project config
+        cmd.args([
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ignore-rules",
+            "--ignore-user-config",
+        ]);
+
+        // Structured output: write schema to a temp file that outlives this call.
+        // NamedTempFile::into_temp_path().keep() persists the file in the OS temp dir,
+        // avoiding lifetime issues with ProcessHandle which outlives this function.
+        if let Some(ref schema) = config.json_schema {
+            let mut tmpfile = NamedTempFile::new()
+                .map_err(|e| ProcessError::SpawnFailed(format!("codex schema temp file: {e}")))?;
+            tmpfile
+                .write_all(schema.as_bytes())
+                .map_err(|e| ProcessError::SpawnFailed(format!("codex schema write: {e}")))?;
+            let schema_path = tmpfile
+                .into_temp_path()
+                .keep()
+                .map_err(|e| ProcessError::SpawnFailed(format!("codex schema persist: {e}")))?;
+            cmd.args(["--output-schema", &schema_path.to_string_lossy()]);
         }
 
         // Apply environment when resolved: env_clear + envs replaces inherited env.
@@ -135,14 +166,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_codex_process_spawner_default() {
-        let spawner = CodexProcessSpawner;
+    fn codex_process_spawner_new() {
+        let spawner = CodexProcessSpawner::new();
         let _ = spawner;
     }
 
     #[test]
-    fn test_codex_process_spawner_new() {
-        let spawner = CodexProcessSpawner::new();
+    fn codex_process_spawner_default() {
+        let spawner = CodexProcessSpawner;
         let _ = spawner;
     }
 }

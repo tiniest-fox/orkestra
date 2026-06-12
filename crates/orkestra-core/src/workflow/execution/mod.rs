@@ -126,9 +126,9 @@ mod tests {
         );
     }
 
-    /// Verify codex is registered and routes correctly in the production registry.
+    /// Verify codex is registered with the correct capabilities.
     #[test]
-    fn production_registry_codex_routes_correctly() {
+    fn production_registry_codex_routes_and_has_correct_capabilities() {
         let registry = build_production_registry();
         let resolved = registry
             .resolve(Some("codex/o4-mini"))
@@ -136,6 +136,8 @@ mod tests {
         assert_eq!(resolved.provider_name, "codex");
         assert_eq!(resolved.model_id, Some("o4-mini".to_string()));
         assert_eq!(resolved.capabilities.execution_mode, ExecutionMode::Process);
-        assert!(!resolved.capabilities.supports_json_schema);
+        assert!(resolved.capabilities.supports_json_schema);
+        assert!(resolved.capabilities.generates_own_session_id);
+        assert!(!resolved.capabilities.supports_system_prompt);
     }
 }

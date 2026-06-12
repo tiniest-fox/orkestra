@@ -364,6 +364,8 @@ Forgetting this used to produce a silent fallback artifact ID. Now it surfaces a
 
 PTY orchestrator-level tests live in `tests/e2e/agents/pty.rs`. Two tests (`pty_full_orchestrator_run`, `pty_session_resume_after_rejection`) use `AgentTestEnv::new_pty_mock()` with a `mock_claude_pty.sh` injected via PATH. Both are `#[ignore]` — run with `--ignored` on a developer machine (require PTY support and Python3).
 
+**Companion scripts must be copied alongside the mock.** `mock_claude_pty.sh` sources `send_hook.sh` via `$(dirname "$0")/send_hook.sh`. Every `AgentTestEnv` constructor that copies the mock binary (`new_pty_mock`, `new_pty_crash_mock`, `swap_to_normal_mock`) must also copy `send_hook.sh` to the same temp bin directory. Missing this leaves `send_hook()` undefined — all hook calls become silent no-ops. The mock will still "work" (no shell error), but `UserPromptSubmit` events never fire, causing resume tests to hang indefinitely since the transcript growth fallback is disabled for resume sessions.
+
 **Remaining gap**: no test exercises the error path where `claude` is absent from PATH (task should fail with a clear error rather than hang).
 
 **`ORK_CAPTURE_ARGS_FILE` args-capture sidecar**: PTY crash/resume tests verify spawn args (`--session-id` vs `--resume`) by setting this env var to a temp file path. The mock PTY script appends its args to the file on each invocation; the test reads it back after each run to assert spawn behavior across crash/rejection cycles. Example from `pty_crash_recovery_resumes_session`:

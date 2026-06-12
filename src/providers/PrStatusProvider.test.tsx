@@ -160,6 +160,7 @@ describe("PrStatusProvider", () => {
         reviews: [],
         fetched_at: new Date().toISOString(),
       },
+      task_sync_status: null,
     });
 
     render(
@@ -187,6 +188,7 @@ describe("PrStatusProvider", () => {
         reviews: [],
         fetched_at: new Date().toISOString(),
       },
+      task_sync_status: null,
     });
 
     render(

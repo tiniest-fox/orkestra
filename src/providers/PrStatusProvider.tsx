@@ -1,7 +1,8 @@
 /**
- * Provider for PR status tracking with tiered polling.
+ * Provider for PR status and sync status tracking with tiered polling.
  *
- * Background polling (10s): All tasks with pr_url where state !== "merged" | "closed"
+ * Background polling (10s): All tasks with pr_url where state !== "merged" | "closed".
+ * Each poll fetches both PR status (get_pr_status) and branch sync status (task_sync_status).
  * Active polling (2s): Single task set via setActivePoll (e.g., PR tab open)
  *
  * Polling pauses when app loses focus (document.visibilityState === "hidden").

@@ -61,4 +61,9 @@ impl HookReceiver {
     ) -> Result<HookEvent, std::sync::mpsc::RecvTimeoutError> {
         self.receiver.recv_timeout(timeout)
     }
+
+    /// Non-blocking receive — returns immediately with `Empty` if no event is queued.
+    pub fn try_recv(&self) -> Result<HookEvent, std::sync::mpsc::TryRecvError> {
+        self.receiver.try_recv()
+    }
 }

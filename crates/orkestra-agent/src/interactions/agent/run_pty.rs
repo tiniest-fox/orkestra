@@ -255,15 +255,15 @@ fn drive_pty_session(
             );
 
             finalize_pty_session(
-                FinalizePtyParams {
+                make_finalize_params(
                     pty_handle,
                     hook_server,
                     tx,
-                    parser: &mut *parser,
-                    task_id: ctx.task_id,
-                    schema: ctx.schema,
-                    fallback_transcript_path: &fallback_transcript_path,
-                },
+                    &mut *parser,
+                    ctx.task_id,
+                    ctx.schema,
+                    &fallback_transcript_path,
+                ),
                 hook_event.as_ref(),
                 full_output,
                 tail_file_pos,
@@ -272,15 +272,15 @@ fn drive_pty_session(
         ReadinessOutcome::EarlyCompletion(event) => {
             // Stop/SessionEnd arrived before the prompt was confirmed — skip tail entirely.
             finalize_pty_session(
-                FinalizePtyParams {
+                make_finalize_params(
                     pty_handle,
                     hook_server,
                     tx,
-                    parser: &mut *parser,
-                    task_id: ctx.task_id,
-                    schema: ctx.schema,
-                    fallback_transcript_path: &fallback_transcript_path,
-                },
+                    &mut *parser,
+                    ctx.task_id,
+                    ctx.schema,
+                    &fallback_transcript_path,
+                ),
                 Some(&event),
                 String::new(),
                 baseline_size_usize,
@@ -308,6 +308,26 @@ struct FinalizePtyParams<'a> {
     task_id: &'a str,
     schema: Option<&'a serde_json::Value>,
     fallback_transcript_path: &'a Path,
+}
+
+fn make_finalize_params<'a>(
+    pty_handle: PtyHandle,
+    hook_server: &'a HookServer,
+    tx: &'a Sender<RunEvent>,
+    parser: &'a mut dyn AgentParser,
+    task_id: &'a str,
+    schema: Option<&'a serde_json::Value>,
+    fallback_transcript_path: &'a Path,
+) -> FinalizePtyParams<'a> {
+    FinalizePtyParams {
+        pty_handle,
+        hook_server,
+        tx,
+        parser,
+        task_id,
+        schema,
+        fallback_transcript_path,
+    }
 }
 
 /// Resolve the transcript path, perform the final stabilized read, clean up the PTY
@@ -404,6 +424,14 @@ enum ReadinessOutcome {
     WriteFailed(String),
 }
 
+/// Returns `true` when the retry write should escalate to Ctrl-U + full prompt re-delivery.
+///
+/// Only applies on resume sessions after the 3rd bare-`\r` retry, once the TUI
+/// replay is expected to have finished and further bare enters won't help.
+fn should_escalate(is_resume: bool, retry_count: u32) -> bool {
+    is_resume && retry_count > 3
+}
+
 /// Wait for the PTY session to accept the prompt using dual-signal detection.
 ///
 /// Returns `Ready` when either the `UserPromptSubmit` hook fires OR the transcript
@@ -435,7 +463,7 @@ fn wait_for_readiness(
     loop {
         // Hook check — UserPromptSubmit signals prompt accepted; Stop/SessionEnd mean
         // the session completed before readiness was confirmed.
-        match hook_rx.receiver.try_recv() {
+        match hook_rx.try_recv() {
             Ok(event) => match event.event_type {
                 HookEventType::UserPromptSubmit => return ReadinessOutcome::Ready,
                 HookEventType::Stop | HookEventType::SessionEnd => {
@@ -447,9 +475,13 @@ fn wait_for_readiness(
         }
 
         // Transcript growth fallback — catches environments where hooks are unavailable.
-        let current_size = std::fs::metadata(transcript_path).map_or(0, |m| m.len());
-        if current_size > baseline_size {
-            return ReadinessOutcome::Ready;
+        // Skipped on resume: bookkeeping bytes grow the transcript before any real turn,
+        // causing a false-positive Ready before the prompt is actually read.
+        if !is_resume {
+            let current_size = std::fs::metadata(transcript_path).map_or(0, |m| m.len());
+            if current_size > baseline_size {
+                return ReadinessOutcome::Ready;
+            }
         }
 
         if std::time::Instant::now() >= deadline {
@@ -461,17 +493,15 @@ fn wait_for_readiness(
             polls_since_retry = 0;
             retry_count += 1;
 
-            let write_result = if !is_resume {
-                writer.write_all(b"\r").and_then(|()| writer.flush())
-            } else if retry_count <= 3 {
-                writer.write_all(b"\r").and_then(|()| writer.flush())
-            } else {
+            let write_result = if should_escalate(is_resume, retry_count) {
                 // Escalate: clear the composer line then re-deliver the full prompt.
                 writer
                     .write_all(b"\x15")
                     .and_then(|()| writer.write_all(prompt))
                     .and_then(|()| writer.write_all(b"\r"))
                     .and_then(|()| writer.flush())
+            } else {
+                writer.write_all(b"\r").and_then(|()| writer.flush())
             };
 
             if let Err(e) = write_result {
@@ -828,7 +858,7 @@ fn tail_transcript_until_stop(
     let mut polls_since_crash_check = 0u32;
 
     loop {
-        match hook_rx.receiver.try_recv() {
+        match hook_rx.try_recv() {
             Ok(event) => match event.event_type {
                 HookEventType::Stop | HookEventType::SessionEnd => {
                     orkestra_debug!(
@@ -1546,6 +1576,60 @@ mod tests {
         assert!(
             start.elapsed() < Duration::from_secs(2),
             "should return quickly for stable file"
+        );
+    }
+
+    #[test]
+    fn should_escalate_only_on_resume_after_3_retries() {
+        assert!(!should_escalate(false, 0), "fresh session never escalates");
+        assert!(
+            !should_escalate(false, 100),
+            "fresh session never escalates at high count"
+        );
+        assert!(
+            !should_escalate(true, 0),
+            "resume: 0 retries — no escalation"
+        );
+        assert!(
+            !should_escalate(true, 3),
+            "resume: 3 retries — still bare \\r"
+        );
+        assert!(
+            should_escalate(true, 4),
+            "resume: 4th retry escalates to Ctrl-U + prompt"
+        );
+        assert!(
+            should_escalate(true, 100),
+            "resume: escalation persists at high count"
+        );
+    }
+
+    #[test]
+    fn wait_for_readiness_ignores_transcript_growth_on_resume() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+
+        // Write content above baseline — simulates TUI bookkeeping bytes on resume.
+        std::fs::write(&path, b"bookkeeping\n").unwrap();
+        let baseline = 0u64;
+
+        // Keep sender alive so try_recv returns Empty, not Disconnected.
+        let (_hook_tx, hook_rx_raw) = mpsc::channel::<HookEvent>();
+        let hook_rx = HookReceiver {
+            receiver: hook_rx_raw,
+        };
+        let mut writer: Box<dyn Write + Send> = Box::new(std::io::sink());
+
+        // If transcript growth were applied, Ready would fire immediately.
+        // With the guard in place, is_resume=true skips growth and reaches Timeout.
+        let deadline = std::time::Instant::now() + Duration::from_millis(600);
+        let outcome =
+            wait_for_readiness(&hook_rx, &mut writer, deadline, &path, baseline, b"", true);
+        assert!(
+            matches!(outcome, ReadinessOutcome::Timeout),
+            "resume sessions must not treat transcript growth as a ready signal"
         );
     }
 

@@ -17,6 +17,7 @@ use std::time::Duration;
 pub enum HookEventType {
     Stop,
     SessionEnd,
+    UserPromptSubmit,
 }
 
 /// A lifecycle event received from a Claude Code PTY session hook.

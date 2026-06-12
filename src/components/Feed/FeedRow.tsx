@@ -118,7 +118,12 @@ export function FeedRow({
               <span className="font-mono text-sm text-text-quaternary mt-0.5 text-center">↳</span>
             </>
           ) : (
-            <StatusSymbol task={task} waiting={waiting} prStatus={prStatus} syncStatus={syncStatus} />
+            <StatusSymbol
+              task={task}
+              waiting={waiting}
+              prStatus={prStatus}
+              syncStatus={syncStatus}
+            />
           )}
           <div className="min-w-0">
             <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">

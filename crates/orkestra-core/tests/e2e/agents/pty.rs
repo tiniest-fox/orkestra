@@ -81,6 +81,54 @@ fn pty_session_resume_after_rejection() {
     env.assert_has_artifact(&task_id, "summary");
 }
 
+/// Resume with bookkeeping bytes before turn: the old byte-growth heuristic
+/// would treat bookkeeping writes as "ready" and exit the retry loop with zero
+/// resends, causing `tail_transcript_until_stop` to block forever.
+/// The hook-gated readiness path waits for `UserPromptSubmit`, so bookkeeping
+/// bytes don't trigger a false positive.
+#[test]
+#[ignore = "requires PTY support and Python3; run with --ignored on a developer machine"]
+fn pty_resume_bookkeeping_does_not_cause_hang() {
+    let env = helpers::AgentTestEnv::new_pty_mock();
+    let task_id = env.create_task(
+        "PTY resume bookkeeping test",
+        "Test resume with bookkeeping.",
+    );
+
+    // First run
+    env.run_to_completion(&task_id, Duration::from_mins(1));
+    env.assert_has_artifact(&task_id, "summary");
+
+    // Reject to trigger resume
+    env.reject(&task_id, "Please try again with more detail.");
+
+    // Second run — mock writes bookkeeping bytes to transcript before reading
+    // stdin. Under the old code, this caused an immediate false "ready" then
+    // hang. Under the new code, readiness requires the UserPromptSubmit hook.
+    env.run_to_completion(&task_id, Duration::from_mins(1));
+
+    let session = env.get_stage_session(&task_id, "work");
+    assert!(
+        session.spawn_count >= 2,
+        "Should have spawned at least twice (initial + resume)"
+    );
+    env.assert_has_artifact(&task_id, "summary");
+}
+
+/// Cold boot with bookkeeping bytes before first turn: the mock writes a
+/// bookkeeping line to the transcript before reading stdin, simulating
+/// Claude Code's TUI init. The hook-gated readiness path is immune to this.
+#[test]
+#[ignore = "requires PTY support and Python3; run with --ignored on a developer machine"]
+fn pty_cold_boot_bookkeeping_does_not_block() {
+    let env = helpers::AgentTestEnv::new_pty_mock();
+    let task_id = env.create_task("PTY cold boot test", "Test cold boot with bookkeeping.");
+
+    env.run_to_completion(&task_id, Duration::from_mins(1));
+    env.assert_has_logs(&task_id, "work");
+    env.assert_has_artifact(&task_id, "summary");
+}
+
 /// Crash recovery and session resume: verify that a PTY process that exits without
 /// firing the Stop hook is detected as dead, transcript is still read, and subsequent
 /// runs after rejection complete normally.

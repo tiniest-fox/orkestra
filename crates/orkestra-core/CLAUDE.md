@@ -103,6 +103,8 @@ Business logic lives in interactions; orchestrator handles I/O plumbing (locks, 
 
 **`auto_pr` vs `auto_merge` precedence**: `find_next_candidate` (merge) skips tasks with `auto_pr=true` via a `!h.auto_pr` guard; `find_pr_candidate` then picks them up in the `else if` branch. Subtasks are always merged via `auto_merge` regardless of `auto_pr`. Result: for top-level tasks, `auto_pr` wins over `auto_merge` — they never both apply to the same task.
 
+**`auto_resolve` implies `auto_pr`**: `create::execute` sets `auto_pr = auto_pr || auto_resolve`. This is the single source of truth — the CLI layer must pass `auto_pr` from its own flag only and let the interaction enforce the implication. Do not re-apply `auto_pr || auto_resolve` in CLI argument parsing or any caller above `create::execute`.
+
 ### Narrow Mutex Scopes
 
 When spawning background work that might call back into the API, gather inputs while holding the lock, then explicitly `drop(lock)` before spawning:
@@ -214,6 +216,14 @@ The key insight: `AwaitingApproval` + approval-capability stage is unambiguous. 
 Tests that verify lock contention (e.g., "second orchestrator is blocked") must use a real running process — either a live `OrchestratorLoop` or a subprocess. Writing `current_pid:fresh_ts` into the lock file does **not** work: `acquire()` sees a fresh timestamp + alive PID, enters the backoff loop, but the call returns `Ok(Stopped)` instead of blocking to `TimedOut`. The root cause: `std::fs::write` truncates the file to zero before writing, creating a brief window where a concurrent reader sees `LockState::Corrupt` and steals the lock. The lock writes are now atomic (write to `.tmp`, rename over target), but the manual-file-write approach still races because the test's write also truncates. Workaround: spin up a real orchestrator A with `build_orchestrator()`, wait for its lock file to appear, then run orchestrator B.
 
 `ACQUIRE_TIMEOUT_SECS = 2` in test mode, so any test that exercises the blocking path takes ~4s (backoff schedule: 250ms → 500ms → 1s → 2s cap before timeout).
+
+### Auto-Resolve PR Feedback
+
+`GhPrMonitor` polls `repos/{owner}/{repo}/pulls/{number}/comments` — these are **review-thread comments only**. Issue-level comments (e.g., posted via `gh pr comment`) are **not** fetched. This is intentional: issue comments include the agent's own summary posts, which would cause a self-triggering loop. Side-effect: reviewer feedback posted as top-level PR comments (not in a review thread) won't trigger auto-resolve.
+
+**CHANGES_REQUESTED escalation is one-iteration-then-handoff by design.** When `GhPrMonitor` detects a CHANGES_REQUESTED review that persists after the agent's iteration completes, it sets `auto_resolve=false` and marks the task for human review. GitHub never auto-clears review state, so the first poll after an iteration will always see it and escalate. This is the intended conservative model: the agent gets one shot; if the reviewer still has unresolved concerns, a human takes over. Don't "fix" this timing — it's not a bug.
+
+**Limit enforcement lives in `trigger_feedback::execute` Step 6.** `auto_resolve` is set to `false` only at the start of the next poll (when the check fires), not immediately after the 10th trigger. When writing limit tests, seed `count` at the limit value (`count=10`), not one below — seeding `count=9` tests the increment path, not the enforcement gate.
 
 ## Anti-Patterns
 

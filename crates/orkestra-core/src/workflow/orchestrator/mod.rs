@@ -156,6 +156,17 @@ impl std::fmt::Display for OrchestratorError {
 impl std::error::Error for OrchestratorError {}
 
 // ============================================================================
+// Auto-Resolve Candidate
+// ============================================================================
+
+/// A task candidate for the auto-resolve polling job.
+struct AutoResolveCandidate {
+    task_id: String,
+    pr_url: String,
+    worktree_path: String,
+}
+
+// ============================================================================
 // Orchestrator Loop
 // ============================================================================
 
@@ -892,13 +903,17 @@ impl OrchestratorLoop {
             return Ok(());
         };
 
-        let candidate_ids: Vec<(String, String, String)> =
+        let candidate_ids: Vec<AutoResolveCandidate> =
             auto_resolve_interactions::find_candidates::execute(snapshot)
                 .into_iter()
                 .filter_map(|h| {
                     let pr_url = h.pr_url.clone()?;
-                    let worktree = h.worktree_path.clone()?;
-                    Some((h.id.clone(), pr_url, worktree))
+                    let worktree_path = h.worktree_path.clone()?;
+                    Some(AutoResolveCandidate {
+                        task_id: h.id.clone(),
+                        pr_url,
+                        worktree_path,
+                    })
                 })
                 .collect();
 
@@ -925,15 +940,15 @@ impl OrchestratorLoop {
                 }
             };
 
-            for (task_id, pr_url, worktree_path) in &candidate_ids {
-                let repo_root = std::path::Path::new(worktree_path);
-                let status = match monitor.fetch_auto_resolve_status(repo_root, pr_url) {
+            for candidate in &candidate_ids {
+                let repo_root = std::path::Path::new(&candidate.worktree_path);
+                let status = match monitor.fetch_auto_resolve_status(repo_root, &candidate.pr_url) {
                     Ok(s) => s,
                     Err(e) => {
                         orkestra_debug!(
                             "auto_resolve",
                             "task {}: fetch_auto_resolve_status failed: {}",
-                            task_id,
+                            candidate.task_id,
                             e
                         );
                         continue;
@@ -944,18 +959,18 @@ impl OrchestratorLoop {
                     store.as_ref(),
                     &workflow,
                     &iteration_service,
-                    task_id,
+                    &candidate.task_id,
                     &status,
                     &authenticated_user,
                 ) {
                     Ok(result) => {
-                        orkestra_debug!("auto_resolve", "task {}: {:?}", task_id, result);
+                        orkestra_debug!("auto_resolve", "task {}: {:?}", candidate.task_id, result);
                     }
                     Err(e) => {
                         orkestra_debug!(
                             "auto_resolve",
                             "task {}: trigger_feedback error: {}",
-                            task_id,
+                            candidate.task_id,
                             e
                         );
                     }

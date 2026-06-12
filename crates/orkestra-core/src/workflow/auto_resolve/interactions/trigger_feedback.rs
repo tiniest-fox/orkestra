@@ -20,6 +20,8 @@ const AUTO_RESOLVE_LIMIT: i32 = 10;
 pub enum TriggerResult {
     /// No new feedback found — task stays Done.
     NoNewFeedback,
+    /// Failed checks exist but CI has not yet fully concluded — waiting for pending runs.
+    WaitingForCi,
     /// A `PrFeedback` iteration was created and the task returned to Queued.
     Triggered,
     /// PR is no longer open (closed or merged) — nothing to do.
@@ -95,7 +97,8 @@ pub fn execute(
     };
 
     if effective_checks.is_empty() && feedback.comments.is_empty() {
-        return Ok(TriggerResult::NoNewFeedback);
+        // Failed checks exist but CI hasn't concluded — distinct from "nothing new"
+        return Ok(TriggerResult::WaitingForCi);
     }
 
     // Step 6: Check limit
@@ -126,9 +129,6 @@ pub fn execute(
         }
     }
     task.auto_resolve_count += 1;
-    if task.auto_resolve_count >= AUTO_RESOLVE_LIMIT {
-        task.auto_resolve = false;
-    }
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     // Step 8: Build PrCommentData and PrCheckData

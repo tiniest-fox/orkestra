@@ -293,10 +293,11 @@ fn test_auto_resolve_limit_pauses() {
     advance_to_done(&ctx, &task_id);
     set_pr_url(&ctx, &task_id, "https://github.com/acme/repo/pull/4");
 
-    // Pre-set auto_resolve_count to 9 and auto_resolve=true
+    // Pre-set auto_resolve_count to 10 (already at limit) and auto_resolve=true.
+    // Step 6 fires on the first poll: returns LimitReached, sets auto_resolve=false.
     let mut task = ctx.api().get_task(&task_id).unwrap();
     task.auto_resolve = true;
-    task.auto_resolve_count = 9;
+    task.auto_resolve_count = 10;
     ctx.api().save_task(&task).unwrap();
 
     let mock = Arc::new(MockPrMonitor::new());
@@ -317,7 +318,7 @@ fn test_auto_resolve_limit_pauses() {
     ctx.force_auto_resolve_check();
     ctx.tick();
 
-    // auto_resolve_count should now be 10, auto_resolve disabled
+    // Step 6 returned early (LimitReached): auto_resolve disabled, count unchanged.
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         !task.auto_resolve,
@@ -524,6 +525,64 @@ fn test_auto_resolve_escalates_on_stale_changes_requested() {
     assert_eq!(
         iterations_after, iterations_before,
         "No new iteration should be created on escalation"
+    );
+}
+
+/// A fresh (first-seen) `CHANGES_REQUESTED` review triggers an iteration AND the review ID is
+/// recorded in `resolved_feedback_ids.review_ids` for future stale-detection.
+#[test]
+fn test_auto_resolve_records_new_changes_requested_review_id() {
+    let workflow = disable_auto_merge(test_default_workflow());
+    let mut ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Record review ID test",
+        "Verify new CHANGES_REQUESTED ID is stored",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+    set_pr_url(&ctx, &task_id, "https://github.com/acme/repo/pull/12");
+    set_auto_resolve(&ctx, &task_id, true);
+
+    let mock = Arc::new(MockPrMonitor::new());
+    // Review ID 700 is new — not yet in resolved_feedback_ids
+    mock.set_next_status(AutoResolveStatus {
+        pr_state: PrState::Open,
+        failed_checks: vec![],
+        comments: vec![AutoResolveComment {
+            id: 701,
+            author: "reviewer".to_string(),
+            body: "Please fix this".to_string(),
+            path: None,
+            line: None,
+        }],
+        reviews: vec![AutoResolveReview {
+            id: 700,
+            author: "reviewer".to_string(),
+            state: ReviewState::ChangesRequested,
+        }],
+        all_checks_concluded: true,
+    });
+    ctx.set_pr_monitor(mock.clone() as Arc<dyn PrMonitor>);
+
+    ctx.force_auto_resolve_check();
+    ctx.tick();
+
+    // Iteration should have been triggered (new comment)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued after trigger, got: {:?}",
+        task.state
+    );
+
+    // Review ID 700 must now appear in resolved_feedback_ids so the next poll can detect
+    // it as stale if it persists.
+    assert!(
+        task.resolved_feedback_ids.review_ids.contains(&700),
+        "Review ID 700 should be recorded in resolved_feedback_ids.review_ids"
     );
 }
 

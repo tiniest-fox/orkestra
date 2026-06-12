@@ -4,12 +4,14 @@
 //! Pure logic, zero I/O. Follows the interface → service → interactions pattern.
 
 mod claude;
+mod codex;
 pub mod interactions;
 pub mod interface;
 mod opencode;
 pub mod types;
 
 pub use claude::ClaudeParserService;
+pub use codex::CodexParserService;
 pub use interface::AgentParser;
 pub use opencode::OpenCodeParserService;
 pub use types::{

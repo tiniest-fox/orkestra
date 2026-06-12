@@ -31,12 +31,8 @@ use orkestra_utility::ExecutionMode;
 // Constants
 // ============================================================================
 
-/// Disallowed tools for the read-only assistant: restricts file modification.
-const ASSISTANT_DISALLOWED_TOOLS: &str =
-    "EnterPlanMode,ExitPlanMode,Edit,Write,NotebookEdit,AskUserQuestion";
-
-/// Disallowed tools for the interactive session: only platform invariants.
-const INTERACTIVE_DISALLOWED_TOOLS: &str = "EnterPlanMode,ExitPlanMode";
+/// Tools disallowed in all assistant sessions: platform invariants only.
+const DISALLOWED_TOOLS: &str = "EnterPlanMode,ExitPlanMode";
 
 // ============================================================================
 // AssistantService
@@ -135,7 +131,7 @@ impl AssistantService {
             message,
             &self.project_root,
             &system_prompt,
-            ASSISTANT_DISALLOWED_TOOLS,
+            DISALLOWED_TOOLS,
         );
 
         self.handle_spawn_result(&mut session, spawn_result, &now)?;
@@ -188,33 +184,11 @@ impl AssistantService {
             message,
             SessionType::Assistant,
             |task| Self::build_task_system_prompt(task, workflow),
-            ASSISTANT_DISALLOWED_TOOLS,
+            DISALLOWED_TOOLS,
         )
     }
 
-    /// Send a message to the interactive session for `task_id`.
-    ///
-    /// The interactive session runs with full file-editing capabilities (no tool restrictions
-    /// beyond the platform invariants). The session type is `SessionType::Interactive`.
-    /// Creates a new interactive session if none exists for this task.
-    ///
-    /// Returns the session even if spawn fails — spawn failures are written as
-    /// `LogEntry::Error` to the session's logs so the UI can display them.
-    pub fn send_interactive_task_message(
-        &self,
-        task_id: &str,
-        message: &str,
-    ) -> WorkflowResult<AssistantSession> {
-        self.send_task_scoped_message(
-            task_id,
-            message,
-            SessionType::Interactive,
-            Self::build_interactive_system_prompt,
-            INTERACTIVE_DISALLOWED_TOOLS,
-        )
-    }
-
-    /// Shared logic for task-scoped message sending (assistant and interactive).
+    /// Shared logic for task-scoped message sending.
     ///
     /// Handles the full lifecycle: empty check, task load, session get-or-create,
     /// worktree validation, kill previous agent, store user message, spawn agent.
@@ -458,14 +432,6 @@ impl AssistantService {
             .replace("{current_stage}", &task.state.to_string())
             .replace("{artifacts}", &artifacts_text)
             .replace("{chat_promotion_guidance}", &chat_promotion_guidance)
-    }
-
-    /// Build the interactive-mode system prompt with task context interpolated.
-    fn build_interactive_system_prompt(task: &Task) -> String {
-        crate::prompts::INTERACTIVE_SYSTEM_PROMPT
-            .replace("{task_id}", &task.id)
-            .replace("{task_title}", &task.title)
-            .replace("{task_description}", &task.description)
     }
 
     /// Load the assistant system prompt template with flow/stage names injected.
@@ -820,11 +786,9 @@ fn generate_and_set_title(
 // Claude assistant process spawning
 // ============================================================================
 
-/// Spawns a Claude process for assistant or interactive sessions.
+/// Spawns a Claude process for an assistant session.
 ///
-/// The caller passes `disallowed_tools` to control capability restrictions:
-/// - Assistant (read-only): use `ASSISTANT_DISALLOWED_TOOLS`
-/// - Interactive (edit-capable): use `INTERACTIVE_DISALLOWED_TOOLS`
+/// The caller passes `disallowed_tools` to control capability restrictions.
 fn spawn_claude_process(
     working_dir: &std::path::Path,
     env: Option<std::collections::HashMap<String, String>>,

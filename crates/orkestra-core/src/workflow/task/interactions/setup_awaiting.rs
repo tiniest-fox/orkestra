@@ -50,6 +50,11 @@ pub fn execute(
             continue;
         };
 
+        // Guard: task may have been adopted by retry_pending_adoptions since snapshot
+        if !matches!(task.state, TaskState::AwaitingSetup { .. }) {
+            continue;
+        }
+
         // Transition to SettingUp BEFORE spawning (prevents double-spawn)
         let stage = task.current_stage().unwrap_or("unknown").to_string();
         task.state = TaskState::setting_up(stage);

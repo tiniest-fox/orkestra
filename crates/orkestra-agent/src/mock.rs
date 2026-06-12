@@ -142,10 +142,9 @@ impl MockAgentRunner {
     }
 
     /// Drain token events for `task_id` and send them on `tx`.
-    fn drain_token_events(&self, task_id: &Option<String>, tx: &mpsc::Sender<RunEvent>) {
-        if let Some(events) = task_id
-            .as_ref()
-            .and_then(|id| self.token_events.lock().unwrap().remove(id.as_str()))
+    fn drain_token_events(&self, task_id: Option<&String>, tx: &mpsc::Sender<RunEvent>) {
+        if let Some(events) =
+            task_id.and_then(|id| self.token_events.lock().unwrap().remove(id.as_str()))
         {
             for (usage, cost) in events {
                 let _ = tx.send(RunEvent::TokenUsage { usage, cost });
@@ -319,7 +318,7 @@ impl AgentRunner for MockAgentRunner {
             let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
                 content: "Mock agent activity".to_string(),
             }));
-            self.drain_token_events(&task_id, &tx);
+            self.drain_token_events(task_id.as_ref(), &tx);
             let _ = tx.send(RunEvent::Completed(Ok(output)));
         } else {
             // Fall through to existing behavior (non-activity outputs)
@@ -339,7 +338,7 @@ impl AgentRunner for MockAgentRunner {
                 let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
                     content: "Mock agent output".to_string(),
                 }));
-                self.drain_token_events(&task_id, &tx);
+                self.drain_token_events(task_id.as_ref(), &tx);
                 let _ = tx.send(RunEvent::Completed(Ok(output)));
             } else {
                 // No output configured — send error WITHOUT LogLine

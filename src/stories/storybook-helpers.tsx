@@ -43,6 +43,10 @@ export function createMockTransport(): Transport {
           return resolve({ files: [] });
         case "get_batch_file_counts":
           return resolve({});
+        case "get_pr_status":
+          return resolve(null);
+        case "task_sync_status":
+          return resolve(null);
         case "get_token_usage":
           return resolve({
             task_id: "mock-task",

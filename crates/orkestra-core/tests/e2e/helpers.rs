@@ -11,7 +11,7 @@ use tempfile::TempDir;
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::WorkflowConfig,
-    domain::{Question, Task},
+    domain::{Question, Task, TokenUsage},
     execution::{
         claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
         ProviderRegistry, RunConfig, StageOutput,
@@ -446,6 +446,14 @@ impl TestEnv {
         Arc::clone(&self.pr_service)
     }
 
+    /// Replace the PR description generator on the underlying `WorkflowApi`.
+    ///
+    /// Call this before `create_pr_sync` to inject a custom mock that returns
+    /// specific bodies or fix responses.
+    pub fn set_pr_description_generator(&self, gen: Arc<dyn PrDescriptionGenerator>) {
+        self.api.lock().unwrap().set_pr_description_generator(gen);
+    }
+
     /// Get the mock git service for verifying git operations.
     ///
     /// Only available when using `with_mock_git()`. Panics if called on
@@ -605,6 +613,12 @@ impl TestEnv {
     /// The mock sends a `LogLine` then `PlainText` completion, parking the task at `AwaitingApproval`.
     pub fn set_plain_text(&self, task_id: &str, text: impl Into<String>) {
         self.runner.set_plain_text(task_id, text);
+    }
+
+    /// Queue token usage events to emit before the next successful completion.
+    /// Events are emitted after `LogLine` but before `Completed`, matching real `OpenCode` ordering.
+    pub fn set_token_events(&self, task_id: &str, events: Vec<(TokenUsage, f64)>) {
+        self.runner.set_token_events(task_id, events);
     }
 
     /// Get the number of calls made to the mock runner.

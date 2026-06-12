@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::TokenUsage;
+
 /// State of a `StageSession`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -85,6 +87,18 @@ pub struct StageSession {
 
     /// When the session was last active (RFC3339).
     pub updated_at: String,
+
+    /// Token usage accumulated during this session. `None` for sessions that
+    /// predate DB token storage or haven't received any token events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<TokenUsage>,
+
+    /// Total cost accumulated during this session (provider-reported).
+    ///
+    /// Stored and persisted for future use; not yet surfaced in `TaskTokenUsage`
+    /// or `SessionTokenUsage` query results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_cost: Option<f64>,
 }
 
 impl StageSession {
@@ -111,6 +125,8 @@ impl StageSession {
             session_state: SessionState::Active,
             created_at: created.clone(),
             updated_at: created,
+            token_usage: None,
+            total_cost: None,
         }
     }
 

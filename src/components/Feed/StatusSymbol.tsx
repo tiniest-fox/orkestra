@@ -1,8 +1,8 @@
 // Text symbol indicating task status with signal color, background chip, and optional pulse.
 
-import { AlertTriangle, CircleCheck, CircleX, Clock } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX, Clock, GitCompareArrows } from "lucide-react";
 import type { ReactNode } from "react";
-import type { PrStatus, WorkflowTaskView } from "../../types/workflow";
+import type { PrStatus, SyncStatus, WorkflowTaskView } from "../../types/workflow";
 import { hasConflicts } from "../../utils/prStatus";
 import { isActivelyProgressing } from "../../utils/taskStatus";
 
@@ -11,6 +11,7 @@ interface StatusSymbolProps {
   /** When true, renders a dotted-circle waiting indicator instead of the task's derived status. */
   waiting?: boolean;
   prStatus?: PrStatus;
+  syncStatus?: SyncStatus;
 }
 
 interface StatusColors {
@@ -34,6 +35,7 @@ function derivePrHealth(prStatus: PrStatus): "passing" | "pending" | "failing" |
 function resolveColors(
   task: WorkflowTaskView,
   prStatus: PrStatus | undefined,
+  syncStatus: SyncStatus | undefined,
 ): {
   colors: StatusColors;
   symbol: string | ReactNode;
@@ -131,13 +133,21 @@ function resolveColors(
     }
     if (task.pr_url && prStatus) {
       const health = derivePrHealth(prStatus);
+      if (health === "conflicts") {
+        return {
+          colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
+          symbol: <AlertTriangle data-testid="icon-conflicts" size={PR_ICON_SIZE} />,
+          extraClass,
+        };
+      }
+      if ((syncStatus?.ahead ?? 0) > 0) {
+        return {
+          colors: { bg: "bg-status-info-bg", icon: "text-status-info" },
+          symbol: <GitCompareArrows data-testid="icon-needs-push" size={PR_ICON_SIZE} />,
+          extraClass,
+        };
+      }
       switch (health) {
-        case "conflicts":
-          return {
-            colors: { bg: "bg-status-warning-bg", icon: "text-status-warning" },
-            symbol: <AlertTriangle data-testid="icon-conflicts" size={PR_ICON_SIZE} />,
-            extraClass,
-          };
         case "failing":
           return {
             colors: { bg: "bg-status-error-bg", icon: "text-status-error" },
@@ -188,15 +198,16 @@ function resolveColors(
   };
 }
 
-export function StatusSymbol({ task, waiting, prStatus }: StatusSymbolProps) {
+export function StatusSymbol({ task, waiting, prStatus, syncStatus }: StatusSymbolProps) {
   const activePrStatus = task.derived.is_done && task.pr_url ? prStatus : undefined;
+  const activeSyncStatus = task.derived.is_done && task.pr_url ? syncStatus : undefined;
   const { colors, symbol, extraClass } = waiting
     ? {
         colors: { bg: "bg-transparent", icon: "text-text-tertiary" },
         symbol: "◌",
         extraClass: "",
       }
-    : resolveColors(task, activePrStatus);
+    : resolveColors(task, activePrStatus, activeSyncStatus);
 
   return (
     <span

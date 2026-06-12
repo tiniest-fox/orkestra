@@ -6,7 +6,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::Mutex;
 
 use orkestra_parser::StageOutput;
-use orkestra_types::domain::LogEntry;
+use orkestra_types::domain::{LogEntry, TokenUsage};
 
 use crate::interface::AgentRunner;
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent, RunResult};
@@ -30,6 +30,8 @@ pub struct MockAgentRunner {
     malformed_outputs: Mutex<HashMap<String, Vec<String>>>,
     /// Queue of plain text outputs: sends a `LogLine` then `PlainText` completion.
     plain_text_outputs: Mutex<HashMap<String, Vec<String>>>,
+    /// Token usage events to emit before completion for specific tasks.
+    token_events: Mutex<HashMap<String, Vec<(TokenUsage, f64)>>>,
     /// Next PID to assign.
     next_pid: AtomicU32,
     /// Recorded calls.
@@ -51,6 +53,7 @@ impl MockAgentRunner {
             failure_with_activity: Mutex::new(HashMap::new()),
             malformed_outputs: Mutex::new(HashMap::new()),
             plain_text_outputs: Mutex::new(HashMap::new()),
+            token_events: Mutex::new(HashMap::new()),
             next_pid: AtomicU32::new(10000),
             calls: Mutex::new(Vec::new()),
         }
@@ -117,6 +120,17 @@ impl MockAgentRunner {
             .push(text.into());
     }
 
+    /// Queue token usage events to emit before the next successful completion for a task.
+    ///
+    /// Events are emitted after the `LogLine` but before `Completed`, matching the real
+    /// `OpenCode` event ordering (`step_finish` → completion).
+    pub fn set_token_events(&self, task_id: &str, events: Vec<(TokenUsage, f64)>) {
+        self.token_events
+            .lock()
+            .unwrap()
+            .insert(task_id.to_string(), events);
+    }
+
     /// Get recorded calls.
     pub fn calls(&self) -> Vec<RunConfig> {
         self.calls.lock().unwrap().clone()
@@ -125,6 +139,17 @@ impl MockAgentRunner {
     /// Clear recorded calls.
     pub fn clear_calls(&self) {
         self.calls.lock().unwrap().clear();
+    }
+
+    /// Drain token events for `task_id` and send them on `tx`.
+    fn drain_token_events(&self, task_id: Option<&String>, tx: &mpsc::Sender<RunEvent>) {
+        if let Some(events) =
+            task_id.and_then(|id| self.token_events.lock().unwrap().remove(id.as_str()))
+        {
+            for (usage, cost) in events {
+                let _ = tx.send(RunEvent::TokenUsage { usage, cost });
+            }
+        }
     }
 
     /// Extract `task_id` from the prompt (looks for "Trak ID: xxx" pattern).
@@ -293,6 +318,7 @@ impl AgentRunner for MockAgentRunner {
             let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
                 content: "Mock agent activity".to_string(),
             }));
+            self.drain_token_events(task_id.as_ref(), &tx);
             let _ = tx.send(RunEvent::Completed(Ok(output)));
         } else {
             // Fall through to existing behavior (non-activity outputs)
@@ -312,6 +338,7 @@ impl AgentRunner for MockAgentRunner {
                 let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
                     content: "Mock agent output".to_string(),
                 }));
+                self.drain_token_events(task_id.as_ref(), &tx);
                 let _ = tx.send(RunEvent::Completed(Ok(output)));
             } else {
                 // No output configured — send error WITHOUT LogLine

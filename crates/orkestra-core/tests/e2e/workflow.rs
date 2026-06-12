@@ -21,7 +21,7 @@
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::{
     config::{GateConfig, IntegrationConfig, StageConfig, WorkflowConfig},
-    domain::{LogEntry, Question, QuestionAnswer, QuestionOption},
+    domain::{LogEntry, Question, QuestionAnswer, QuestionOption, TokenUsage},
     runtime::{Outcome, TaskState},
     CreateTaskOptions, TaskCreationMode,
 };
@@ -10322,5 +10322,102 @@ fn test_universal_prompt_injected_into_system_prompt() {
     assert!(
         system_prompt.contains("Prefer functional patterns"),
         "System prompt should contain full ORKESTRA.md content"
+    );
+}
+
+// =============================================================================
+// OpenCode Token Pipeline E2E Test
+// =============================================================================
+
+/// Verify the full `OpenCode` token pipeline: mock agent emits `RunEvent::TokenUsage`
+/// events → `ActiveAgent` accumulates → persisted to DB → `get_token_usage` returns
+/// correct summed totals.
+///
+/// This test exercises the DB path (as opposed to the JSONL path used by Claude Code),
+/// confirming that token events flow from the mock runner through the orchestrator
+/// tick loop into the `StageSession` and are queryable via the API.
+#[test]
+fn opencode_token_usage_persisted_and_queryable() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "result").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Token pipeline test",
+        "Verify token event accumulation",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Two token events: total input=3000, output=500, cost=0.13
+    ctx.set_token_events(
+        &task_id,
+        vec![
+            (
+                TokenUsage {
+                    input_tokens: 1000,
+                    output_tokens: 200,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                0.05,
+            ),
+            (
+                TokenUsage {
+                    input_tokens: 2000,
+                    output_tokens: 300,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                0.08,
+            ),
+        ],
+    );
+    ctx.set_output(&task_id, MockAgentOutput::artifact("result", "Work done"));
+
+    ctx.advance(); // spawns agent (mock emits token events then Completed synchronously)
+    ctx.advance(); // poll_active processes completion, persist_token_usage writes to DB
+
+    // Verify via get_token_usage: uses DB path because session.token_usage is now set
+    let usage = ctx
+        .api()
+        .get_token_usage(&task_id)
+        .expect("get_token_usage should succeed");
+
+    assert_eq!(usage.task_id, task_id);
+    assert_eq!(usage.stages.len(), 1, "should have one stage");
+
+    let stage = &usage.stages[0];
+    assert_eq!(stage.stage, "work");
+    assert_eq!(stage.sessions.len(), 1, "should have one session");
+
+    let session_usage = stage.sessions[0]
+        .usage
+        .as_ref()
+        .expect("session should have usage from DB path");
+    assert_eq!(session_usage.input_tokens, 3000);
+    assert_eq!(session_usage.output_tokens, 500);
+    assert_eq!(session_usage.cache_creation_input_tokens, 0);
+    assert_eq!(session_usage.cache_read_input_tokens, 0);
+
+    assert_eq!(stage.total.input_tokens, 3000);
+    assert_eq!(stage.total.output_tokens, 500);
+    assert_eq!(usage.total.input_tokens, 3000);
+    assert_eq!(usage.total.output_tokens, 500);
+
+    // Verify total_cost is persisted on the StageSession
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .expect("get_stage_session should succeed")
+        .expect("session should exist");
+
+    let total_cost = session
+        .total_cost
+        .expect("total_cost should be Some after token events");
+    assert!(
+        (total_cost - 0.13).abs() < 0.001,
+        "expected total_cost ~0.13, got {total_cost}"
     );
 }

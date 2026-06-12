@@ -35,6 +35,7 @@ type TransportMethod =
   | "delete_task"
   | "get_startup_data"
   | "get_pr_status"
+  | "task_sync_status"
   | "get_project_info"
   | "start_run_script"
   | "stop_run_script"
@@ -55,6 +56,7 @@ interface ResponseMap {
     reviews: unknown[];
     fetched_at: string;
   };
+  task_sync_status: { ahead: number; behind: number; diverged: boolean } | null;
   get_project_info: ProjectInfo;
   start_run_script: undefined;
   stop_run_script: undefined;

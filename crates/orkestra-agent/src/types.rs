@@ -10,6 +10,7 @@ use orkestra_parser::StageOutput;
 use orkestra_process::ProcessError;
 use orkestra_types::domain::LogEntry;
 use orkestra_types::domain::PromptSection;
+use orkestra_types::domain::TokenUsage;
 
 // ============================================================================
 // Run Configuration
@@ -165,6 +166,10 @@ impl std::fmt::Display for AgentCompletionError {
 // ============================================================================
 
 /// Events emitted during async agent execution.
+///
+/// **Ordering invariant**: `TokenUsage` events MUST be emitted before `Completed`.
+/// `poll()` in `ActiveAgent` stops processing after it receives `Completed`, so any
+/// `TokenUsage` events that arrive after it would be silently dropped.
 #[derive(Debug, Clone)]
 pub enum RunEvent {
     /// A parsed log entry from the agent's stdout stream.
@@ -172,6 +177,8 @@ pub enum RunEvent {
     /// A session ID extracted from the stream (emitted once for providers like
     /// `OpenCode` that generate their own session IDs).
     SessionId(String),
+    /// Token usage extracted from a `step_finish` event (`OpenCode` only).
+    TokenUsage { usage: TokenUsage, cost: f64 },
     /// Agent completed with parsed output.
     Completed(Result<StageOutput, AgentCompletionError>),
 }

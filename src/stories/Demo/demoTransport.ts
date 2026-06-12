@@ -59,6 +59,10 @@ export function createDemoTransport(): Transport {
           return resolve({ files: [] });
         case "get_batch_file_counts":
           return resolve({});
+        case "get_pr_status":
+          return resolve(null);
+        case "task_sync_status":
+          return resolve(null);
         case "create_chat_task":
           return resolve({
             id: "chat-demo-1",

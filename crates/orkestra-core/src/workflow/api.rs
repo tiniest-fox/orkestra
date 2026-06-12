@@ -382,6 +382,13 @@ impl WorkflowApi {
         &self.store
     }
 
+    /// Replace the PR description generator.
+    ///
+    /// Used in e2e tests to inject a custom mock before calling `create_pr_sync`.
+    pub fn set_pr_description_generator(&mut self, gen: Arc<dyn PrDescriptionGenerator>) {
+        self.pr_description_generator = gen;
+    }
+
     /// Force a task to `Queued { stage }` regardless of current state.
     ///
     /// Used in crash-recovery e2e tests to set up the state that

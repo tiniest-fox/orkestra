@@ -91,6 +91,9 @@ pub(crate) fn execute(
             (task.title.clone(), body)
         });
 
+    // 3b. Validate mermaid and attempt fixes (max 3 retries)
+    let pr_body = super::validate_and_fix_mermaid::execute(&pr_body, &task.title, pr_desc_gen, 3);
+
     // 4. Create PR (idempotent — checks for existing PR first)
     pr_service
         .create_pull_request(worktree_dir, branch, base_branch, &pr_title, &pr_body)
@@ -199,5 +202,93 @@ mod tests {
 
         let url = result.expect("execute should succeed");
         assert!(url.contains("github.com"), "should return PR URL");
+    }
+
+    // -----------------------------------------------------------------------
+    // Mermaid validation tests
+    // -----------------------------------------------------------------------
+
+    /// Build a minimal task + git/pr-service combo for mermaid tests (skips the
+    /// commit/push setup noise).
+    fn task_and_mocks(worktree_path: &str) -> (Task, MockGitService, MockPrService) {
+        let git = MockGitService::new();
+        git.push_commit_log_at_result(Ok(vec![]));
+        let pr_service = MockPrService::new();
+        let task = Task::new(
+            "t1",
+            "Add feature",
+            "Add a new feature",
+            "work",
+            "2025-01-01T00:00:00Z",
+        )
+        .with_branch("task/t1")
+        .with_worktree(worktree_path);
+        (task, git, pr_service)
+    }
+
+    const BROKEN_MERMAID_BODY: &str =
+        "## Summary\n\n- task\n\n```mermaid\ngraph TD\n  A[broken (parens)] --> B\n```\n";
+    const FIXED_MERMAID_BODY: &str =
+        "## Summary\n\n- task\n\n```mermaid\ngraph TD\n  A[\"fixed\"] --> B\n```\n";
+
+    #[test]
+    fn pr_creation_retries_broken_mermaid_and_succeeds() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (task, git, pr_service) = task_and_mocks(tmp.path().to_str().unwrap());
+
+        let pr_desc_gen = MockPrDescriptionGenerator::succeeding()
+            .with_generate_body(BROKEN_MERMAID_BODY)
+            .push_fix_response(Ok(FIXED_MERMAID_BODY.to_string()));
+
+        execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[], None).unwrap();
+
+        let calls = pr_service.create_pr_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].1, FIXED_MERMAID_BODY,
+            "PR should be created with fixed body"
+        );
+        assert_eq!(pr_desc_gen.fix_call_count(), 1);
+    }
+
+    #[test]
+    fn pr_creation_exhausts_retries_ships_original() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (task, git, pr_service) = task_and_mocks(tmp.path().to_str().unwrap());
+
+        let still_broken =
+            "## Summary\n\n```mermaid\ngraph TD\n  A[still (broken)] --> B\n```\n".to_string();
+        let pr_desc_gen = MockPrDescriptionGenerator::succeeding()
+            .with_generate_body(BROKEN_MERMAID_BODY)
+            .push_fix_response(Ok(still_broken.clone()))
+            .push_fix_response(Ok(still_broken.clone()))
+            .push_fix_response(Ok(still_broken));
+
+        execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[], None).unwrap();
+
+        let calls = pr_service.create_pr_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].1, BROKEN_MERMAID_BODY,
+            "PR should be created with original body when retries exhausted"
+        );
+        assert_eq!(pr_desc_gen.fix_call_count(), 3);
+    }
+
+    #[test]
+    fn pr_creation_skips_validation_for_clean_body() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (task, git, pr_service) = task_and_mocks(tmp.path().to_str().unwrap());
+
+        // Default succeeding() mock returns a clean body (no mermaid).
+        let pr_desc_gen = MockPrDescriptionGenerator::succeeding();
+
+        execute(&git, &pr_service, &pr_desc_gen, &task, &[], &[], None).unwrap();
+
+        assert_eq!(
+            pr_desc_gen.fix_call_count(),
+            0,
+            "fix should not be called for clean body"
+        );
     }
 }

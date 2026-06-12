@@ -38,12 +38,22 @@ pub fn execute(
 
     let mut session_usages: Vec<SessionTokenUsage> = Vec::with_capacity(sessions.len());
     for session in &sessions {
+        // DB-first: if session has stored token data, use it directly
+        if let Some(ref db_usage) = session.token_usage {
+            session_usages.push(SessionTokenUsage {
+                session_id: session.id.clone(),
+                stage: session.stage.clone(),
+                usage: Some(db_usage.clone()),
+            });
+            continue;
+        }
+
+        // JSONL fallback: for sessions with a claude_session_id but no DB tokens
         let Some(claude_session_id) = &session.claude_session_id else {
             continue;
         };
 
         let transcript_path = compute_transcript_path(home_dir, &working_dir, claude_session_id);
-
         let usage = read_usage_from_jsonl(&transcript_path);
         session_usages.push(SessionTokenUsage {
             session_id: session.id.clone(),
@@ -132,6 +142,8 @@ fn read_usage_from_jsonl(path: &Path) -> Option<TokenUsage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workflow::ports::InMemoryWorkflowStore;
+    use orkestra_types::domain::{StageSession, Task};
     use tempfile::TempDir;
 
     fn make_jsonl_line(input: u64, output: u64, cache_create: u64, cache_read: u64) -> String {
@@ -283,5 +295,83 @@ mod tests {
             path,
             PathBuf::from("/home/user/.claude/projects/-repo-my-project/ses-123.jsonl")
         );
+    }
+
+    fn make_store_with_task(task_id: &str, worktree: &str) -> InMemoryWorkflowStore {
+        let store = InMemoryWorkflowStore::new();
+        let mut task = Task::new(task_id, "Test", "", "work", "2026-01-01T00:00:00Z");
+        task.worktree_path = Some(worktree.to_string());
+        store.save_task(&task).unwrap();
+        store
+    }
+
+    #[test]
+    fn session_with_db_tokens_uses_db_path() {
+        let store = make_store_with_task("task-1", "/tmp/wt");
+        let mut session = StageSession::new("ss-1", "task-1", "work", "2026-01-01T00:00:00Z");
+        session.token_usage = Some(TokenUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 5,
+        });
+        store.save_stage_session(&session).unwrap();
+
+        let home = PathBuf::from("/nonexistent");
+        let result = execute(&store, "task-1", &home).unwrap();
+
+        assert_eq!(result.stages.len(), 1);
+        let stage = &result.stages[0];
+        assert_eq!(stage.sessions.len(), 1);
+        let su = &stage.sessions[0];
+        assert!(su.usage.is_some());
+        let usage = su.usage.as_ref().unwrap();
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        // JSONL path was never consulted — home dir doesn't exist and no error
+    }
+
+    #[test]
+    fn session_without_db_tokens_falls_back_to_jsonl() {
+        let tmp = TempDir::new().unwrap();
+        let worktree = tmp.path().to_string_lossy().into_owned();
+        let store = make_store_with_task("task-2", &worktree);
+
+        let session_id = "ses-fallback";
+        let mut session = StageSession::new("ss-2", "task-2", "work", "2026-01-01T00:00:00Z");
+        session.claude_session_id = Some(session_id.to_string());
+        session.token_usage = None;
+        store.save_stage_session(&session).unwrap();
+
+        // Write a JSONL file for this session
+        let home = tmp.path().to_path_buf();
+        let encoded_cwd: String = worktree
+            .chars()
+            .map(|c| if c == '/' || c == '.' { '-' } else { c })
+            .collect();
+        let projects_dir = home.join(".claude").join("projects").join(&encoded_cwd);
+        std::fs::create_dir_all(&projects_dir).unwrap();
+        let jsonl_path = projects_dir.join(format!("{session_id}.jsonl"));
+        std::fs::write(&jsonl_path, make_jsonl_line(200, 75, 0, 0)).unwrap();
+
+        let result = execute(&store, "task-2", &home).unwrap();
+
+        assert_eq!(result.stages.len(), 1);
+        let su = &result.stages[0].sessions[0];
+        assert!(su.usage.is_some());
+        assert_eq!(su.usage.as_ref().unwrap().input_tokens, 200);
+    }
+
+    #[test]
+    fn session_without_either_is_skipped() {
+        let store = make_store_with_task("task-3", "/tmp/wt");
+        // Session has neither db token_usage nor claude_session_id
+        let session = StageSession::new("ss-3", "task-3", "work", "2026-01-01T00:00:00Z");
+        store.save_stage_session(&session).unwrap();
+
+        let home = PathBuf::from("/nonexistent");
+        let result = execute(&store, "task-3", &home).unwrap();
+
+        assert!(result.stages.is_empty());
     }
 }

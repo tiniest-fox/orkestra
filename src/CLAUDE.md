@@ -226,13 +226,16 @@ Several providers (`TasksProvider`, `GitHistoryProvider`, `WorkflowConfigProvide
 - One-shot providers (workflow config) **must** explicitly clear their cache and re-fetch on reconnect; polling won't do it for them.
 - Maps accumulate entries for every project URL visited during the session (no implicit eviction). This is fine in practice — sessions visit few projects — but worth noting if memory becomes a concern.
 
-### `demoTransport.ts` Must Stay in Sync with Response Shapes
+### Keep All Transport Mocks in Sync When Adding or Changing Methods
 
-`src/stories/Demo/demoTransport.ts` is a hardcoded demo implementation of the transport interface for Storybook. Every command returns a static value. When a command's **response shape changes** (e.g., `get_logs` switching from a plain array to a `{ logs, cursor }` envelope), update `demoTransport.ts` too.
+When you add a **new transport method** or change a **response shape**, update all four of these:
 
-TypeScript won't catch this — transport methods return `Promise<unknown>`, so the mismatch compiles silently. The break only surfaces at runtime in Storybook or when a reviewer traces the response path.
+1. **`src/transport/mock.ts`** — The TypeScript `TransportMethod` union and `ResponseMap` type registry. TypeScript *will* catch this — a missing entry causes a `TS2353` error in any test that uses `Partial<ResponseMap>`.
+2. **`src/stories/storybook-helpers.tsx`** — `createMockTransport` must handle the new method. TypeScript won't catch a missing entry here; the transport returns `Promise<unknown>` so silence is the failure mode.
+3. **`src/stories/Demo/demoTransport.ts`** — Hardcoded demo transport for Storybook. Same silent failure mode as above.
+4. For response shape changes only: verify the return shape against the `transport.call<T>()` call site — `<T>` is the authoritative expected shape.
 
-**Rule:** Any time you change what a backend command returns, `demoTransport.ts` is in scope for that change.
+**Rule:** Every new RPC method touches all three mock files. Response shape changes also touch `demoTransport.ts`. The gate will catch `mock.ts` omissions via TS2353; Storybook omissions only surface at story render time.
 
 ## Styling
 

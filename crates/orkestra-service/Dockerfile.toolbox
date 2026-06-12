@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # Create the toolbox directory layout.
-RUN mkdir -p /opt/orkestra/bin /opt/orkestra/node /opt/orkestra/claude-code /opt/orkestra/pnpm
+RUN mkdir -p /opt/orkestra/bin /opt/orkestra/node /opt/orkestra/claude-code /opt/orkestra/pnpm /opt/orkestra/opencode
 
 # Install Node.js 22 LTS from the official tarball.
 # Extract to /opt/orkestra/node/ and symlink binaries into /opt/orkestra/bin/.
@@ -24,6 +24,10 @@ RUN ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') && \
 ENV PATH="/opt/orkestra/node/bin:$PATH"
 RUN npm install --prefix /opt/orkestra/claude-code @anthropic-ai/claude-code && \
     ln -sf /opt/orkestra/claude-code/node_modules/.bin/claude /opt/orkestra/bin/claude
+
+# Install OpenCode CLI via npm --prefix and symlink into /opt/orkestra/bin/.
+RUN npm install --prefix /opt/orkestra/opencode opencode-ai && \
+    ln -sf /opt/orkestra/opencode/node_modules/.bin/opencode /opt/orkestra/bin/opencode
 
 # Install pnpm via npm --prefix and symlink into /opt/orkestra/bin/.
 # Create a world-writable pnpm store so any non-root user can run pnpm install.

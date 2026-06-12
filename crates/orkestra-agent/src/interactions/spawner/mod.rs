@@ -2,4 +2,5 @@
 
 pub mod claude;
 pub mod cli_path;
+pub mod codex;
 pub mod opencode;

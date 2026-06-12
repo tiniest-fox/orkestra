@@ -49,6 +49,24 @@ pub fn claudecode_model_entries() -> &'static [ModelEntry] {
     ]
 }
 
+/// Codex model entries.
+pub fn codex_model_entries() -> &'static [ModelEntry] {
+    &[
+        ModelEntry {
+            alias: "o4-mini",
+            model_id: "o4-mini",
+            display_name: "GPT-o4 mini",
+            provider: "codex",
+        },
+        ModelEntry {
+            alias: "o3",
+            model_id: "o3",
+            display_name: "GPT-o3",
+            provider: "codex",
+        },
+    ]
+}
+
 /// `OpenCode` model entries.
 pub fn opencode_model_entries() -> &'static [ModelEntry] {
     &[
@@ -113,6 +131,7 @@ fn all_model_entries() -> impl Iterator<Item = &'static ModelEntry> {
     claudecode_model_entries()
         .iter()
         .chain(opencode_model_entries().iter())
+        .chain(codex_model_entries().iter())
 }
 
 /// Check whether `spec` matches the `provider/alias` form for an entry.
@@ -146,6 +165,8 @@ mod tests {
         assert_eq!(friendly_model_name(Some("kimi-k2")), "Kimi K2");
         assert_eq!(friendly_model_name(Some("kimi-k2.5")), "Kimi K2.5");
         assert_eq!(friendly_model_name(Some("kimi-k2.6")), "Kimi K2.6");
+        assert_eq!(friendly_model_name(Some("o4-mini")), "GPT-o4 mini");
+        assert_eq!(friendly_model_name(Some("o3")), "GPT-o3");
     }
 
     #[test]
@@ -165,6 +186,8 @@ mod tests {
         assert_eq!(friendly_model_name(Some("opencode/kimi-k2")), "Kimi K2");
         assert_eq!(friendly_model_name(Some("opencode/kimi-k2.5")), "Kimi K2.5");
         assert_eq!(friendly_model_name(Some("opencode/kimi-k2.6")), "Kimi K2.6");
+        assert_eq!(friendly_model_name(Some("codex/o4-mini")), "GPT-o4 mini");
+        assert_eq!(friendly_model_name(Some("codex/o3")), "GPT-o3");
     }
 
     #[test]
@@ -254,5 +277,23 @@ mod tests {
         assert_eq!(k26.model_id, "moonshot/kimi-k2.6");
         assert_eq!(k26.display_name, "Kimi K2.6");
         assert_eq!(k26.provider, "opencode");
+    }
+
+    // -- codex_model_entries --
+
+    #[test]
+    fn codex_entries_are_correct() {
+        let entries = codex_model_entries();
+        assert_eq!(entries.len(), 2);
+
+        let o4 = entries.iter().find(|e| e.alias == "o4-mini").unwrap();
+        assert_eq!(o4.model_id, "o4-mini");
+        assert_eq!(o4.display_name, "GPT-o4 mini");
+        assert_eq!(o4.provider, "codex");
+
+        let o3 = entries.iter().find(|e| e.alias == "o3").unwrap();
+        assert_eq!(o3.model_id, "o3");
+        assert_eq!(o3.display_name, "GPT-o3");
+        assert_eq!(o3.provider, "codex");
     }
 }

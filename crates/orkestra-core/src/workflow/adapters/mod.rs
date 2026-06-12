@@ -11,6 +11,7 @@ pub use orkestra_git::Git2GitService;
 
 // ProcessSpawner adapters re-exported from orkestra-agent
 pub use orkestra_agent::interactions::spawner::claude::ClaudeProcessSpawner;
+pub use orkestra_agent::interactions::spawner::codex::CodexProcessSpawner;
 pub use orkestra_agent::interactions::spawner::opencode::OpenCodeProcessSpawner;
 
 // Store types re-exported from orkestra-store

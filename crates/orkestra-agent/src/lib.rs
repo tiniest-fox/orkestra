@@ -60,9 +60,9 @@ pub fn resolve_agent_env(
 
 // Registry
 pub use registry::{
-    claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    pty_claude_capabilities, ExecutionMode, ProviderCapabilities, ProviderRegistry, RegistryError,
-    ResolvedProvider, StubPtySpawner,
+    claudecode_aliases, claudecode_capabilities, codex_aliases, codex_capabilities,
+    opencode_aliases, opencode_capabilities, pty_claude_capabilities, ExecutionMode,
+    ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider, StubPtySpawner,
 };
 
 // Mock (feature-gated)

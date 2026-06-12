@@ -2,7 +2,7 @@
 //!
 //! The registry uses prefix-based routing to dispatch model specs to providers:
 //! - `"claude/X"` or `"claudecode/X"` → Claude Code provider with model X (prefix stripped)
-//! - `"codex/X"` → error (not yet implemented)
+//! - `"codex/X"` → Codex provider with model X (prefix stripped)
 //! - `"prefix/model"` (any other prefix) → `OpenCode` with full spec as model ID
 //! - `"alias"` (bare name, no `/`) → search alias tables; error on miss
 //! - `None` → default provider's default model
@@ -104,7 +104,7 @@ impl std::fmt::Debug for ResolvedProvider {
 pub enum RegistryError {
     /// The provider name in the model spec is not registered.
     UnknownProvider(String),
-    /// The `codex/` prefix is reserved but the provider isn't implemented yet.
+    /// A named provider is recognized but not yet implemented.
     ProviderNotImplemented(String),
     /// A bare alias (no `/` prefix) had no match in any provider's alias table.
     UnknownAlias {
@@ -141,7 +141,7 @@ impl std::error::Error for RegistryError {}
 ///
 /// Resolves model specs using prefix-based routing:
 /// - `"claude/X"` or `"claudecode/X"` → Claude Code with model X (prefix stripped)
-/// - `"codex/X"` → error (not yet implemented)
+/// - `"codex/X"` → Codex with model X (prefix stripped)
 /// - `"prefix/model"` → `OpenCode` with full spec as model ID
 /// - `"alias"` → search alias tables; error on miss
 /// - `None` → default provider's default model
@@ -183,7 +183,7 @@ impl ProviderRegistry {
     ///
     /// Routing rules (in priority order):
     /// - `"claude/X"` or `"claudecode/X"` → Claude Code provider with model X
-    /// - `"codex/X"` → error (`ProviderNotImplemented`)
+    /// - `"codex/X"` → Codex provider with model X (prefix stripped)
     /// - `"prefix/model"` (any other prefix) → `OpenCode` with full spec as model ID
     /// - `"alias"` (bare name) → search alias tables; `UnknownAlias` error on miss
     /// - `None` → default provider with no model ID
@@ -252,8 +252,8 @@ impl ProviderRegistry {
             self.resolve_with_provider("claudecode", Some(model.to_string()))
         } else if let Some(model) = spec.strip_prefix("claudecode/") {
             self.resolve_with_provider("claudecode", Some(model.to_string()))
-        } else if spec.starts_with("codex/") {
-            Err(RegistryError::ProviderNotImplemented("codex".to_string()))
+        } else if let Some(model) = spec.strip_prefix("codex/") {
+            self.resolve_with_provider("codex", Some(model.to_string()))
         } else if spec.contains('/') {
             self.resolve_with_provider("opencode", Some(spec.to_string()))
         } else {
@@ -320,6 +320,14 @@ pub fn claudecode_aliases() -> HashMap<String, String> {
         .collect()
 }
 
+/// Codex provider alias table.
+pub fn codex_aliases() -> HashMap<String, String> {
+    orkestra_types::config::models::codex_model_entries()
+        .iter()
+        .map(|e| (e.alias.to_string(), e.model_id.to_string()))
+        .collect()
+}
+
 /// `OpenCode` provider alias table.
 pub fn opencode_aliases() -> HashMap<String, String> {
     orkestra_types::config::models::opencode_model_entries()
@@ -347,6 +355,18 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
         supports_json_schema: false,
         supports_sessions: true,
         generates_own_session_id: true,
+        requires_direct_structured_output: false,
+        supports_system_prompt: false,
+    }
+}
+
+/// Codex provider capabilities.
+pub fn codex_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        execution_mode: ExecutionMode::Process,
+        supports_json_schema: false,
+        supports_sessions: false,
+        generates_own_session_id: false,
         requires_direct_structured_output: false,
         supports_system_prompt: false,
     }
@@ -429,6 +449,12 @@ pub fn default_test_registry() -> ProviderRegistry {
         opencode_aliases(),
     );
     registry.register(
+        "codex",
+        Arc::new(StubSpawner),
+        codex_capabilities(),
+        codex_aliases(),
+    );
+    registry.register(
         "claude-pty",
         Arc::new(StubPtySpawner),
         pty_claude_capabilities(),
@@ -485,6 +511,12 @@ mod tests {
             Arc::new(StubSpawner::new("opencode")),
             opencode_capabilities(),
             opencode_aliases(),
+        );
+        registry.register(
+            "codex",
+            Arc::new(StubSpawner::new("codex")),
+            codex_capabilities(),
+            codex_aliases(),
         );
         registry.register(
             "claude-pty",
@@ -560,17 +592,24 @@ mod tests {
         assert!(!resolved.capabilities.supports_json_schema);
     }
 
-    // -- Prefix-based routing: codex/ error --
+    // -- Prefix-based routing: codex/ --
 
     #[test]
-    fn resolve_codex_prefix_returns_not_implemented() {
+    fn resolve_codex_prefix_routes_to_codex_provider() {
         let registry = test_registry();
-        let result = registry.resolve(Some("codex/anything"));
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RegistryError::ProviderNotImplemented(ref name) if name == "codex"
-        ));
+        let resolved = registry.resolve(Some("codex/o4-mini")).unwrap();
+        assert_eq!(resolved.provider_name, "codex");
+        assert_eq!(resolved.model_id, Some("o4-mini".to_string()));
+        assert!(!resolved.capabilities.supports_json_schema);
+        assert!(!resolved.capabilities.supports_sessions);
+    }
+
+    #[test]
+    fn resolve_codex_prefix_strips_prefix_and_passes_model() {
+        let registry = test_registry();
+        let resolved = registry.resolve(Some("codex/o3")).unwrap();
+        assert_eq!(resolved.provider_name, "codex");
+        assert_eq!(resolved.model_id, Some("o3".to_string()));
     }
 
     // -- Shorthand resolution (no provider prefix) --
@@ -595,6 +634,15 @@ mod tests {
     }
 
     #[test]
+    fn resolve_shorthand_o4_mini() {
+        let registry = test_registry();
+        let resolved = registry.resolve(Some("o4-mini")).unwrap();
+        assert_eq!(resolved.model_id, Some("o4-mini".to_string()));
+        assert_eq!(resolved.provider_name, "codex");
+        assert!(!resolved.capabilities.supports_json_schema);
+    }
+
+    #[test]
     fn resolve_shorthand_unknown_returns_error() {
         let registry = test_registry();
         let result = registry.resolve(Some("some-unknown-model"));
@@ -608,6 +656,8 @@ mod tests {
                 assert!(available.contains(&"kimi-k2".to_string()));
                 assert!(available.contains(&"kimi-k2.5".to_string()));
                 assert!(available.contains(&"kimi-k2.6".to_string()));
+                assert!(available.contains(&"o4-mini".to_string()));
+                assert!(available.contains(&"o3".to_string()));
             }
             other => panic!("expected UnknownAlias, got {other:?}"),
         }
@@ -696,7 +746,7 @@ mod tests {
         let registry = test_registry();
         let mut names = registry.provider_names();
         names.sort_unstable();
-        assert_eq!(names, vec!["claude-pty", "claudecode", "opencode"]);
+        assert_eq!(names, vec!["claude-pty", "claudecode", "codex", "opencode"]);
     }
 
     // -- claude-pty provider tests --
@@ -752,5 +802,26 @@ mod tests {
         assert_eq!(aliases["kimi-k2.5"], "opencode/kimi-k2.5-free");
         assert_eq!(aliases["kimi-k2.6"], "moonshot/kimi-k2.6");
         assert_eq!(aliases.len(), 3);
+    }
+
+    #[test]
+    fn codex_aliases_are_correct() {
+        let aliases = codex_aliases();
+        assert_eq!(aliases["o4-mini"], "o4-mini");
+        assert_eq!(aliases["o3"], "o3");
+        assert_eq!(aliases.len(), 2);
+    }
+
+    // -- Codex capabilities tests --
+
+    #[test]
+    fn codex_capabilities_are_correct() {
+        let caps = codex_capabilities();
+        assert!(!caps.supports_json_schema);
+        assert!(!caps.supports_sessions);
+        assert!(!caps.generates_own_session_id);
+        assert!(!caps.requires_direct_structured_output);
+        assert!(!caps.supports_system_prompt);
+        assert_eq!(caps.execution_mode, ExecutionMode::Process);
     }
 }

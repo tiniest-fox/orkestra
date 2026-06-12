@@ -1,7 +1,7 @@
 // 4-column grid row for a top-level task in the feed view.
 
 import React from "react";
-import type { PrStatus, WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
+import type { PrStatus, SyncStatus, WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { FeedRow } from "./FeedRow";
 import { IterationChain } from "./IterationChain";
 
@@ -12,6 +12,7 @@ interface FeedTaskRowProps {
   /** When true, shows a waiting indicator instead of the task's derived status symbol. */
   waiting?: boolean;
   prStatus?: PrStatus;
+  syncStatus?: SyncStatus;
   onMouseEnter: () => void;
   onReview: () => void;
   onAnswer: () => void;
@@ -30,6 +31,7 @@ function FeedTaskRowInner({
   isFocused,
   waiting,
   prStatus,
+  syncStatus,
   onMouseEnter,
   onReview,
   onAnswer,
@@ -52,6 +54,7 @@ function FeedTaskRowInner({
       isFocused={isFocused}
       waiting={waiting}
       prStatus={prStatus}
+      syncStatus={syncStatus}
       onMouseEnter={onMouseEnter}
       onReview={onReview}
       onAnswer={onAnswer}
@@ -90,6 +93,7 @@ export const FeedTaskRow = React.memo(FeedTaskRowInner, (prev, next) => {
     prev.isFocused === next.isFocused &&
     prev.waiting === next.waiting &&
     prev.config === next.config &&
-    prev.prStatus === next.prStatus
+    prev.prStatus === next.prStatus &&
+    prev.syncStatus === next.syncStatus
   );
 });

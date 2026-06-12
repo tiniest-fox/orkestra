@@ -80,6 +80,7 @@ function TestConsumer({ taskId = "task-1" }: { taskId?: string }) {
   return (
     <div>
       <div data-testid="status">{api.getPrStatus(taskId)?.state ?? "none"}</div>
+      <div data-testid="sync-ahead">{api.getTaskSyncStatus(taskId)?.ahead ?? "none"}</div>
       <div data-testid="loading">{String(api.isLoading(taskId))}</div>
     </div>
   );
@@ -218,6 +219,36 @@ describe("PrStatusProvider", () => {
 
     // Should not have called transport.call since task has no pr_url
     expect(mockTransport.call).not.toHaveBeenCalled();
+  });
+
+  it("fetches sync status for tasks with pr_url and exposes it via getTaskSyncStatus", async () => {
+    const task = createMockTask("task-1", "https://github.com/test/repo/pull/1");
+    mockUseTasks.mockReturnValue(createMockTasksValue([task]));
+
+    mockTransportCallResponses({
+      get_pr_status: {
+        url: "https://github.com/test/repo/pull/1",
+        state: "open",
+        checks: [],
+        reviews: [],
+        fetched_at: new Date().toISOString(),
+      },
+      task_sync_status: { ahead: 2, behind: 0, diverged: false },
+    });
+
+    render(
+      <PrStatusProvider>
+        <TestConsumer />
+      </PrStatusProvider>,
+    );
+
+    await waitFor(() => {
+      expect(mockTransport.call).toHaveBeenCalledWith("task_sync_status", { task_id: "task-1" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sync-ahead")).toHaveTextContent("2");
+    });
   });
 
   it("handles fetch errors gracefully", async () => {

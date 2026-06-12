@@ -11,13 +11,15 @@ import { createContext, type ReactNode, useCallback, useContext, useRef, useStat
 import { usePageVisibility } from "../hooks/usePageVisibility";
 import { usePolling } from "../hooks/usePolling";
 import { useConnectionState, useTransport } from "../transport";
-import type { PrStatus } from "../types/workflow";
+import type { PrStatus, SyncStatus } from "../types/workflow";
 import { isDisconnectError } from "../utils/transportErrors";
 import { useTasks } from "./TasksProvider";
 
 interface PrStatusContextValue {
   /** Get PR status for a task (undefined if not fetched). */
   getPrStatus: (taskId: string) => PrStatus | undefined;
+  /** Get sync status (ahead/behind remote) for a task (undefined if not fetched). */
+  getTaskSyncStatus: (taskId: string) => SyncStatus | undefined;
   /** Whether status is currently loading for a task. */
   isLoading: (taskId: string) => boolean;
   /** Request immediate fetch for a task (for manual refresh). */
@@ -65,6 +67,7 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
   const transport = useTransport();
   const { tasks } = useTasks();
   const [statuses, setStatuses] = useState<Map<string, PrStatus>>(new Map());
+  const [syncStatuses, setSyncStatuses] = useState<Map<string, SyncStatus>>(new Map());
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
   const isVisible = usePageVisibility();
   const connectionState = useConnectionState();
@@ -73,6 +76,7 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
 
   // Track in-flight fetches to avoid duplicate requests
   const inFlightRef = useRef<Set<string>>(new Set());
+  const syncInFlightRef = useRef<Set<string>>(new Set());
 
   // Track task IDs with terminal PR states (no more polling needed)
   const terminalTasksRef = useRef<Set<string>>(new Set());
@@ -124,6 +128,41 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
     [transport],
   );
 
+  const fetchSyncStatus = useCallback(
+    async (taskId: string) => {
+      if (syncInFlightRef.current.has(taskId)) return;
+      syncInFlightRef.current.add(taskId);
+      try {
+        const status = await transport.call<SyncStatus | null>("task_sync_status", {
+          task_id: taskId,
+        });
+        if (status) {
+          setSyncStatuses((prev) => {
+            const existing = prev.get(taskId);
+            if (
+              existing &&
+              existing.ahead === status.ahead &&
+              existing.behind === status.behind &&
+              existing.diverged === status.diverged
+            ) {
+              return prev;
+            }
+            const next = new Map(prev);
+            next.set(taskId, status);
+            return next;
+          });
+        }
+      } catch (err) {
+        if (!isDisconnectError(err)) {
+          console.error(`[PrStatusProvider] Failed to fetch sync status for ${taskId}:`, err);
+        }
+      } finally {
+        syncInFlightRef.current.delete(taskId);
+      }
+    },
+    [transport],
+  );
+
   // Background polling (10s) — reads tasks via ref to avoid restarting on every task update
   const backgroundPoll = useCallback(async () => {
     const toFetch = tasksRef.current.flatMap((t) => {
@@ -135,8 +174,9 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
 
     for (const { id, prUrl } of toFetch) {
       fetchPrStatus(id, prUrl);
+      fetchSyncStatus(id);
     }
-  }, [fetchPrStatus]);
+  }, [fetchPrStatus, fetchSyncStatus]);
 
   usePolling(canPoll ? backgroundPoll : null, 10_000);
 
@@ -151,11 +191,17 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
     const task = tasksRef.current.find((t) => t.id === taskId);
     if (!task?.pr_url) return;
     await fetchPrStatus(taskId, task.pr_url);
-  }, [activePollTaskId, fetchPrStatus]); // activePollTaskId restarts cycle on task change
+    fetchSyncStatus(taskId);
+  }, [activePollTaskId, fetchPrStatus, fetchSyncStatus]); // activePollTaskId restarts cycle on task change
 
   usePolling(canPoll && activePollTaskId ? activePoll : null, 2000);
 
   const getPrStatus = useCallback((taskId: string) => statuses.get(taskId), [statuses]);
+
+  const getTaskSyncStatus = useCallback(
+    (taskId: string) => syncStatuses.get(taskId),
+    [syncStatuses],
+  );
 
   const isLoading = useCallback((taskId: string) => loadingIds.has(taskId), [loadingIds]);
 
@@ -168,6 +214,7 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
 
   const value: PrStatusContextValue = {
     getPrStatus,
+    getTaskSyncStatus,
     isLoading,
     requestFetch,
     setActivePoll: setActivePollTaskId,

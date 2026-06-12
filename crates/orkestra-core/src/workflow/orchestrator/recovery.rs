@@ -44,6 +44,11 @@ impl OrchestratorLoop {
             orkestra_debug!("recovery", "Failed to clean orphaned worktree records: {e}");
         }
 
+        // Adopt any Ready prewarm records that survived cleanup
+        if let Err(e) = task_interactions::retry_pending_adoptions::execute(api.store.as_ref()) {
+            orkestra_debug!("recovery", "Failed to retry pending adoptions: {e}");
+        }
+
         // Recover tasks stuck in transient phases
         task_interactions::recover_stale_setup::execute(api.store.as_ref(), git_service, &headers);
         task_interactions::recover_stale_agents::execute(api.store.as_ref(), &headers);

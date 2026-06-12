@@ -352,6 +352,15 @@ impl OrchestratorLoop {
         // Load + categorize once
         let snapshot = self.build_snapshot()?;
 
+        // Retry worktree adoption for tasks that missed their prewarm window
+        {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            let adopted = task_interactions::retry_pending_adoptions::execute(api.store.as_ref())?;
+            for id in &adopted {
+                orkestra_debug!("orchestrator", "Deferred worktree adoption for task {id}");
+            }
+        }
+
         // Setup tasks whose dependencies are satisfied
         {
             let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;

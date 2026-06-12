@@ -40,3 +40,94 @@ pub fn execute(store: &dyn WorkflowStore) -> WorkflowResult<()> {
     }
     Ok(())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use orkestra_store::{WorktreeRecord, WorktreeStatus};
+
+    use crate::workflow::domain::Task;
+    use crate::workflow::ports::WorkflowStore;
+    use crate::workflow::InMemoryWorkflowStore;
+
+    use super::execute;
+
+    fn make_record(task_id: &str, status: WorktreeStatus) -> WorktreeRecord {
+        WorktreeRecord {
+            task_id: task_id.to_string(),
+            status,
+            base_branch: Some("main".to_string()),
+            worktree_path: Some("/tmp/wt".to_string()),
+            branch_name: Some("task/my-task".to_string()),
+            base_commit: Some("abc123".to_string()),
+            created_at: "2025-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn make_task(id: &str) -> Task {
+        Task::new(id, "Test", "desc", "work", "2025-01-01T00:00:00Z")
+    }
+
+    #[test]
+    fn empty_records_is_noop() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        execute(store.as_ref()).unwrap();
+        // No panic, no error — just a no-op.
+    }
+
+    #[test]
+    fn ready_record_for_existing_task_is_preserved() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        store.save_task(&make_task("task-1")).unwrap();
+        store
+            .save_worktree_record(&make_record("task-1", WorktreeStatus::Ready))
+            .unwrap();
+
+        execute(store.as_ref()).unwrap();
+
+        let record = store.get_worktree_record("task-1").unwrap();
+        assert!(
+            record.is_some(),
+            "Ready record for an existing task must be preserved for deferred adoption"
+        );
+    }
+
+    #[test]
+    fn ready_record_for_missing_task_is_deleted() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        // No task saved — this is an orphaned record.
+        store
+            .save_worktree_record(&make_record("ghost-task", WorktreeStatus::Ready))
+            .unwrap();
+
+        execute(store.as_ref()).unwrap();
+
+        let record = store.get_worktree_record("ghost-task").unwrap();
+        assert!(
+            record.is_none(),
+            "Ready record for a non-existent task must be deleted"
+        );
+    }
+
+    #[test]
+    fn pending_record_for_existing_task_is_deleted() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        store.save_task(&make_task("task-2")).unwrap();
+        store
+            .save_worktree_record(&make_record("task-2", WorktreeStatus::Pending))
+            .unwrap();
+
+        execute(store.as_ref()).unwrap();
+
+        let record = store.get_worktree_record("task-2").unwrap();
+        assert!(
+            record.is_none(),
+            "Pending record must be deleted (prewarm thread from previous session is dead)"
+        );
+    }
+}

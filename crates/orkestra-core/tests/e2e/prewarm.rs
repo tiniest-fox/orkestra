@@ -425,6 +425,62 @@ fn test_deferred_adoption_after_pending_prewarm() {
 }
 
 // =============================================================================
+// Startup cleanup: Ready record for live task survives (success criterion #3)
+// =============================================================================
+
+/// Verifies the preserve branch in `cleanup_orphaned_worktree_records`:
+/// a Ready record that belongs to an existing task is kept intact so that
+/// `retry_pending_adoptions` can adopt it in the same startup pass.
+///
+/// Scenario: task exists with `worktree_path` = None, a Ready record arrives
+/// (e.g. prewarm completed between session exit and restart), startup recovery
+/// runs — the record must survive cleanup.
+#[test]
+fn test_cleanup_preserves_ready_record_for_live_task() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+
+    // Create a chat task without prewarm — task has no worktree yet.
+    let task = ctx
+        .api()
+        .create_chat_task_with_prewarm("live-task-no-wt", "Chat no wt", None)
+        .expect("create chat should succeed");
+    assert!(
+        task.worktree_path.is_none(),
+        "task should have no worktree when created without prewarm"
+    );
+
+    // Simulate a prewarm that completed after the previous session exited:
+    // save a Ready record directly (not via the API prewarm flow, so adoption
+    // has NOT run yet).
+    let ready_record = WorktreeRecord {
+        task_id: "live-task-no-wt".to_string(),
+        status: WorktreeStatus::Ready,
+        worktree_path: Some("/tmp/prewarm-ready".to_string()),
+        branch_name: Some("task/live-task-no-wt".to_string()),
+        base_commit: Some("abc123".to_string()),
+        base_branch: Some("main".to_string()),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&ready_record)
+        .expect("save ready record");
+
+    // Startup recovery: cleanup preserves the Ready record, then
+    // retry_pending_adoptions adopts it (consuming the record).
+    ctx.run_startup_recovery();
+
+    // If cleanup had incorrectly deleted the record, adoption would never run
+    // and worktree_path would still be None. A set worktree_path proves the
+    // preserve branch fired and adoption succeeded.
+    let task_after = ctx.api().get_task("live-task-no-wt").expect("store query");
+    assert!(
+        task_after.worktree_path.is_some(),
+        "task must have worktree_path after recovery — proves cleanup preserved the Ready record so retry_pending_adoptions could adopt it"
+    );
+}
+
+// =============================================================================
 // Startup cleanup preserves Ready records, deletes Pending records
 // =============================================================================
 

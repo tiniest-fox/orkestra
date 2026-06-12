@@ -174,6 +174,44 @@ struct PtySessionParams<'a> {
     is_resume: bool,
 }
 
+/// Compute the fallback transcript path + baseline size, then wait for PTY readiness.
+///
+/// Returns `(fallback_transcript_path, baseline_size_usize, readiness_outcome)`.
+fn compute_transcript_baseline_and_wait(
+    hook_rx: &HookReceiver,
+    writer: &mut Box<dyn Write + Send>,
+    ctx: PtySessionParams<'_>,
+) -> (PathBuf, usize, ReadinessOutcome) {
+    // baseline_size is the initial file position for tail_transcript_until_stop so
+    // prior-run content is not re-parsed as new output.
+    let fallback_transcript_path =
+        compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
+    let baseline_size = if ctx.is_resume {
+        std::fs::metadata(&fallback_transcript_path).map_or(0, |m| m.len())
+    } else {
+        0
+    };
+    let baseline_size_usize =
+        usize::try_from(baseline_size).expect("transcript size exceeds platform address space");
+    // Wait for readiness via dual-signal: UserPromptSubmit hook OR transcript growth.
+    // Re-send Enter every ~3s to handle TUI startup races; escalates on resume after 3 retries.
+    let readiness_deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let readiness_outcome = wait_for_readiness(
+        hook_rx,
+        writer,
+        readiness_deadline,
+        &fallback_transcript_path,
+        baseline_size,
+        ctx.prompt.as_bytes(),
+        ctx.is_resume,
+    );
+    (
+        fallback_transcript_path,
+        baseline_size_usize,
+        readiness_outcome,
+    )
+}
+
 fn drive_pty_session(
     mut pty_handle: PtyHandle,
     hook_rx: &HookReceiver,
@@ -206,67 +244,20 @@ fn drive_pty_session(
         ctx.prompt.len()
     );
 
-    // Compute fallback transcript path and baseline for resume sessions.
-    // baseline_size is still used as the initial file position for tail_transcript_until_stop
-    // so prior-run content is not re-parsed as new output.
-    let fallback_transcript_path =
-        compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
-
-    let baseline_size = if ctx.is_resume {
-        std::fs::metadata(&fallback_transcript_path).map_or(0, |m| m.len())
-    } else {
-        0
-    };
-
-    let baseline_size_usize =
-        usize::try_from(baseline_size).expect("transcript size exceeds platform address space");
-
-    // Wait for readiness via dual-signal: UserPromptSubmit hook OR transcript growth.
-    // Re-send Enter every ~3s to handle TUI startup races; escalates on resume after 3 retries.
-    let readiness_deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let readiness_outcome = wait_for_readiness(
-        hook_rx,
-        &mut pty_handle.writer,
-        readiness_deadline,
-        &fallback_transcript_path,
-        baseline_size,
-        ctx.prompt.as_bytes(),
-        ctx.is_resume,
-    );
+    let (fallback_transcript_path, baseline_size_usize, readiness_outcome) =
+        compute_transcript_baseline_and_wait(hook_rx, &mut pty_handle.writer, ctx);
 
     match readiness_outcome {
         ReadinessOutcome::Ready => {
-            // Two Text events needed for `has_confirmed_output` crash-recovery tracking.
-            let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
-                content: "PTY session active".to_string(),
-            }));
-            let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
-                content: "PTY session confirmed".to_string(),
-            }));
-
-            // Tail transcript until Stop hook fires; polls every 150ms, checks liveness every ~3s.
-            let (hook_event, full_output, tail_file_pos) = tail_transcript_until_stop(
-                &fallback_transcript_path,
+            run_tail_and_finalize(
+                pty_handle,
                 hook_rx,
-                &mut pty_handle.child,
-                &mut *parser,
+                hook_server,
                 tx,
+                &mut *parser,
+                &ctx,
+                &fallback_transcript_path,
                 baseline_size_usize,
-            );
-
-            finalize_pty_session(
-                make_finalize_params(
-                    pty_handle,
-                    hook_server,
-                    tx,
-                    &mut *parser,
-                    ctx.task_id,
-                    ctx.schema,
-                    &fallback_transcript_path,
-                ),
-                hook_event.as_ref(),
-                full_output,
-                tail_file_pos,
             );
         }
         ReadinessOutcome::EarlyCompletion(event) => {
@@ -298,6 +289,54 @@ fn drive_pty_session(
             hook_server.unregister_task(ctx.task_id);
         }
     }
+}
+
+/// Emit synthetic activity events, tail the transcript until Stop fires, then finalize.
+///
+/// Called from `drive_pty_session` once the session is confirmed ready. Extracted to
+/// keep `drive_pty_session` under the 100-line clippy threshold.
+fn run_tail_and_finalize(
+    mut pty_handle: PtyHandle,
+    hook_rx: &HookReceiver,
+    hook_server: &HookServer,
+    tx: &Sender<RunEvent>,
+    parser: &mut dyn AgentParser,
+    ctx: &PtySessionParams<'_>,
+    fallback_transcript_path: &Path,
+    baseline_size_usize: usize,
+) {
+    // Two Text events needed for `has_confirmed_output` crash-recovery tracking.
+    let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+        content: "PTY session active".to_string(),
+    }));
+    let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+        content: "PTY session confirmed".to_string(),
+    }));
+
+    // Tail transcript until Stop hook fires; polls every 150ms, checks liveness every ~3s.
+    let (hook_event, full_output, tail_file_pos) = tail_transcript_until_stop(
+        fallback_transcript_path,
+        hook_rx,
+        &mut pty_handle.child,
+        parser,
+        tx,
+        baseline_size_usize,
+    );
+
+    finalize_pty_session(
+        make_finalize_params(
+            pty_handle,
+            hook_server,
+            tx,
+            parser,
+            ctx.task_id,
+            ctx.schema,
+            fallback_transcript_path,
+        ),
+        hook_event.as_ref(),
+        full_output,
+        tail_file_pos,
+    );
 }
 
 struct FinalizePtyParams<'a> {

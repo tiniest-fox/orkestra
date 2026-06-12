@@ -35,10 +35,20 @@ TRANSCRIPT_DIR="$HOME/.claude/projects/$ENCODED_CWD"
 mkdir -p "$TRANSCRIPT_DIR"
 TRANSCRIPT="$TRANSCRIPT_DIR/${SESSION_ID}.jsonl"
 
-# Read prompt from PTY stdin (with timeout so we don't block if the write is slow)
+# On resume, simulate TUI replay time: the runner must wait for the transcript to
+# grow past its pre-existing size, not just detect file existence. The delay here
+# gives the runner's initial prompt write a chance to be swallowed so that the
+# Enter-retry path re-delivers the prompt after we start reading stdin.
+if [ "$IS_RESUME" = true ]; then
+    sleep 1
+fi
+
+# Read prompt from PTY stdin (with timeout so we don't block if the write is slow).
+# On resume, the transcript file already exists — we append new lines to it below.
 read -r -t 5 PROMPT || true
 
-# Write JSONL transcript with structured output that the Claude parser can extract
+# Write JSONL transcript with structured output that the Claude parser can extract.
+# Use >> so resume runs append to the existing transcript rather than overwriting it.
 printf '{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it."}]}}\n' >> "$TRANSCRIPT"
 printf '{"structured_output":{"type":"summary","content":"Test output from mock claude"}}\n' >> "$TRANSCRIPT"
 

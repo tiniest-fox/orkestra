@@ -23,3 +23,4 @@ pub mod pull_pr_changes;
 pub mod recover_stale;
 pub mod retry_pr_creation;
 pub mod squash_rebase_merge;
+pub(crate) mod validate_and_fix_mermaid;

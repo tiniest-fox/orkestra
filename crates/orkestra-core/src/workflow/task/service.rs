@@ -14,6 +14,7 @@ pub struct CreateTaskOptions {
     pub mode: TaskCreationMode,
     pub flow: Option<String>,
     pub auto_pr: bool,
+    pub auto_resolve: bool,
 }
 
 impl WorkflowApi {
@@ -31,10 +32,11 @@ impl WorkflowApi {
             mode: TaskCreationMode::Normal,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
     }
 
-    /// Create a new task with options (`mode`, flow, `auto_pr`).
+    /// Create a new task with options (`mode`, flow, `auto_pr`, `auto_resolve`).
     pub fn create_task_with_options(&self, options: &CreateTaskOptions) -> WorkflowResult<Task> {
         task_interactions::create::execute(
             &self.store,
@@ -48,6 +50,7 @@ impl WorkflowApi {
             options.mode,
             options.flow.as_deref(),
             options.auto_pr,
+            options.auto_resolve,
             Some(std::sync::Arc::clone(&self.title_generator)),
         )
     }
@@ -63,6 +66,7 @@ impl WorkflowApi {
         mode: TaskCreationMode,
         flow: Option<&str>,
         auto_pr: bool,
+        auto_resolve: bool,
     ) -> WorkflowResult<Task> {
         task_interactions::create::execute(
             &self.store,
@@ -76,6 +80,7 @@ impl WorkflowApi {
             mode,
             flow,
             auto_pr,
+            auto_resolve,
             Some(std::sync::Arc::clone(&self.title_generator)),
         )
     }

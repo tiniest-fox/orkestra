@@ -3,6 +3,7 @@
 //! Ports define abstractions that allow the workflow system to work with
 //! different implementations (databases, file systems, etc.) and enable testing.
 
+mod pr_monitor;
 mod pr_service;
 mod store;
 
@@ -10,6 +11,10 @@ mod store;
 pub use orkestra_git::{
     CommitInfo, FileChangeType, FileDiff, GitError, GitService, MergeResult, SyncStatus, TaskDiff,
     WorktreeCreated,
+};
+pub use pr_monitor::{
+    AutoResolveCheckRun, AutoResolveComment, AutoResolveReview, AutoResolveStatus, PrMonitor,
+    PrState, ReviewState,
 };
 pub use pr_service::{PrError, PrService};
 pub use store::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -26,5 +31,7 @@ pub use orkestra_git::MockGitService;
 pub use orkestra_process::MockProcessSpawner;
 #[cfg(any(test, feature = "testutil"))]
 pub use orkestra_store::InMemoryWorkflowStore;
+#[cfg(any(test, feature = "testutil"))]
+pub use pr_monitor::mock::MockPrMonitor;
 #[cfg(any(test, feature = "testutil"))]
 pub use pr_service::mock::MockPrService;

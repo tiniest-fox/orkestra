@@ -16,7 +16,7 @@ use orkestra_core::workflow::{
         claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
         ProviderRegistry, RunConfig, StageOutput,
     },
-    ports::{GitService, MockGitService, MockPrService, PrService},
+    ports::{GitService, MockGitService, MockPrService, PrMonitor, PrService},
     runtime::TaskState,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
@@ -452,6 +452,23 @@ impl TestEnv {
     /// specific bodies or fix responses.
     pub fn set_pr_description_generator(&self, gen: Arc<dyn PrDescriptionGenerator>) {
         self.api.lock().unwrap().set_pr_description_generator(gen);
+    }
+
+    /// Inject a PR monitor for auto-resolve tests.
+    ///
+    /// Call this after construction, before running ticks.
+    pub fn set_pr_monitor(&mut self, monitor: Arc<dyn PrMonitor>) {
+        self.orchestrator.set_pr_monitor(monitor);
+    }
+
+    /// Force the `check_auto_resolve` periodic job to be due on the next tick.
+    ///
+    /// The job normally fires once on the first tick (to drain any candidates
+    /// present at startup), then resets its 5-minute timer. Tests that set up
+    /// auto-resolve candidates *after* the first tick call this before each
+    /// `tick()` to ensure the job fires deterministically.
+    pub fn force_auto_resolve_check(&self) {
+        self.orchestrator.force_periodic_due("check_auto_resolve");
     }
 
     /// Get the mock git service for verifying git operations.

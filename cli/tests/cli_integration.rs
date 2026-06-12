@@ -247,6 +247,7 @@ fn test_task_create_with_flow() {
             mode: TaskCreationMode::Normal,
             flow: Some("quick".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("create task with flow");
 
@@ -263,6 +264,7 @@ fn test_task_create_with_flow() {
         mode: TaskCreationMode::Normal,
         flow: Some("nonexistent".into()),
         auto_pr: false,
+        auto_resolve: false,
     });
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -618,6 +620,7 @@ fn test_create_task_with_auto_mode() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("create auto task");
     assert!(
@@ -634,10 +637,38 @@ fn test_create_task_with_auto_mode() {
             mode: TaskCreationMode::Normal,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .expect("create normal task");
     assert!(
         !normal_task.auto_mode,
         "Task created with Normal mode should have auto_mode=false"
+    );
+}
+
+#[test]
+fn test_create_task_auto_resolve_implies_auto_pr() {
+    let (api, _store, _temp_dir) = setup_test_env(&test_workflow());
+
+    // --auto-resolve with pr: false — auto_pr must be set to true by the implication in create.rs
+    let task = api
+        .create_task_with_options(&CreateTaskOptions {
+            title: "Auto-resolve task".into(),
+            description: "Description".into(),
+            base_branch: None,
+            mode: TaskCreationMode::Normal,
+            flow: None,
+            auto_pr: false,
+            auto_resolve: true,
+        })
+        .expect("create auto-resolve task");
+
+    assert!(
+        task.auto_resolve,
+        "--auto-resolve task should have auto_resolve=true"
+    );
+    assert!(
+        task.auto_pr,
+        "--auto-resolve implies --pr: auto_pr must be true even when pr: false was passed"
     );
 }

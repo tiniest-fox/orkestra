@@ -152,6 +152,10 @@ enum TaskAction {
         /// Automatically create a GitHub PR when the Trak reaches Done.
         #[arg(long)]
         pr: bool,
+        /// Automatically monitor the PR and resolve CI failures and review comments.
+        /// Implies --pr.
+        #[arg(long)]
+        auto_resolve: bool,
     },
     /// Approve the current stage artifact
     Approve {
@@ -411,6 +415,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             flow,
             auto,
             pr,
+            auto_resolve,
         } => {
             let mode = if auto {
                 TaskCreationMode::AutoMode
@@ -424,6 +429,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
                 mode,
                 flow,
                 auto_pr: pr,
+                auto_resolve,
             };
             handle_create_task(&api, &opts, pretty);
         }

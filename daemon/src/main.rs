@@ -14,7 +14,9 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::adapters::{GhPrService, Git2GitService, SqliteWorkflowStore};
+use orkestra_core::workflow::adapters::{
+    GhPrMonitor, GhPrService, Git2GitService, SqliteWorkflowStore,
+};
 use orkestra_core::workflow::execution::build_production_registry;
 use orkestra_core::workflow::{
     AgentKiller, LogNotification, OrchestratorLoop, StageExecutionService, WorkflowApi,
@@ -222,6 +224,7 @@ async fn run(
     let api = if let Some(git) = git_service {
         WorkflowApi::with_git(workflow.clone(), Arc::clone(&store), git)
             .with_pr_service(Arc::new(GhPrService::new()))
+            .with_pr_monitor(Arc::new(GhPrMonitor::default()))
             .with_provider_registry(Arc::clone(&provider_registry))
             .with_project_root(project_root.clone())
     } else {

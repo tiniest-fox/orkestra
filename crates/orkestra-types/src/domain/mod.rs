@@ -20,7 +20,9 @@ pub use iteration::{GateResult, Iteration, IterationTrigger, PrCheckData, PrComm
 pub use log_entry::{AnnotatedLogEntry, LogEntry, OrkAction, PromptSection, TodoItem, ToolInput};
 pub use question::{Question, QuestionAnswer, QuestionOption};
 pub use stage_session::{SessionState, StageSession};
-pub use task::{extract_short_id, Task, TaskCreationMode, TaskHeader, TickSnapshot};
+pub use task::{
+    extract_short_id, ResolvedFeedbackIds, Task, TaskCreationMode, TaskHeader, TickSnapshot,
+};
 pub use token_usage::{
     compute_transcript_path, SessionTokenUsage, StageTokenUsage, TaskTokenUsage, TokenUsage,
 };

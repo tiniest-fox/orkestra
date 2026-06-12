@@ -42,6 +42,7 @@ fn test_play_happy_path() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -114,6 +115,7 @@ fn test_play_with_subtasks() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -261,6 +263,7 @@ fn test_play_questions_auto_answered() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -328,6 +331,7 @@ fn test_play_agent_blocked() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -373,6 +377,7 @@ fn test_play_agent_failed() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -433,6 +438,7 @@ fn test_play_gate_failure_requeues_agent() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -538,6 +544,7 @@ fn test_play_integration_after_done() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -595,6 +602,7 @@ fn test_play_pr_creation_after_done() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -670,6 +678,7 @@ fn test_play_with_flow() {
             mode: TaskCreationMode::AutoMode,
             flow: Some("quick".into()),
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -724,6 +733,7 @@ fn test_play_auto_merge_completes_to_archived() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();
@@ -780,6 +790,7 @@ fn test_play_no_integrate_stays_done() {
             mode: TaskCreationMode::AutoMode,
             flow: None,
             auto_pr: false,
+            auto_resolve: false,
         })
         .unwrap();
     let task_id = task.id.clone();

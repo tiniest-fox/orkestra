@@ -31,10 +31,11 @@ use super::periodic::PeriodicScheduler;
 use crate::orkestra_debug;
 use crate::workflow::agent::interactions as agent_interactions;
 use crate::workflow::api::WorkflowApi;
+use crate::workflow::auto_resolve::interactions as auto_resolve_interactions;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{LogEntry, TaskHeader, TickSnapshot};
 use crate::workflow::integration::interactions as integration_interactions;
-use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{GitService, PrMonitor, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
 use crate::workflow::stage::interactions as stage_interactions;
 use crate::workflow::stage::service::StageExecutionService;
@@ -156,6 +157,17 @@ impl std::fmt::Display for OrchestratorError {
 impl std::error::Error for OrchestratorError {}
 
 // ============================================================================
+// Auto-Resolve Candidate
+// ============================================================================
+
+/// A task candidate for the auto-resolve polling job.
+struct AutoResolveCandidate {
+    task_id: String,
+    pr_url: String,
+    worktree_path: String,
+}
+
+// ============================================================================
 // Orchestrator Loop
 // ============================================================================
 
@@ -169,6 +181,8 @@ pub struct OrchestratorLoop {
     stage_executor: Arc<StageExecutionService>,
     /// Git service for background integration threads (avoids holding API lock during git ops).
     git_service: Option<Arc<dyn GitService>>,
+    /// PR monitor for auto-resolve polling (avoids holding API lock during gh calls).
+    pr_monitor: Option<Arc<dyn PrMonitor>>,
     /// Periodic scheduler for tick phases.
     scheduler: Mutex<PeriodicScheduler>,
     stop_flag: Arc<AtomicBool>,
@@ -183,17 +197,21 @@ pub struct OrchestratorLoop {
 impl OrchestratorLoop {
     /// Create a new orchestrator loop.
     pub fn new(api: Arc<Mutex<WorkflowApi>>, stage_executor: Arc<StageExecutionService>) -> Self {
-        let git_service = api.lock().ok().and_then(|a| a.git_service().cloned());
+        let (git_service, pr_monitor) = api.lock().ok().map_or((None, None), |a| {
+            (a.git_service().cloned(), a.pr_monitor().cloned())
+        });
 
         let mut scheduler = PeriodicScheduler::new();
 
         // Maintenance — runs periodically (core phases run unconditionally every tick)
         scheduler.register("cleanup_worktrees", Duration::from_mins(1));
+        scheduler.register("check_auto_resolve", Duration::from_mins(5)); // 5 minutes
 
         Self {
             api,
             stage_executor,
             git_service,
+            pr_monitor,
             scheduler: Mutex::new(scheduler),
             stop_flag: Arc::new(AtomicBool::new(false)),
             sync_background: false,
@@ -208,6 +226,21 @@ impl OrchestratorLoop {
     /// control: each tick completes all its work before returning.
     pub fn set_sync_background(&mut self, sync: bool) {
         self.sync_background = sync;
+    }
+
+    /// Override the PR monitor (for testing — inject a mock after construction).
+    pub fn set_pr_monitor(&mut self, monitor: Arc<dyn PrMonitor>) {
+        self.pr_monitor = Some(monitor);
+    }
+
+    /// Force a named periodic job to be due on the next tick.
+    ///
+    /// Used in tests to trigger a specific periodic job without waiting for
+    /// its interval to elapse naturally.
+    pub fn force_periodic_due(&self, name: &str) {
+        if let Ok(mut scheduler) = self.scheduler.lock() {
+            scheduler.force_due(name);
+        }
     }
 
     /// Create with default components for a project.
@@ -346,6 +379,7 @@ impl OrchestratorLoop {
     ///
     /// Each phase delegates to a domain interaction for business logic,
     /// then the orchestrator handles I/O plumbing (locks, threads, events).
+    #[allow(clippy::too_many_lines)]
     pub fn tick(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
         let mut defer_spawn_ids = HashSet::new();
@@ -452,6 +486,8 @@ impl OrchestratorLoop {
                 } else {
                     std::thread::spawn(run);
                 }
+            } else if name == "check_auto_resolve" {
+                self.spawn_auto_resolve_poll(&snapshot)?;
             }
         }
 
@@ -860,6 +896,102 @@ impl OrchestratorLoop {
             run_integration();
         } else {
             std::thread::spawn(run_integration);
+        }
+
+        Ok(())
+    }
+
+    /// Poll all auto-resolve candidates and trigger `PrFeedback` iterations for any with new feedback.
+    ///
+    /// Runs off the API lock: gathers inputs under lock, then drops it before spawning the
+    /// background thread that calls `gh` CLI and mutates task state.
+    fn spawn_auto_resolve_poll(
+        &self,
+        snapshot: &crate::workflow::domain::TickSnapshot,
+    ) -> WorkflowResult<()> {
+        let Some(monitor) = self.pr_monitor.clone() else {
+            return Ok(());
+        };
+
+        let candidate_ids: Vec<AutoResolveCandidate> =
+            auto_resolve_interactions::find_candidates::execute(snapshot)
+                .into_iter()
+                .filter_map(|h| {
+                    let pr_url = h.pr_url.clone()?;
+                    let worktree_path = h.worktree_path.clone()?;
+                    Some(AutoResolveCandidate {
+                        task_id: h.id.clone(),
+                        pr_url,
+                        worktree_path,
+                    })
+                })
+                .collect();
+
+        if candidate_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Gather shared state under lock, then release before background work
+        let (store, workflow, iteration_service) = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            (
+                Arc::clone(&api.store),
+                api.workflow.clone(),
+                Arc::clone(&api.iteration_service),
+            )
+        };
+
+        let run = move || {
+            let authenticated_user = match monitor.authenticated_user() {
+                Ok(u) => u,
+                Err(e) => {
+                    orkestra_debug!("auto_resolve", "failed to get authenticated user: {}", e);
+                    return;
+                }
+            };
+
+            for candidate in &candidate_ids {
+                let repo_root = std::path::Path::new(&candidate.worktree_path);
+                let status = match monitor.fetch_auto_resolve_status(repo_root, &candidate.pr_url) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        orkestra_debug!(
+                            "auto_resolve",
+                            "task {}: fetch_auto_resolve_status failed: {}",
+                            candidate.task_id,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+                match auto_resolve_interactions::trigger_feedback::execute(
+                    store.as_ref(),
+                    &workflow,
+                    &iteration_service,
+                    &candidate.task_id,
+                    &status,
+                    &authenticated_user,
+                ) {
+                    Ok(result) => {
+                        orkestra_debug!("auto_resolve", "task {}: {:?}", candidate.task_id, result);
+                    }
+                    Err(e) => {
+                        orkestra_debug!(
+                            "auto_resolve",
+                            "task {}: trigger_feedback error: {}",
+                            candidate.task_id,
+                            e
+                        );
+                    }
+                }
+            }
+        };
+
+        if self.sync_background {
+            run();
+        } else {
+            std::thread::spawn(run);
         }
 
         Ok(())

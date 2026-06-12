@@ -11,7 +11,7 @@ use tempfile::TempDir;
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::WorkflowConfig,
-    domain::{Question, Task},
+    domain::{Question, Task, TokenUsage},
     execution::{
         claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
         ProviderRegistry, RunConfig, StageOutput,
@@ -613,6 +613,12 @@ impl TestEnv {
     /// The mock sends a `LogLine` then `PlainText` completion, parking the task at `AwaitingApproval`.
     pub fn set_plain_text(&self, task_id: &str, text: impl Into<String>) {
         self.runner.set_plain_text(task_id, text);
+    }
+
+    /// Queue token usage events to emit before the next successful completion.
+    /// Events are emitted after `LogLine` but before `Completed`, matching real `OpenCode` ordering.
+    pub fn set_token_events(&self, task_id: &str, events: Vec<(TokenUsage, f64)>) {
+        self.runner.set_token_events(task_id, events);
     }
 
     /// Get the number of calls made to the mock runner.

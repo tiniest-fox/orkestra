@@ -13,7 +13,9 @@ pub fn execute(conn: &Connection, task_ids: &[&str]) -> WorkflowResult<Vec<Stage
     let placeholders = vec!["?"; task_ids.len()].join(", ");
     let sql = format!(
         "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                session_state, created_at, updated_at, has_activity
+                session_state, created_at, updated_at, has_activity,
+                input_tokens, output_tokens, cache_creation_input_tokens,
+                cache_read_input_tokens, total_cost
          FROM workflow_stage_sessions WHERE task_id IN ({placeholders}) ORDER BY task_id, created_at"
     );
 

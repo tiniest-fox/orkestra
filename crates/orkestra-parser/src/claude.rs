@@ -167,6 +167,8 @@ impl AgentParser for ClaudeParserService {
         ParsedUpdate {
             log_entries,
             session_id: None,
+            token_usage: None,
+            cost: None,
         }
     }
 

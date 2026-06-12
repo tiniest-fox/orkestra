@@ -116,6 +116,11 @@ Tracks agent process continuity across iterations. Enables session recovery via 
 | `session_state` | TEXT | NOT NULL, DEFAULT 'active' | Session lifecycle state: `spawning`, `active`, `completed`, `abandoned` |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+| `input_tokens` | INTEGER | | Accumulated input tokens from provider token events. NULL for sessions predating DB token storage or using JSONL path. |
+| `output_tokens` | INTEGER | | Accumulated output tokens from provider token events. NULL for same conditions as `input_tokens`. |
+| `cache_creation_input_tokens` | INTEGER | | Accumulated cache-creation tokens. NULL for same conditions as `input_tokens`. |
+| `cache_read_input_tokens` | INTEGER | | Accumulated cache-read tokens. NULL for same conditions as `input_tokens`. |
+| `total_cost` | REAL | | Accumulated provider-reported cost in USD. NULL for same conditions as `input_tokens`. |
 
 **Indexes:**
 - `idx_workflow_stage_sessions_task` on `task_id`

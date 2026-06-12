@@ -177,6 +177,13 @@ fn stream_stdout_lines(
                     }
                 }
 
+                if let Some(usage) = update.token_usage {
+                    let cost = update.cost.unwrap_or(0.0);
+                    if tx.send(RunEvent::TokenUsage { usage, cost }).is_err() {
+                        return None;
+                    }
+                }
+
                 for entry in update.log_entries {
                     if tx.send(RunEvent::LogLine(entry)).is_err() {
                         return None;

@@ -1043,6 +1043,8 @@ mod tests {
                         content: line.to_string(),
                     }],
                     session_id: None,
+                    token_usage: None,
+                    cost: None,
                 }
             }
             fn finalize(&mut self) -> Vec<LogEntry> {

@@ -13,12 +13,6 @@ pub const ASSISTANT_SYSTEM_PROMPT: &str = include_str!("templates/assistant/syst
 pub const TASK_ASSISTANT_SYSTEM_PROMPT: &str =
     include_str!("templates/assistant/task_system_prompt.md");
 
-/// System prompt template for the interactive (vibe-mode) session.
-///
-/// Placeholders: `{task_id}`, `{task_title}`, `{task_description}`.
-pub const INTERACTIVE_SYSTEM_PROMPT: &str =
-    include_str!("templates/assistant/interactive_system_prompt.md");
-
 /// Promotion guidance snippet injected into `TASK_ASSISTANT_SYSTEM_PROMPT` for chat Traks.
 ///
 /// Placeholders: `{available_flows}`.

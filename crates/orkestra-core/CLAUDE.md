@@ -366,7 +366,9 @@ PTY orchestrator-level tests live in `tests/e2e/agents/pty.rs`. Two tests (`pty_
 
 **Companion scripts must be copied alongside the mock.** `mock_claude_pty.sh` sources `send_hook.sh` via `$(dirname "$0")/send_hook.sh`. Every `AgentTestEnv` constructor that copies the mock binary (`new_pty_mock`, `new_pty_crash_mock`, `swap_to_normal_mock`) must also copy `send_hook.sh` to the same temp bin directory. Missing this leaves `send_hook()` undefined — all hook calls become silent no-ops. The mock will still "work" (no shell error), but `UserPromptSubmit` events never fire, causing resume tests to hang indefinitely since the transcript growth fallback is disabled for resume sessions.
 
-**Remaining gap**: no test exercises the error path where `claude` is absent from PATH (task should fail with a clear error rather than hang).
+**Remaining gaps**:
+- No test exercises the error path where `claude` is absent from PATH (task should fail with a clear error rather than hang).
+- No e2e test exercises `is_resume=true` through the full orchestrator. All rejection-triggered respawns supersede the session (`should_supersede=Yes`), so the PTY resume path is covered only by the unit test `wait_for_readiness_ignores_transcript_growth_on_resume`. A true-resume e2e requires a crash-recovery flow where `should_supersede` returns `No` — see the `None`/active-session row in the supersession table in this file.
 
 **`ORK_CAPTURE_ARGS_FILE` args-capture sidecar**: PTY crash/resume tests verify spawn args (`--session-id` vs `--resume`) by setting this env var to a temp file path. The mock PTY script appends its args to the file on each invocation; the test reads it back after each run to assert spawn behavior across crash/rejection cycles. Example from `pty_crash_recovery_resumes_session`:
 

@@ -58,6 +58,24 @@ Every e2e test should follow this pattern:
 2. **Drive**: Set mock outputs → `advance()` → assert state → repeat
 3. **Verify**: Assert on final state, prompt contents, iteration counts
 
+**Assert preconditions for state-change tests.** When verifying that an operation clears or changes a field (e.g., `agent_pid` becomes `None` after dispatch), first assert the field was set to the expected "before" value. A test that only checks `None == None` after the operation passes silently even if the setup step (e.g., PID recording) regressed.
+
+```rust
+// Good — precondition + postcondition
+let task = env.api().get_task(&task.id).unwrap();
+assert!(task.agent_pid.is_some(), "agent_pid should be set after spawn");
+
+env.advance(); // process completion
+
+let task = env.api().get_task(&task.id).unwrap();
+assert!(task.agent_pid.is_none(), "agent_pid should be cleared after dispatch");
+
+// Bad — only checks postcondition; passes even if agent_pid was never set
+env.advance();
+let task = env.api().get_task(&task.id).unwrap();
+assert!(task.agent_pid.is_none());
+```
+
 ```rust
 #[test]
 fn test_rejection_loops_back_to_work() {

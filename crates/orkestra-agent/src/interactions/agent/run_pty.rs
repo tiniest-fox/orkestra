@@ -421,20 +421,12 @@ fn finalize_pty_session(
 
     // Final sidechain reads. Re-derive the sidechain dir from the final transcript path so
     // newly-appeared agent directories are caught when the path diverged from the fallback.
+    // update_sidechains discovers any new entries before reading, so no separate conditional
+    // discover step is needed — it handles both the same-path and diverged-path cases.
     let sidechain_dir = derive_sidechain_dir(&transcript_path);
-    if transcript_path != fallback_transcript_path {
-        let new = discover_new_sidechains(&sidechain_dir, &sidechains);
-        for (k, s) in new {
-            sidechains.insert(k, s);
-        }
-    }
     // Brief wait for sidechain files to flush alongside the main transcript.
     thread::sleep(Duration::from_millis(50));
-    for state in sidechains.values_mut() {
-        let path = state.file_path.clone();
-        let id = state.parent_tool_use_id.clone();
-        state.file_pos = read_sidechain_lines(&path, state.file_pos, &id, parser, tx);
-    }
+    update_sidechains(&sidechain_dir, &mut sidechains, parser, tx);
 
     // Process is confirmed done — disarm so Drop sends SIGTERM only (no SIGKILL escalation)
     pty_handle.guard.disarm();
@@ -821,6 +813,26 @@ fn wait_for_stable_size(path: &Path, stable_for: Duration, timeout: Duration) {
     }
 }
 
+/// Read complete lines from `path` starting at `file_pos` (byte offset).
+///
+/// Returns `(complete_lines_as_string, new_byte_position)`, or `None` if the file cannot
+/// be read or contains no complete lines. Positions track raw bytes — see the gotcha in
+/// CLAUDE.md about UTF-8 lossy offset drift.
+fn read_complete_lines(path: &Path, file_pos: usize) -> Option<(String, usize)> {
+    let mut file = std::fs::File::open(path).ok()?;
+    file.seek(SeekFrom::Start(file_pos as u64)).ok()?;
+    let mut raw = Vec::new();
+    BufReader::new(file).read_to_end(&mut raw).ok()?;
+    // Find the last newline in raw bytes. 0x0A cannot appear as a UTF-8 continuation
+    // byte, so this is always a correct line boundary regardless of encoding.
+    let complete_end = raw.iter().rposition(|&b| b == b'\n').map(|pos| pos + 1)?;
+    // Convert only the complete portion so that `complete_end` remains a valid raw
+    // byte offset — lossy replacement expands invalid bytes (1 byte → 3 bytes) which
+    // would make the returned file position overshoot the actual file position.
+    let buf = String::from_utf8_lossy(&raw[..complete_end]).into_owned();
+    Some((buf, file_pos + complete_end))
+}
+
 /// Read new complete lines from `path` starting at `file_pos` (byte offset), parse each
 /// through `parser`, emit `LogLine` events, append to `full_output`, and return the updated
 /// byte position. Incomplete trailing lines (no terminating `\n`) are not parsed — the position
@@ -833,30 +845,9 @@ fn read_new_lines(
     full_output: &mut String,
     line_count: &mut usize,
 ) -> usize {
-    let Ok(mut file) = std::fs::File::open(path) else {
+    let Some((buf, new_pos)) = read_complete_lines(path, file_pos) else {
         return file_pos;
     };
-
-    if file.seek(SeekFrom::Start(file_pos as u64)).is_err() {
-        return file_pos;
-    }
-
-    let mut raw = Vec::new();
-    if BufReader::new(file).read_to_end(&mut raw).is_err() {
-        return file_pos;
-    }
-
-    // Find the last newline in raw bytes. 0x0A cannot appear as a UTF-8 continuation
-    // byte, so this is always a correct line boundary regardless of encoding.
-    let complete_end = match raw.iter().rposition(|&b| b == b'\n') {
-        Some(pos) => pos + 1,
-        None => return file_pos,
-    };
-
-    // Convert only the complete portion so that `complete_end` remains a valid raw
-    // byte offset — lossy replacement expands invalid bytes (1 byte → 3 bytes) which
-    // would make the returned file position overshoot the actual file position.
-    let buf = String::from_utf8_lossy(&raw[..complete_end]);
 
     for line in buf.lines() {
         if line.trim().is_empty() {
@@ -872,7 +863,7 @@ fn read_new_lines(
 
         for entry in update.log_entries {
             if tx.send(RunEvent::LogLine(entry)).is_err() {
-                return file_pos + complete_end;
+                return new_pos;
             }
         }
 
@@ -880,7 +871,7 @@ fn read_new_lines(
         full_output.push('\n');
     }
 
-    file_pos + complete_end
+    new_pos
 }
 
 /// Poll the transcript file for new lines every 150ms while waiting for the Stop hook.
@@ -1042,19 +1033,24 @@ fn discover_new_sidechains(
 
 /// Inject a `parent_tool_use_id` field into a JSON line.
 ///
-/// Returns the modified JSON string, or the original string if it is not valid JSON.
-fn inject_parent_tool_use_id(line: &str, parent_tool_use_id: &str) -> String {
-    match serde_json::from_str::<serde_json::Value>(line) {
-        Ok(mut v) => {
-            if let Some(obj) = v.as_object_mut() {
-                obj.insert(
-                    "parent_tool_use_id".to_string(),
-                    serde_json::Value::String(parent_tool_use_id.to_string()),
-                );
-            }
-            v.to_string()
+/// Returns `None` if the line is not valid JSON (and logs a debug message). Returns
+/// the modified JSON string on success.
+fn inject_parent_tool_use_id(line: &str, parent_tool_use_id: &str) -> Option<String> {
+    if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(line) {
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert(
+                "parent_tool_use_id".to_string(),
+                serde_json::Value::String(parent_tool_use_id.to_string()),
+            );
         }
-        Err(_) => line.to_string(),
+        Some(v.to_string())
+    } else {
+        orkestra_debug!(
+            "runner",
+            "run_pty: skipping malformed sidechain JSON line: {:?}",
+            &line[..line.len().min(120)]
+        );
+        None
     }
 }
 
@@ -1067,37 +1063,27 @@ fn read_sidechain_lines(
     parser: &mut dyn AgentParser,
     tx: &Sender<RunEvent>,
 ) -> usize {
-    let Ok(mut file) = std::fs::File::open(path) else {
+    let Some((buf, new_pos)) = read_complete_lines(path, file_pos) else {
         return file_pos;
     };
-    if file.seek(SeekFrom::Start(file_pos as u64)).is_err() {
-        return file_pos;
-    }
-    let mut raw = Vec::new();
-    if BufReader::new(file).read_to_end(&mut raw).is_err() {
-        return file_pos;
-    }
-    let complete_end = match raw.iter().rposition(|&b| b == b'\n') {
-        Some(pos) => pos + 1,
-        None => return file_pos,
-    };
-    let buf = String::from_utf8_lossy(&raw[..complete_end]);
     for line in buf.lines() {
         if line.trim().is_empty() {
             continue;
         }
-        let injected = inject_parent_tool_use_id(line, parent_tool_use_id);
+        let Some(injected) = inject_parent_tool_use_id(line, parent_tool_use_id) else {
+            continue;
+        };
         let update = parser.parse_line(&injected);
         if let Some(sid) = update.session_id {
             let _ = tx.send(RunEvent::SessionId(sid));
         }
         for entry in update.log_entries {
             if tx.send(RunEvent::LogLine(entry)).is_err() {
-                return file_pos + complete_end;
+                return new_pos;
             }
         }
     }
-    file_pos + complete_end
+    new_pos
 }
 
 /// Discover new sidechains and read pending lines from all tracked sidechains.
@@ -1112,9 +1098,13 @@ fn update_sidechains(
         sidechains.insert(k, s);
     }
     for state in sidechains.values_mut() {
-        let path = state.file_path.clone();
-        let id = state.parent_tool_use_id.clone();
-        state.file_pos = read_sidechain_lines(&path, state.file_pos, &id, parser, tx);
+        state.file_pos = read_sidechain_lines(
+            &state.file_path,
+            state.file_pos,
+            &state.parent_tool_use_id,
+            parser,
+            tx,
+        );
     }
 }
 
@@ -1912,7 +1902,7 @@ mod tests {
     #[test]
     fn test_inject_parent_tool_use_id() {
         let line = r#"{"type":"tool_use","id":"toolu_01"}"#;
-        let result = inject_parent_tool_use_id(line, "toolu_parent");
+        let result = inject_parent_tool_use_id(line, "toolu_parent").unwrap();
         let v: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(v["parent_tool_use_id"], "toolu_parent");
         assert_eq!(v["type"], "tool_use");
@@ -1923,13 +1913,13 @@ mod tests {
     fn test_inject_parent_tool_use_id_invalid_json() {
         let line = "not json at all";
         let result = inject_parent_tool_use_id(line, "toolu_parent");
-        assert_eq!(result, "not json at all");
+        assert!(result.is_none(), "malformed JSON should return None");
     }
 
     #[test]
     fn test_inject_parent_tool_use_id_preserves_existing_fields() {
         let line = r#"{"a":1,"b":"hello","c":true}"#;
-        let result = inject_parent_tool_use_id(line, "pid");
+        let result = inject_parent_tool_use_id(line, "pid").unwrap();
         let v: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(v["a"], 1);
         assert_eq!(v["b"], "hello");

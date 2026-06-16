@@ -13,7 +13,7 @@ mod prompt;
 
 pub use crate::workflow::stage::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
 pub use orkestra_parser::{
-    AgentParser, ClaudeParserService as ClaudeAgentParser,
+    AgentParser, ClaudeParserService as ClaudeAgentParser, CodexParserService as CodexAgentParser,
     OpenCodeParserService as OpenCodeAgentParser, ResourceOutput, StageOutput, StageOutputError,
     SubtaskOutput,
 };
@@ -31,10 +31,10 @@ pub use orkestra_agent::AgentRunner as AgentRunnerTrait;
 pub use orkestra_agent::HookServer;
 pub use orkestra_agent::ProcessAgentRunner as AgentRunner;
 pub use orkestra_agent::{
-    claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    AgentCompletionError, ExecutionMode, ProviderCapabilities, ProviderRegistry, RegistryError,
-    ResolvedProvider, RunConfig, RunError, RunEvent, RunResult, ScriptEnv, ScriptHandle,
-    ScriptPollState, ScriptResult,
+    claudecode_aliases, claudecode_capabilities, codex_aliases, codex_capabilities,
+    opencode_aliases, opencode_capabilities, AgentCompletionError, ExecutionMode,
+    ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider, RunConfig, RunError,
+    RunEvent, RunResult, ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult,
 };
 
 // Internal-only imports for build_production_registry — not part of the public API.
@@ -53,7 +53,9 @@ pub use orkestra_agent::{default_test_registry, MockAgentRunner};
 /// capabilities and aliases. This is the single source of truth — all three
 /// production callers (`StageExecutionService`, daemon, Tauri) use this function.
 pub fn build_production_registry() -> ProviderRegistry {
-    use crate::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
+    use crate::workflow::adapters::{
+        ClaudeProcessSpawner, CodexProcessSpawner, OpenCodeProcessSpawner,
+    };
     use crate::workflow::ports::ProcessSpawner;
     use std::sync::Arc;
 
@@ -69,6 +71,12 @@ pub fn build_production_registry() -> ProviderRegistry {
         Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
         opencode_capabilities(),
         opencode_aliases(),
+    );
+    registry.register(
+        "codex",
+        Arc::new(CodexProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        codex_capabilities(),
+        codex_aliases(),
     );
     registry.register(
         "claude-pty",
@@ -116,5 +124,20 @@ mod tests {
             ExecutionMode::Process,
             "claudecode must use ExecutionMode::Process"
         );
+    }
+
+    /// Verify codex is registered with the correct capabilities.
+    #[test]
+    fn production_registry_codex_routes_and_has_correct_capabilities() {
+        let registry = build_production_registry();
+        let resolved = registry
+            .resolve(Some("codex/o4-mini"))
+            .expect("codex should be registered");
+        assert_eq!(resolved.provider_name, "codex");
+        assert_eq!(resolved.model_id, Some("o4-mini".to_string()));
+        assert_eq!(resolved.capabilities.execution_mode, ExecutionMode::Process);
+        assert!(resolved.capabilities.supports_json_schema);
+        assert!(resolved.capabilities.generates_own_session_id);
+        assert!(!resolved.capabilities.supports_system_prompt);
     }
 }

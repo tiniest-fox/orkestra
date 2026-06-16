@@ -28,6 +28,7 @@ src/
     └── spawner/
         ├── cli_path.rs    # PATH preparation for CLI tools
         ├── claude.rs      # ClaudeProcessSpawner
+        ├── codex.rs       # CodexProcessSpawner
         └── opencode.rs    # OpenCodeProcessSpawner
 ```
 
@@ -42,7 +43,7 @@ Model specs are resolved via prefix-based routing in `resolve_spec()`:
 | `None` | - | Default provider's default model |
 | `claude/X` | `"claude/sonnet-4.6"` | Claude Code — prefix stripped, `X` passed raw |
 | `claudecode/X` | `"claudecode/opus"` | Claude Code — prefix stripped, `X` passed raw |
-| `codex/X` | `"codex/o4-mini"` | Error: not yet implemented |
+| `codex/X` | `"codex/o4-mini"` | Codex — prefix stripped, `X` passed as `--model` |
 | Other prefixed | `"opencode/kimi-k2.6"`, `"moonshot/..."` | OpenCode — full spec passed as `--model` |
 | Bare alias | `"sonnet"`, `"kimi"` | Alias table lookup; error on miss |
 
@@ -110,19 +111,19 @@ Async execution emits events through a channel:
 
 ## Provider Differences
 
-| Feature | Claude Code | OpenCode |
-|---------|-------------|----------|
-| CLI command | `claude` | `opencode run` |
-| JSON schema | `--json-schema` flag | Embedded in prompt |
-| New session | `--session-id UUID` | Auto-generated |
-| Resume session | `--resume UUID` | `--session SES_ID` |
-| System prompt | `--append-system-prompt` | Not supported |
-| Disallowed tools | `--disallowedTools` flag | Prompt-level only |
-| Output format | `--output-format stream-json` | `--format json` |
+| Feature | Claude Code | OpenCode | Codex |
+|---------|-------------|----------|-------|
+| CLI command | `claude` | `opencode run` | `codex exec --json` |
+| JSON schema | `--json-schema` flag | Embedded in prompt | `--output-schema` temp file |
+| New session | `--session-id UUID` | Auto-generated | Extracted from `thread.started` JSONL |
+| Resume session | `--resume UUID` | `--session SES_ID` | `codex exec resume <id> -` |
+| System prompt | `--append-system-prompt` | Not supported | Not supported |
+| Disallowed tools | `--disallowedTools` flag | Prompt-level only | Prompt-level only |
+| Output format | `--output-format stream-json` | `--format json` | JSONL (provider default) |
 
 ## Gotchas
 
-- **Alias count assertions are mirrored**: `registry.rs` has `opencode_aliases_are_correct` and `claude_aliases_are_correct` tests that assert both individual alias mappings *and* `aliases.len()`. When you add a model in `orkestra-types/src/config/models.rs`, the gate will fail until you also add the corresponding alias assertion and bump the `len()` in that test.
+- **Alias count assertions are mirrored**: `registry.rs` has `opencode_aliases_are_correct`, `claudecode_aliases_are_correct`, and `codex_aliases_are_correct` tests that assert both individual alias mappings *and* `aliases.len()`. When you add a model in `orkestra-types/src/config/models.rs`, the gate will fail until you also add the corresponding alias assertion and bump the `len()` in that test.
 
 - **OpenCode session IDs**: OpenCode generates `ses_...` IDs internally. Don't pre-generate UUIDs for OpenCode — the session ID is extracted from the output stream.
 - **Provider capabilities affect prompts**: When `supports_json_schema` is false, the JSON schema is injected into the prompt text by `PromptBuilder` in orkestra-prompt.

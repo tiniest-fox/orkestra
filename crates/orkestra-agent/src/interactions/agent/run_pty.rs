@@ -176,12 +176,12 @@ struct PtySessionParams<'a> {
 
 /// Compute the fallback transcript path + baseline size, then wait for PTY readiness.
 ///
-/// Returns `(fallback_transcript_path, baseline_size_usize, readiness_outcome)`.
+/// Returns `(baseline, readiness_outcome)`.
 fn compute_transcript_baseline_and_wait(
     hook_rx: &HookReceiver,
     writer: &mut Box<dyn Write + Send>,
     ctx: PtySessionParams<'_>,
-) -> (PathBuf, usize, ReadinessOutcome) {
+) -> (TranscriptBaseline, ReadinessOutcome) {
     // baseline_size is the initial file position for tail_transcript_until_stop so
     // prior-run content is not re-parsed as new output.
     let fallback_transcript_path =
@@ -206,8 +206,10 @@ fn compute_transcript_baseline_and_wait(
         ctx.is_resume,
     );
     (
-        fallback_transcript_path,
-        baseline_size_usize,
+        TranscriptBaseline {
+            path: fallback_transcript_path,
+            size: baseline_size_usize,
+        },
         readiness_outcome,
     )
 }
@@ -244,7 +246,7 @@ fn drive_pty_session(
         ctx.prompt.len()
     );
 
-    let (fallback_transcript_path, baseline_size_usize, readiness_outcome) =
+    let (baseline, readiness_outcome) =
         compute_transcript_baseline_and_wait(hook_rx, &mut pty_handle.writer, ctx);
 
     match readiness_outcome {
@@ -256,8 +258,7 @@ fn drive_pty_session(
                 tx,
                 &mut *parser,
                 &ctx,
-                &fallback_transcript_path,
-                baseline_size_usize,
+                &baseline,
             );
         }
         ReadinessOutcome::EarlyCompletion(event) => {
@@ -270,11 +271,11 @@ fn drive_pty_session(
                     &mut *parser,
                     ctx.task_id,
                     ctx.schema,
-                    &fallback_transcript_path,
+                    &baseline.path,
                 ),
                 Some(&event),
                 String::new(),
-                baseline_size_usize,
+                baseline.size,
             );
         }
         ReadinessOutcome::Timeout => {
@@ -302,8 +303,7 @@ fn run_tail_and_finalize(
     tx: &Sender<RunEvent>,
     parser: &mut dyn AgentParser,
     ctx: &PtySessionParams<'_>,
-    fallback_transcript_path: &Path,
-    baseline_size_usize: usize,
+    baseline: &TranscriptBaseline,
 ) {
     // Two Text events needed for `has_confirmed_output` crash-recovery tracking.
     let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
@@ -315,12 +315,12 @@ fn run_tail_and_finalize(
 
     // Tail transcript until Stop hook fires; polls every 150ms, checks liveness every ~3s.
     let (hook_event, full_output, tail_file_pos) = tail_transcript_until_stop(
-        fallback_transcript_path,
+        &baseline.path,
         hook_rx,
         &mut pty_handle.child,
         parser,
         tx,
-        baseline_size_usize,
+        baseline.size,
     );
 
     finalize_pty_session(
@@ -331,12 +331,17 @@ fn run_tail_and_finalize(
             parser,
             ctx.task_id,
             ctx.schema,
-            fallback_transcript_path,
+            &baseline.path,
         ),
         hook_event.as_ref(),
         full_output,
         tail_file_pos,
     );
+}
+
+struct TranscriptBaseline {
+    path: PathBuf,
+    size: usize,
 }
 
 struct FinalizePtyParams<'a> {

@@ -10,6 +10,20 @@ use crate::workflow::OrchestratorEvent;
 // Helpers
 // ============================================================================
 
+/// Clear the agent PID from the stage session after agent completion.
+///
+/// Prevents stale PIDs from persisting in the database. Non-fatal:
+/// if this fails, startup recovery will clean it up.
+fn clear_agent_pid(store: &dyn WorkflowStore, task_id: &str, stage: &str) -> WorkflowResult<()> {
+    if let Some(mut session) = store.get_stage_session(task_id, stage)? {
+        if session.agent_pid.is_some() {
+            session.agent_pid = None;
+            store.save_stage_session(&session)?;
+        }
+    }
+    Ok(())
+}
+
 /// Persist the activity flag for a stage session when the agent produced output.
 ///
 /// Called on `AgentSuccess` (valid structured output) and `AgentMalformedOutput`
@@ -40,6 +54,15 @@ fn persist_activity_flag(
 pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<OrchestratorEvent> {
     match exec.result {
         ExecutionResult::AgentSuccess(stage_output) => {
+            if let Err(e) = clear_agent_pid(api.store.as_ref(), &exec.task_id, &exec.stage) {
+                orkestra_debug!(
+                    "orchestrator",
+                    "Failed to clear agent PID for {}/{}: {}",
+                    exec.task_id,
+                    exec.stage,
+                    e
+                );
+            }
             let output_type = stage_output.notification_label().to_string();
             orkestra_debug!(
                 "orchestrator",
@@ -97,6 +120,15 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
             }
         }
         ExecutionResult::AgentFailed(error) | ExecutionResult::PollError { error } => {
+            if let Err(e) = clear_agent_pid(api.store.as_ref(), &exec.task_id, &exec.stage) {
+                orkestra_debug!(
+                    "orchestrator",
+                    "Failed to clear agent PID for {}/{}: {}",
+                    exec.task_id,
+                    exec.stage,
+                    e
+                );
+            }
             if let Err(e) =
                 api.fail_agent_execution(&exec.task_id, &format!("Agent error: {error}"))
             {
@@ -113,6 +145,15 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
             })
         }
         ExecutionResult::AgentMalformedOutput(error) => {
+            if let Err(e) = clear_agent_pid(api.store.as_ref(), &exec.task_id, &exec.stage) {
+                orkestra_debug!(
+                    "orchestrator",
+                    "Failed to clear agent PID for {}/{}: {}",
+                    exec.task_id,
+                    exec.stage,
+                    e
+                );
+            }
             // Persist activity flag so the retry spawn resumes the existing session.
             // The agent produced output (just not valid structured output), so the
             // session should continue with a corrective prompt rather than start fresh.
@@ -154,6 +195,15 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
             }
         }
         ExecutionResult::AgentPlainText(_text) => {
+            if let Err(e) = clear_agent_pid(api.store.as_ref(), &exec.task_id, &exec.stage) {
+                orkestra_debug!(
+                    "orchestrator",
+                    "Failed to clear agent PID for {}/{}: {}",
+                    exec.task_id,
+                    exec.stage,
+                    e
+                );
+            }
             // Agent produced prose with no structured output — not retryable. Persist activity
             // so any future respawn resumes the existing session, then park for human review.
             if let Err(e) = persist_activity_flag(api.store.as_ref(), &exec.task_id, &exec.stage) {

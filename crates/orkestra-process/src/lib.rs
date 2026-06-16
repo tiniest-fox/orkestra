@@ -24,6 +24,7 @@ pub use interactions::stream::parse_event::execute as parse_stream_event;
 pub use interactions::tree::is_running::execute as is_process_running;
 pub use interactions::tree::is_zombie::execute as is_zombie;
 pub use interactions::tree::kill::execute as kill_process_tree;
+pub use interactions::tree::reap::execute as reap_process;
 
 // Mock (feature-gated)
 #[cfg(any(test, feature = "testutil"))]

@@ -18,6 +18,7 @@ fn clear_agent_pid(store: &dyn WorkflowStore, task_id: &str, stage: &str) -> Wor
     if let Some(mut session) = store.get_stage_session(task_id, stage)? {
         if session.agent_pid.is_some() {
             session.agent_pid = None;
+            session.updated_at = chrono::Utc::now().to_rfc3339();
             store.save_stage_session(&session)?;
         }
     }

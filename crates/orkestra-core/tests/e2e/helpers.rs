@@ -13,8 +13,8 @@ use orkestra_core::workflow::{
     config::WorkflowConfig,
     domain::{Question, Task, TokenUsage},
     execution::{
-        claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-        ProviderRegistry, RunConfig, StageOutput,
+        claudecode_aliases, claudecode_capabilities, codex_aliases, codex_capabilities,
+        opencode_aliases, opencode_capabilities, ProviderRegistry, RunConfig, StageOutput,
     },
     ports::{GitService, MockGitService, MockPrService, PrMonitor, PrService},
     runtime::TaskState,
@@ -63,6 +63,12 @@ fn test_provider_registry() -> Arc<ProviderRegistry> {
         Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
         opencode_capabilities(),
         opencode_aliases(),
+    );
+    registry.register(
+        "codex",
+        Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        codex_capabilities(),
+        codex_aliases(),
     );
     Arc::new(registry)
 }

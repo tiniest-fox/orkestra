@@ -1583,6 +1583,98 @@ fn test_opencode_no_pregenerated_session_id() {
     );
 }
 
+/// Verify that Codex stages don't pre-generate session UUIDs and that the
+/// orchestrator routes `codex/o3` through the Codex provider end-to-end.
+///
+/// Codex generates its own session IDs (extracted from `thread.started` JSONL),
+/// so the orchestrator must not pre-generate a UUID — mirroring `OpenCode`'s behaviour.
+///
+/// Flow:
+/// 1. Create a single-stage workflow using `codex/o3`
+/// 2. First spawn: verify `session_id` is `None` and `RunConfig.model` is `"codex/o3"`
+///    (raw stage-config spec; the spawner receives the stripped `"o3"` via `resolved.model_id`)
+/// 3. Verify no `claude_session_id` in DB (mock doesn't emit `RunEvent::SessionId`)
+/// 4. Restart + retry: verify `session_id` is still `None` and `is_resume` is `false`
+#[test]
+fn test_codex_provider_routes_and_no_pregenerated_session_id() {
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "result")
+        .with_prompt("worker.md")
+        .with_model("codex/o3")
+        .with_gate(GateConfig::Agentic)]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Codex provider test",
+        "Verify Codex provider routing and session ID behaviour",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "result".to_string(),
+            content: "Codex output".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes output
+
+    // Codex generates its own session IDs — no pre-generated UUID should be passed.
+    let first_call = ctx.last_run_config();
+    assert_eq!(
+        first_call.session_id, None,
+        "Codex stage should NOT have a pre-generated session ID"
+    );
+    assert!(!first_call.is_resume, "First spawn should not be a resume");
+
+    // RunConfig.model carries the raw stage-config spec; the spawner receives the
+    // registry-resolved model_id ("o3") via a separate resolved.model_id path.
+    assert_eq!(
+        first_call.model.as_deref(),
+        Some("codex/o3"),
+        "RunConfig.model should hold the raw stage-config model spec"
+    );
+
+    // Mock runner never emits RunEvent::SessionId, so no claude_session_id is stored.
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("Session should exist after first spawn");
+    assert!(
+        session.claude_session_id.is_none(),
+        "Session should have no claude_session_id (mock never emits SessionId events)"
+    );
+
+    // Restart and verify the retry also has no pre-generated session ID.
+    ctx.api().restart_stage(&task_id, "Try again").unwrap();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "result".to_string(),
+            content: "Codex second output".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes output
+
+    let second_call = ctx.last_run_config();
+    assert_eq!(
+        second_call.session_id, None,
+        "Retry should NOT have a session ID (none was ever extracted from Codex output)"
+    );
+    assert!(
+        !second_call.is_resume,
+        "Retry without session ID must NOT be a resume"
+    );
+}
+
 // =============================================================================
 // Session Reset on Cross-Stage Rejection Tests
 // =============================================================================

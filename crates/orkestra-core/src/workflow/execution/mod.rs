@@ -13,7 +13,7 @@ mod prompt;
 
 pub use crate::workflow::stage::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
 pub use orkestra_parser::{
-    AgentParser, ClaudeParserService as ClaudeAgentParser,
+    AgentParser, ClaudeParserService as ClaudeAgentParser, CodexParserService as CodexAgentParser,
     OpenCodeParserService as OpenCodeAgentParser, ResourceOutput, StageOutput, StageOutputError,
     SubtaskOutput,
 };

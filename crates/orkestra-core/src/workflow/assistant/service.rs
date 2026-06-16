@@ -178,27 +178,15 @@ impl AssistantService {
         task_id: &str,
         message: &str,
     ) -> WorkflowResult<AssistantSession> {
-        let workflow = &self.workflow;
-        self.send_task_scoped_message(
-            task_id,
-            message,
-            SessionType::Assistant,
-            |task| Self::build_task_system_prompt(task, workflow),
-            DISALLOWED_TOOLS,
-        )
+        self.send_task_scoped_message(task_id, message)
     }
 
-    /// Shared logic for task-scoped message sending.
-    ///
     /// Handles the full lifecycle: empty check, task load, session get-or-create,
     /// worktree validation, kill previous agent, store user message, spawn agent.
     fn send_task_scoped_message(
         &self,
         task_id: &str,
         message: &str,
-        session_type: SessionType,
-        build_prompt: impl Fn(&Task) -> String,
-        disallowed_tools: &str,
     ) -> WorkflowResult<AssistantSession> {
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -218,15 +206,12 @@ impl AssistantService {
         let new_session_id = uuid::Uuid::new_v4().to_string();
         let claude_session_id = uuid::Uuid::new_v4().to_string();
         let mut new_session = AssistantSession::new(&new_session_id, &now).with_task(task_id);
-        if session_type == SessionType::Interactive {
-            new_session = new_session.with_interactive_type();
-        }
         new_session.claude_session_id = Some(claude_session_id);
 
         // Atomically get the existing session or create a new one
         let mut session = self.store.get_or_create_assistant_session_for_task(
             task_id,
-            &session_type,
+            &SessionType::Assistant,
             &new_session,
         )?;
 
@@ -284,13 +269,13 @@ impl AssistantService {
         )?;
 
         // Spawn the agent
-        let system_prompt = build_prompt(&task);
+        let system_prompt = Self::build_task_system_prompt(&task, &self.workflow);
         let spawn_result = self.spawn_agent_in(
             &session,
             message,
             &working_dir,
             &system_prompt,
-            disallowed_tools,
+            DISALLOWED_TOOLS,
         );
 
         self.handle_spawn_result(&mut session, spawn_result, &now)?;

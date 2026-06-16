@@ -640,7 +640,7 @@ mod tests {
         let resolved = registry.resolve(Some("o4-mini")).unwrap();
         assert_eq!(resolved.model_id, Some("o4-mini".to_string()));
         assert_eq!(resolved.provider_name, "codex");
-        assert!(!resolved.capabilities.supports_json_schema);
+        assert!(resolved.capabilities.supports_json_schema);
     }
 
     #[test]
@@ -660,7 +660,9 @@ mod tests {
                 assert!(available.contains(&"o4-mini".to_string()));
                 assert!(available.contains(&"o3".to_string()));
             }
-            other => panic!("expected UnknownAlias, got {other:?}"),
+            other @ RegistryError::UnknownProvider(_) => {
+                panic!("expected UnknownAlias, got {other:?}")
+            }
         }
     }
 
@@ -677,7 +679,9 @@ mod tests {
                 sorted.sort();
                 assert_eq!(available, &sorted);
             }
-            other => panic!("expected UnknownAlias, got {other:?}"),
+            other @ RegistryError::UnknownProvider(_) => {
+                panic!("expected UnknownAlias, got {other:?}")
+            }
         }
         // Display message should be well-formed
         let msg = err.to_string();

@@ -113,10 +113,10 @@ Async execution emits events through a channel:
 
 | Feature | Claude Code | OpenCode | Codex |
 |---------|-------------|----------|-------|
-| CLI command | `claude` | `opencode run` | `codex --full-auto` |
-| JSON schema | `--json-schema` flag | Embedded in prompt | Embedded in prompt |
-| New session | `--session-id UUID` | Auto-generated | Not supported |
-| Resume session | `--resume UUID` | `--session SES_ID` | Not supported |
+| CLI command | `claude` | `opencode run` | `codex exec --json` |
+| JSON schema | `--json-schema` flag | Embedded in prompt | `--output-schema` temp file |
+| New session | `--session-id UUID` | Auto-generated | Extracted from `thread.started` JSONL |
+| Resume session | `--resume UUID` | `--session SES_ID` | `codex exec resume <id> -` |
 | System prompt | `--append-system-prompt` | Not supported | Not supported |
 | Disallowed tools | `--disallowedTools` flag | Prompt-level only | Prompt-level only |
 | Output format | `--output-format stream-json` | `--format json` | JSONL (provider default) |

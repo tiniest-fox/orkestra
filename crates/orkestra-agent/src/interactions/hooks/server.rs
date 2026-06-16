@@ -166,6 +166,7 @@ fn dispatch_payload(payload: &str, senders: &Arc<Mutex<HashMap<String, mpsc::Sen
     let event_type = match parsed.event.as_str() {
         "stop" => HookEventType::Stop,
         "session_end" => HookEventType::SessionEnd,
+        "user_prompt_submit" => HookEventType::UserPromptSubmit,
         other => {
             orkestra_debug!("hooks", "unknown hook event type: {other}");
             return;
@@ -246,6 +247,25 @@ mod tests {
         assert_eq!(event.session_id, "ses-abc");
         assert_eq!(event.event_type, HookEventType::Stop);
         assert_eq!(event.transcript_path, Some(PathBuf::from("/tmp/a.jsonl")));
+        assert!(event.reason.is_none());
+    }
+
+    #[test]
+    fn test_user_prompt_submit_event_delivered() {
+        let dir = TempDir::new().unwrap();
+        let server = execute(dir.path()).unwrap();
+        let rx = server.register_task("task-ups");
+
+        send_payload(
+            server.socket_path(),
+            r#"{"event":"user_prompt_submit","task_id":"task-ups","session_id":"ses-ups"}"#,
+        );
+
+        let event = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(event.task_id, "task-ups");
+        assert_eq!(event.session_id, "ses-ups");
+        assert_eq!(event.event_type, HookEventType::UserPromptSubmit);
+        assert!(event.transcript_path.is_none());
         assert!(event.reason.is_none());
     }
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Mock claude for PTY crash recovery tests.
-# Writes transcript and args sidecar, exits WITHOUT firing the Stop hook.
-# Simulates a crash where the process dies mid-execution.
+# Writes transcript and args sidecar, fires UserPromptSubmit hook, then exits
+# WITHOUT firing the Stop hook. Simulates a crash where the process dies mid-execution.
 
 SESSION_ID=""
 SETTINGS_FILE=""
@@ -34,8 +34,29 @@ TRANSCRIPT_DIR="$HOME/.claude/projects/$ENCODED_CWD"
 mkdir -p "$TRANSCRIPT_DIR"
 TRANSCRIPT="$TRANSCRIPT_DIR/${SESSION_ID}.jsonl"
 
+# shellcheck source=send_hook.sh
+source "$(dirname "$0")/send_hook.sh"
+
+TASK_ID="${ORK_TASK_ID:-}"
+
+# On resume, write bookkeeping bytes before reading stdin (same as normal mock).
+if [ "$IS_RESUME" = true ]; then
+    printf '{"type":"system","subtype":"mode","mode":"normal"}\n' >> "$TRANSCRIPT"
+    printf '{"type":"system","subtype":"permission-mode","mode":"default"}\n' >> "$TRANSCRIPT"
+    sleep 1
+fi
+
+# On fresh start, write one bookkeeping byte to simulate cold-boot TUI init.
+if [ "$IS_RESUME" != true ]; then
+    printf '{"type":"system","subtype":"mode","mode":"normal"}\n' >> "$TRANSCRIPT"
+fi
+
 # Read prompt from PTY stdin
 read -r -t 5 PROMPT || true
+
+# Fire UserPromptSubmit hook — proves readiness detection works even for crashes
+# (hook fires, then process exits without Stop; dead-process detection handles cleanup).
+send_hook "UserPromptSubmit" "$(printf '{"event":"user_prompt_submit","task_id":"%s","session_id":"%s"}' "$TASK_ID" "$SESSION_ID")"
 
 # Write valid transcript (same as normal mock)
 printf '{"type":"assistant","message":{"content":[{"type":"text","text":"Working on it."}]}}\n' >> "$TRANSCRIPT"

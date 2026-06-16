@@ -69,6 +69,11 @@ impl AgentTestEnv {
         let claude_bin = temp_bin.path().join("claude");
         std::fs::copy(fixtures_dir.join("mock_claude_pty.sh"), &claude_bin)
             .expect("copy mock_claude_pty.sh");
+        std::fs::copy(
+            fixtures_dir.join("send_hook.sh"),
+            temp_bin.path().join("send_hook.sh"),
+        )
+        .expect("copy send_hook.sh");
         let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&claude_bin, perms).unwrap();
@@ -114,6 +119,11 @@ impl AgentTestEnv {
         let claude_bin = temp_bin.path().join("claude");
         std::fs::copy(fixtures_dir.join("mock_claude_pty_crash.sh"), &claude_bin)
             .expect("copy mock_claude_pty_crash.sh");
+        std::fs::copy(
+            fixtures_dir.join("send_hook.sh"),
+            temp_bin.path().join("send_hook.sh"),
+        )
+        .expect("copy send_hook.sh");
         let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&claude_bin, perms).unwrap();
@@ -155,6 +165,11 @@ impl AgentTestEnv {
             let claude_bin = bin_dir.path().join("claude");
             std::fs::copy(fixtures_dir.join("mock_claude_pty.sh"), &claude_bin)
                 .expect("copy mock_claude_pty.sh for swap");
+            std::fs::copy(
+                fixtures_dir.join("send_hook.sh"),
+                bin_dir.path().join("send_hook.sh"),
+            )
+            .expect("copy send_hook.sh for swap");
             let mut perms = std::fs::metadata(&claude_bin).unwrap().permissions();
             perms.set_mode(0o755);
             std::fs::set_permissions(&claude_bin, perms).unwrap();

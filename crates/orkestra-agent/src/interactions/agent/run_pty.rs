@@ -19,7 +19,7 @@ use orkestra_types::domain::{compute_transcript_path, LogEntry, PromptSection};
 use portable_pty::{CommandBuilder, PtySize};
 use tempfile::NamedTempFile;
 
-use crate::interactions::hooks::types::{HookEvent, HookReceiver, HookServer};
+use crate::interactions::hooks::types::{HookEvent, HookEventType, HookReceiver, HookServer};
 use crate::orkestra_debug;
 use crate::registry::{ProviderRegistry, ResolvedProvider};
 use crate::types::{AgentCompletionError, RunConfig, RunError, RunEvent};
@@ -174,6 +174,46 @@ struct PtySessionParams<'a> {
     is_resume: bool,
 }
 
+/// Compute the fallback transcript path + baseline size, then wait for PTY readiness.
+///
+/// Returns `(baseline, readiness_outcome)`.
+fn compute_transcript_baseline_and_wait(
+    hook_rx: &HookReceiver,
+    writer: &mut Box<dyn Write + Send>,
+    ctx: PtySessionParams<'_>,
+) -> (TranscriptBaseline, ReadinessOutcome) {
+    // baseline_size is the initial file position for tail_transcript_until_stop so
+    // prior-run content is not re-parsed as new output.
+    let fallback_transcript_path =
+        compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
+    let baseline_size = if ctx.is_resume {
+        std::fs::metadata(&fallback_transcript_path).map_or(0, |m| m.len())
+    } else {
+        0
+    };
+    let baseline_size_usize =
+        usize::try_from(baseline_size).expect("transcript size exceeds platform address space");
+    // Wait for readiness via dual-signal: UserPromptSubmit hook OR transcript growth.
+    // Re-send Enter every ~3s to handle TUI startup races; escalates on resume after 3 retries.
+    let readiness_deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let readiness_outcome = wait_for_readiness(
+        hook_rx,
+        writer,
+        readiness_deadline,
+        &fallback_transcript_path,
+        baseline_size,
+        ctx.prompt.as_bytes(),
+        ctx.is_resume,
+    );
+    (
+        TranscriptBaseline {
+            path: fallback_transcript_path,
+            size: baseline_size_usize,
+        },
+        readiness_outcome,
+    )
+}
+
 fn drive_pty_session(
     mut pty_handle: PtyHandle,
     hook_rx: &HookReceiver,
@@ -206,81 +246,102 @@ fn drive_pty_session(
         ctx.prompt.len()
     );
 
-    // Poll for JSONL transcript file (two Text events needed for `has_confirmed_output`
-    // crash-recovery tracking). Re-send Enter every ~3s to handle TUI startup race:
-    // initial \r may be swallowed during TUI boot; extra \r on idle composer is a no-op,
-    // on an unsubmitted composer it submits.
-    let fallback_transcript_path =
-        compute_transcript_path(ctx.home_dir, ctx.working_dir, ctx.session_id);
+    let (baseline, readiness_outcome) =
+        compute_transcript_baseline_and_wait(hook_rx, &mut pty_handle.writer, ctx);
 
-    // On resume, seed baseline to current file size so poll waits for new growth.
-    let baseline_size = if ctx.is_resume {
-        std::fs::metadata(&fallback_transcript_path).map_or(0, |m| m.len())
-    } else {
-        0
-    };
-
-    let poll_deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let poll_outcome = poll_for_transcript_with_enter_retry(
-        &fallback_transcript_path,
-        poll_deadline,
-        &mut pty_handle.writer,
-        baseline_size,
-        ctx.prompt.as_bytes(),
-        ctx.is_resume,
-    );
-
-    let transcript_found = match poll_outcome {
-        PollOutcome::Found => true,
-        PollOutcome::Timeout => false,
-        PollOutcome::WriteFailed(e) => {
-            // PTY process died — fail fast instead of waiting 30s
+    match readiness_outcome {
+        ReadinessOutcome::Ready => {
+            run_tail_and_finalize(
+                pty_handle,
+                hook_rx,
+                hook_server,
+                tx,
+                &mut *parser,
+                &ctx,
+                &baseline,
+            );
+        }
+        ReadinessOutcome::EarlyCompletion(event) => {
+            // Stop/SessionEnd arrived before the prompt was confirmed — skip tail entirely.
+            finalize_pty_session(
+                make_finalize_params(
+                    pty_handle,
+                    hook_server,
+                    tx,
+                    &mut *parser,
+                    ctx.task_id,
+                    ctx.schema,
+                    &baseline.path,
+                ),
+                Some(&event),
+                String::new(),
+                baseline.size,
+            );
+        }
+        ReadinessOutcome::Timeout => {
+            handle_transcript_not_found(pty_handle, hook_server, tx, ctx.task_id);
+        }
+        ReadinessOutcome::WriteFailed(e) => {
+            // PTY process died — fail fast instead of waiting for the deadline.
             let _ = tx.send(RunEvent::Completed(Err(AgentCompletionError::Crash(
                 format!("PTY process died during startup — failed to write Enter: {e}"),
             ))));
             drop(pty_handle);
             hook_server.unregister_task(ctx.task_id);
-            return;
         }
-    };
-
-    if transcript_found {
-        let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
-            content: "PTY session active".to_string(),
-        }));
-        let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
-            content: "PTY session confirmed".to_string(),
-        }));
-    } else {
-        handle_transcript_not_found(pty_handle, hook_server, tx, ctx.task_id);
-        return;
     }
+}
+
+/// Emit synthetic activity events, tail the transcript until Stop fires, then finalize.
+///
+/// Called from `drive_pty_session` once the session is confirmed ready. Extracted to
+/// keep `drive_pty_session` under the 100-line clippy threshold.
+fn run_tail_and_finalize(
+    mut pty_handle: PtyHandle,
+    hook_rx: &HookReceiver,
+    hook_server: &HookServer,
+    tx: &Sender<RunEvent>,
+    parser: &mut dyn AgentParser,
+    ctx: &PtySessionParams<'_>,
+    baseline: &TranscriptBaseline,
+) {
+    // Two Text events needed for `has_confirmed_output` crash-recovery tracking.
+    let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+        content: "PTY session active".to_string(),
+    }));
+    let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+        content: "PTY session confirmed".to_string(),
+    }));
 
     // Tail transcript until Stop hook fires; polls every 150ms, checks liveness every ~3s.
-    // initial_file_pos skips prior-run content on resume.
     let (hook_event, full_output, tail_file_pos) = tail_transcript_until_stop(
-        &fallback_transcript_path,
+        &baseline.path,
         hook_rx,
         &mut pty_handle.child,
-        &mut *parser,
+        parser,
         tx,
-        usize::try_from(baseline_size).expect("transcript size exceeds platform address space"),
+        baseline.size,
     );
 
     finalize_pty_session(
-        FinalizePtyParams {
+        make_finalize_params(
             pty_handle,
             hook_server,
             tx,
-            parser: &mut *parser,
-            task_id: ctx.task_id,
-            schema: ctx.schema,
-            fallback_transcript_path: &fallback_transcript_path,
-        },
+            parser,
+            ctx.task_id,
+            ctx.schema,
+            &baseline.path,
+        ),
         hook_event.as_ref(),
         full_output,
         tail_file_pos,
     );
+}
+
+struct TranscriptBaseline {
+    path: PathBuf,
+    size: usize,
 }
 
 struct FinalizePtyParams<'a> {
@@ -291,6 +352,26 @@ struct FinalizePtyParams<'a> {
     task_id: &'a str,
     schema: Option<&'a serde_json::Value>,
     fallback_transcript_path: &'a Path,
+}
+
+fn make_finalize_params<'a>(
+    pty_handle: PtyHandle,
+    hook_server: &'a HookServer,
+    tx: &'a Sender<RunEvent>,
+    parser: &'a mut dyn AgentParser,
+    task_id: &'a str,
+    schema: Option<&'a serde_json::Value>,
+    fallback_transcript_path: &'a Path,
+) -> FinalizePtyParams<'a> {
+    FinalizePtyParams {
+        pty_handle,
+        hook_server,
+        tx,
+        parser,
+        task_id,
+        schema,
+        fallback_transcript_path,
+    }
 }
 
 /// Resolve the transcript path, perform the final stabilized read, clean up the PTY
@@ -375,62 +456,103 @@ fn finalize_pty_session(
 // Helpers
 // ============================================================================
 
-/// Outcome of the transcript poll loop in `drive_pty_session`.
-enum PollOutcome {
-    Found,
+/// Outcome of the readiness wait in `drive_pty_session`.
+enum ReadinessOutcome {
+    /// Prompt accepted — proceed to tail the transcript.
+    Ready,
+    /// Stop or `SessionEnd` arrived before readiness — skip tail, finalize immediately.
+    EarlyCompletion(HookEvent),
+    /// Deadline elapsed with no readiness signal.
     Timeout,
+    /// PTY writer returned an error (process died).
     WriteFailed(String),
 }
 
-/// Poll for the JSONL transcript file to grow past `baseline_size`, re-sending Enter
-/// (or the full prompt + Enter on resume) every ~3s to handle the TUI startup race.
+/// Returns `true` when the retry write should escalate to Ctrl-U + full prompt re-delivery.
 ///
-/// `baseline_size = 0` covers fresh sessions (file doesn't exist yet — Found once it
-/// appears with any content). `baseline_size > 0` covers resumes (file exists from the
-/// prior run — Found only after new bytes are appended past the baseline).
+/// Only applies on resume sessions after the 3rd bare-`\r` retry, once the TUI
+/// replay is expected to have finished and further bare enters won't help.
+fn should_escalate(is_resume: bool, retry_count: u32) -> bool {
+    is_resume && retry_count > 3
+}
+
+/// Wait for the PTY session to accept the prompt using dual-signal detection.
 ///
-/// On fresh sessions retries send only `\r` — a no-op on an idle composer, submits on
-/// an unsubmitted one. On resume retries send the full `prompt` followed by `\r` because
-/// the TUI is replaying the old transcript and may have discarded the initial write.
+/// Returns `Ready` when either the `UserPromptSubmit` hook fires OR the transcript
+/// grows past `baseline_size` (fallback for environments where hooks fire late or
+/// not at all). Returns `EarlyCompletion` if a `Stop`/`SessionEnd` event arrives
+/// before readiness, `Timeout` if the deadline elapses, or `WriteFailed` if the
+/// PTY writer fails (process died).
 ///
-/// Returns `Found` when readiness is confirmed, `Timeout` when the deadline passes, or
-/// `WriteFailed` when the PTY writer returns an error (process died).
-fn poll_for_transcript_with_enter_retry(
-    path: &Path,
-    deadline: std::time::Instant,
+/// Retry cadence (every ~3s / 6 iterations):
+/// - Fresh sessions (`!is_resume`): bare `\r` — no-op on idle composer, submits otherwise.
+/// - Resume sessions, first 3 retries: bare `\r` while the TUI replays the transcript.
+/// - Resume sessions, subsequent retries: `\x15` (Ctrl-U) + full prompt + `\r` to
+///   re-deliver the prompt after the TUI finishes replaying and may have discarded the
+///   initial write.
+fn wait_for_readiness(
+    hook_rx: &HookReceiver,
     writer: &mut Box<dyn Write + Send>,
+    deadline: std::time::Instant,
+    transcript_path: &Path,
     baseline_size: u64,
     prompt: &[u8],
     is_resume: bool,
-) -> PollOutcome {
-    let mut polls_since_enter = 0u32;
+) -> ReadinessOutcome {
+    use std::sync::mpsc::TryRecvError;
+
+    let mut polls_since_retry = 0u32;
+    let mut retry_count = 0u32;
+
     loop {
-        // Found when the file has grown past baseline (or exists at all for baseline=0).
-        let current_size = std::fs::metadata(path).map_or(0, |m| m.len());
-        if current_size > baseline_size {
-            return PollOutcome::Found;
+        // Hook check — UserPromptSubmit signals prompt accepted; Stop/SessionEnd mean
+        // the session completed before readiness was confirmed.
+        match hook_rx.try_recv() {
+            Ok(event) => match event.event_type {
+                HookEventType::UserPromptSubmit => return ReadinessOutcome::Ready,
+                HookEventType::Stop | HookEventType::SessionEnd => {
+                    return ReadinessOutcome::EarlyCompletion(event);
+                }
+            },
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => return ReadinessOutcome::Timeout,
         }
+
+        // Transcript growth fallback — catches environments where hooks are unavailable.
+        // Skipped on resume: bookkeeping bytes grow the transcript before any real turn,
+        // causing a false-positive Ready before the prompt is actually read.
+        if !is_resume {
+            let current_size = std::fs::metadata(transcript_path).map_or(0, |m| m.len());
+            if current_size > baseline_size {
+                return ReadinessOutcome::Ready;
+            }
+        }
+
         if std::time::Instant::now() >= deadline {
-            return PollOutcome::Timeout;
+            return ReadinessOutcome::Timeout;
         }
-        polls_since_enter += 1;
-        if polls_since_enter >= 6 {
-            polls_since_enter = 0;
-            // On resume re-deliver the full prompt in case the initial write was
-            // swallowed while the TUI was replaying the prior transcript.
-            // On fresh sessions send only \r (no-op on idle composer, submits otherwise).
-            let write_result = if is_resume {
+
+        polls_since_retry += 1;
+        if polls_since_retry >= 6 {
+            polls_since_retry = 0;
+            retry_count += 1;
+
+            let write_result = if should_escalate(is_resume, retry_count) {
+                // Escalate: clear the composer line then re-deliver the full prompt.
                 writer
-                    .write_all(prompt)
+                    .write_all(b"\x15")
+                    .and_then(|()| writer.write_all(prompt))
                     .and_then(|()| writer.write_all(b"\r"))
                     .and_then(|()| writer.flush())
             } else {
                 writer.write_all(b"\r").and_then(|()| writer.flush())
             };
+
             if let Err(e) = write_result {
-                return PollOutcome::WriteFailed(e.to_string());
+                return ReadinessOutcome::WriteFailed(e.to_string());
             }
         }
+
         thread::sleep(Duration::from_millis(500));
     }
 }
@@ -614,8 +736,9 @@ fn build_pty_command(cfg: &PtyCommandConfig<'_>) -> Result<CommandBuilder, RunEr
 /// Write Claude Code hook settings JSON to a temp file.
 ///
 /// The Stop hook sends the turn-done signal to the UDS server. `SessionEnd`
-/// fires when the process terminates. Both commands use `$ORK_TASK_ID` (set
-/// in the PTY environment) for server-side routing.
+/// fires when the process terminates. `UserPromptSubmit` fires when the TUI
+/// accepts the prompt, signaling readiness. All commands use `$ORK_TASK_ID`
+/// (set in the PTY environment) for server-side routing.
 ///
 /// Returns an error if `socket_path` or `session_id` contain shell metacharacters.
 fn build_settings_file(
@@ -642,11 +765,15 @@ fn build_settings_file(
     let session_end_cmd = format!(
         "echo '{{\"event\":\"session_end\",\"task_id\":\"'\"$ORK_TASK_ID\"'\",\"session_id\":\"{session_id}\"}}' | nc -U {socket_path}"
     );
+    let user_prompt_submit_cmd = format!(
+        "echo '{{\"event\":\"user_prompt_submit\",\"task_id\":\"'\"$ORK_TASK_ID\"'\",\"session_id\":\"{session_id}\"}}' | nc -U {socket_path}"
+    );
 
     let settings = serde_json::json!({
         "hooks": {
             "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": stop_cmd}]}],
-            "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": session_end_cmd}]}]
+            "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": session_end_cmd}]}],
+            "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": user_prompt_submit_cmd}]}]
         }
     });
 
@@ -775,16 +902,21 @@ fn tail_transcript_until_stop(
     let mut polls_since_crash_check = 0u32;
 
     loop {
-        match hook_rx.receiver.try_recv() {
-            Ok(event) => {
-                orkestra_debug!(
-                    "runner",
-                    "run_pty: got hook event {:?} for session {}",
-                    event.event_type,
-                    event.session_id
-                );
-                return (Some(event), full_output, file_pos);
-            }
+        match hook_rx.try_recv() {
+            Ok(event) => match event.event_type {
+                HookEventType::Stop | HookEventType::SessionEnd => {
+                    orkestra_debug!(
+                        "runner",
+                        "run_pty: got hook event {:?} for session {}",
+                        event.event_type,
+                        event.session_id
+                    );
+                    return (Some(event), full_output, file_pos);
+                }
+                HookEventType::UserPromptSubmit => {
+                    // Stale or duplicate readiness signal — ignore and keep tailing.
+                }
+            },
             Err(TryRecvError::Empty) => {
                 file_pos = read_new_lines(
                     transcript_path,
@@ -929,7 +1061,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_file_contains_stop_and_session_end_hooks() {
+    fn settings_file_contains_all_hooks() {
         let file = build_settings_file("ses-123", "/tmp/hooks.sock").unwrap();
         let content = std::fs::read_to_string(file.path()).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -976,6 +1108,32 @@ mod tests {
         assert!(
             se_cmd.contains("\"event\":\"session_end\""),
             "SessionEnd cmd missing event type"
+        );
+
+        let ups_hooks = &parsed["hooks"]["UserPromptSubmit"];
+        assert!(
+            ups_hooks.is_array(),
+            "UserPromptSubmit hooks should be an array"
+        );
+        assert_eq!(
+            parsed["hooks"]["UserPromptSubmit"][0]["hooks"][0]["type"].as_str(),
+            Some("command"),
+            "UserPromptSubmit hook must use nested hooks array with type=command"
+        );
+        let ups_cmd = parsed["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(
+            ups_cmd.contains("nc -U /tmp/hooks.sock"),
+            "UserPromptSubmit cmd missing socket path"
+        );
+        assert!(
+            ups_cmd.contains("\"event\":\"user_prompt_submit\""),
+            "UserPromptSubmit cmd missing event type"
+        );
+        assert!(
+            ups_cmd.contains("ses-123"),
+            "UserPromptSubmit cmd missing session_id"
         );
     }
 
@@ -1314,9 +1472,8 @@ mod tests {
     }
 
     #[test]
-    fn poll_returns_found_only_when_file_grows_past_baseline() {
-        use std::io::Write as _;
-        use std::time::Instant;
+    fn wait_for_readiness_returns_ready_on_transcript_growth() {
+        use std::sync::mpsc;
 
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("transcript.jsonl");
@@ -1325,45 +1482,120 @@ mod tests {
         std::fs::write(&path, b"old content\n").unwrap();
         let baseline = std::fs::metadata(&path).unwrap().len();
 
+        // Keep sender alive so try_recv returns Empty (not Disconnected → Timeout).
+        let (_hook_tx, hook_rx_raw) = mpsc::channel::<HookEvent>();
+        let hook_rx = HookReceiver {
+            receiver: hook_rx_raw,
+        };
+
         let mut writer: Box<dyn Write + Send> = Box::new(std::io::sink());
 
-        // Short deadline — file hasn't grown yet, so poll must timeout.
-        let short_deadline = Instant::now() + Duration::from_millis(600);
-        let outcome = poll_for_transcript_with_enter_retry(
-            &path,
-            short_deadline,
-            &mut writer,
-            baseline,
-            b"Resume prompt",
-            true, // is_resume
-        );
-        assert!(
-            matches!(outcome, PollOutcome::Timeout),
-            "should timeout when file has not grown past baseline"
-        );
-
-        // Append new content past baseline.
+        // Append new content before calling wait_for_readiness — transcript growth path fires.
         {
             let mut f = std::fs::OpenOptions::new()
                 .append(true)
                 .open(&path)
                 .unwrap();
-            f.write_all(b"new line\n").unwrap();
+            std::io::Write::write_all(&mut f, b"new line\n").unwrap();
         }
 
-        // Now poll with generous deadline — should return Found immediately.
-        let long_deadline = Instant::now() + Duration::from_secs(5);
-        let outcome2 = poll_for_transcript_with_enter_retry(
-            &path,
-            long_deadline,
-            &mut writer,
-            baseline,
-            b"Resume prompt",
-            true, // is_resume
-        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let outcome =
+            wait_for_readiness(&hook_rx, &mut writer, deadline, &path, baseline, b"", false);
         assert!(
-            matches!(outcome2, PollOutcome::Found),
-            "should return Found once file has grown past baseline"
+            matches!(outcome, ReadinessOutcome::Ready),
+            "should return Ready once transcript grows past baseline"
+        );
+    }
+
+    #[test]
+    fn wait_for_readiness_timeout_when_no_signal() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("no-transcript.jsonl");
+        // File does not exist — no transcript growth, no hook.
+
+        let (_hook_tx, hook_rx_raw) = mpsc::channel::<HookEvent>();
+        let hook_rx = HookReceiver {
+            receiver: hook_rx_raw,
+        };
+
+        let mut writer: Box<dyn Write + Send> = Box::new(std::io::sink());
+        // Very short deadline.
+        let deadline = std::time::Instant::now() + Duration::from_millis(600);
+        let outcome = wait_for_readiness(&hook_rx, &mut writer, deadline, &path, 0, b"", false);
+        assert!(
+            matches!(outcome, ReadinessOutcome::Timeout),
+            "should timeout when neither hook nor transcript growth arrives"
+        );
+    }
+
+    #[test]
+    fn wait_for_readiness_returns_ready_on_user_prompt_submit_hook() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("no-transcript.jsonl");
+        // No file — only the hook will signal readiness.
+
+        let (hook_tx, hook_rx_raw) = mpsc::channel::<HookEvent>();
+        let hook_rx = HookReceiver {
+            receiver: hook_rx_raw,
+        };
+
+        let mut writer: Box<dyn Write + Send> = Box::new(std::io::sink());
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+
+        // Send UserPromptSubmit after a short delay.
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            let _ = hook_tx.send(HookEvent {
+                event_type: HookEventType::UserPromptSubmit,
+                task_id: "task-1".to_string(),
+                session_id: "ses-1".to_string(),
+                transcript_path: None,
+                reason: None,
+            });
+        });
+
+        let outcome =
+            wait_for_readiness(&hook_rx, &mut writer, deadline, &path, 0, b"prompt", false);
+        assert!(
+            matches!(outcome, ReadinessOutcome::Ready),
+            "should return Ready when UserPromptSubmit hook fires"
+        );
+    }
+
+    #[test]
+    fn wait_for_readiness_returns_early_completion_on_stop_hook() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("no-transcript.jsonl");
+
+        let (hook_tx, hook_rx_raw) = mpsc::channel::<HookEvent>();
+        let hook_rx = HookReceiver {
+            receiver: hook_rx_raw,
+        };
+
+        // Send Stop event before calling wait_for_readiness.
+        hook_tx
+            .send(HookEvent {
+                event_type: HookEventType::Stop,
+                task_id: "task-1".to_string(),
+                session_id: "ses-1".to_string(),
+                transcript_path: None,
+                reason: None,
+            })
+            .unwrap();
+
+        let mut writer: Box<dyn Write + Send> = Box::new(std::io::sink());
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let outcome = wait_for_readiness(&hook_rx, &mut writer, deadline, &path, 0, b"", false);
+        assert!(
+            matches!(outcome, ReadinessOutcome::EarlyCompletion(_)),
+            "should return EarlyCompletion when Stop hook fires before readiness"
         );
     }
 
@@ -1388,6 +1620,60 @@ mod tests {
         assert!(
             start.elapsed() < Duration::from_secs(2),
             "should return quickly for stable file"
+        );
+    }
+
+    #[test]
+    fn should_escalate_only_on_resume_after_3_retries() {
+        assert!(!should_escalate(false, 0), "fresh session never escalates");
+        assert!(
+            !should_escalate(false, 100),
+            "fresh session never escalates at high count"
+        );
+        assert!(
+            !should_escalate(true, 0),
+            "resume: 0 retries — no escalation"
+        );
+        assert!(
+            !should_escalate(true, 3),
+            "resume: 3 retries — still bare \\r"
+        );
+        assert!(
+            should_escalate(true, 4),
+            "resume: 4th retry escalates to Ctrl-U + prompt"
+        );
+        assert!(
+            should_escalate(true, 100),
+            "resume: escalation persists at high count"
+        );
+    }
+
+    #[test]
+    fn wait_for_readiness_ignores_transcript_growth_on_resume() {
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+
+        // Write content above baseline — simulates TUI bookkeeping bytes on resume.
+        std::fs::write(&path, b"bookkeeping\n").unwrap();
+        let baseline = 0u64;
+
+        // Keep sender alive so try_recv returns Empty, not Disconnected.
+        let (_hook_tx, hook_rx_raw) = mpsc::channel::<HookEvent>();
+        let hook_rx = HookReceiver {
+            receiver: hook_rx_raw,
+        };
+        let mut writer: Box<dyn Write + Send> = Box::new(std::io::sink());
+
+        // If transcript growth were applied, Ready would fire immediately.
+        // With the guard in place, is_resume=true skips growth and reaches Timeout.
+        let deadline = std::time::Instant::now() + Duration::from_millis(600);
+        let outcome =
+            wait_for_readiness(&hook_rx, &mut writer, deadline, &path, baseline, b"", true);
+        assert!(
+            matches!(outcome, ReadinessOutcome::Timeout),
+            "resume sessions must not treat transcript growth as a ready signal"
         );
     }
 

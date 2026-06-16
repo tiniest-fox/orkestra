@@ -264,15 +264,16 @@ fn drive_pty_session(
         ReadinessOutcome::EarlyCompletion(event) => {
             // Stop/SessionEnd arrived before the prompt was confirmed — skip tail entirely.
             finalize_pty_session(
-                make_finalize_params(
+                FinalizePtyParams {
                     pty_handle,
                     hook_server,
                     tx,
-                    &mut *parser,
-                    ctx.task_id,
-                    ctx.schema,
-                    &baseline.path,
-                ),
+                    parser: &mut *parser,
+                    task_id: ctx.task_id,
+                    schema: ctx.schema,
+                    fallback_transcript_path: &baseline.path,
+                    sidechains: HashMap::new(),
+                },
                 Some(&event),
                 String::new(),
                 baseline.size,
@@ -314,7 +315,7 @@ fn run_tail_and_finalize(
     }));
 
     // Tail transcript until Stop hook fires; polls every 150ms, checks liveness every ~3s.
-    let (hook_event, full_output, tail_file_pos) = tail_transcript_until_stop(
+    let (hook_event, full_output, tail_file_pos, sidechains) = tail_transcript_until_stop(
         &baseline.path,
         hook_rx,
         &mut pty_handle.child,
@@ -324,15 +325,16 @@ fn run_tail_and_finalize(
     );
 
     finalize_pty_session(
-        make_finalize_params(
+        FinalizePtyParams {
             pty_handle,
             hook_server,
             tx,
             parser,
-            ctx.task_id,
-            ctx.schema,
-            &baseline.path,
-        ),
+            task_id: ctx.task_id,
+            schema: ctx.schema,
+            fallback_transcript_path: &baseline.path,
+            sidechains,
+        },
         hook_event.as_ref(),
         full_output,
         tail_file_pos,
@@ -344,6 +346,13 @@ struct TranscriptBaseline {
     size: usize,
 }
 
+/// Tracks the state of a discovered Claude Code subagent sidechain transcript file.
+struct SidechainState {
+    parent_tool_use_id: String,
+    file_path: PathBuf,
+    file_pos: usize,
+}
+
 struct FinalizePtyParams<'a> {
     pty_handle: PtyHandle,
     hook_server: &'a HookServer,
@@ -352,30 +361,14 @@ struct FinalizePtyParams<'a> {
     task_id: &'a str,
     schema: Option<&'a serde_json::Value>,
     fallback_transcript_path: &'a Path,
-}
-
-fn make_finalize_params<'a>(
-    pty_handle: PtyHandle,
-    hook_server: &'a HookServer,
-    tx: &'a Sender<RunEvent>,
-    parser: &'a mut dyn AgentParser,
-    task_id: &'a str,
-    schema: Option<&'a serde_json::Value>,
-    fallback_transcript_path: &'a Path,
-) -> FinalizePtyParams<'a> {
-    FinalizePtyParams {
-        pty_handle,
-        hook_server,
-        tx,
-        parser,
-        task_id,
-        schema,
-        fallback_transcript_path,
-    }
+    sidechains: HashMap<PathBuf, SidechainState>,
 }
 
 /// Resolve the transcript path, perform the final stabilized read, clean up the PTY
 /// process, flush the parser, classify output, and emit the completion event.
+///
+/// Also performs a final read of all sidechain transcript files, re-discovering if the
+/// transcript path diverged from the fallback.
 fn finalize_pty_session(
     params: FinalizePtyParams<'_>,
     hook_event: Option<&HookEvent>,
@@ -390,6 +383,7 @@ fn finalize_pty_session(
         task_id,
         schema,
         fallback_transcript_path,
+        mut sidechains,
     } = params;
 
     // Use transcript path from hook event if available, else computed fallback.
@@ -424,6 +418,23 @@ fn finalize_pty_session(
         &mut full_output,
         &mut trailing_count,
     );
+
+    // Final sidechain reads. Re-derive the sidechain dir from the final transcript path so
+    // newly-appeared agent directories are caught when the path diverged from the fallback.
+    let sidechain_dir = derive_sidechain_dir(&transcript_path);
+    if transcript_path != fallback_transcript_path {
+        let new = discover_new_sidechains(&sidechain_dir, &sidechains);
+        for (k, s) in new {
+            sidechains.insert(k, s);
+        }
+    }
+    // Brief wait for sidechain files to flush alongside the main transcript.
+    thread::sleep(Duration::from_millis(50));
+    for state in sidechains.values_mut() {
+        let path = state.file_path.clone();
+        let id = state.parent_tool_use_id.clone();
+        state.file_pos = read_sidechain_lines(&path, state.file_pos, &id, parser, tx);
+    }
 
     // Process is confirmed done — disarm so Drop sends SIGTERM only (no SIGKILL escalation)
     pty_handle.guard.disarm();
@@ -874,8 +885,9 @@ fn read_new_lines(
 
 /// Poll the transcript file for new lines every 150ms while waiting for the Stop hook.
 ///
-/// Returns `(hook_event, full_output, file_pos)`. `full_output` contains all content
-/// parsed so far; `file_pos` is the byte offset for the subsequent final read.
+/// Returns `(hook_event, full_output, file_pos, sidechains)`. `full_output` contains all
+/// main-agent content parsed so far; `file_pos` is the byte offset for the subsequent final
+/// read. `sidechains` is the accumulated sidechain state for the finalization step.
 ///
 /// `initial_file_pos` seeds the starting byte offset — pass the pre-existing file size
 /// on resume so prior-run lines are not re-parsed as new output.
@@ -893,9 +905,12 @@ fn tail_transcript_until_stop(
     Option<crate::interactions::hooks::types::HookEvent>,
     String,
     usize,
+    HashMap<PathBuf, SidechainState>,
 ) {
     use std::sync::mpsc::TryRecvError;
 
+    let sidechain_dir = derive_sidechain_dir(transcript_path);
+    let mut sidechains: HashMap<PathBuf, SidechainState> = HashMap::new();
     let mut file_pos = initial_file_pos;
     let mut full_output = String::new();
     let mut line_count = 0usize;
@@ -911,7 +926,7 @@ fn tail_transcript_until_stop(
                         event.event_type,
                         event.session_id
                     );
-                    return (Some(event), full_output, file_pos);
+                    return (Some(event), full_output, file_pos, sidechains);
                 }
                 HookEventType::UserPromptSubmit => {
                     // Stale or duplicate readiness signal — ignore and keep tailing.
@@ -926,6 +941,7 @@ fn tail_transcript_until_stop(
                     &mut full_output,
                     &mut line_count,
                 );
+                update_sidechains(&sidechain_dir, &mut sidechains, parser, tx);
                 polls_since_crash_check += 1;
                 if polls_since_crash_check >= 20 {
                     polls_since_crash_check = 0;
@@ -936,7 +952,7 @@ fn tail_transcript_until_stop(
                                 "run_pty: PTY process exited with {:?} without firing Stop hook",
                                 exit_status
                             );
-                            return (None, full_output, file_pos);
+                            return (None, full_output, file_pos, sidechains);
                         }
                         Ok(None) => {}
                         Err(e) => {
@@ -944,7 +960,7 @@ fn tail_transcript_until_stop(
                                 "runner",
                                 "run_pty: try_wait failed: {e:?}, assuming process dead"
                             );
-                            return (None, full_output, file_pos);
+                            return (None, full_output, file_pos, sidechains);
                         }
                     }
                 }
@@ -952,9 +968,153 @@ fn tail_transcript_until_stop(
             }
             Err(TryRecvError::Disconnected) => {
                 orkestra_debug!("runner", "run_pty: hook receiver disconnected");
-                return (None, full_output, file_pos);
+                return (None, full_output, file_pos, sidechains);
             }
         }
+    }
+}
+
+/// Derive the sidechain directory from a transcript path.
+///
+/// For a path like `~/.claude/projects/<cwd>/abc123.jsonl`, returns
+/// `~/.claude/projects/<cwd>/abc123/subagents/`.
+fn derive_sidechain_dir(transcript_path: &Path) -> PathBuf {
+    transcript_path.with_extension("").join("subagents")
+}
+
+/// Scan `sidechain_dir` for new `agent-*` subdirectories not yet in `known`.
+///
+/// For each new directory, reads `meta.json` to extract `toolUseId` and finds the
+/// `.jsonl` file. Silently skips directories that are missing either file.
+fn discover_new_sidechains(
+    sidechain_dir: &Path,
+    known: &HashMap<PathBuf, SidechainState>,
+) -> Vec<(PathBuf, SidechainState)> {
+    let Ok(entries) = std::fs::read_dir(sidechain_dir) else {
+        return vec![];
+    };
+    let mut result = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.starts_with("agent-") || known.contains_key(&path) {
+            continue;
+        }
+        let Ok(meta_bytes) = std::fs::read(path.join("meta.json")) else {
+            continue;
+        };
+        let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&meta_bytes) else {
+            continue;
+        };
+        let Some(tool_use_id) = meta.get("toolUseId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Ok(sub_entries) = std::fs::read_dir(&path) else {
+            continue;
+        };
+        let Some(jsonl_path) = sub_entries
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|ext| ext == "jsonl"))
+        else {
+            continue;
+        };
+        orkestra_debug!(
+            "runner",
+            "run_pty: discovered sidechain {} parent_tool_use_id={}",
+            path.display(),
+            tool_use_id
+        );
+        result.push((
+            path,
+            SidechainState {
+                parent_tool_use_id: tool_use_id.to_string(),
+                file_path: jsonl_path,
+                file_pos: 0,
+            },
+        ));
+    }
+    result
+}
+
+/// Inject a `parent_tool_use_id` field into a JSON line.
+///
+/// Returns the modified JSON string, or the original string if it is not valid JSON.
+fn inject_parent_tool_use_id(line: &str, parent_tool_use_id: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(mut v) => {
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert(
+                    "parent_tool_use_id".to_string(),
+                    serde_json::Value::String(parent_tool_use_id.to_string()),
+                );
+            }
+            v.to_string()
+        }
+        Err(_) => line.to_string(),
+    }
+}
+
+/// Read new complete lines from a sidechain transcript, injecting `parent_tool_use_id`
+/// before parsing, and emit `LogLine` events. Does not append to `full_output`.
+fn read_sidechain_lines(
+    path: &Path,
+    file_pos: usize,
+    parent_tool_use_id: &str,
+    parser: &mut dyn AgentParser,
+    tx: &Sender<RunEvent>,
+) -> usize {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return file_pos;
+    };
+    if file.seek(SeekFrom::Start(file_pos as u64)).is_err() {
+        return file_pos;
+    }
+    let mut raw = Vec::new();
+    if BufReader::new(file).read_to_end(&mut raw).is_err() {
+        return file_pos;
+    }
+    let complete_end = match raw.iter().rposition(|&b| b == b'\n') {
+        Some(pos) => pos + 1,
+        None => return file_pos,
+    };
+    let buf = String::from_utf8_lossy(&raw[..complete_end]);
+    for line in buf.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let injected = inject_parent_tool_use_id(line, parent_tool_use_id);
+        let update = parser.parse_line(&injected);
+        if let Some(sid) = update.session_id {
+            let _ = tx.send(RunEvent::SessionId(sid));
+        }
+        for entry in update.log_entries {
+            if tx.send(RunEvent::LogLine(entry)).is_err() {
+                return file_pos + complete_end;
+            }
+        }
+    }
+    file_pos + complete_end
+}
+
+/// Discover new sidechains and read pending lines from all tracked sidechains.
+fn update_sidechains(
+    sidechain_dir: &Path,
+    sidechains: &mut HashMap<PathBuf, SidechainState>,
+    parser: &mut dyn AgentParser,
+    tx: &Sender<RunEvent>,
+) {
+    let new = discover_new_sidechains(sidechain_dir, sidechains);
+    for (k, s) in new {
+        sidechains.insert(k, s);
+    }
+    for state in sidechains.values_mut() {
+        let path = state.file_path.clone();
+        let id = state.parent_tool_use_id.clone();
+        state.file_pos = read_sidechain_lines(&path, state.file_pos, &id, parser, tx);
     }
 }
 
@@ -1737,6 +1897,122 @@ mod tests {
         // indefinitely on Linux CI.
         drop(pair);
         let _ = drain.join();
+    }
+
+    #[test]
+    fn test_derive_sidechain_dir() {
+        let transcript = PathBuf::from("/home/user/.claude/projects/-home-user-repo/abc123.jsonl");
+        let dir = derive_sidechain_dir(&transcript);
+        assert_eq!(
+            dir,
+            PathBuf::from("/home/user/.claude/projects/-home-user-repo/abc123/subagents")
+        );
+    }
+
+    #[test]
+    fn test_inject_parent_tool_use_id() {
+        let line = r#"{"type":"tool_use","id":"toolu_01"}"#;
+        let result = inject_parent_tool_use_id(line, "toolu_parent");
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["parent_tool_use_id"], "toolu_parent");
+        assert_eq!(v["type"], "tool_use");
+        assert_eq!(v["id"], "toolu_01");
+    }
+
+    #[test]
+    fn test_inject_parent_tool_use_id_invalid_json() {
+        let line = "not json at all";
+        let result = inject_parent_tool_use_id(line, "toolu_parent");
+        assert_eq!(result, "not json at all");
+    }
+
+    #[test]
+    fn test_inject_parent_tool_use_id_preserves_existing_fields() {
+        let line = r#"{"a":1,"b":"hello","c":true}"#;
+        let result = inject_parent_tool_use_id(line, "pid");
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["a"], 1);
+        assert_eq!(v["b"], "hello");
+        assert_eq!(v["c"], true);
+        assert_eq!(v["parent_tool_use_id"], "pid");
+    }
+
+    #[test]
+    fn test_discover_sidechains_with_temp_dir() {
+        let dir = TempDir::new().unwrap();
+        let sidechain_dir = dir.path().join("subagents");
+        std::fs::create_dir_all(&sidechain_dir).unwrap();
+
+        // Create agent-abc directory with meta.json and a .jsonl file
+        let agent_dir = sidechain_dir.join("agent-abc");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(
+            agent_dir.join("meta.json"),
+            r#"{"toolUseId":"toolu_01abc"}"#,
+        )
+        .unwrap();
+        std::fs::write(agent_dir.join("transcript.jsonl"), b"").unwrap();
+
+        // Create a non-agent directory — should be ignored
+        let other_dir = sidechain_dir.join("not-an-agent");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        std::fs::write(other_dir.join("meta.json"), r#"{"toolUseId":"ignored"}"#).unwrap();
+
+        let known: HashMap<PathBuf, SidechainState> = HashMap::new();
+        let mut found = discover_new_sidechains(&sidechain_dir, &known);
+        assert_eq!(found.len(), 1, "should find exactly one agent- directory");
+
+        let (key, state) = found.remove(0);
+        assert_eq!(key, agent_dir);
+        assert_eq!(state.parent_tool_use_id, "toolu_01abc");
+        assert_eq!(state.file_path, agent_dir.join("transcript.jsonl"));
+        assert_eq!(state.file_pos, 0);
+    }
+
+    #[test]
+    fn test_discover_sidechains_skips_missing_meta() {
+        let dir = TempDir::new().unwrap();
+        let sidechain_dir = dir.path().join("subagents");
+        std::fs::create_dir_all(&sidechain_dir).unwrap();
+
+        // No meta.json — should be skipped
+        let agent_dir = sidechain_dir.join("agent-no-meta");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(agent_dir.join("transcript.jsonl"), b"").unwrap();
+
+        let known: HashMap<PathBuf, SidechainState> = HashMap::new();
+        let found = discover_new_sidechains(&sidechain_dir, &known);
+        assert_eq!(found.len(), 0, "should skip agent dir with no meta.json");
+    }
+
+    #[test]
+    fn test_discover_sidechains_skips_known() {
+        let dir = TempDir::new().unwrap();
+        let sidechain_dir = dir.path().join("subagents");
+        std::fs::create_dir_all(&sidechain_dir).unwrap();
+
+        let agent_dir = sidechain_dir.join("agent-abc");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(agent_dir.join("meta.json"), r#"{"toolUseId":"toolu_01"}"#).unwrap();
+        std::fs::write(agent_dir.join("transcript.jsonl"), b"").unwrap();
+
+        // Pre-populate known with this agent dir
+        let mut known: HashMap<PathBuf, SidechainState> = HashMap::new();
+        known.insert(
+            agent_dir.clone(),
+            SidechainState {
+                parent_tool_use_id: "toolu_01".to_string(),
+                file_path: agent_dir.join("transcript.jsonl"),
+                file_pos: 0,
+            },
+        );
+
+        let found = discover_new_sidechains(&sidechain_dir, &known);
+        assert_eq!(
+            found.len(),
+            0,
+            "should not re-discover already-known agents"
+        );
     }
 
     #[test]

@@ -2046,4 +2046,390 @@ mod tests {
             "should wait for timeout when file keeps growing (elapsed: {elapsed:?})"
         );
     }
+
+    // ============================================================================
+    // Sidechain integration tests
+    // ============================================================================
+
+    /// Set up a temp directory with a main transcript and one sidechain.
+    ///
+    /// Returns `(main_transcript_path, sidechain_jsonl_path)`.
+    ///
+    /// Directory layout:
+    ///   dir/session123.jsonl              (main transcript)
+    ///   dir/session123/subagents/agent-abc/meta.json
+    ///   dir/session123/subagents/agent-abc/<uuid>.jsonl
+    fn setup_sidechain_fixture(dir: &Path) -> (PathBuf, PathBuf) {
+        let main_path = dir.join("session123.jsonl");
+
+        // Main transcript: Agent tool_use followed by user tool_result with agentId
+        let agent_tool_use = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Agent",
+                    "id": "tu_agent_1",
+                    "input": {"description": "do work"}
+                }]
+            }
+        });
+        let agent_tool_result = serde_json::json!({
+            "type": "user",
+            "toolUseResult": {"agentId": "agent-abc"},
+            "message": {
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "tu_agent_1",
+                    "content": "done"
+                }]
+            }
+        });
+        let main_content = format!("{agent_tool_use}\n{agent_tool_result}\n");
+        std::fs::write(&main_path, main_content.as_bytes()).unwrap();
+
+        // Sidechain directory structure
+        let sidechain_base = dir.join("session123").join("subagents").join("agent-abc");
+        std::fs::create_dir_all(&sidechain_base).unwrap();
+
+        // meta.json points back to the parent tool_use_id
+        std::fs::write(
+            sidechain_base.join("meta.json"),
+            r#"{"toolUseId": "tu_agent_1", "agentType": "general-purpose", "description": "do work"}"#,
+        )
+        .unwrap();
+
+        // Sidechain transcript: tool_use (NO parent_tool_use_id — transcript-file format)
+        // then tool_result, then another tool_use
+        let sub_tool_use = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Read",
+                    "id": "tu_sub_1",
+                    "input": {"file_path": "/foo.rs"}
+                }]
+            }
+        });
+        let sub_tool_result = serde_json::json!({
+            "type": "user",
+            "message": {
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "tu_sub_1",
+                    "content": "file contents"
+                }]
+            }
+        });
+        let sub_tool_use_2 = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Edit",
+                    "id": "tu_sub_2",
+                    "input": {"file_path": "/bar.rs"}
+                }]
+            }
+        });
+        let sidechain_content = format!("{sub_tool_use}\n{sub_tool_result}\n{sub_tool_use_2}\n");
+        let sidechain_jsonl = sidechain_base.join("transcript.jsonl");
+        std::fs::write(&sidechain_jsonl, sidechain_content.as_bytes()).unwrap();
+
+        (main_path, sidechain_jsonl)
+    }
+
+    #[test]
+    fn sidechain_events_produce_subagent_log_entries() {
+        use orkestra_parser::ClaudeParserService;
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let (main_path, sidechain_jsonl) = setup_sidechain_fixture(dir.path());
+
+        let (tx, rx) = mpsc::channel();
+        let mut parser = ClaudeParserService::new();
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
+
+        // Parse main transcript — establishes agent_tool_ids in the parser
+        read_new_lines(
+            &main_path,
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        // Now read sidechain lines — inject parent_tool_use_id before parsing
+        read_sidechain_lines(&sidechain_jsonl, 0, "tu_agent_1", &mut parser, &tx);
+
+        let events: Vec<_> = rx.try_iter().collect();
+        let log_entries: Vec<&LogEntry> = events
+            .iter()
+            .filter_map(|e| {
+                if let RunEvent::LogLine(entry) = e {
+                    Some(entry)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Verify at least one SubagentToolUse with correct parent_task_id
+        let subagent_tool_uses: Vec<_> = log_entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::SubagentToolUse { .. }))
+            .collect();
+        assert!(
+            !subagent_tool_uses.is_empty(),
+            "expected SubagentToolUse entries from sidechain, got none"
+        );
+
+        // Check the first SubagentToolUse has correct parent_task_id
+        match subagent_tool_uses[0] {
+            LogEntry::SubagentToolUse {
+                parent_task_id,
+                tool,
+                ..
+            } => {
+                assert_eq!(
+                    parent_task_id, "tu_agent_1",
+                    "parent_task_id must match Agent tool_use_id"
+                );
+                assert_eq!(tool, "Read", "first subagent tool should be Read");
+            }
+            _ => panic!("expected SubagentToolUse"),
+        }
+
+        // Verify SubagentToolResult entries — injected parent_tool_use_id makes the
+        // parser treat these as subagent events and emit SubagentToolResult.
+        let subagent_tool_results: Vec<_> = log_entries
+            .iter()
+            .filter(|e| matches!(e, LogEntry::SubagentToolResult { .. }))
+            .collect();
+        assert!(
+            !subagent_tool_results.is_empty(),
+            "expected SubagentToolResult entries from sidechain, got none"
+        );
+
+        match subagent_tool_results[0] {
+            LogEntry::SubagentToolResult {
+                parent_task_id,
+                tool_use_id,
+                ..
+            } => {
+                assert_eq!(parent_task_id, "tu_agent_1");
+                assert_eq!(tool_use_id, "tu_sub_1");
+            }
+            _ => panic!("expected SubagentToolResult"),
+        }
+    }
+
+    #[test]
+    fn sidechain_discovery_finds_new_agents() {
+        let dir = TempDir::new().unwrap();
+        let main_path = dir.path().join("session123.jsonl");
+        std::fs::write(&main_path, b"").unwrap();
+
+        let sidechain_dir = dir.path().join("session123").join("subagents");
+        std::fs::create_dir_all(&sidechain_dir).unwrap();
+
+        // Initially no agent directories — should find nothing
+        let known: HashMap<PathBuf, SidechainState> = HashMap::new();
+        let found = discover_new_sidechains(&sidechain_dir, &known);
+        assert!(found.is_empty(), "no agent dirs yet — should find nothing");
+
+        // Create agent directory with meta.json + .jsonl
+        let agent_dir = sidechain_dir.join("agent-xyz");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(agent_dir.join("meta.json"), r#"{"toolUseId":"tu_agent_1"}"#).unwrap();
+        std::fs::write(agent_dir.join("transcript.jsonl"), b"").unwrap();
+
+        // Should now find the new agent
+        let found2 = discover_new_sidechains(&sidechain_dir, &known);
+        assert_eq!(found2.len(), 1, "should find the newly-created agent");
+        assert_eq!(found2[0].1.parent_tool_use_id, "tu_agent_1");
+
+        // Build a known map from the result and call again — should return empty
+        let mut known2: HashMap<PathBuf, SidechainState> = HashMap::new();
+        for (k, s) in found2 {
+            known2.insert(k, s);
+        }
+        let found3 = discover_new_sidechains(&sidechain_dir, &known2);
+        assert!(
+            found3.is_empty(),
+            "already-known agents must not be re-discovered"
+        );
+    }
+
+    /// Build a two-agent fixture: main transcript + two sidechain dirs.
+    ///
+    /// Returns `(main_path, agent1_dir, agent2_dir)`.
+    fn setup_two_agent_fixture(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        let main_path = dir.join("session.jsonl");
+        let a1 = serde_json::json!({"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","id":"tu_agent_1","input":{"description":"task 1"}}]}});
+        let r1 = serde_json::json!({"type":"user","toolUseResult":{"agentId":"agent-abc"},"message":{"content":[{"type":"tool_result","tool_use_id":"tu_agent_1","content":"done 1"}]}});
+        let a2 = serde_json::json!({"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","id":"tu_agent_2","input":{"description":"task 2"}}]}});
+        let r2 = serde_json::json!({"type":"user","toolUseResult":{"agentId":"agent-def"},"message":{"content":[{"type":"tool_result","tool_use_id":"tu_agent_2","content":"done 2"}]}});
+        std::fs::write(&main_path, format!("{a1}\n{r1}\n{a2}\n{r2}\n").as_bytes()).unwrap();
+
+        let sidechain_base = dir.join("session").join("subagents");
+        let agent1_dir = sidechain_base.join("agent-abc");
+        let agent2_dir = sidechain_base.join("agent-def");
+        std::fs::create_dir_all(&agent1_dir).unwrap();
+        std::fs::create_dir_all(&agent2_dir).unwrap();
+
+        std::fs::write(
+            agent1_dir.join("meta.json"),
+            r#"{"toolUseId":"tu_agent_1"}"#,
+        )
+        .unwrap();
+        let sc1 = serde_json::json!({"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","id":"tu_sub_1","input":{"file_path":"/a.rs"}}]}});
+        std::fs::write(agent1_dir.join("t1.jsonl"), format!("{sc1}\n").as_bytes()).unwrap();
+
+        std::fs::write(
+            agent2_dir.join("meta.json"),
+            r#"{"toolUseId":"tu_agent_2"}"#,
+        )
+        .unwrap();
+        let sc2 = serde_json::json!({"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","id":"tu_sub_2","input":{"file_path":"/b.rs"}}]}});
+        std::fs::write(agent2_dir.join("t2.jsonl"), format!("{sc2}\n").as_bytes()).unwrap();
+
+        (main_path, agent1_dir, agent2_dir)
+    }
+
+    #[test]
+    fn multiple_concurrent_sidechains() {
+        use orkestra_parser::ClaudeParserService;
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let (main_path, agent1_dir, agent2_dir) = setup_two_agent_fixture(dir.path());
+
+        let (tx, rx) = mpsc::channel();
+        let mut parser = ClaudeParserService::new();
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
+
+        // Parse main transcript to register both Agent tool IDs
+        read_new_lines(
+            &main_path,
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        // Read both sidechains
+        read_sidechain_lines(
+            &agent1_dir.join("t1.jsonl"),
+            0,
+            "tu_agent_1",
+            &mut parser,
+            &tx,
+        );
+        read_sidechain_lines(
+            &agent2_dir.join("t2.jsonl"),
+            0,
+            "tu_agent_2",
+            &mut parser,
+            &tx,
+        );
+
+        let events: Vec<_> = rx.try_iter().collect();
+        let subagent_uses: Vec<_> = events
+            .iter()
+            .filter_map(|e| {
+                if let RunEvent::LogLine(LogEntry::SubagentToolUse {
+                    parent_task_id,
+                    tool,
+                    ..
+                }) = e
+                {
+                    Some((parent_task_id.clone(), tool.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(
+            subagent_uses.len(),
+            2,
+            "expected two SubagentToolUse entries, one per sidechain"
+        );
+
+        // Each sidechain must have its own parent_task_id
+        let ids: Vec<&str> = subagent_uses.iter().map(|(id, _)| id.as_str()).collect();
+        assert!(
+            ids.contains(&"tu_agent_1"),
+            "sidechain 1 must reference tu_agent_1"
+        );
+        assert!(
+            ids.contains(&"tu_agent_2"),
+            "sidechain 2 must reference tu_agent_2"
+        );
+    }
+
+    #[test]
+    fn missing_meta_json_skips_sidechain() {
+        let dir = TempDir::new().unwrap();
+        let sidechain_dir = dir.path().join("subagents");
+        std::fs::create_dir_all(&sidechain_dir).unwrap();
+
+        // Create agent dir WITHOUT meta.json
+        let agent_dir = sidechain_dir.join("agent-no-meta");
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::write(agent_dir.join("transcript.jsonl"), b"").unwrap();
+
+        let known: HashMap<PathBuf, SidechainState> = HashMap::new();
+        let found = discover_new_sidechains(&sidechain_dir, &known);
+        assert!(
+            found.is_empty(),
+            "sidechain without meta.json must be skipped without error"
+        );
+    }
+
+    #[test]
+    fn sidechain_lines_not_in_full_output() {
+        use orkestra_parser::ClaudeParserService;
+        use std::sync::mpsc;
+
+        let dir = TempDir::new().unwrap();
+        let (main_path, sidechain_jsonl) = setup_sidechain_fixture(dir.path());
+
+        let (tx, _rx) = mpsc::channel();
+        let mut parser = ClaudeParserService::new();
+        let mut full_output = String::new();
+        let mut line_count = 0usize;
+
+        // Parse main transcript
+        read_new_lines(
+            &main_path,
+            0,
+            &mut parser,
+            &tx,
+            &mut full_output,
+            &mut line_count,
+        );
+
+        let main_output_snapshot = full_output.clone();
+
+        // Read sidechain — must NOT modify full_output
+        read_sidechain_lines(&sidechain_jsonl, 0, "tu_agent_1", &mut parser, &tx);
+
+        assert_eq!(
+            full_output, main_output_snapshot,
+            "sidechain reading must not append to full_output"
+        );
+        // Sidechain content must not appear in full_output
+        assert!(
+            !full_output.contains("tu_sub_1"),
+            "sidechain tool IDs must not appear in full_output"
+        );
+    }
 }

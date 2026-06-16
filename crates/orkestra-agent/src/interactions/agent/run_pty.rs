@@ -1033,8 +1033,9 @@ fn discover_new_sidechains(
 
 /// Inject a `parent_tool_use_id` field into a JSON line.
 ///
-/// Returns `None` if the line is not valid JSON (and logs a debug message). Returns
-/// the modified JSON string on success.
+/// Returns `None` if the line is not valid JSON or is valid JSON but not an object
+/// (e.g. array or primitive) — both cases log a debug message. Returns the modified
+/// JSON string on success.
 fn inject_parent_tool_use_id(line: &str, parent_tool_use_id: &str) -> Option<String> {
     if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(line) {
         if let Some(obj) = v.as_object_mut() {
@@ -1042,13 +1043,20 @@ fn inject_parent_tool_use_id(line: &str, parent_tool_use_id: &str) -> Option<Str
                 "parent_tool_use_id".to_string(),
                 serde_json::Value::String(parent_tool_use_id.to_string()),
             );
+            Some(v.to_string())
+        } else {
+            orkestra_debug!(
+                "runner",
+                "run_pty: skipping non-object sidechain JSON line: {:?}",
+                line.get(..120).unwrap_or(line)
+            );
+            None
         }
-        Some(v.to_string())
     } else {
         orkestra_debug!(
             "runner",
             "run_pty: skipping malformed sidechain JSON line: {:?}",
-            &line[..line.len().min(120)]
+            line.get(..120).unwrap_or(line)
         );
         None
     }
@@ -1363,6 +1371,43 @@ mod tests {
             }
         }
         NullParser
+    }
+
+    #[test]
+    fn read_complete_lines_missing_file_returns_none() {
+        let result = read_complete_lines(&PathBuf::from("/nonexistent/path.jsonl"), 0);
+        assert!(result.is_none(), "missing file must return None");
+    }
+
+    #[test]
+    fn read_complete_lines_partial_line_no_newline_returns_none() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("partial.jsonl");
+        std::fs::write(&path, b"no newline at end").unwrap();
+        let result = read_complete_lines(&path, 0);
+        assert!(result.is_none(), "no trailing newline must return None");
+    }
+
+    #[test]
+    fn read_complete_lines_multiple_complete_lines() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("lines.jsonl");
+        std::fs::write(&path, b"line1\nline2\nline3\n").unwrap();
+        let (buf, pos) = read_complete_lines(&path, 0).expect("must return Some");
+        assert_eq!(pos, 18, "position must equal total byte count");
+        let lines: Vec<&str> = buf.lines().collect();
+        assert_eq!(lines, vec!["line1", "line2", "line3"]);
+    }
+
+    #[test]
+    fn read_complete_lines_mid_file_seek() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("seek.jsonl");
+        std::fs::write(&path, b"first\nsecond\n").unwrap();
+        // Seek past "first\n" (6 bytes)
+        let (buf, pos) = read_complete_lines(&path, 6).expect("must return Some");
+        assert_eq!(pos, 13, "position must be end of file");
+        assert_eq!(buf.trim(), "second");
     }
 
     #[test]
@@ -1925,6 +1970,24 @@ mod tests {
         assert_eq!(v["b"], "hello");
         assert_eq!(v["c"], true);
         assert_eq!(v["parent_tool_use_id"], "pid");
+    }
+
+    #[test]
+    fn test_inject_parent_tool_use_id_non_object_json_returns_none() {
+        // Arrays and primitives are valid JSON but not objects — must return None, not
+        // silently pass through without the injected field.
+        assert!(
+            inject_parent_tool_use_id(r#"["a","b"]"#, "pid").is_none(),
+            "JSON array must return None"
+        );
+        assert!(
+            inject_parent_tool_use_id("42", "pid").is_none(),
+            "JSON number must return None"
+        );
+        assert!(
+            inject_parent_tool_use_id("\"string\"", "pid").is_none(),
+            "JSON string must return None"
+        );
     }
 
     #[test]

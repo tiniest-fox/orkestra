@@ -99,7 +99,7 @@ describe("StatusSymbol — done task", () => {
     expect(screen.getByText("↑")).toBeInTheDocument();
   });
 
-  it("renders SVG with success colors when PR is open with no checks (passing)", () => {
+  it("renders Circle with quaternary colors when PR is open with no checks and no reviews", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
@@ -107,9 +107,9 @@ describe("StatusSymbol — done task", () => {
     const { container } = render(
       <StatusSymbol task={task} prStatus={makePrStatus({ state: "open" })} />,
     );
-    const svg = container.querySelector("[data-testid='icon-passing']");
+    const svg = container.querySelector("[data-testid='icon-open']");
     expect(svg).toBeInTheDocument();
-    expect(svg?.parentElement).toHaveClass("text-status-success");
+    expect(svg?.parentElement).toHaveClass("text-text-quaternary");
   });
 
   it("renders ✓ when task is done and PR state is merged", () => {
@@ -231,7 +231,7 @@ describe("StatusSymbol — done task", () => {
     expect(svg?.parentElement).not.toHaveClass("text-status-error");
   });
 
-  it("skipped checks are treated as passing — renders SVG with success colors", () => {
+  it("skipped checks produce no meaningful signal — renders open icon with quaternary colors", () => {
     const task = createMockWorkflowTaskView({
       state: { type: "done" },
       pr_url: "https://github.com/owner/repo/pull/42",
@@ -245,9 +245,9 @@ describe("StatusSymbol — done task", () => {
         })}
       />,
     );
-    const svg = container.querySelector("[data-testid='icon-passing']");
+    const svg = container.querySelector("[data-testid='icon-open']");
     expect(svg).toBeInTheDocument();
-    expect(svg?.parentElement).toHaveClass("text-status-success");
+    expect(svg?.parentElement).toHaveClass("text-text-quaternary");
   });
 
   it("renders GitCompareArrows with info colors when done task is ahead of remote", () => {
@@ -321,5 +321,216 @@ describe("StatusSymbol — done task", () => {
     expect(svg).toBeInTheDocument();
     expect(container.querySelector("[data-testid='icon-needs-push']")).not.toBeInTheDocument();
     expect(svg?.parentElement).toHaveClass("text-status-error");
+  });
+
+  it("approved PR renders ShieldCheck with success colors", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          reviews: [
+            {
+              id: 1,
+              author: "user",
+              state: "APPROVED",
+              body: null,
+              submitted_at: "2025-01-01T00:00:00Z",
+            },
+          ],
+        })}
+      />,
+    );
+    const svg = container.querySelector("[data-testid='icon-approved']");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-success");
+  });
+
+  it("changes-requested PR renders ShieldX with error colors", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          reviews: [
+            {
+              id: 1,
+              author: "user",
+              state: "CHANGES_REQUESTED",
+              body: null,
+              submitted_at: "2025-01-01T00:00:00Z",
+            },
+          ],
+        })}
+      />,
+    );
+    const svg = container.querySelector("[data-testid='icon-changes-requested']");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-error");
+  });
+
+  it("changes-requested beats failing checks — shows ShieldX not CircleX", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "failure" }],
+          reviews: [
+            {
+              id: 1,
+              author: "user",
+              state: "CHANGES_REQUESTED",
+              body: null,
+              submitted_at: "2025-01-01T00:00:00Z",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(container.querySelector("[data-testid='icon-changes-requested']")).toBeInTheDocument();
+    expect(container.querySelector("[data-testid='icon-failing']")).not.toBeInTheDocument();
+  });
+
+  it("conflicts beat changes-requested — shows AlertTriangle not ShieldX", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          mergeable: false,
+          merge_state_status: "DIRTY",
+          reviews: [
+            {
+              id: 1,
+              author: "user",
+              state: "CHANGES_REQUESTED",
+              body: null,
+              submitted_at: "2025-01-01T00:00:00Z",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(container.querySelector("[data-testid='icon-conflicts']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-testid='icon-changes-requested']"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("approved beats pending checks — shows ShieldCheck not Clock", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "pending" }],
+          reviews: [
+            {
+              id: 1,
+              author: "user",
+              state: "APPROVED",
+              body: null,
+              submitted_at: "2025-01-01T00:00:00Z",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(container.querySelector("[data-testid='icon-approved']")).toBeInTheDocument();
+    expect(container.querySelector("[data-testid='icon-pending']")).not.toBeInTheDocument();
+  });
+
+  it("approved beats passing checks — shows ShieldCheck not CircleCheck", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "success" }],
+          reviews: [
+            {
+              id: 1,
+              author: "user",
+              state: "APPROVED",
+              body: null,
+              submitted_at: "2025-01-01T00:00:00Z",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(container.querySelector("[data-testid='icon-approved']")).toBeInTheDocument();
+    expect(container.querySelector("[data-testid='icon-passing']")).not.toBeInTheDocument();
+  });
+
+  it("no reviews with passing checks shows CircleCheck (passing, not open)", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          checks: [{ name: "ci", status: "success" }],
+        })}
+      />,
+    );
+    const svg = container.querySelector("[data-testid='icon-passing']");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.parentElement).toHaveClass("text-status-success");
+    expect(container.querySelector("[data-testid='icon-open']")).not.toBeInTheDocument();
+  });
+
+  it("COMMENTED review does not count as approved — shows open icon", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      pr_url: "https://github.com/owner/repo/pull/42",
+    });
+    const { container } = render(
+      <StatusSymbol
+        task={task}
+        prStatus={makePrStatus({
+          state: "open",
+          reviews: [
+            {
+              id: 1,
+              author: "user",
+              state: "COMMENTED",
+              body: null,
+              submitted_at: "2025-01-01T00:00:00Z",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(container.querySelector("[data-testid='icon-approved']")).not.toBeInTheDocument();
+    expect(container.querySelector("[data-testid='icon-open']")).toBeInTheDocument();
   });
 });

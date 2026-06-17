@@ -1,6 +1,15 @@
 // Text symbol indicating task status with signal color, background chip, and optional pulse.
 
-import { AlertTriangle, CircleCheck, CircleX, Clock, GitCompareArrows } from "lucide-react";
+import {
+  AlertTriangle,
+  Circle,
+  CircleCheck,
+  CircleX,
+  Clock,
+  GitCompareArrows,
+  ShieldCheck,
+  ShieldX,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { PrStatus, SyncStatus, WorkflowTaskView } from "../../types/workflow";
 import { hasConflicts } from "../../utils/prStatus";
@@ -22,14 +31,30 @@ interface StatusColors {
 const TRANSPARENT = "bg-transparent";
 const PR_ICON_SIZE = 14;
 
-function derivePrHealth(prStatus: PrStatus): "passing" | "pending" | "failing" | "conflicts" {
+type PrHealth =
+  | "conflicts"
+  | "changes_requested"
+  | "failing"
+  | "approved"
+  | "pending"
+  | "passing"
+  | "open";
+
+function derivePrHealth(prStatus: PrStatus): PrHealth {
   if (hasConflicts(prStatus)) {
     return "conflicts";
   }
+  if (prStatus.reviews.some((r) => r.state === "CHANGES_REQUESTED")) {
+    return "changes_requested";
+  }
   const meaningful = prStatus.checks.filter((c) => c.status !== "skipped");
   if (meaningful.some((c) => c.status === "failure")) return "failing";
+  if (prStatus.reviews.some((r) => r.state === "APPROVED")) {
+    return "approved";
+  }
   if (meaningful.some((c) => c.status === "pending")) return "pending";
-  return "passing";
+  if (meaningful.some((c) => c.status === "success")) return "passing";
+  return "open";
 }
 
 function resolveColors(
@@ -148,10 +173,22 @@ function resolveColors(
         };
       }
       switch (health) {
+        case "changes_requested":
+          return {
+            colors: { bg: "bg-status-error-bg", icon: "text-status-error" },
+            symbol: <ShieldX data-testid="icon-changes-requested" size={PR_ICON_SIZE} />,
+            extraClass,
+          };
         case "failing":
           return {
             colors: { bg: "bg-status-error-bg", icon: "text-status-error" },
             symbol: <CircleX data-testid="icon-failing" size={PR_ICON_SIZE} />,
+            extraClass,
+          };
+        case "approved":
+          return {
+            colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
+            symbol: <ShieldCheck data-testid="icon-approved" size={PR_ICON_SIZE} />,
             extraClass,
           };
         case "pending":
@@ -164,6 +201,12 @@ function resolveColors(
           return {
             colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
             symbol: <CircleCheck data-testid="icon-passing" size={PR_ICON_SIZE} />,
+            extraClass,
+          };
+        case "open":
+          return {
+            colors: { bg: TRANSPARENT, icon: "text-text-quaternary" },
+            symbol: <Circle data-testid="icon-open" size={PR_ICON_SIZE} />,
             extraClass,
           };
       }

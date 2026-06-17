@@ -112,3 +112,69 @@ export const DonePassingChecks: Story = {
     prStatus: { ...basePrStatus, checks: [{ name: "CI", status: "success" }] },
   },
 };
+
+export const DoneApproved: Story = {
+  name: "Done — PR approved",
+  args: {
+    task: doneTaskWithPr,
+    prStatus: {
+      ...basePrStatus,
+      reviews: [
+        {
+          id: 1,
+          author: "reviewer",
+          state: "APPROVED",
+          body: null,
+          submitted_at: "2025-01-01T00:00:00Z",
+        },
+      ],
+    },
+  },
+};
+
+export const DoneChangesRequested: Story = {
+  name: "Done — changes requested",
+  args: {
+    task: doneTaskWithPr,
+    prStatus: {
+      ...basePrStatus,
+      reviews: [
+        {
+          id: 1,
+          author: "reviewer",
+          state: "CHANGES_REQUESTED",
+          body: null,
+          submitted_at: "2025-01-01T00:00:00Z",
+        },
+      ],
+    },
+  },
+};
+
+export const DoneOpenNoReviews: Story = {
+  name: "Done — open, no reviews",
+  args: {
+    task: doneTaskWithPr,
+    prStatus: { ...basePrStatus, reviews: [], checks: [] },
+  },
+};
+
+export const DoneApprovedPassingChecks: Story = {
+  name: "Done — approved with passing checks",
+  args: {
+    task: doneTaskWithPr,
+    prStatus: {
+      ...basePrStatus,
+      checks: [{ name: "CI", status: "success" }],
+      reviews: [
+        {
+          id: 1,
+          author: "reviewer",
+          state: "APPROVED",
+          body: null,
+          submitted_at: "2025-01-01T00:00:00Z",
+        },
+      ],
+    },
+  },
+};

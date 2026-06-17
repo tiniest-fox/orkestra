@@ -38,6 +38,25 @@ fn persist_activity_flag(
 /// Dispatches based on result type to the appropriate `WorkflowApi` method.
 #[allow(clippy::too_many_lines)]
 pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<OrchestratorEvent> {
+    let is_agent_result = matches!(
+        exec.result,
+        ExecutionResult::AgentSuccess(_)
+            | ExecutionResult::AgentFailed(_)
+            | ExecutionResult::PollError { .. }
+            | ExecutionResult::AgentMalformedOutput(_)
+            | ExecutionResult::AgentPlainText(_)
+    );
+    if is_agent_result {
+        if let Err(e) = api.clear_session_agent_pid(&exec.task_id, &exec.stage) {
+            orkestra_debug!(
+                "orchestrator",
+                "Failed to clear agent PID for {}/{}: {}",
+                exec.task_id,
+                exec.stage,
+                e
+            );
+        }
+    }
     match exec.result {
         ExecutionResult::AgentSuccess(stage_output) => {
             let output_type = stage_output.notification_label().to_string();

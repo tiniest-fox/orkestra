@@ -257,3 +257,62 @@ fn test_cleanup_orphaned_agents_kills_running() {
         .unwrap();
     assert!(session.agent_pid.is_none());
 }
+
+// =============================================================================
+// Agent PID Cleanup Tests
+// =============================================================================
+
+#[test]
+fn test_agent_pid_cleared_after_completion() {
+    // Use sleep_script: agent stage followed by a slow gate.
+    // We advance two ticks (spawn agent, process output) and verify the agent
+    // PID is cleared from the session before the gate ever spawns.
+    let ctx = TestEnv::with_workflow(workflows::sleep_script());
+
+    let task = ctx.create_task(
+        "PID cleanup test",
+        "Verify agent_pid cleared on completion",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    ctx.set_output(&task_id, simple_artifact());
+
+    ctx.tick(); // spawn agent (sets agent_pid in session to mock PID)
+    ctx.tick(); // dispatch_completion runs → clears agent_pid, task moves to AwaitingGate
+
+    // Gate has not spawned yet — agent_pid should be None.
+    let pid = ctx.get_session_pid(&task_id, "work");
+    assert!(
+        pid.is_none(),
+        "agent_pid should be cleared from session after agent completion"
+    );
+}
+
+#[test]
+fn test_agent_pid_cleared_after_failure() {
+    // Verify clear_agent_pid is called on the AgentFailed path, not just AgentSuccess.
+    // Use instant_script (no gate delay) so the task fails cleanly without leaving
+    // a gate running.
+    let ctx = TestEnv::with_workflow(workflows::instant_script());
+
+    let task = ctx.create_task(
+        "PID failure cleanup test",
+        "Verify agent_pid cleared on agent failure",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Queue a failure — agent produces a log line then errors out.
+    ctx.set_failure_with_activity(&task_id, "simulated agent error".to_string());
+
+    ctx.tick(); // spawn agent (sets agent_pid in session to mock PID)
+    ctx.tick(); // dispatch_completion runs → AgentFailed path → clears agent_pid
+
+    // agent_pid should be cleared regardless of the failure outcome.
+    let pid = ctx.get_session_pid(&task_id, "work");
+    assert!(
+        pid.is_none(),
+        "agent_pid should be cleared from session after agent failure"
+    );
+}

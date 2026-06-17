@@ -52,6 +52,8 @@ impl Drop for ProcessGuard {
             );
             let _ = crate::interactions::tree::kill::execute_with_escalation(self.pid, 2000);
         }
+        // Reap the direct child to prevent zombie processes.
+        crate::interactions::tree::reap::execute(self.pid);
     }
 }
 
@@ -269,6 +271,47 @@ pub struct ParsedStreamEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn process_guard_drop_reaps_zombie() {
+        use std::os::unix::process::CommandExt;
+        use std::time::Duration;
+
+        let child = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0)
+            .spawn()
+            .expect("failed to spawn child");
+
+        let pid = child.id();
+
+        // Prevent Child::drop from reaping — we want a zombie to test against.
+        std::mem::forget(child);
+
+        // Give the process time to exit and become a zombie.
+        std::thread::sleep(Duration::from_millis(100));
+
+        assert!(
+            crate::interactions::tree::is_zombie::execute(pid),
+            "unreaped exited process should be a zombie"
+        );
+
+        // Drop a disarmed guard — should reap the zombie.
+        let guard = ProcessGuard::new(pid);
+        guard.disarm();
+        drop(guard);
+
+        std::thread::sleep(Duration::from_millis(50));
+
+        assert!(
+            !crate::interactions::tree::is_zombie::execute(pid),
+            "process should no longer be a zombie after guard drop"
+        );
+    }
 
     #[test]
     fn test_process_config_builder() {

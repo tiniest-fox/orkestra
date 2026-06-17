@@ -3,3 +3,4 @@
 pub mod is_running;
 pub mod is_zombie;
 pub mod kill;
+pub mod reap;

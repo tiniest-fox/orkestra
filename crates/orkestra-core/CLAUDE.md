@@ -232,7 +232,7 @@ Tests that verify lock contention (e.g., "second orchestrator is blocked") must 
 
 - **Don't embed test-only configuration in production constructors** — If a production `new()` delegates to a shared builder method (e.g., `with_runner()`), any feature added to that shared method silently applies to production. Instead, expose test-only configuration as a separate opt-in builder callable *after* construction (e.g., `StageExecutionService::with_skip_env_resolution()`). Use `Arc::get_mut()` when the builder needs mutable access — safe as long as tests call it immediately after construction before any clones exist.
 
-- **Don't bypass WorkflowApi** — Store access should go through API methods or interactions
+- **Don't bypass WorkflowApi** — Store access should go through API methods or interactions. Before writing an inline store operation (e.g., direct `store.save_session()` calls), check `workflow/api.rs` to see if `WorkflowApi` already exposes the method. Methods like `clear_session_agent_pid`, `set_session_id`, and `save_task` are all delegated through the API. Duplicate inline helpers introduce SSOT violations that reviewers catch as HIGH severity.
 - **Don't hold locks during async/background ops** — Causes deadlocks
 - **Don't put business logic in orchestrator** — It's a thin sequencer; logic goes in interactions
 - **Don't mix concerns in interactions** — One `execute()` per file, single responsibility

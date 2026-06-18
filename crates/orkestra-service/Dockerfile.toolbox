@@ -70,12 +70,15 @@ for bin in /opt/orkestra/bin/*; do
     ln -sf "$bin" "/usr/local/bin/$(basename "$bin")"
 done
 
-# -- Set NODE_PATH and PATH via profile script --
+# -- Set NODE_PATH, PATH, and XDG dirs via profile script --
 # Written to /etc/profile.d/ so it is sourced for all login shells.
+# XDG_CACHE_HOME redirects tool caches (opencode, etc.) away from ~/.cache,
+# which may be root-owned in some base images.
 
 cat > /etc/profile.d/orkestra-env.sh << 'EOF'
 export PATH="/opt/orkestra/bin:$PATH"
 export NODE_PATH="/opt/orkestra/claude-code/node_modules:/opt/orkestra/node/lib/node_modules"
+export XDG_CACHE_HOME=/home/orkestra/.local/cache
 EOF
 
 # -- Resolve or create the uid 1000 user --
@@ -87,8 +90,11 @@ else
     USERNAME=orkestra
 fi
 
-# Ensure the home directory exists and is owned by uid 1000.
-mkdir -p /home/orkestra
+# Ensure the home directory and XDG cache dir exist and are owned by uid 1000.
+# .local/cache is created explicitly so XDG_CACHE_HOME (set in orkestra-env.sh)
+# is always writable — some base images create ~/.cache as root.
+mkdir -p /home/orkestra /home/orkestra/.local/cache
+chown -R 1000:1000 /home/orkestra/.local
 chown 1000:1000 /home/orkestra
 
 # -- Configure git --

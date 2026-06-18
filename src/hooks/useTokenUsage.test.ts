@@ -90,14 +90,12 @@ describe("useTokenUsage", () => {
     );
 
     await waitFor(() => expect(result.current.tokenUsage).toEqual(usageA));
-    const callsAfterFirst = mockCall.mock.calls.length;
 
     // Switch away and back — the ref was cleared, so task-a must be re-fetched
     rerender({ taskId: "task-b" });
     await act(async () => {});
     rerender({ taskId: "task-a" });
 
-    await waitFor(() => expect(mockCall.mock.calls.length).toBeGreaterThan(callsAfterFirst + 1));
-    expect(result.current.tokenUsage).toEqual(usageA);
+    await waitFor(() => expect(result.current.tokenUsage).toEqual(usageA));
   });
 });

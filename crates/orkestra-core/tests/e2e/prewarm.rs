@@ -745,3 +745,264 @@ fn test_prewarm_adopt_task_merges_at_integration() {
         "Prewarmed task must be Archived after integration (branch_name set correctly)"
     );
 }
+
+// =============================================================================
+// Cleanup preserves prewarm worktrees (Bug 3 fix)
+// =============================================================================
+
+#[test]
+fn test_prewarm_cleanup_preserves_worktree_with_record() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+    let task_id = "prewarm-cleanup-preserve";
+
+    // Prewarm (sync mode → immediately Ready, creates real git worktree)
+    ctx.api()
+        .prewarm_worktree(task_id, None)
+        .expect("prewarm should succeed");
+
+    // Get the worktree path from the record
+    let record = ctx
+        .api()
+        .test_store()
+        .get_worktree_record(task_id)
+        .expect("store query")
+        .expect("record should exist after prewarm");
+    let wt_path = record.worktree_path.expect("worktree_path should be set");
+
+    assert!(
+        std::path::Path::new(&wt_path).exists(),
+        "worktree directory should exist before cleanup"
+    );
+
+    // Force cleanup and advance one tick
+    ctx.force_periodic_due("cleanup_worktrees");
+    ctx.advance();
+
+    // Worktree directory must still exist (prewarm record protects it)
+    assert!(
+        std::path::Path::new(&wt_path).exists(),
+        "worktree directory should still exist after cleanup — prewarm record protects it"
+    );
+
+    // Record must still exist in the store (not yet adopted by any task)
+    let record_after = ctx
+        .api()
+        .test_store()
+        .get_worktree_record(task_id)
+        .expect("store query");
+    assert!(
+        record_after.is_some(),
+        "worktree record should still exist after cleanup"
+    );
+}
+
+// =============================================================================
+// Cleanup removes truly orphaned worktrees (regression guard)
+// =============================================================================
+
+#[test]
+fn test_cleanup_still_removes_truly_orphaned_worktrees() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+    let task_id = "orphaned-worktree-cleanup";
+
+    // Prewarm (creates real git worktree + Ready record)
+    ctx.api()
+        .prewarm_worktree(task_id, None)
+        .expect("prewarm should succeed");
+
+    // Get the worktree path before deleting the record
+    let record = ctx
+        .api()
+        .test_store()
+        .get_worktree_record(task_id)
+        .expect("store query")
+        .expect("record should exist after prewarm");
+    let wt_path = record.worktree_path.expect("worktree_path should be set");
+
+    assert!(
+        std::path::Path::new(&wt_path).exists(),
+        "worktree directory should exist before test"
+    );
+
+    // Delete the record — simulates a truly orphaned worktree (no task, no record)
+    ctx.api()
+        .test_store()
+        .delete_worktree_record(task_id)
+        .expect("delete record");
+
+    // Force cleanup and advance
+    ctx.force_periodic_due("cleanup_worktrees");
+    ctx.advance();
+
+    // Orphaned worktree must be removed
+    assert!(
+        !std::path::Path::new(&wt_path).exists(),
+        "orphaned worktree should be removed by cleanup"
+    );
+}
+
+// =============================================================================
+// Title generation does not clobber task state (Bug 2 fix)
+// =============================================================================
+
+#[test]
+fn test_title_gen_does_not_clobber_task_state() {
+    let (api, store, _tmp) = create_api_with_store();
+    let task_id = "title-gen-state-test";
+
+    // Create a task (empty title triggers title generation in setup)
+    api.create_task_with_prewarm(
+        task_id,
+        "",
+        "Implement the widget feature",
+        None,
+        orkestra_core::workflow::domain::TaskCreationMode::Normal,
+        None,
+        false,
+        false,
+    )
+    .expect("create should succeed");
+
+    // Manually advance state to AgentWorking and save (simulates race:
+    // orchestrator advanced the task while title-gen is still running)
+    let mut task = store
+        .get_task(task_id)
+        .expect("store query")
+        .expect("task should exist");
+    let stage = task.current_stage().unwrap_or("planning").to_string();
+    task.state = TaskState::agent_working(&stage);
+    store.save_task(&task).expect("save task with AgentWorking");
+
+    // Call update_task_title — this is what generate_title::execute uses.
+    // The fix: targeted SQL UPDATE on the title column only, not a save_task
+    // that would overwrite the whole record and revert state to Queued.
+    store
+        .update_task_title(task_id, "Generated Task Title")
+        .expect("update title should succeed");
+
+    // Reload and verify state was not clobbered
+    let reloaded = store
+        .get_task(task_id)
+        .expect("store query")
+        .expect("task should exist");
+
+    assert!(
+        matches!(reloaded.state, TaskState::AgentWorking { .. }),
+        "state must not be clobbered by title update, got: {:?}",
+        reloaded.state
+    );
+    assert_eq!(
+        reloaded.title, "Generated Task Title",
+        "title should be updated by targeted update"
+    );
+}
+
+// =============================================================================
+// Invalid worktree falls back to normal setup (validity guard fix)
+// =============================================================================
+
+#[test]
+fn test_invalid_worktree_falls_back_to_setup() {
+    let ctx = TestEnv::with_git(&two_stage_workflow(), &["planning", "work"]);
+    let task_id = "invalid-wt-fallback";
+
+    // Save a Ready record pointing to a path with no .git file.
+    // Using a non-existent path ensures git2 won't find a registered worktree
+    // for this task_id, so normal setup can create a real one.
+    let fake_record = WorktreeRecord {
+        task_id: task_id.to_string(),
+        status: WorktreeStatus::Ready,
+        base_branch: None,
+        worktree_path: Some("/nonexistent/prewarm/worktree".to_string()),
+        branch_name: None,
+        base_commit: None,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    ctx.api()
+        .test_store()
+        .save_worktree_record(&fake_record)
+        .expect("save fake record");
+
+    // Create task — validity guard sees no .git at the fake path → rejects adoption
+    let task = ctx
+        .api()
+        .create_task_with_prewarm(
+            task_id,
+            "Invalid worktree test",
+            "Description",
+            None,
+            orkestra_core::workflow::domain::TaskCreationMode::Normal,
+            None,
+            false,
+            false,
+        )
+        .expect("create should succeed");
+
+    // Task must fall back to AwaitingSetup (not Queued)
+    assert!(
+        matches!(task.state, TaskState::AwaitingSetup { .. }),
+        "task should fall back to AwaitingSetup when prewarm worktree is invalid, got: {:?}",
+        task.state
+    );
+
+    // Advance: setup_awaiting_tasks runs → creates a real worktree → task moves to Queued
+    ctx.advance();
+
+    let after_setup = ctx.api().get_task(task_id).expect("task should exist");
+
+    assert!(
+        matches!(after_setup.state, TaskState::Queued { .. }),
+        "task should be Queued after setup completes, got: {:?}",
+        after_setup.state
+    );
+    assert!(
+        after_setup.worktree_path.is_some(),
+        "task should have a valid worktree_path after setup"
+    );
+}
+
+// =============================================================================
+// Prewarmed worktree adoption happy path still works with validity guard (Test 5)
+// =============================================================================
+
+#[test]
+fn test_prewarm_setup_is_idempotent() {
+    let (api, _store, _tmp) = create_api_with_store();
+    let task_id = "prewarm-idempotent";
+
+    // Prewarm (sync mode → creates real git worktree with .git file)
+    api.prewarm_worktree(task_id, None)
+        .expect("prewarm should succeed");
+
+    // Create task — validity guard checks .git file, finds it valid, adoption succeeds
+    let task = api
+        .create_task_with_prewarm(
+            task_id,
+            "Idempotent prewarm test",
+            "Description",
+            None,
+            orkestra_core::workflow::domain::TaskCreationMode::Normal,
+            None,
+            false,
+            false,
+        )
+        .expect("create should succeed");
+
+    // Happy path: task starts in Queued (worktree adopted, not AwaitingSetup)
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "task with valid prewarm should start in Queued, got: {:?}",
+        task.state
+    );
+    assert!(
+        task.worktree_path.is_some(),
+        "task should have worktree_path after successful adoption"
+    );
+
+    // Verify the adopted worktree directory actually has a .git file
+    let wt_path = task.worktree_path.as_ref().unwrap();
+    assert!(
+        std::path::Path::new(wt_path).join(".git").exists(),
+        "adopted worktree must have a .git file"
+    );
+}

@@ -262,6 +262,7 @@ impl OrchestratorLoop {
             project_root.clone(),
             store,
             iteration_service,
+            None,
         )?);
 
         let mut orchestrator = Self::new(api, stage_executor);
@@ -1082,6 +1083,7 @@ mod tests {
             iteration_service,
             runner,
             registry,
+            None,
         ));
 
         OrchestratorLoop::new(api, stage_executor)

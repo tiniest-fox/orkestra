@@ -39,8 +39,9 @@ impl Git2GitService {
     /// Create a new `Git2GitService` for the given repository path.
     pub fn new(repo_path: &Path) -> Result<Self, GitError> {
         DISABLE_OWNER_VALIDATION.call_once(disable_owner_validation);
-        let repo = Repository::open(repo_path)
-            .map_err(|e| GitError::RepositoryNotFound(format!("Failed to open repository: {e}")))?;
+        let repo = Repository::discover(repo_path).map_err(|e| {
+            GitError::RepositoryNotFound(format!("Failed to discover repository: {e}"))
+        })?;
         let worktrees_dir = repo_path.join(".orkestra/.worktrees");
         Ok(Self {
             repo: Mutex::new(repo),
@@ -731,6 +732,51 @@ mod tests {
         git.remove_worktree("TASK-FAILCLEAN", true)
             .expect("Removal should succeed even if cleanup fails");
         assert!(!result.worktree_path.exists(), "Worktree should be removed");
+    }
+
+    #[test]
+    fn test_create_service_from_subdirectory() {
+        // Git repo at root, .orkestra in a subdirectory (mono-repo layout)
+        let (_temp_dir, repo_path) = create_test_repo();
+        let frontend_path = repo_path.join("frontend");
+        std::fs::create_dir_all(frontend_path.join(".orkestra")).unwrap();
+
+        // Add and commit the frontend directory so the worktree mirrors it
+        std::fs::write(frontend_path.join("index.ts"), "export {};").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Add frontend"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+
+        // Service must succeed even though .git/ is in a parent directory
+        let git = Git2GitService::new(&frontend_path)
+            .expect("Failed to create git service from subdirectory");
+
+        // Worktree should be placed under frontend/.orkestra/.worktrees/
+        let result = git
+            .create_worktree("MONO-001", Some("main"))
+            .expect("Failed to create worktree");
+
+        let expected_worktrees_dir = frontend_path.join(".orkestra/.worktrees");
+        assert!(
+            result.worktree_path.starts_with(&expected_worktrees_dir),
+            "Worktree {:?} should be under {:?}",
+            result.worktree_path,
+            expected_worktrees_dir
+        );
+        assert!(result.worktree_path.exists());
+
+        // Worktree mirrors git tree from root, so frontend/ subdir exists inside it
+        assert!(
+            result.worktree_path.join("frontend").is_dir(),
+            "Worktree should contain frontend/ subdirectory"
+        );
     }
 
     #[test]

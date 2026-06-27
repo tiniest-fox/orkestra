@@ -96,6 +96,11 @@ pub struct AgentExecutionService {
     /// When true, skips login-shell env resolution. Used in tests to avoid
     /// blocking the tick thread on slow shell startup.
     skip_env_resolution: bool,
+    /// Relative path from git root to project root for mono-repo layouts.
+    ///
+    /// When set, agents are spawned in `worktree_path/project_subpath/` so they
+    /// start in the correct subdirectory. `None` for standard (non-mono-repo) projects.
+    project_subpath: Option<PathBuf>,
 }
 
 impl AgentExecutionService {
@@ -105,6 +110,7 @@ impl AgentExecutionService {
         workflow: WorkflowConfig,
         project_root: PathBuf,
         registry: Arc<ProviderRegistry>,
+        project_subpath: Option<PathBuf>,
     ) -> Self {
         Self {
             runner,
@@ -112,6 +118,7 @@ impl AgentExecutionService {
             workflow,
             registry,
             skip_env_resolution: false,
+            project_subpath,
         }
     }
 
@@ -151,6 +158,7 @@ impl AgentExecutionService {
             sibling_tasks,
             parent_resources,
             self.skip_env_resolution,
+            self.project_subpath.as_deref(),
         )
     }
 }

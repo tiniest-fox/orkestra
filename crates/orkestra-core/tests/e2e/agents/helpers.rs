@@ -252,9 +252,14 @@ impl AgentTestEnv {
         let project_root = PathBuf::from(temp_dir.path());
         let iteration_service = api.lock().unwrap().iteration_service().clone();
 
-        let base =
-            StageExecutionService::new(loaded_workflow, project_root, store, iteration_service)
-                .expect("failed to start hook server in test");
+        let base = StageExecutionService::new(
+            loaded_workflow,
+            project_root,
+            store,
+            iteration_service,
+            None,
+        )
+        .expect("failed to start hook server in test");
 
         let stage_executor = if skip_env {
             Arc::new(base.with_skip_env_resolution())

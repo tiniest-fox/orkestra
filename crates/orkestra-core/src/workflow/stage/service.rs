@@ -224,6 +224,7 @@ impl StageExecutionService {
         iteration_service: Arc<IterationService>,
         runner: Arc<dyn AgentRunnerTrait>,
         registry: Arc<ProviderRegistry>,
+        project_subpath: Option<PathBuf>,
     ) -> Self {
         // Agent service only handles execution - session lifecycle is managed here.
         let agent_service = Arc::new(AgentExecutionService::new(
@@ -231,6 +232,7 @@ impl StageExecutionService {
             workflow.clone(),
             project_root.clone(),
             Arc::clone(&registry),
+            project_subpath,
         ));
 
         let script_service = Arc::new(ScriptExecutionService::new(
@@ -260,6 +262,7 @@ impl StageExecutionService {
         project_root: PathBuf,
         store: Arc<dyn WorkflowStore>,
         iteration_service: Arc<IterationService>,
+        project_subpath: Option<PathBuf>,
     ) -> Result<Self, std::io::Error> {
         use crate::workflow::execution::{build_production_registry, start_hook_server};
 
@@ -276,6 +279,7 @@ impl StageExecutionService {
             iteration_service,
             runner,
             registry,
+            project_subpath,
         ))
     }
 
@@ -1107,6 +1111,7 @@ mod tests {
             iteration_service,
             runner,
             registry,
+            None,
         )
     }
 

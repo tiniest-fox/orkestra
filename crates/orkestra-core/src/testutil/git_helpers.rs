@@ -1,6 +1,6 @@
 //! Git test helpers for creating temporary repositories.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -74,6 +74,53 @@ pub fn create_temp_git_repo() -> std::io::Result<TempDir> {
         .output()?;
 
     Ok(temp_dir)
+}
+
+/// Creates a temporary mono-repo for testing.
+///
+/// The repo has `.git/` at the git root and a project subdirectory at `subpath`
+/// (e.g., `"frontend"`). Returns `(TempDir, project_root_path)` where `TempDir`
+/// owns the git root and `project_root_path` is the subdirectory with Orkestra.
+pub fn create_temp_monorepo(subpath: &str) -> std::io::Result<(TempDir, PathBuf)> {
+    let temp_dir = TempDir::new()?;
+    let git_root = temp_dir.path();
+    let project_root = git_root.join(subpath);
+
+    Command::new("git")
+        .args(["init"])
+        .current_dir(git_root)
+        .output()?;
+    Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(git_root)
+        .output()?;
+    Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(git_root)
+        .output()?;
+
+    std::fs::create_dir_all(&project_root)?;
+    std::fs::write(project_root.join("README.md"), "# Frontend\n")?;
+
+    let gitignore_content =
+        ".orkestra/.database/\n.orkestra/.logs/\n.orkestra/.worktrees/\n.orkestra/.artifacts/\n";
+    std::fs::write(git_root.join(".gitignore"), gitignore_content)?;
+    std::fs::write(git_root.join("README.md"), "# Monorepo\n")?;
+
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(git_root)
+        .output()?;
+    Command::new("git")
+        .args(["commit", "-m", "Initial commit"])
+        .current_dir(git_root)
+        .output()?;
+    Command::new("git")
+        .args(["branch", "-M", "main"])
+        .current_dir(git_root)
+        .output()?;
+
+    Ok((temp_dir, project_root))
 }
 
 /// Creates the `.orkestra/.worktrees` directory in a repo.

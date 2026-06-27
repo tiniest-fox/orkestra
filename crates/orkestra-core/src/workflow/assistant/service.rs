@@ -50,6 +50,11 @@ pub struct AssistantService {
     registry: Arc<ProviderRegistry>,
     project_root: PathBuf,
     workflow: WorkflowConfig,
+    /// Relative path from git root to project root for mono-repo layouts.
+    ///
+    /// Appended to the worktree path when resolving the agent working directory.
+    /// `None` for standard (non-mono-repo) projects.
+    project_subpath: Option<PathBuf>,
 }
 
 impl AssistantService {
@@ -59,12 +64,14 @@ impl AssistantService {
         registry: Arc<ProviderRegistry>,
         project_root: PathBuf,
         workflow: WorkflowConfig,
+        project_subpath: Option<PathBuf>,
     ) -> Self {
         Self {
             store,
             registry,
             project_root,
             workflow,
+            project_subpath,
         }
     }
 
@@ -227,7 +234,10 @@ impl AssistantService {
         });
 
         let working_dir = match worktree_path {
-            Some(path) => path,
+            Some(path) => match &self.project_subpath {
+                Some(sp) => path.join(sp),
+                None => path,
+            },
             None if task.is_chat => self.project_root.clone(),
             None => {
                 self.store.append_assistant_log_entry(
@@ -859,6 +869,7 @@ mod tests {
             Arc::new(registry),
             std::env::temp_dir(), // project_root (not used in pure logic tests)
             WorkflowConfig::new(vec![]),
+            None,
         );
         (service, store)
     }

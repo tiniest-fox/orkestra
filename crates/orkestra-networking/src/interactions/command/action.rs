@@ -71,6 +71,16 @@ pub fn archive(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPaylo
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
+/// Enters vibe mode from `AwaitingApproval` or Done.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub fn enter_vibe(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.enter_vibe(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+}
+
 /// Rejects with line-level PR comments.
 ///
 /// Expected params: `{ "task_id": "<id>", "comments": [...], "guidance": "<guidance>" }`

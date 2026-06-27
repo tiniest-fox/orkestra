@@ -123,6 +123,14 @@ impl WorkflowApi {
         human::archive::execute(self.store.as_ref(), task_id)
     }
 
+    /// Enter vibe mode from `AwaitingApproval` or Done.
+    ///
+    /// Saves the task's origin (flow, stage) in `vibe_origin`, ends any open
+    /// iteration, and transitions to `Queued { stage: "vibe" }`.
+    pub fn enter_vibe(&self, task_id: &str) -> WorkflowResult<Task> {
+        human::enter_vibe::execute(self.store.as_ref(), &self.iteration_service, task_id)
+    }
+
     /// Skip the current stage, advancing to the next stage with a message.
     pub fn skip_stage(&self, task_id: &str, message: &str) -> WorkflowResult<Task> {
         human::skip_stage::execute(

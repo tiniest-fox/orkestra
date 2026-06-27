@@ -93,6 +93,46 @@ impl PromptService {
         )
     }
 
+    /// Build a complete agent configuration from a pre-resolved stage config.
+    ///
+    /// Like `build_agent_config`, but accepts `stage` directly instead of
+    /// looking it up by name. Use for virtual stages (e.g., vibe) that are not
+    /// registered in any flow's stage list.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_agent_config_with_stage<'a>(
+        &self,
+        workflow: &'a WorkflowConfig,
+        stage: &'a orkestra_types::config::StageConfig,
+        task: &'a Task,
+        stage_name: &str,
+        artifact_names: &[String],
+        agent_definition: &str,
+        json_schema: &str,
+        universal_prompt: Option<&str>,
+        feedback: Option<&'a str>,
+        integration_error: Option<IntegrationErrorContext<'a>>,
+        show_direct_structured_output_hint: bool,
+        sibling_tasks: &[SiblingTaskContext],
+        parent_resources: Option<&ResourceStore>,
+    ) -> Result<ResolvedAgentConfig, AgentConfigError> {
+        interactions::build::agent_config::execute_with_stage(
+            &self.templates,
+            workflow,
+            stage,
+            task,
+            stage_name,
+            artifact_names,
+            agent_definition,
+            json_schema,
+            universal_prompt,
+            feedback,
+            integration_error,
+            show_direct_structured_output_hint,
+            sibling_tasks,
+            parent_resources,
+        )
+    }
+
     /// Build the system prompt from agent definition and context.
     pub fn build_system_prompt(
         &self,

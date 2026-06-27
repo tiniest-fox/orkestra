@@ -12,3 +12,4 @@ pub mod next_id;
 pub mod next_subtask_id;
 pub mod save;
 pub mod touch;
+pub mod update_title;

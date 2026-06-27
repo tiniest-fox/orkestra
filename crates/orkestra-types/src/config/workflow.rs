@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::stage::{GateConfig, StageConfig};
 use super::VIBE_STAGE;
+use crate::domain::Task;
 use crate::runtime::{ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME};
 
 /// Name used by `WorkflowConfig::new()` for its single created flow.
@@ -317,6 +318,21 @@ impl WorkflowConfig {
             config = config.with_model(model.as_str());
         }
         config
+    }
+
+    /// Compute the valid exit destinations for the vibe agent.
+    ///
+    /// Uses the task's origin flow (or current flow if no origin) to build the list
+    /// of valid stages plus "done".
+    pub fn vibe_exit_destinations(&self, task: &Task) -> Vec<String> {
+        let flow = task.vibe_origin.as_ref().map_or(&task.flow, |v| &v.flow);
+        let mut destinations: Vec<String> = self
+            .stages_in_flow(flow)
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        destinations.push("done".to_string());
+        destinations
     }
 
     // -- Validation --

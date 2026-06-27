@@ -193,6 +193,22 @@ pub fn workflow_archive(
     })
 }
 
+/// Enter vibe mode from AwaitingApproval or Done.
+///
+/// Saves origin state and transitions the task to vibe stage for ad-hoc experimentation.
+#[tauri::command]
+pub fn workflow_enter_vibe(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Value, TauriError> {
+    orkestra_debug!("tauri", "enter_vibe {task_id}");
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id });
+        action::enter_vibe(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
 /// Reject an `AwaitingApproval` task with line-level comments.
 ///
 /// Routes the task to the rejection target stage (typically "work") with

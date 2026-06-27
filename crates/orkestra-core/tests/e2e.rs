@@ -56,6 +56,8 @@ mod sync;
 mod task_creation;
 #[path = "e2e/token_usage.rs"]
 mod token_usage;
+#[path = "e2e/vibe.rs"]
+mod vibe;
 #[path = "e2e/workflow.rs"]
 mod workflow;
 

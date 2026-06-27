@@ -18,10 +18,10 @@ pub use orkestra_parser::{
     SubtaskOutput,
 };
 pub use prompt::{
-    build_resume_prompt, build_user_message, determine_resume_type, get_agent_schema,
-    load_agent_definition, resolve_stage_agent_config_for, sibling_status_display,
-    AgentConfigError, IntegrationErrorContext, PrCheckContext, PrComment, PromptBuilder,
-    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
+    build_resume_prompt, build_user_message, build_vibe_schema, determine_resume_type,
+    get_agent_schema, load_agent_definition, resolve_stage_agent_config_for,
+    sibling_status_display, AgentConfigError, IntegrationErrorContext, PrCheckContext, PrComment,
+    PromptBuilder, QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
     SiblingTaskContext, StagePromptContext,
 };
 

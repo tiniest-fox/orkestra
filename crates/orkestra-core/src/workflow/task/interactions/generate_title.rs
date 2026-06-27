@@ -25,12 +25,7 @@ pub(crate) fn execute(
         }
     };
 
-    if let Ok(Some(mut task)) = store.get_task(task_id) {
-        if task.title.trim().is_empty() {
-            task.title = title;
-            if let Err(e) = store.save_task(&task) {
-                crate::orkestra_debug!("task", "WARNING: Failed to save title for {task_id}: {e}");
-            }
-        }
+    if let Err(e) = store.update_task_title(task_id, &title) {
+        crate::orkestra_debug!("task", "WARNING: Failed to save title for {task_id}: {e}");
     }
 }

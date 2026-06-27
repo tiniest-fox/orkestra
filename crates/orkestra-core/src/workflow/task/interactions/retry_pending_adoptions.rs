@@ -98,13 +98,25 @@ mod tests {
 
     #[test]
     fn ready_record_with_no_worktree_adopts() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".git"), "gitdir: ...").unwrap();
+        let wt_path = tmp.path().to_string_lossy().to_string();
+
         let store = Arc::new(InMemoryWorkflowStore::new());
         let mut task = make_task("task-1");
         task.state = TaskState::awaiting_setup("work");
         store.save_task(&task).unwrap();
-        store
-            .save_worktree_record(&make_record("task-1", WorktreeStatus::Ready))
-            .unwrap();
+
+        let record = WorktreeRecord {
+            task_id: "task-1".to_string(),
+            status: WorktreeStatus::Ready,
+            base_branch: Some("main".to_string()),
+            worktree_path: Some(wt_path.clone()),
+            branch_name: Some("task/my-task".to_string()),
+            base_commit: Some("abc123".to_string()),
+            created_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+        store.save_worktree_record(&record).unwrap();
 
         let adopted = execute(store.as_ref()).unwrap();
         assert_eq!(adopted, vec!["task-1"]);
@@ -112,7 +124,7 @@ mod tests {
         let updated = store.get_task("task-1").unwrap().unwrap();
         assert_eq!(
             updated.worktree_path,
-            Some("/tmp/wt".to_string()),
+            Some(wt_path),
             "worktree_path should be set after adoption"
         );
         // AwaitingSetup → Queued

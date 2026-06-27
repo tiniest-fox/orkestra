@@ -131,12 +131,12 @@ mod tests {
         WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
     }
 
-    fn ready_prewarm(task_id: &str) -> WorktreeRecord {
+    fn ready_prewarm(task_id: &str, worktree_path: &str) -> WorktreeRecord {
         WorktreeRecord {
             task_id: task_id.to_string(),
             status: WorktreeStatus::Ready,
             base_branch: Some("main".to_string()),
-            worktree_path: Some("/tmp/wt".to_string()),
+            worktree_path: Some(worktree_path.to_string()),
             branch_name: Some(format!("task/{task_id}")),
             base_commit: Some("abc123".to_string()),
             created_at: "2025-01-01T00:00:00Z".to_string(),
@@ -147,12 +147,16 @@ mod tests {
     /// have an empty title but non-empty description.
     #[test]
     fn prewarm_adoption_triggers_title_generation() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".git"), "gitdir: ...").unwrap();
+        let wt_path = tmp.path().to_string_lossy().to_string();
+
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
         let title_gen_clone: Arc<dyn crate::title::TitleGenerator> =
             Arc::new(MockTitleGenerator::succeeding());
 
         store
-            .save_worktree_record(&ready_prewarm("my-task"))
+            .save_worktree_record(&ready_prewarm("my-task", &wt_path))
             .unwrap();
 
         let iteration_service = IterationService::new(Arc::clone(&store));
@@ -188,12 +192,16 @@ mod tests {
     /// No title generation when a prewarm is adopted but title is already set.
     #[test]
     fn prewarm_adoption_skips_title_gen_when_title_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".git"), "gitdir: ...").unwrap();
+        let wt_path = tmp.path().to_string_lossy().to_string();
+
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
         let title_gen: Arc<dyn crate::title::TitleGenerator> =
             Arc::new(MockTitleGenerator::succeeding());
 
         store
-            .save_worktree_record(&ready_prewarm("my-task2"))
+            .save_worktree_record(&ready_prewarm("my-task2", &wt_path))
             .unwrap();
 
         let iteration_service = IterationService::new(Arc::clone(&store));

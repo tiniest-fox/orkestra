@@ -99,6 +99,14 @@ impl TaskSetupService {
             let branch = base_branch.as_deref();
             match git_service.ensure_worktree(&task_id, branch) {
                 Ok(result) => {
+                    if let Err(e) = git_service.run_setup_script(&result.worktree_path) {
+                        crate::orkestra_debug!(
+                            "setup",
+                            "WARNING: Prewarm setup script failed for {task_id}: {e}"
+                        );
+                        // Non-fatal: worktree is still usable, just missing project-specific setup.
+                        // The setup path in setup_worktree::execute will run it again if needed.
+                    }
                     let updated = WorktreeRecord {
                         task_id: task_id.clone(),
                         status: WorktreeStatus::Ready,

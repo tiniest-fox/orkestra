@@ -3,7 +3,7 @@
 //! This is the core execution pipeline: resolve provider → build prompts →
 //! apply schema enforcement → apply tool restrictions → run agent.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use crate::orkestra_debug;
@@ -43,6 +43,7 @@ pub(crate) fn execute(
     sibling_tasks: &[SiblingTaskContext],
     parent_resources: Option<&ResourceStore>,
     skip_env_resolution: bool,
+    project_subpath: Option<&Path>,
 ) -> Result<ExecutionHandle, ExecutionError> {
     let stage = task
         .current_stage()
@@ -201,6 +202,7 @@ pub(crate) fn execute(
         stage_config,
         spawn_context,
         resolved_env,
+        project_subpath,
     );
 
     // 10. Run the agent
@@ -640,11 +642,26 @@ fn append_schema_enforcement(prompt: &str) -> Result<String, ExecutionError> {
 // -- Run Config --
 
 /// Get the working directory for a task.
-fn get_working_dir(prompt_service: &PromptService, task: &Task) -> PathBuf {
-    task.worktree_path.as_ref().map_or_else(
-        || prompt_service.project_root().to_path_buf(),
-        PathBuf::from,
-    )
+///
+/// When a worktree path is set, appends `project_subpath` (the relative path
+/// from git root to project root) so agents start in the correct subdirectory
+/// for mono-repo layouts. When there is no worktree, `project_root` is already
+/// the correct directory so subpath is not appended.
+fn get_working_dir(
+    prompt_service: &PromptService,
+    task: &Task,
+    project_subpath: Option<&Path>,
+) -> PathBuf {
+    match task.worktree_path.as_ref() {
+        Some(wt) => {
+            let base = PathBuf::from(wt);
+            match project_subpath {
+                Some(sp) => base.join(sp),
+                None => base,
+            }
+        }
+        None => prompt_service.project_root().to_path_buf(),
+    }
 }
 
 /// Build `RunConfig` with session info, model spec, system prompt, and resolved env.
@@ -654,8 +671,9 @@ fn build_run_config(
     resolved: ResolvedStageConfig,
     spawn_context: &SessionSpawnContext,
     resolved_env: Option<std::collections::HashMap<String, String>>,
+    project_subpath: Option<&Path>,
 ) -> RunConfig {
-    let working_dir = get_working_dir(prompt_service, task);
+    let working_dir = get_working_dir(prompt_service, task, project_subpath);
     let mut run_config = RunConfig::new(working_dir, resolved.user_prompt, resolved.json_schema)
         .with_task_id(&task.id);
 
@@ -1212,5 +1230,53 @@ mod tests {
         assert!(result.contains("Please fix this"));
         assert!(result.contains("Failed CI Checks"));
         assert!(result.contains("clippy: 2 warnings"));
+    }
+
+    #[test]
+    fn get_working_dir_worktree_with_subpath() {
+        let prompt_service = PromptService::new("/project/root");
+        let task = crate::workflow::domain::Task::new(
+            "t1",
+            "title",
+            "desc",
+            "flow",
+            "2024-01-01T00:00:00Z",
+        )
+        .with_worktree("/worktrees/task-branch");
+
+        let result = get_working_dir(&prompt_service, &task, Some(Path::new("frontend")));
+        assert_eq!(result, PathBuf::from("/worktrees/task-branch/frontend"));
+    }
+
+    #[test]
+    fn get_working_dir_worktree_no_subpath() {
+        let prompt_service = PromptService::new("/project/root");
+        let task = crate::workflow::domain::Task::new(
+            "t1",
+            "title",
+            "desc",
+            "flow",
+            "2024-01-01T00:00:00Z",
+        )
+        .with_worktree("/worktrees/task-branch");
+
+        let result = get_working_dir(&prompt_service, &task, None);
+        assert_eq!(result, PathBuf::from("/worktrees/task-branch"));
+    }
+
+    #[test]
+    fn get_working_dir_no_worktree_returns_project_root() {
+        let prompt_service = PromptService::new("/project/root");
+        let task = crate::workflow::domain::Task::new(
+            "t1",
+            "title",
+            "desc",
+            "flow",
+            "2024-01-01T00:00:00Z",
+        );
+
+        // subpath is ignored when there is no worktree — project_root is already correct
+        let result = get_working_dir(&prompt_service, &task, Some(Path::new("frontend")));
+        assert_eq!(result, PathBuf::from("/project/root"));
     }
 }

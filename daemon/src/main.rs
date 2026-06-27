@@ -22,7 +22,7 @@ use orkestra_core::workflow::{
     AgentKiller, LogNotification, OrchestratorLoop, StageExecutionService, WorkflowApi,
     WorkflowStore,
 };
-use orkestra_core::{ensure_orkestra_project, orkestra_debug};
+use orkestra_core::{compute_project_subpath, ensure_orkestra_project, orkestra_debug};
 use orkestra_networking::{
     convert_orchestrator_event, generate_pairing_code, CommandContext, Event, HeaderValue,
     RelayClientConfig,
@@ -252,11 +252,14 @@ async fn run(
     // to WebSocket clients as `log_entry_appended` events.
     let (log_tx, log_rx) = std::sync::mpsc::channel::<LogNotification>();
 
+    let project_subpath = compute_project_subpath(&project_root);
+
     let mut stage_executor_inner = StageExecutionService::new(
         workflow.clone(),
         project_root.clone(),
         Arc::clone(&store),
         iteration_service,
+        project_subpath.clone(),
     )
     .map_err(|e| format!("Failed to start hook server: {e}"))?;
     stage_executor_inner.set_log_notify_tx(log_tx.clone());
@@ -274,13 +277,16 @@ async fn run(
     let (event_tx, _event_rx) = broadcast::channel::<Event>(256);
 
     // -- Shared CommandContext (used by both server and relay client) --
-    let ctx = Arc::new(CommandContext::new(
-        Arc::clone(&api),
-        Arc::clone(&raw_conn),
-        project_root.clone(),
-        provider_registry,
-        Arc::clone(&store),
-    ));
+    let ctx = Arc::new(
+        CommandContext::new(
+            Arc::clone(&api),
+            Arc::clone(&raw_conn),
+            project_root.clone(),
+            provider_registry,
+            Arc::clone(&store),
+        )
+        .with_project_subpath(project_subpath),
+    );
 
     // -- Log notification listener thread --
     // Reads LogNotification values from the mpsc channel and broadcasts

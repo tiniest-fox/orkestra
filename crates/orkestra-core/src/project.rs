@@ -102,6 +102,20 @@ pub fn find_git_root(from: &std::path::Path) -> Option<PathBuf> {
     }
 }
 
+/// Compute the relative subpath from the git root to `project_root`.
+///
+/// Returns `None` when `project_root` is the git root itself (no subpath), or
+/// when no git repository is found.
+pub fn compute_project_subpath(project_root: &std::path::Path) -> Option<PathBuf> {
+    find_git_root(project_root).and_then(|git_root| {
+        project_root
+            .strip_prefix(&git_root)
+            .ok()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(std::path::Path::to_path_buf)
+    })
+}
+
 /// Gets the .orkestra directory path at the project root.
 /// Always returns the MAIN repo's .orkestra, even if called from a worktree.
 ///

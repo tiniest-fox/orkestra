@@ -46,6 +46,19 @@ mod tests {
     use crate::types::SchemaConfig;
     use serde_json::Value;
 
+    fn has_description(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => {
+                if map.contains_key("description") {
+                    return true;
+                }
+                map.values().any(has_description)
+            }
+            Value::Array(arr) => arr.iter().any(has_description),
+            _ => false,
+        }
+    }
+
     #[test]
     fn test_compact_schema_strips_descriptions() {
         let schema = generate_stage_schema(&SchemaConfig {
@@ -53,23 +66,10 @@ mod tests {
             produces_subtasks: false,
             has_approval: false,
             route_to_stages: &[],
+            proposed_exit_destinations: &[],
         });
         let compact = execute(&schema).unwrap();
         let parsed: Value = serde_json::from_str(&compact).unwrap();
-
-        // Verify no description keys remain anywhere in the schema
-        fn has_description(value: &Value) -> bool {
-            match value {
-                Value::Object(map) => {
-                    if map.contains_key("description") {
-                        return true;
-                    }
-                    map.values().any(has_description)
-                }
-                Value::Array(arr) => arr.iter().any(has_description),
-                _ => false,
-            }
-        }
 
         assert!(
             !has_description(&parsed),
@@ -91,6 +91,7 @@ mod tests {
             produces_subtasks: false,
             has_approval: false,
             route_to_stages: &[],
+            proposed_exit_destinations: &[],
         });
         let compact = execute(&schema).unwrap();
         let parsed: Value = serde_json::from_str(&compact).unwrap();

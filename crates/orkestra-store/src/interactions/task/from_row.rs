@@ -1,15 +1,15 @@
 //! Convert a `SQLite` row to a `Task` or `TaskHeader`.
 
-use orkestra_types::domain::{ResolvedFeedbackIds, Task, TaskHeader};
+use orkestra_types::domain::{ResolvedFeedbackIds, Task, TaskHeader, VibeOrigin};
 use orkestra_types::runtime::TaskState;
 
-/// Convert a full task row (25 columns) to a `Task`.
+/// Convert a full task row (26 columns) to a `Task`.
 ///
 /// Column order: id, title, description, state, artifacts,
 /// `parent_id`, `depends_on`, `branch_name`, `worktree_path`, `auto_mode`,
 /// `created_at`, `updated_at`, `completed_at`, `base_branch`, flow, `short_id`,
 /// `base_commit`, `pr_url`, interactive, resources, `is_chat`, `auto_pr`,
-/// `auto_resolve`, `auto_resolve_count`, `resolved_feedback_ids`
+/// `auto_resolve`, `auto_resolve_count`, `resolved_feedback_ids`, `vibe_origin`
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let state_json: String = row.get(3)?;
     let artifacts_json: String = row.get(4)?;
@@ -41,6 +41,11 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
                 .ok()
         })
         .unwrap_or_default();
+    let vibe_origin: Option<VibeOrigin> = row
+        .get::<_, Option<String>>(25)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
 
     Ok(Task {
         id: row.get(0)?,
@@ -64,6 +69,7 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         resolved_feedback_ids,
         flow,
         is_chat,
+        vibe_origin,
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
         completed_at: row.get(12)?,

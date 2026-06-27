@@ -16,6 +16,7 @@ const DEFAULT_PROMPTS: &[(&str, &str)] = &[
     ("worker.md", include_str!("defaults/agents/worker.md")),
     ("reviewer.md", include_str!("defaults/agents/reviewer.md")),
     ("compound.md", include_str!("defaults/agents/compound.md")),
+    ("vibe.md", include_str!("defaults/agents/vibe.md")),
 ];
 
 /// Subdirectories created inside `.orkestra/` on init.

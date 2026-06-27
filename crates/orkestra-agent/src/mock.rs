@@ -386,6 +386,15 @@ fn output_to_json(output: &StageOutput) -> serde_json::Value {
                 "subtasks": subtasks
             })
         }
+        StageOutput::ProposedExit {
+            destination,
+            rationale,
+            ..
+        } => serde_json::json!({
+            "type": "proposed_exit",
+            "destination": destination,
+            "rationale": rationale,
+        }),
         StageOutput::Failed { error } => serde_json::json!({
             "type": "failed",
             "error": error

@@ -92,7 +92,7 @@ pub fn execute(
 /// Resources declared in the output are merged into `task.resources` before returning.
 /// When an artifact-producing handler returns `Some(artifact_name)`, saves the artifact
 /// to `workflow_artifacts` and emits an `ArtifactProduced` log entry.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn dispatch_output(
     store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
@@ -195,6 +195,13 @@ pub(crate) fn dispatch_output(
                 )?;
             }
             None
+        }
+        // ProposedExit is only valid in vibe stage sessions.
+        // Routing on ProposedExit is handled by the vibe exit flow (whitefly subtask).
+        StageOutput::ProposedExit { .. } => {
+            return Err(WorkflowError::InvalidState(
+                "proposed_exit output is not valid outside a vibe stage session".into(),
+            ));
         }
     };
 

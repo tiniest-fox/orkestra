@@ -141,6 +141,24 @@ pub enum StageOutput {
         resources: Vec<ResourceOutput>,
     },
 
+    /// Agent proposes an exit from vibe mode.
+    /// Only valid during a vibe stage session.
+    ProposedExit {
+        /// Target stage or "done".
+        destination: String,
+        /// Why this destination was chosen.
+        rationale: String,
+        /// Summary of work done during the vibe session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content: Option<String>,
+        /// Terse bullet points covering decisions made and changes applied.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        activity_log: Option<String>,
+        /// External resources registered during the session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resources: Option<Vec<ResourceOutput>>,
+    },
+
     /// Agent failed to complete.
     Failed {
         /// Error message.
@@ -176,6 +194,7 @@ impl StageOutput {
             StageOutput::Questions { .. } => "questions",
             StageOutput::Subtasks { .. } => "subtasks",
             StageOutput::Approval { .. } => "approval",
+            StageOutput::ProposedExit { .. } => "proposed_exit",
             StageOutput::Failed { .. } => "failed",
             StageOutput::Blocked { .. } => "blocked",
         }
@@ -228,7 +247,8 @@ impl StageOutput {
         match self {
             StageOutput::Artifact { activity_log, .. }
             | StageOutput::Approval { activity_log, .. }
-            | StageOutput::Subtasks { activity_log, .. } => activity_log.as_deref(),
+            | StageOutput::Subtasks { activity_log, .. }
+            | StageOutput::ProposedExit { activity_log, .. } => activity_log.as_deref(),
             _ => None,
         }
     }
@@ -240,6 +260,7 @@ impl StageOutput {
             | StageOutput::Approval { resources, .. }
             | StageOutput::Subtasks { resources, .. }
             | StageOutput::Questions { resources, .. } => resources,
+            StageOutput::ProposedExit { resources, .. } => resources.as_deref().unwrap_or(&[]),
             _ => &[],
         }
     }

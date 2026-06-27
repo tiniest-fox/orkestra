@@ -16,4 +16,8 @@ pub struct SchemaConfig<'a> {
     /// Valid stage names for the `route_to` field on approval output.
     /// When non-empty and `has_approval` is true, a `route_to` enum property is added.
     pub route_to_stages: &'a [String],
+    /// Valid destinations for a `proposed_exit` output.
+    /// When non-empty, adds `proposed_exit` to the type enum with an enum-constrained
+    /// `destination` field.
+    pub proposed_exit_destinations: &'a [String],
 }

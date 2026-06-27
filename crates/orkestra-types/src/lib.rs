@@ -8,3 +8,5 @@
 pub mod config;
 pub mod domain;
 pub mod runtime;
+
+pub use config::VIBE_STAGE;

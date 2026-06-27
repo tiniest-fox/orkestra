@@ -10,6 +10,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::runtime::{ArtifactStore, ResourceStore, TaskState};
 
+/// Records where a task came from when entering vibe mode.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VibeOrigin {
+    /// The flow the task was in when vibe mode was entered.
+    pub flow: String,
+    /// The stage the task was in when vibe mode was entered, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    /// The destination proposed by the vibe agent, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposed_destination: Option<String>,
+}
+
 /// IDs of PR comments, CI check runs, and reviews already processed by auto-resolve (dedup guard).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ResolvedFeedbackIds {
@@ -127,6 +140,10 @@ pub struct Task {
     #[serde(default)]
     pub is_chat: bool,
 
+    /// Where the task came from when entering vibe mode, if applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vibe_origin: Option<VibeOrigin>,
+
     // === Tracking ===
     /// When the task was created (RFC3339).
     pub created_at: String,
@@ -175,6 +192,7 @@ impl Task {
             resolved_feedback_ids: ResolvedFeedbackIds::default(),
             flow: "default".to_string(),
             is_chat: false,
+            vibe_origin: None,
             created_at: created.clone(),
             updated_at: created,
             completed_at: None,
@@ -851,5 +869,36 @@ mod tests {
         let task = Task::new("t", "T", "d", "work", "now").with_auto_resolve(false);
         assert!(!task.auto_resolve);
         assert!(!task.auto_pr);
+    }
+
+    #[test]
+    fn vibe_origin_roundtrip() {
+        let origin = VibeOrigin {
+            flow: "default".to_string(),
+            stage: Some("work".to_string()),
+            proposed_destination: Some("done".to_string()),
+        };
+        let json = serde_json::to_string(&origin).unwrap();
+        let parsed: VibeOrigin = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, origin);
+
+        // None-stage variant
+        let origin2 = VibeOrigin {
+            flow: "default".to_string(),
+            stage: None,
+            proposed_destination: None,
+        };
+        let json2 = serde_json::to_string(&origin2).unwrap();
+        assert!(!json2.contains("stage"));
+        assert!(!json2.contains("proposed_destination"));
+        let parsed2: VibeOrigin = serde_json::from_str(&json2).unwrap();
+        assert_eq!(parsed2, origin2);
+    }
+
+    #[test]
+    fn task_vibe_origin_omitted_when_none() {
+        let task = Task::new("t", "T", "d", "work", "now");
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(!json.contains("vibe_origin"));
     }
 }

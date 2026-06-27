@@ -99,6 +99,23 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
             resources: parse_resources(value)?,
         }),
 
+        "proposed_exit" => Ok(StageOutput::ProposedExit {
+            destination: value["destination"]
+                .as_str()
+                .ok_or_else(|| StageOutputError::MissingField("destination".into()))?
+                .to_string(),
+            rationale: value["rationale"]
+                .as_str()
+                .ok_or_else(|| StageOutputError::MissingField("rationale".into()))?
+                .to_string(),
+            content: value["content"].as_str().map(String::from),
+            activity_log: value["activity_log"].as_str().map(String::from),
+            resources: match value.get("resources") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(v) => Some(serde_json::from_value(v.clone())?),
+            },
+        }),
+
         // Any other type is an artifact (the schema validated the type is in the enum)
         _ => Ok(StageOutput::Artifact {
             content: value["content"]
@@ -467,6 +484,69 @@ mod tests {
             Some("https://example.com/spec")
         );
         assert_eq!(resources[0].description, Some("API spec".to_string()));
+    }
+
+    #[test]
+    fn test_parse_proposed_exit() {
+        let mut schema = test_schema("summary", false);
+        schema["properties"]["type"]["enum"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("proposed_exit"));
+        let json = r#"{
+            "type": "proposed_exit",
+            "destination": "done",
+            "rationale": "Work is complete"
+        }"#;
+        let output = execute(json, &schema).unwrap();
+        match output {
+            StageOutput::ProposedExit {
+                destination,
+                rationale,
+                content,
+                activity_log,
+                resources,
+            } => {
+                assert_eq!(destination, "done");
+                assert_eq!(rationale, "Work is complete");
+                assert!(content.is_none());
+                assert!(activity_log.is_none());
+                assert!(resources.is_none());
+            }
+            _ => panic!("Expected ProposedExit"),
+        }
+    }
+
+    #[test]
+    fn test_parse_proposed_exit_with_optional_fields() {
+        let mut schema = test_schema("summary", false);
+        schema["properties"]["type"]["enum"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("proposed_exit"));
+        let json = r#"{
+            "type": "proposed_exit",
+            "destination": "work",
+            "rationale": "Needs more work",
+            "content": "Did X and Y",
+            "activity_log": "- changed foo\n- fixed bar"
+        }"#;
+        let output = execute(json, &schema).unwrap();
+        match output {
+            StageOutput::ProposedExit {
+                destination,
+                rationale,
+                content,
+                activity_log,
+                ..
+            } => {
+                assert_eq!(destination, "work");
+                assert_eq!(rationale, "Needs more work");
+                assert_eq!(content.as_deref(), Some("Did X and Y"));
+                assert!(activity_log.is_some());
+            }
+            _ => panic!("Expected ProposedExit"),
+        }
     }
 
     #[test]

@@ -12,7 +12,7 @@ pub use orkestra_types::config::workflow;
 
 pub use orkestra_types::config::{
     FlowConfig, GateConfig, IntegrationConfig, StageCapabilities, StageConfig, SubtaskCapabilities,
-    ToolRestriction, WorkflowConfig,
+    ToolRestriction, VibeConfig, WorkflowConfig,
 };
 
 // Local I/O operations

@@ -126,6 +126,7 @@ pub fn get_agent_schema(
         produces_subtasks: stage_config.capabilities.produces_subtasks(),
         has_approval: stage_config.has_agentic_gate(),
         route_to_stages,
+        proposed_exit_destinations: &[],
     };
     Some(crate::prompts::generate_stage_schema(&schema_config))
 }

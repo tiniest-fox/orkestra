@@ -1,6 +1,7 @@
 //! Remove worktrees that are no longer needed.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::orkestra_debug;
 use crate::workflow::domain::TaskHeader;
@@ -11,6 +12,9 @@ use crate::workflow::ports::{GitService, WorkflowStore};
 /// Removes worktrees in two cases:
 /// 1. **Orphaned**: The task was deleted from the DB but the worktree remains on disk.
 /// 2. **Archived**: The task was integrated but crashed before worktree cleanup.
+///
+/// Prewarm worktrees (present in the `worktrees` table but not yet adopted by a task)
+/// are preserved — they are not orphaned.
 ///
 /// Other terminal states (Done, Failed, Blocked) keep their worktrees.
 pub fn execute(store: &dyn WorkflowStore, git_service: &dyn GitService) {
@@ -34,14 +38,34 @@ pub fn execute(store: &dyn WorkflowStore, git_service: &dyn GitService) {
         return;
     };
 
+    let prewarm_ids: HashSet<String> = match store.list_worktree_records() {
+        Ok(records) => records.into_iter().map(|r| r.task_id).collect(),
+        Err(e) => {
+            orkestra_debug!(
+                "recovery",
+                "Failed to list worktree records for orphaned worktree cleanup: {}",
+                e
+            );
+            return;
+        }
+    };
+
     let headers_by_id: HashMap<&str, &TaskHeader> =
         all_headers.iter().map(|h| (h.id.as_str(), h)).collect();
 
     for name in &worktree_names {
         let should_remove = match headers_by_id.get(name.as_str()) {
             None => {
-                orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
-                true
+                if prewarm_ids.contains(name.as_str()) {
+                    orkestra_debug!(
+                        "recovery",
+                        "Preserving prewarm worktree (no task yet): {name}"
+                    );
+                    false
+                } else {
+                    orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
+                    true
+                }
             }
             Some(header) if header.is_archived() => {
                 orkestra_debug!("recovery", "Cleaning up worktree for archived task: {name}");

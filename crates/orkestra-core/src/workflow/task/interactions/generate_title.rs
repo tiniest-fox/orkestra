@@ -7,7 +7,6 @@ use crate::workflow::ports::WorkflowStore;
 ///
 /// Saves immediately so the UI can display the title before worktree setup finishes.
 /// Falls back to a truncated description if AI generation fails.
-/// No-op if the task already has a non-empty title.
 pub(crate) fn execute(
     store: &dyn WorkflowStore,
     title_gen: &dyn TitleGenerator,

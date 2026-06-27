@@ -477,6 +477,14 @@ impl TestEnv {
         self.orchestrator.force_periodic_due("check_auto_resolve");
     }
 
+    /// Force a named periodic job to be due on the next tick.
+    ///
+    /// Used in tests to trigger specific periodic maintenance jobs (e.g.,
+    /// `"cleanup_worktrees"`) without waiting for their real timer to fire.
+    pub fn force_periodic_due(&self, name: &str) {
+        self.orchestrator.force_periodic_due(name);
+    }
+
     /// Get the mock git service for verifying git operations.
     ///
     /// Only available when using `with_mock_git()`. Panics if called on

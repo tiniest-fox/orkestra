@@ -49,7 +49,7 @@ pub fn find_project_root() -> std::io::Result<PathBuf> {
 /// directory containing `.orkestra/` by walking up from the worktree. For non-Orkestra
 /// worktrees, falls back to extracting the git root from the gitdir path.
 /// Returns `None` if not a worktree (i.e., `.git` is a directory, not a file).
-fn find_main_repo_if_worktree(path: &std::path::Path) -> Option<PathBuf> {
+pub fn find_main_repo_if_worktree(path: &std::path::Path) -> Option<PathBuf> {
     let git_path = path.join(".git");
 
     // .git as a directory means this is a main repo, not a worktree

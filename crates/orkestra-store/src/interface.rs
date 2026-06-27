@@ -136,6 +136,9 @@ pub trait WorkflowStore: Send + Sync {
     /// corresponding `save_task` call.
     fn touch_task(&self, id: &str) -> WorkflowResult<()>;
 
+    /// Update only the task title, leaving all other fields (including state) unchanged.
+    fn update_task_title(&self, id: &str, title: &str) -> WorkflowResult<()>;
+
     // -- Iteration --
 
     /// Get all iterations for a task.

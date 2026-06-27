@@ -1,0 +1,75 @@
+# Orkestra Workflow Configuration
+# ================================
+# Defines the flows (pipelines) a task passes through from creation to completion.
+# Each flow contains its own ordered stages with integration configuration.
+#
+# Stages run an AI agent (with a prompt template) or a shell script.
+# Artifacts from earlier stages are automatically available to later stages.
+#
+# Stages can have a gate: a shell script that runs after the agent completes.
+# If the gate exits non-zero, the agent retries with the error output as feedback.
+#
+# YAML anchors (&name / *name) provide reuse for stages shared across flows.
+
+version: 2
+
+flows:
+  # Default pipeline: planning → breakdown → work → review → compound.
+  default:
+    stages:
+      # Planning: understand what to build, ask clarifying questions.
+      # Produces a requirements-level plan (not implementation details).
+      - name: planning
+        description: Produces a high-level implementation plan after clarifying requirements
+        artifact: plan
+        prompt: planner.md
+
+      # Breakdown: research the codebase and split the plan into subtasks.
+      # Subtasks are assigned to the "subtask" flow (work → review only).
+      - name: breakdown
+        description: Breaks the plan into actionable subtasks with technical and implementation guidance
+        artifact: breakdown
+        prompt: breakdown.md
+        capabilities:
+          subtasks:
+            flow: subtask
+
+      # Work: implement the code changes described by the plan.
+      # The gate runs checks.sh after the agent completes. On failure, the agent retries.
+      - &work_stage
+        name: work
+        description: Implements the code changes described by the plan and produces a work summary
+        artifact: summary
+        prompt: worker.md
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 600
+
+      # Review: check completed work, approve or reject with feedback.
+      # On rejection, sends the task back to the work stage.
+      - &review_stage
+        name: review
+        description: Reviews completed work and produces an approval or rejection verdict with feedback
+        artifact: verdict
+        prompt: reviewer.md
+        gate: true
+
+      # Compound: capture documentation improvements from completed work.
+      # Most Traks result in no changes.
+      - &compound_stage
+        name: compound
+        description: Captures learnings from the completed Trak to improve future work
+        artifact: learnings
+        prompt: compound.md
+
+    # Where to send the task when merging its branch fails (e.g., conflict).
+    integration:
+      on_failure: work
+
+  # Subtask pipeline: work → review only (no planning or breakdown).
+  subtask:
+    stages:
+      - *work_stage
+      - *review_stage
+    integration:
+      on_failure: work

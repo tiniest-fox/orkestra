@@ -5,6 +5,7 @@ use crate::error::TauriError;
 use crate::notifications::TaskNotifier;
 use crate::project_init::{initialize_project, validate_project_path};
 use crate::project_registry::{ProjectRegistry, RecentProject};
+use orkestra_core::compute_project_subpath;
 use orkestra_core::orkestra_debug;
 use orkestra_core::workflow::OrchestratorStatus;
 use serde::Serialize;
@@ -437,11 +438,14 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
     // (chat path). A listener thread forwards these to the Tauri window as push events.
     let (log_tx, log_rx) = std::sync::mpsc::channel::<orkestra_core::workflow::LogNotification>();
 
+    let project_subpath = compute_project_subpath(&project_root);
+
     let mut stage_executor_inner = match orkestra_core::workflow::StageExecutionService::new(
         config.clone(),
         project_root.clone(),
         store.clone(),
         iteration_service,
+        project_subpath,
     ) {
         Ok(s) => s,
         Err(e) => {

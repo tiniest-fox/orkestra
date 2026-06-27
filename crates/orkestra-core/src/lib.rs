@@ -44,4 +44,4 @@ pub use process::{is_process_running, kill_process_tree, ParsedStreamEvent, Proc
 pub use init::ensure_orkestra_project;
 
 // Project discovery re-exports
-pub use project::{find_git_root, find_project_root, get_orkestra_dir};
+pub use project::{compute_project_subpath, find_git_root, find_project_root, get_orkestra_dir};

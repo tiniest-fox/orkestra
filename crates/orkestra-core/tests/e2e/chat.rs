@@ -69,6 +69,7 @@ fn create_chat_api() -> (
         Arc::clone(&registry),
         temp_dir.path().to_path_buf(),
         one_stage_workflow(),
+        None,
     );
 
     (api, store, service, temp_dir)

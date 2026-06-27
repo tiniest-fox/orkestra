@@ -34,6 +34,8 @@ pub struct CommandContext {
     pub(crate) conn: Arc<Mutex<Connection>>,
     pub(crate) provider_registry: Arc<ProviderRegistry>,
     pub(crate) store: Arc<dyn WorkflowStore>,
+    /// Relative path from git root to project root for mono-repo layouts.
+    pub(crate) project_subpath: Option<PathBuf>,
 }
 
 impl CommandContext {
@@ -53,7 +55,18 @@ impl CommandContext {
             diff_cache: Arc::new(DiffCacheState::new()),
             provider_registry,
             store,
+            project_subpath: None,
         }
+    }
+
+    /// Set the project subpath for mono-repo layouts.
+    ///
+    /// When set, `AssistantService` will append this path to the worktree directory
+    /// so agents start in the correct subdirectory.
+    #[must_use]
+    pub fn with_project_subpath(mut self, project_subpath: Option<PathBuf>) -> Self {
+        self.project_subpath = project_subpath;
+        self
     }
 
     /// Construct an `AssistantService` bound to this context's store, registry, project root, and workflow config.
@@ -69,6 +82,7 @@ impl CommandContext {
             Arc::clone(&self.provider_registry),
             (*self.project_root).clone(),
             workflow,
+            self.project_subpath.clone(),
         )
     }
 }

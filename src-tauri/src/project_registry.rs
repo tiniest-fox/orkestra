@@ -18,7 +18,7 @@ use orkestra_core::workflow::{
 use orkestra_networking::CommandContext;
 use serde::{Deserialize, Serialize};
 
-use orkestra_core::orkestra_debug;
+use orkestra_core::{compute_project_subpath, orkestra_debug};
 
 use crate::error::TauriError;
 use crate::run_process::RunProcessRegistry;
@@ -104,16 +104,21 @@ impl ProjectState {
 
         let stop_flag = Arc::new(AtomicBool::new(false));
 
+        let project_subpath = compute_project_subpath(&project_root);
+
         let api_arc = Arc::new(Mutex::new(api));
         let store_for_ctx: Arc<dyn WorkflowStore> =
             Arc::new(SqliteWorkflowStore::new(conn.shared()));
-        let command_ctx = Arc::new(CommandContext::new(
-            Arc::clone(&api_arc),
-            conn.shared(),
-            project_root.clone(),
-            Arc::clone(&provider_registry),
-            store_for_ctx,
-        ));
+        let command_ctx = Arc::new(
+            CommandContext::new(
+                Arc::clone(&api_arc),
+                conn.shared(),
+                project_root.clone(),
+                Arc::clone(&provider_registry),
+                store_for_ctx,
+            )
+            .with_project_subpath(project_subpath),
+        );
 
         Ok(Self {
             config: workflow,

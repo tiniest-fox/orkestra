@@ -9,7 +9,7 @@ pub mod debug_log;
 pub mod init;
 pub mod pr_description;
 pub mod process;
-pub mod project;
+pub(crate) mod project;
 pub mod prompts;
 pub mod title;
 pub mod utility;
@@ -45,3 +45,7 @@ pub use init::ensure_orkestra_project;
 
 // Project discovery re-exports
 pub use project::{compute_project_subpath, find_git_root, find_project_root, get_orkestra_dir};
+
+// Test-only project utilities
+#[cfg(any(test, feature = "testutil"))]
+pub use project::find_main_repo_if_worktree;

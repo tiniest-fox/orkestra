@@ -32,6 +32,8 @@ mod integration;
 mod lock;
 #[path = "e2e/mermaid_validation.rs"]
 mod mermaid_validation;
+#[path = "e2e/mono_repo.rs"]
+mod mono_repo;
 #[path = "e2e/multi_project.rs"]
 mod multi_project;
 #[path = "e2e/play.rs"]

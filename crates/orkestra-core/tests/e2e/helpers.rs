@@ -261,6 +261,101 @@ impl TestEnv {
         }
     }
 
+    /// Create a test env with a mono-repo layout: git root at parent, project at `subpath`.
+    ///
+    /// Used for testing mono-repo flows where `.orkestra/` lives in a subdirectory
+    /// of the git root. The agent working directory should be `<worktree>/subpath`.
+    pub fn with_git_monorepo(workflow: &WorkflowConfig, agents: &[&str], subpath: &str) -> Self {
+        use orkestra_core::testutil::create_temp_monorepo;
+        use orkestra_core::workflow::{Git2GitService, GitService};
+        use std::path::PathBuf;
+
+        let (temp_dir, project_root) =
+            create_temp_monorepo(subpath).expect("Failed to create monorepo");
+
+        // Create .orkestra directory structure inside the project subdirectory
+        let orkestra_dir = project_root.join(".orkestra");
+        std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
+
+        // Create agent definition files
+        let agents_dir = orkestra_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        for agent in agents {
+            std::fs::write(
+                agents_dir.join(format!("{agent}.md")),
+                format!("You are a {agent} agent."),
+            )
+            .unwrap();
+        }
+
+        // Save and reload workflow config
+        let workflow_path = orkestra_dir.join("workflow.yaml");
+        let yaml = serde_yaml::to_string(&workflow).unwrap();
+        std::fs::write(&workflow_path, yaml).unwrap();
+        let loaded_workflow = orkestra_core::workflow::config::load_workflow(&workflow_path)
+            .expect("Should load workflow");
+
+        // Real SQLite database
+        let db_path = orkestra_dir.join(".database/orkestra.db");
+        let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
+        let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
+            Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
+
+        // Git service discovers the git root from the project subdirectory
+        let git_service: Arc<dyn GitService> =
+            Arc::new(Git2GitService::new(&project_root).expect("Git service should init"));
+
+        // Compute the subpath from git root to project root
+        let project_subpath = orkestra_core::compute_project_subpath(&project_root);
+
+        let pr_service = Arc::new(MockPrService::new());
+        let project_root_buf = PathBuf::from(&project_root);
+        let api = WorkflowApi::with_git(
+            loaded_workflow.clone(),
+            Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+            git_service,
+        )
+        .with_title_generator(Arc::new(MockTitleGenerator::succeeding()))
+        .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding()))
+        .with_pr_service(pr_service.clone() as Arc<dyn PrService>)
+        .with_pr_description_generator(
+            Arc::new(MockPrDescriptionGenerator::succeeding()) as Arc<dyn PrDescriptionGenerator>
+        )
+        .with_provider_registry(test_provider_registry())
+        .with_project_root(project_root_buf.clone());
+
+        let api = Arc::new(Mutex::new(api));
+
+        let iteration_service = api.lock().unwrap().iteration_service().clone();
+        let runner = Arc::new(MockAgentRunner::new());
+
+        let stage_executor = Arc::new(
+            StageExecutionService::with_runner(
+                loaded_workflow,
+                project_root_buf,
+                store,
+                iteration_service,
+                runner.clone(),
+                test_provider_registry(),
+                project_subpath,
+            )
+            .with_skip_env_resolution(),
+        );
+
+        let mut orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+        orchestrator.set_sync_background(true);
+        api.lock().unwrap().set_sync_setup(true);
+
+        Self {
+            api,
+            orchestrator,
+            runner,
+            pr_service,
+            mock_git_service: None,
+            temp_dir,
+        }
+    }
+
     /// Create a test env with a real git repo where title generation fails.
     ///
     /// Same as `with_git` but uses `MockTitleGenerator::failing()`, so tasks

@@ -16,6 +16,9 @@ pub fn execute(store: &dyn WorkflowStore, task_id: &str) -> WorkflowResult<Optio
     if record.status == WorktreeStatus::Ready {
         // Guard: verify the worktree directory actually exists and has a valid .git file.
         // Cleanup may have removed it between prewarm and adoption.
+        // Note: `worktree_path = None` skips this guard and is adopted (apply_to_task
+        // then no-ops the path copy). Safe in practice because spawn_prewarm always
+        // sets Some(path) before marking Ready.
         if let Some(ref path) = record.worktree_path {
             let git_path = std::path::Path::new(path).join(".git");
             if !git_path.exists() {

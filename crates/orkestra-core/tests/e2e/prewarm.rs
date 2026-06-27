@@ -456,11 +456,15 @@ fn test_cleanup_preserves_ready_record_for_live_task() {
 
     // Simulate a prewarm that completed after the previous session exited:
     // save a Ready record directly (not via the API prewarm flow, so adoption
-    // has NOT run yet).
+    // has NOT run yet). Use a real tempdir with a .git file so the validity
+    // guard in adopt_worktree::execute accepts the record.
+    let tmp_wt = tempfile::tempdir().expect("tempdir");
+    std::fs::write(tmp_wt.path().join(".git"), "gitdir: ...").expect("write .git");
+    let wt_path = tmp_wt.path().to_string_lossy().to_string();
     let ready_record = WorktreeRecord {
         task_id: "live-task-no-wt".to_string(),
         status: WorktreeStatus::Ready,
-        worktree_path: Some("/tmp/prewarm-ready".to_string()),
+        worktree_path: Some(wt_path),
         branch_name: Some("task/live-task-no-wt".to_string()),
         base_commit: Some("abc123".to_string()),
         base_branch: Some("main".to_string()),

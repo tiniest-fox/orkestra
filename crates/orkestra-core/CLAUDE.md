@@ -106,6 +106,14 @@ Business logic lives in interactions; orchestrator handles I/O plumbing (locks, 
 
 **`auto_resolve` implies `auto_pr`**: `create::execute` sets `auto_pr = auto_pr || auto_resolve`. This is the single source of truth — the CLI layer must pass `auto_pr` from its own flag only and let the interaction enforce the implication. Do not re-apply `auto_pr || auto_resolve` in CLI argument parsing or any caller above `create::execute`.
 
+### Mono-Repo: Subpath Computed Once, Stored on Services
+
+`compute_project_subpath()` runs **once at startup** (orchestrator construction, daemon init, Tauri project open) and derives the relative path from the git root to the project root (e.g., `Some("frontend")` for `/repo/frontend/.orkestra/`, `None` for non-mono-repo setups). The result is stored directly on `AgentExecutionService`, `AssistantService`, and `CommandContext` — no repeated filesystem walks.
+
+When extending mono-repo support, follow this pattern: compute once, thread the `Option<PathBuf>` to the service that owns the working-directory concern. Do not add subpath computation inside per-invocation code paths.
+
+`find_main_repo_if_worktree()` in `project.rs` uses a dual-path fallback: Orkestra worktrees resolve via `.orkestra/` walk-up within the worktree; non-Orkestra worktrees fall back to gitdir parsing. The asymmetry is intentional — it handles the edge case where Orkestra tools run inside a non-Orkestra git worktree. The function is test-gated (`#[cfg(any(test, feature = "testutil"))]`).
+
 ### Narrow Mutex Scopes
 
 When spawning background work that might call back into the API, gather inputs while holding the lock, then explicitly `drop(lock)` before spawning:
@@ -335,9 +343,15 @@ Before submitting:
 
 The crate has extensive e2e tests in `tests/e2e/`:
 
-- `TestEnv` — Unified test environment with `with_workflow()`, `with_git()`, `with_mock_git()` constructors
+- `TestEnv` — Unified test environment with `with_workflow()`, `with_git()`, `with_mock_git()`, `with_git_monorepo()` constructors
 - `MockAgentOutput` — Builder for simulated agent responses
 - `workflows` module — Pre-built workflow configs
+
+**Mono-repo test helpers** (added for mono-repo support):
+- `TestEnv::with_git_monorepo()` — Creates a `TestEnv` where the project root is a subdirectory of the git root (mimics `.git/` in parent, `.orkestra/` in child). Use for any test that exercises the `project_subpath` propagation path.
+- `create_temp_monorepo()` in `testutil/` — Creates a temp git repo with a nested project directory; used by `with_git_monorepo()`.
+- `TestEnv::call_count()` — Returns the number of times the `MockAgentRunner` was invoked. Useful for verifying spawn count across multi-stage flows.
+- `TestEnv::last_run_config()` — Returns the `RunConfig` from the most recent `MockAgentRunner` invocation. Use to assert working directory, model, or other spawn-time parameters.
 
 For unit tests, use `InMemoryWorkflowStore` and mock generators.
 

@@ -413,6 +413,12 @@ export function FeedView({ config, tasks, serviceProjectName, showHomeLink }: Fe
                     if (!isDisconnectError(err)) showError(extractErrorMessage(err));
                   });
                 }}
+                onVibe={(taskId) => {
+                  applyOptimistic(taskId, { type: "enter_vibe" });
+                  transport.call("enter_vibe", { task_id: taskId }).catch((err) => {
+                    if (!isDisconnectError(err)) showError(extractErrorMessage(err));
+                  });
+                }}
                 onRowClick={onStripRowClick}
               />
             ))}

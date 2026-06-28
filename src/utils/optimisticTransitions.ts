@@ -8,7 +8,8 @@ export type OptimisticAction =
   | { type: "answer_questions" }
   | { type: "interrupt" }
   | { type: "resume" }
-  | { type: "archive" };
+  | { type: "archive" }
+  | { type: "enter_vibe" };
 
 export function applyOptimisticTransition(
   task: WorkflowTaskView,
@@ -124,6 +125,26 @@ export function applyOptimisticTransition(
           current_stage: null,
           is_done: false,
           phase_icon: null,
+        },
+      };
+    }
+
+    case "enter_vibe": {
+      if (task.state.type !== "awaiting_approval" && task.state.type !== "done") {
+        return null;
+      }
+      return {
+        ...task,
+        state: { type: "queued", stage: "vibe" },
+        derived: {
+          ...task.derived,
+          current_stage: "vibe",
+          is_working: true,
+          needs_review: false,
+          is_done: false,
+          is_terminal: false,
+          is_vibing: true,
+          phase_icon: "queued",
         },
       };
     }

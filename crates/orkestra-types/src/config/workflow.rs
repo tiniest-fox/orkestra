@@ -324,7 +324,7 @@ impl WorkflowConfig {
     ///
     /// Uses the task's origin flow (or current flow if no origin) to build the list
     /// of valid stages plus "done".
-    pub fn vibe_exit_destinations(&self, task: &Task) -> Vec<String> {
+    pub fn vibe_valid_destinations(&self, task: &Task) -> Vec<String> {
         let flow = task.vibe_origin.as_ref().map_or(&task.flow, |v| &v.flow);
         let mut destinations: Vec<String> = self
             .stages_in_flow(flow)

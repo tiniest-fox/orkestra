@@ -139,7 +139,8 @@ export function applyOptimisticTransition(
         derived: {
           ...task.derived,
           current_stage: "vibe",
-          is_working: true,
+          is_preparing: true,
+          is_working: false,
           needs_review: false,
           is_done: false,
           is_terminal: false,

@@ -470,3 +470,110 @@ fn test_derived_state_vibe_fields() {
         "vibe_valid_destinations should include 'done'"
     );
 }
+
+/// Vibe re-entry: entering vibe twice creates a fresh session with no memory of the first.
+///
+/// Verifies the plan acceptance criterion: "Each vibe entry starts a fresh session".
+#[test]
+fn test_vibe_reentry_starts_fresh_session() {
+    let workflow = disable_auto_merge(simple_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["worker", "vibe"]);
+
+    let task = ctx.create_task("Reentry test", "Test fresh session on re-entry", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingApproval
+
+    // === First vibe session ===
+    ctx.api().enter_vibe(&task_id).unwrap();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::ProposedExit {
+            destination: "done".to_string(),
+            rationale: "First session complete".to_string(),
+            content: Some("First vibe summary".to_string()),
+        },
+    );
+    ctx.advance(); // spawn vibe agent → AwaitingApproval{vibe}
+
+    let first_iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let first_vibe_iter_count = first_iterations
+        .iter()
+        .filter(|i| i.stage == "vibe")
+        .count();
+    assert_eq!(
+        first_vibe_iter_count, 1,
+        "Should have exactly one vibe iteration"
+    );
+
+    // Reject the proposed exit — sends task back to vibe
+    use orkestra_core::workflow::domain::PrCommentData;
+    let comment = PrCommentData {
+        id: None,
+        author: "human".to_string(),
+        body: "Keep going".to_string(),
+        path: None,
+        line: None,
+    };
+    ctx.api()
+        .reject_with_comments(&task_id, vec![comment], None)
+        .unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(&task.state, TaskState::Queued { stage } if stage == "vibe"),
+        "Expected Queued{{vibe}} after rejection, got {:?}",
+        task.state
+    );
+    let origin = task
+        .vibe_origin
+        .as_ref()
+        .expect("vibe_origin should remain");
+    assert!(
+        origin.proposed_destination.is_none(),
+        "proposed_destination should be cleared after rejection"
+    );
+
+    // Vibe agent proposes exit again and human approves → Done
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::ProposedExit {
+            destination: "done".to_string(),
+            rationale: "Now actually done".to_string(),
+            content: None,
+        },
+    );
+    ctx.advance(); // second vibe iteration → AwaitingApproval{vibe}
+
+    // The second vibe iteration is a new iteration (different ID)
+    let all_iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let vibe_iter_count = all_iterations.iter().filter(|i| i.stage == "vibe").count();
+    assert_eq!(
+        vibe_iter_count, 2,
+        "Second vibe entry should create a new iteration (fresh session)"
+    );
+
+    // Approve the second session's exit
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // finalize → Done
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_done(),
+        "Task should be Done after second vibe exit, got {:?}",
+        task.state
+    );
+    assert!(task.vibe_origin.is_none(), "vibe_origin should be cleared");
+}

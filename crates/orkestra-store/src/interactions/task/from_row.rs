@@ -41,11 +41,23 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
                 .ok()
         })
         .unwrap_or_default();
-    let vibe_origin: Option<VibeOrigin> = row
-        .get::<_, Option<String>>(25)
-        .ok()
-        .flatten()
-        .and_then(|s| serde_json::from_str(&s).ok());
+    let vibe_origin: Option<VibeOrigin> =
+        row.get::<_, Option<String>>(25)
+            .ok()
+            .flatten()
+            .and_then(|s| {
+                serde_json::from_str(&s)
+                    .map_err(|e| {
+                        tracing::warn!(
+                            task_id = %row.get::<_, String>(0).unwrap_or_default(),
+                            error = %e,
+                            "failed to deserialize vibe_origin, \
+                         resetting to None — task vibe state may be lost"
+                        );
+                        e
+                    })
+                    .ok()
+            });
 
     Ok(Task {
         id: row.get(0)?,

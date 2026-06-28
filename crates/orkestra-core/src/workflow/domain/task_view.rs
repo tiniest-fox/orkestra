@@ -190,15 +190,11 @@ impl DerivedTaskState {
                 .vibe_origin
                 .as_ref()
                 .and_then(|v| v.proposed_destination.clone()),
-            vibe_valid_destinations: task.vibe_origin.as_ref().map_or_else(Vec::new, |v| {
-                let mut dests: Vec<String> = workflow
-                    .stages_in_flow(&v.flow)
-                    .iter()
-                    .map(|s| s.name.clone())
-                    .collect();
-                dests.push("done".to_string());
-                dests
-            }),
+            vibe_valid_destinations: if task.vibe_origin.is_some() {
+                workflow.vibe_valid_destinations(task)
+            } else {
+                Vec::new()
+            },
         }
     }
 }

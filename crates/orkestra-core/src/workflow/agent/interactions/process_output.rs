@@ -202,7 +202,7 @@ pub(crate) fn dispatch_output(
             rationale,
             content,
             ..
-        } => super::handle_proposed_exit::execute(
+        } => super::record_proposed_exit::execute(
             workflow,
             iteration_service,
             task,

@@ -47,6 +47,9 @@ export function createMockTransport(): Transport {
           return resolve(null);
         case "task_sync_status":
           return resolve(null);
+        case "enter_vibe":
+        case "confirm_vibe_exit":
+          return resolve(null);
         case "get_token_usage":
           return resolve({
             task_id: "mock-task",

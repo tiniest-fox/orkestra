@@ -266,7 +266,8 @@ describe("applyOptimisticTransition — enter_vibe", () => {
     expect(result).not.toBeNull();
     expect(result?.state).toEqual({ type: "queued", stage: "vibe" });
     expect(result?.derived.current_stage).toBe("vibe");
-    expect(result?.derived.is_working).toBe(true);
+    expect(result?.derived.is_preparing).toBe(true);
+    expect(result?.derived.is_working).toBe(false);
     expect(result?.derived.needs_review).toBe(false);
     expect(result?.derived.is_done).toBe(false);
     expect(result?.derived.is_terminal).toBe(false);

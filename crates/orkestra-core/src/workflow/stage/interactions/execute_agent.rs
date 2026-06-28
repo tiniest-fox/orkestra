@@ -130,7 +130,7 @@ pub(crate) fn execute(
 
     // 6b. For vibe stage, append valid exit destinations so the agent knows where it can route.
     let user_prompt = if stage == VIBE_STAGE && !spawn_context.is_resume {
-        let destinations = workflow.vibe_exit_destinations(task);
+        let destinations = workflow.vibe_valid_destinations(task);
         let dest_list: String = destinations
             .iter()
             .map(|d| format!("- {d}"))

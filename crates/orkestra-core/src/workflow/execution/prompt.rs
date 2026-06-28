@@ -137,7 +137,7 @@ pub fn get_agent_schema(
 /// Single source of truth for vibe schema construction — both the agent executor
 /// and the prompt resolver call this instead of building `SchemaConfig` inline.
 pub fn build_vibe_schema(workflow: &WorkflowConfig, task: &Task) -> String {
-    let destinations = workflow.vibe_exit_destinations(task);
+    let destinations = workflow.vibe_valid_destinations(task);
     let schema_config = crate::prompts::SchemaConfig {
         artifact_name: VIBE_STAGE,
         produces_subtasks: false,

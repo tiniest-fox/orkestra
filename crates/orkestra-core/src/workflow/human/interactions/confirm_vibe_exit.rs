@@ -26,29 +26,24 @@ pub fn execute(
     }
 
     // Must be in vibe mode
-    let vibe_origin = task.vibe_origin.as_ref().ok_or_else(|| {
-        WorkflowError::InvalidTransition("Task is not in vibe mode; use approve instead".into())
-    })?;
+    if task.vibe_origin.is_none() {
+        return Err(WorkflowError::InvalidTransition(
+            "Task is not in vibe mode; use approve instead".into(),
+        ));
+    }
 
     // Validate destination against the origin flow
-    let valid_destinations = {
-        let mut dests: Vec<String> = workflow
-            .stages_in_flow(&vibe_origin.flow)
-            .iter()
-            .map(|s| s.name.clone())
-            .collect();
-        dests.push("done".to_string());
-        dests
-    };
-
-    if !valid_destinations.contains(&destination.to_string()) {
+    let valid_destinations = workflow.vibe_valid_destinations(&task);
+    if !valid_destinations.iter().any(|d| d == destination) {
         return Err(WorkflowError::InvalidTransition(format!(
             "Invalid vibe destination: {destination}"
         )));
     }
 
     // Override proposed destination
-    task.vibe_origin.as_mut().unwrap().proposed_destination = Some(destination.to_string());
+    if let Some(ref mut origin) = task.vibe_origin {
+        origin.proposed_destination = Some(destination.to_string());
+    }
 
     let now = chrono::Utc::now().to_rfc3339();
     stage::enter_commit_pipeline::execute(iteration_service, &mut task, &now)?;

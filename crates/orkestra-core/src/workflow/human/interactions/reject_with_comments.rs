@@ -81,10 +81,8 @@ pub fn execute(
 
     // Vibe mode: rejection sends agent back to vibe stage, preserving vibe_origin but
     // clearing the proposed destination so the agent can try again.
-    if task.vibe_origin.is_some() {
-        if let Some(ref mut origin) = task.vibe_origin {
-            origin.proposed_destination = None;
-        }
+    if let Some(ref mut origin) = task.vibe_origin {
+        origin.proposed_destination = None;
         let feedback = guidance.clone().unwrap_or_else(|| {
             comments
                 .iter()

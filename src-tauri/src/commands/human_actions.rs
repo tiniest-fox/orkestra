@@ -209,6 +209,24 @@ pub fn workflow_enter_vibe(
     })
 }
 
+/// Override the vibe exit destination and enter the commit pipeline.
+///
+/// Valid from `AwaitingApproval` while the task is in vibe mode.
+/// Overrides the agent's proposed destination with the provided one.
+#[tauri::command]
+pub fn workflow_confirm_vibe_exit(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    destination: String,
+) -> Result<Value, TauriError> {
+    orkestra_debug!("tauri", "confirm_vibe_exit {task_id} -> {destination}");
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id, "destination": destination });
+        action::confirm_vibe_exit(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
 /// Reject an `AwaitingApproval` task with line-level comments.
 ///
 /// Routes the task to the rejection target stage (typically "work") with

@@ -7,6 +7,7 @@ use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
+use orkestra_types::config::VIBE_STAGE;
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -77,6 +78,33 @@ pub fn execute(
         &task,
         Outcome::rejected(&current_stage, "Rejected with line comments"),
     )?;
+
+    // Vibe mode: rejection sends agent back to vibe stage, preserving vibe_origin but
+    // clearing the proposed destination so the agent can try again.
+    if task.vibe_origin.is_some() {
+        if let Some(ref mut origin) = task.vibe_origin {
+            origin.proposed_destination = None;
+        }
+        let feedback = guidance.clone().unwrap_or_else(|| {
+            comments
+                .iter()
+                .map(|c| c.body.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        iteration_service.create_iteration(
+            &task.id,
+            VIBE_STAGE,
+            Some(IterationTrigger::Rejection {
+                from_stage: current_stage.clone(),
+                feedback,
+            }),
+        )?;
+        task.state = TaskState::queued(VIBE_STAGE);
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        store.save_task(&task)?;
+        return Ok(task);
+    }
 
     route_to_rejection_target(
         store,

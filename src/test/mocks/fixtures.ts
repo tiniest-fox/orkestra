@@ -79,6 +79,9 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     subtask_progress: null,
     can_bypass: false,
     assistant_active: false,
+    is_vibing: false,
+    vibe_proposed_destination: null,
+    vibe_valid_destinations: [],
     ...overrides,
   };
 }

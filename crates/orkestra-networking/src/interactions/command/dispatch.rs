@@ -147,6 +147,7 @@ pub async fn execute(
         "send_message" => run_sync(ctx, params, action::send_message).await,
         "promote_to_flow" => run_sync(ctx, params, action::promote_to_flow).await,
         "enter_vibe" => run_sync(ctx, params, action::enter_vibe).await,
+        "confirm_vibe_exit" => run_sync(ctx, params, action::confirm_vibe_exit).await,
 
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,

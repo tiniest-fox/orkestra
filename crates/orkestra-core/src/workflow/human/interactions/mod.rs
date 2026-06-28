@@ -8,6 +8,7 @@ pub mod address_pr_feedback;
 pub mod answer_questions;
 pub mod approve;
 pub mod archive;
+pub mod confirm_vibe_exit;
 pub mod enter_vibe;
 pub mod interrupt;
 pub mod promote_to_flow;

@@ -131,6 +131,21 @@ impl WorkflowApi {
         human::enter_vibe::execute(self.store.as_ref(), &self.iteration_service, task_id)
     }
 
+    /// Override the vibe exit destination and enter the commit pipeline.
+    ///
+    /// Valid from `AwaitingApproval` while `task.vibe_origin` is set.
+    /// Overrides the agent's proposed destination with `destination`,
+    /// then delegates to `finalize_stage_advancement` after commit.
+    pub fn confirm_vibe_exit(&self, task_id: &str, destination: &str) -> WorkflowResult<Task> {
+        human::confirm_vibe_exit::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
+            &self.workflow,
+            task_id,
+            destination,
+        )
+    }
+
     /// Skip the current stage, advancing to the next stage with a message.
     pub fn skip_stage(&self, task_id: &str, message: &str) -> WorkflowResult<Task> {
         human::skip_stage::execute(

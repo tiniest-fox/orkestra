@@ -31,6 +31,16 @@ pub fn execute(
 
     let now = chrono::Utc::now().to_rfc3339();
 
+    // Vibe exit: route to proposed destination and clear vibe state.
+    // This check runs first — vibe never produces subtasks, so the subtask
+    // check below would always be skipped, but we return early here for clarity.
+    if task.vibe_origin.is_some() {
+        advance_vibe_task(iteration_service, &mut task, &now)?;
+        task.updated_at = now;
+        store.save_task(&task)?;
+        return Ok(task);
+    }
+
     if stage_has_subtask_data(workflow, &stage, &task) {
         let artifact_name = artifact_name_for_stage(workflow, &task.flow, &stage, "breakdown");
         let created = super::create_subtasks::execute(
@@ -85,6 +95,30 @@ fn advance_task(
 
     if is_done {
         task.completed_at = Some(now.to_string());
+    }
+    Ok(())
+}
+
+/// Advance a vibe-mode task to its proposed destination, clearing vibe state.
+fn advance_vibe_task(
+    iteration_service: &IterationService,
+    task: &mut Task,
+    now: &str,
+) -> WorkflowResult<()> {
+    let vibe_origin = task
+        .vibe_origin
+        .take()
+        .ok_or_else(|| WorkflowError::InvalidState("Vibe exit without vibe_origin".into()))?;
+    let destination = vibe_origin.proposed_destination.ok_or_else(|| {
+        WorkflowError::InvalidState("Vibe exit without proposed destination".into())
+    })?;
+
+    if destination == "done" {
+        task.state = TaskState::Done;
+        task.completed_at = Some(now.to_string());
+    } else {
+        iteration_service.create_iteration(&task.id, &destination, None)?;
+        task.state = TaskState::queued(&destination);
     }
     Ok(())
 }

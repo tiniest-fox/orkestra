@@ -197,12 +197,21 @@ pub(crate) fn dispatch_output(
             None
         }
         // ProposedExit is only valid in vibe stage sessions.
-        // Routing on ProposedExit is handled by the vibe exit flow (whitefly subtask).
-        StageOutput::ProposedExit { .. } => {
-            return Err(WorkflowError::InvalidState(
-                "proposed_exit output is not valid outside a vibe stage session".into(),
-            ));
-        }
+        StageOutput::ProposedExit {
+            destination,
+            rationale,
+            content,
+            ..
+        } => super::handle_proposed_exit::execute(
+            workflow,
+            iteration_service,
+            task,
+            &destination,
+            &rationale,
+            content.as_deref(),
+            current_stage,
+            now,
+        )?,
     };
 
     // Persist artifact to workflow_artifacts table and emit ArtifactProduced log entry.

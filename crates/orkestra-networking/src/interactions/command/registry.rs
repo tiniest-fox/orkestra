@@ -34,6 +34,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "send_message",
     "promote_to_flow",
     "enter_vibe",
+    "confirm_vibe_exit",
     // Assistant
     "create_chat_and_send",
     "assistant_send_message",

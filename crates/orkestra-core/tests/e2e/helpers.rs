@@ -959,6 +959,12 @@ pub enum MockAgentOutput {
     Failed { error: String },
     /// Agent is blocked.
     Blocked { reason: String },
+    /// Agent proposes exiting vibe mode to a destination.
+    ProposedExit {
+        destination: String,
+        rationale: String,
+        content: Option<String>,
+    },
 }
 
 impl MockAgentOutput {
@@ -1016,6 +1022,17 @@ impl From<MockAgentOutput> for StageOutput {
             },
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },
             MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },
+            MockAgentOutput::ProposedExit {
+                destination,
+                rationale,
+                content,
+            } => StageOutput::ProposedExit {
+                destination,
+                rationale,
+                content,
+                activity_log: None,
+                resources: None,
+            },
         }
     }
 }

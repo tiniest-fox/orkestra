@@ -6,6 +6,7 @@ pub mod dispatch_completion;
 pub mod fail_execution;
 pub mod handle_approval;
 pub mod handle_artifact;
+pub mod handle_proposed_exit;
 pub mod handle_questions;
 pub mod handle_subtasks;
 pub mod park_plain_text;

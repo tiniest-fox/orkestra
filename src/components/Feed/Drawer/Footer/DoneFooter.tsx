@@ -24,6 +24,7 @@ interface DoneFooterProps {
   onArchive: () => void;
   onFixConflicts: () => void;
   onAddressFeedback: () => void;
+  onVibe?: () => void;
 }
 
 export function DoneFooter({
@@ -43,6 +44,7 @@ export function DoneFooter({
   onArchive,
   onFixConflicts,
   onAddressFeedback,
+  onVibe,
 }: DoneFooterProps) {
   if (updateMode) {
     return (
@@ -153,6 +155,11 @@ export function DoneFooter({
         <Button variant="secondary" onClick={onEnterUpdateMode} disabled={loading}>
           Request Changes
         </Button>
+        {onVibe && (
+          <Button variant="secondary" onClick={onVibe} disabled={loading}>
+            Vibe
+          </Button>
+        )}
       </FooterBar>
     );
   }
@@ -171,6 +178,11 @@ export function DoneFooter({
       <Button variant="secondary" onClick={onEnterUpdateMode} disabled={loading}>
         Request Changes
       </Button>
+      {onVibe && (
+        <Button variant="secondary" onClick={onVibe} disabled={loading}>
+          Vibe
+        </Button>
+      )}
     </FooterBar>
   );
 }

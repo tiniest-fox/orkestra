@@ -253,6 +253,51 @@ describe("applyOptimisticTransition — resume", () => {
   });
 });
 
+describe("applyOptimisticTransition — enter_vibe", () => {
+  it("transitions awaiting_approval to queued vibe stage", () => {
+    const config = createConfig();
+    const task = createMockWorkflowTaskView({
+      state: { type: "awaiting_approval", stage: "review" },
+      derived: { needs_review: true },
+    });
+
+    const result = applyOptimisticTransition(task, { type: "enter_vibe" }, config);
+
+    expect(result).not.toBeNull();
+    expect(result?.state).toEqual({ type: "queued", stage: "vibe" });
+    expect(result?.derived.current_stage).toBe("vibe");
+    expect(result?.derived.is_working).toBe(true);
+    expect(result?.derived.needs_review).toBe(false);
+    expect(result?.derived.is_done).toBe(false);
+    expect(result?.derived.is_terminal).toBe(false);
+    expect(result?.derived.is_vibing).toBe(true);
+  });
+
+  it("transitions done to queued vibe stage", () => {
+    const config = createConfig();
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      derived: { is_done: true, is_terminal: true },
+    });
+
+    const result = applyOptimisticTransition(task, { type: "enter_vibe" }, config);
+
+    expect(result).not.toBeNull();
+    expect(result?.state).toEqual({ type: "queued", stage: "vibe" });
+    expect(result?.derived.is_vibing).toBe(true);
+    expect(result?.derived.is_done).toBe(false);
+  });
+
+  it("returns null when not in awaiting_approval or done state", () => {
+    const config = createConfig();
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+    });
+
+    expect(applyOptimisticTransition(task, { type: "enter_vibe" }, config)).toBeNull();
+  });
+});
+
 describe("applyOptimisticTransition — archive", () => {
   it("transitions done to archived", () => {
     const config = createConfig();

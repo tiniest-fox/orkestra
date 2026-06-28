@@ -31,6 +31,7 @@ interface FeedRowProps {
   onOpenPr?: () => void;
   onArchive?: () => void;
   onDelete?: () => void;
+  onVibe?: () => void;
   onClick?: () => void;
   /** Replaces the default HotkeyScope+FeedRowActions last column when provided. */
   actionsSlot?: React.ReactNode;
@@ -54,6 +55,7 @@ export function FeedRow({
   onOpenPr,
   onArchive,
   onDelete,
+  onVibe,
   onClick,
   actionsSlot,
 }: FeedRowProps) {
@@ -148,6 +150,7 @@ export function FeedRow({
                     onOpenPr={onOpenPr ?? (() => {})}
                     onArchive={onArchive ?? (() => {})}
                     onDelete={onDelete ?? (() => {})}
+                    onVibe={onVibe}
                     prStatus={prStatus}
                     fullWidth
                   />
@@ -214,6 +217,7 @@ export function FeedRow({
               onOpenPr={onOpenPr ?? (() => {})}
               onArchive={onArchive ?? (() => {})}
               onDelete={onDelete ?? (() => {})}
+              onVibe={onVibe}
               prStatus={prStatus}
             />
           </div>

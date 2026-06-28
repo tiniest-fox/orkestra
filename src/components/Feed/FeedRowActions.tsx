@@ -18,6 +18,7 @@ interface FeedRowActionsProps {
   onOpenPr: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  onVibe?: () => void;
   fullWidth?: boolean;
   prStatus?: PrStatus;
 }
@@ -31,6 +32,7 @@ export function FeedRowActions({
   onOpenPr,
   onArchive,
   onDelete,
+  onVibe,
   fullWidth = false,
   prStatus,
 }: FeedRowActionsProps) {
@@ -103,6 +105,19 @@ export function FeedRowActions({
         >
           Approve
         </Button>
+        {onVibe && !derived.is_vibing && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className={btnCls}
+            onClick={(e) => {
+              e.stopPropagation();
+              onVibe();
+            }}
+          >
+            Vibe
+          </Button>
+        )}
       </div>
     );
   }
@@ -134,6 +149,19 @@ export function FeedRowActions({
         >
           Open PR
         </Button>
+        {onVibe && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className={btnCls}
+            onClick={(e) => {
+              e.stopPropagation();
+              onVibe();
+            }}
+          >
+            Vibe
+          </Button>
+        )}
       </div>
     );
   }
@@ -198,6 +226,19 @@ export function FeedRowActions({
         >
           View ↗
         </Button>
+        {onVibe && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className={btnCls}
+            onClick={(e) => {
+              e.stopPropagation();
+              onVibe();
+            }}
+          >
+            Vibe
+          </Button>
+        )}
       </div>
     );
   }

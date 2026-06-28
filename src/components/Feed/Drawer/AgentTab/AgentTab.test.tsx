@@ -93,6 +93,8 @@ function makeState(overrides?: Partial<TaskDrawerState>): TaskDrawerState {
     handleAddressFeedback: vi.fn(),
     handleSubmitAnswers: vi.fn(),
     handleToggleAutoMode: vi.fn(),
+    handleEnterVibe: vi.fn(),
+    handleConfirmVibeExit: vi.fn(),
     optimisticAutoMode: null,
     ...overrides,
   };

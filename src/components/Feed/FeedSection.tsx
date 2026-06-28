@@ -21,6 +21,7 @@ interface FeedSectionProps {
   onOpenPr?: (taskId: string) => void;
   onArchive?: (taskId: string) => void;
   onDelete?: (taskId: string) => void;
+  onVibe?: (taskId: string) => void;
   onRowClick?: (taskId: string) => void;
 }
 
@@ -39,6 +40,7 @@ export function FeedSection({
   onOpenPr,
   onArchive,
   onDelete,
+  onVibe,
   onRowClick,
 }: FeedSectionProps) {
   const isMobile = useIsMobile();
@@ -81,6 +83,7 @@ export function FeedSection({
                 onOpenPr={onOpenPr ? () => onOpenPr(task.id) : undefined}
                 onArchive={onArchive ? () => onArchive(task.id) : undefined}
                 onDelete={onDelete ? () => onDelete(task.id) : undefined}
+                onVibe={onVibe ? () => onVibe(task.id) : undefined}
                 onClick={onRowClick ? () => onRowClick(task.id) : undefined}
               />
               {taskSubtasks.map((subtask) => (
@@ -97,6 +100,7 @@ export function FeedSection({
                   onOpenPr={onOpenPr ? () => onOpenPr(subtask.id) : undefined}
                   onArchive={onArchive ? () => onArchive(subtask.id) : undefined}
                   onDelete={onDelete ? () => onDelete(subtask.id) : undefined}
+                  onVibe={onVibe ? () => onVibe(subtask.id) : undefined}
                   onClick={onRowClick ? () => onRowClick(subtask.id) : undefined}
                 />
               ))}

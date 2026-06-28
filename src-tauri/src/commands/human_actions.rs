@@ -193,7 +193,7 @@ pub fn workflow_archive(
     })
 }
 
-/// Enter vibe mode from AwaitingApproval or Done.
+/// Enter vibe mode from `AwaitingApproval` or Done.
 ///
 /// Saves origin state and transitions the task to vibe stage for ad-hoc experimentation.
 #[tauri::command]

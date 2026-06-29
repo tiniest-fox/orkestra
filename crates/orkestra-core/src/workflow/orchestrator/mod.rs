@@ -86,6 +86,8 @@ pub enum OrchestratorEvent {
     PrCreationCompleted { task_id: String, pr_url: String },
     /// PR creation failed.
     PrCreationFailed { task_id: String, error: String },
+    /// A PR update was pushed (commits pushed to existing PR branch).
+    PrUpdatePushed { task_id: String },
     /// Gate script was spawned for a task.
     GateSpawned {
         task_id: String,
@@ -797,6 +799,10 @@ impl OrchestratorLoop {
             integration_interactions::find_pr_candidate::execute(snapshot)
         {
             self.start_pr_creation(candidate, events);
+        } else if let Some(candidate) =
+            integration_interactions::find_pr_update_candidate::execute(snapshot)
+        {
+            self.start_pr_update(candidate, events);
         }
         Ok(())
     }
@@ -1037,6 +1043,68 @@ impl OrchestratorLoop {
                 error: e.to_string(),
             });
         }
+    }
+
+    /// Push unpushed changes for a task with an open PR and audit the description.
+    ///
+    /// Checks for uncommitted changes (`has_pending_changes`) or committed-but-unpushed
+    /// changes (`sync_status_for_branch`). If neither, skips silently.
+    /// Push failures are logged and skipped — the next tick will re-check.
+    fn start_pr_update(&self, header: &TaskHeader, events: &mut Vec<OrchestratorEvent>) {
+        let task_id = header.id.clone();
+        let worktree_path = match &header.worktree_path {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let branch = match &header.branch_name {
+            Some(b) => b.clone(),
+            None => return,
+        };
+
+        let Some(git) = &self.git_service else { return };
+
+        let has_pending = git
+            .has_pending_changes(std::path::Path::new(&worktree_path))
+            .unwrap_or(false);
+        let has_unpushed = git
+            .sync_status_for_branch(&branch)
+            .ok()
+            .flatten()
+            .is_some_and(|s| s.ahead > 0);
+
+        if !has_pending && !has_unpushed {
+            return;
+        }
+
+        let api = Arc::clone(&self.api);
+        if self.sync_background {
+            match Self::run_pr_update(&api, &task_id) {
+                Ok(()) => {
+                    events.push(OrchestratorEvent::PrUpdatePushed { task_id });
+                }
+                Err(e) => {
+                    orkestra_debug!("pr_update", "PR update push failed for {task_id}: {e}");
+                }
+            }
+        } else {
+            std::thread::spawn(move || {
+                if let Err(e) = Self::run_pr_update(&api, &task_id) {
+                    orkestra_debug!("pr_update", "PR update push failed for {task_id}: {e}");
+                }
+            });
+        }
+    }
+
+    fn run_pr_update(api: &Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowResult<()> {
+        {
+            let api = api.lock().map_err(|_| WorkflowError::Lock)?;
+            api.commit_and_push_pr_changes(task_id)?;
+        }
+        // Lock released — audit is best-effort
+        crate::workflow::integration::pr_description_audit::spawn_pr_description_audit(
+            api, task_id,
+        );
+        Ok(())
     }
 }
 

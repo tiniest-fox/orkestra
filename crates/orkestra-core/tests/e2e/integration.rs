@@ -1494,3 +1494,104 @@ fn auto_pr_without_pr_service_fails_gracefully() {
         task.state
     );
 }
+
+// =============================================================================
+// PR Update (auto-push) Tests
+// =============================================================================
+
+/// When a task with an open PR returns to Done with uncommitted changes,
+/// the orchestrator auto-pushes on the next tick.
+#[test]
+fn orchestrator_auto_pushes_pr_update_on_pending_changes() {
+    use super::helpers::workflows;
+    use orkestra_git::SyncStatus;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task an open PR (simulating a previous PR creation)
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Capture push calls before the tick
+    let pre_push_calls = ctx.mock_git_service().get_push_branch_calls();
+
+    // Signal uncommitted changes in the worktree
+    ctx.mock_git_service().set_has_pending_changes(true);
+
+    // Tick — orchestrator should detect the open PR + pending changes and push
+    ctx.advance();
+
+    let post_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    let new_push_calls: Vec<_> = post_push_calls.iter().skip(pre_push_calls.len()).collect();
+    assert!(
+        !new_push_calls.is_empty(),
+        "orchestrator should push when pending changes exist for a task with an open PR"
+    );
+
+    // Task should remain Done
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done after auto-push, got: {:?}",
+        task.state
+    );
+
+    // Also verify via sync_status path: reset pending, set ahead=1
+    ctx.mock_git_service().set_has_pending_changes(false);
+    ctx.mock_git_service().set_sync_status(Some(SyncStatus {
+        ahead: 1,
+        behind: 0,
+        diverged: false,
+    }));
+
+    let pre_push_calls2 = ctx.mock_git_service().get_push_branch_calls();
+    ctx.advance();
+    let post_push_calls2 = ctx.mock_git_service().get_push_branch_calls();
+    let new_push_calls2: Vec<_> = post_push_calls2
+        .iter()
+        .skip(pre_push_calls2.len())
+        .collect();
+    assert!(
+        !new_push_calls2.is_empty(),
+        "orchestrator should push when branch is ahead of origin for a task with an open PR"
+    );
+}
+
+/// Task with open PR but no pending changes — orchestrator does NOT push.
+#[test]
+fn orchestrator_skips_pr_update_when_no_pending_changes() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task an open PR
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // No pending changes, sync_status is None (default) — nothing to push
+    let pre_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    ctx.advance();
+    let post_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    let new_push_calls: Vec<_> = post_push_calls.iter().skip(pre_push_calls.len()).collect();
+
+    assert!(
+        new_push_calls.is_empty(),
+        "orchestrator should NOT push when there are no pending changes or unpushed commits, got: {new_push_calls:?}"
+    );
+}

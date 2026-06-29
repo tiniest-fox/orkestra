@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
+use orkestra_types::config::VIBE_STAGE;
 use orkestra_types::runtime::ResourceStore;
 
 // Re-export everything from orkestra-prompt for backward compatibility.
@@ -126,8 +127,25 @@ pub fn get_agent_schema(
         produces_subtasks: stage_config.capabilities.produces_subtasks(),
         has_approval: stage_config.has_agentic_gate(),
         route_to_stages,
+        proposed_exit_destinations: &[],
     };
     Some(crate::prompts::generate_stage_schema(&schema_config))
+}
+
+/// Build the JSON schema string for the vibe virtual stage.
+///
+/// Single source of truth for vibe schema construction — both the agent executor
+/// and the prompt resolver call this instead of building `SchemaConfig` inline.
+pub fn build_vibe_schema(workflow: &WorkflowConfig, task: &Task) -> String {
+    let destinations = workflow.vibe_valid_destinations(task);
+    let schema_config = crate::prompts::SchemaConfig {
+        artifact_name: VIBE_STAGE,
+        produces_subtasks: false,
+        has_approval: false,
+        route_to_stages: &[],
+        proposed_exit_destinations: &destinations,
+    };
+    crate::prompts::generate_stage_schema(&schema_config)
 }
 
 // ============================================================================
@@ -155,9 +173,15 @@ pub fn resolve_stage_agent_config_for(
     sibling_tasks: &[SiblingTaskContext],
     parent_resources: Option<&ResourceStore>,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-    let stage = workflow
-        .stage(&task.flow, stage_name)
-        .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
+    let vibe_config;
+    let stage = if stage_name == VIBE_STAGE {
+        vibe_config = workflow.build_vibe_stage_config();
+        &vibe_config
+    } else {
+        workflow
+            .stage(&task.flow, stage_name)
+            .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?
+    };
 
     // I/O: Load agent definition from disk
     let definition_path = stage
@@ -168,16 +192,39 @@ pub fn resolve_stage_agent_config_for(
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
 
     // I/O: Get JSON schema (may load custom schema from disk)
-    let route_to_stages = workflow.route_to_stage_names(&task.flow, stage_name);
-    let json_schema = get_agent_schema(stage, project_root, &route_to_stages).ok_or_else(|| {
-        AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
-    })?;
+    let json_schema = if stage_name == VIBE_STAGE {
+        build_vibe_schema(workflow, task)
+    } else {
+        let route_to_stages = workflow.route_to_stage_names(&task.flow, stage_name);
+        get_agent_schema(stage, project_root, &route_to_stages).ok_or_else(|| {
+            AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
+        })?
+    };
 
     // I/O: Load project-level universal prompt (optional)
     let universal_prompt = load_universal_prompt(project_root)
         .map_err(|e| AgentConfigError::DefinitionNotFound(format!("ORKESTRA.md: {e}")))?;
 
-    // Pure: delegate to orkestra-prompt for assembly
+    // Pure: delegate to orkestra-prompt for assembly.
+    // Vibe is a virtual stage not in any flow — use the pre-resolved stage config
+    // directly to bypass the internal workflow.stage() lookup in build_agent_config.
+    if stage_name == VIBE_STAGE {
+        return RENDERER.build_agent_config_with_stage(
+            workflow,
+            stage,
+            task,
+            stage_name,
+            artifact_names,
+            &agent_def,
+            &json_schema,
+            universal_prompt.as_deref(),
+            feedback,
+            integration_error,
+            show_direct_structured_output_hint,
+            sibling_tasks,
+            parent_resources,
+        );
+    }
     RENDERER.build_agent_config(
         workflow,
         task,

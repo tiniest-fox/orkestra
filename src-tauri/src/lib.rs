@@ -604,6 +604,8 @@ pub fn run() {
             commands::workflow_restart_stage,
             commands::workflow_send_message,
             commands::workflow_promote_to_flow,
+            commands::workflow_enter_vibe,
+            commands::workflow_confirm_vibe_exit,
             commands::workflow_get_config,
             commands::workflow_get_startup_data,
             commands::workflow_get_auto_task_templates,

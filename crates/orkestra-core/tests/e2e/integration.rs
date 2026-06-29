@@ -1180,7 +1180,7 @@ fn force_push_pr_changes_propagates_git_error() {
 fn per_flow_auto_merge_resolved_per_candidate() {
     use indexmap::IndexMap;
     use orkestra_core::workflow::config::{
-        FlowConfig, IntegrationConfig, StageConfig, WorkflowConfig,
+        FlowConfig, IntegrationConfig, StageConfig, VibeConfig, WorkflowConfig,
     };
     use orkestra_core::workflow::TaskCreationMode;
 
@@ -1211,7 +1211,11 @@ fn per_flow_auto_merge_resolved_per_candidate() {
         },
     );
 
-    let workflow = WorkflowConfig { version: 1, flows };
+    let workflow = WorkflowConfig {
+        version: 1,
+        flows,
+        vibe: VibeConfig::default(),
+    };
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
     // Create both tasks before any advance so they both get set up in the same tick.

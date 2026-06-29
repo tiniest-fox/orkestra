@@ -57,6 +57,7 @@ export function DrawerFooter({ task, activeTab, state }: DrawerFooterProps) {
         onArchive={state.handleArchive}
         onFixConflicts={state.handleFixConflicts}
         onAddressFeedback={state.handleAddressFeedback}
+        onVibe={state.handleEnterVibe}
       />
     );
   }

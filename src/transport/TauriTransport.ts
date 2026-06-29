@@ -49,6 +49,8 @@ const METHOD_MAP: Record<string, string> = {
   skip_stage: "workflow_skip_stage",
   send_to_stage: "workflow_send_to_stage",
   restart_stage: "workflow_restart_stage",
+  enter_vibe: "workflow_enter_vibe",
+  confirm_vibe_exit: "workflow_confirm_vibe_exit",
 
   // -- Startup --
   retry_startup: "workflow_retry_startup",

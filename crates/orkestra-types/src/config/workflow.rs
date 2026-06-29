@@ -9,11 +9,37 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use super::stage::{GateConfig, StageConfig};
+use super::VIBE_STAGE;
+use crate::domain::Task;
 use crate::runtime::{ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME};
 
 /// Name used by `WorkflowConfig::new()` for its single created flow.
 /// Not a required name — the "default flow" is always the first flow in the map.
 const NEW_WORKFLOW_DEFAULT_FLOW: &str = "default";
+
+fn default_vibe_prompt() -> String {
+    "vibe.md".to_string()
+}
+
+/// Configuration for vibe mode sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VibeConfig {
+    /// Prompt template path for the vibe agent, relative to `.orkestra/agents/`.
+    #[serde(default = "default_vibe_prompt")]
+    pub prompt: String,
+    /// Model override for the vibe agent. Uses the provider default when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+impl Default for VibeConfig {
+    fn default() -> Self {
+        Self {
+            prompt: "vibe.md".to_string(),
+            model: None,
+        }
+    }
+}
 
 // ============================================================================
 // Top-level types
@@ -29,6 +55,10 @@ pub struct WorkflowConfig {
     /// Named flows. Each flow is an independent pipeline with its own stages
     /// and integration config.
     pub flows: IndexMap<String, FlowConfig>,
+
+    /// Vibe mode configuration.
+    #[serde(default)]
+    pub vibe: VibeConfig,
 }
 
 /// Configuration for a named flow (pipeline).
@@ -123,6 +153,7 @@ impl WorkflowConfig {
         Self {
             version: default_version(),
             flows,
+            vibe: VibeConfig::default(),
         }
     }
 
@@ -278,6 +309,30 @@ impl WorkflowConfig {
             }
         }
         result
+    }
+
+    /// Build a `StageConfig` for the vibe virtual stage from the workflow's vibe config.
+    pub fn build_vibe_stage_config(&self) -> StageConfig {
+        let mut config = StageConfig::new(VIBE_STAGE, VIBE_STAGE).with_prompt(&self.vibe.prompt);
+        if let Some(model) = &self.vibe.model {
+            config = config.with_model(model.as_str());
+        }
+        config
+    }
+
+    /// Compute the valid exit destinations for the vibe agent.
+    ///
+    /// Uses the task's origin flow (or current flow if no origin) to build the list
+    /// of valid stages plus "done".
+    pub fn vibe_valid_destinations(&self, task: &Task) -> Vec<String> {
+        let flow = task.vibe_origin.as_ref().map_or(&task.flow, |v| &v.flow);
+        let mut destinations: Vec<String> = self
+            .stages_in_flow(flow)
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        destinations.push("done".to_string());
+        destinations
     }
 
     // -- Validation --
@@ -503,7 +558,11 @@ mod tests {
         let mut flows = IndexMap::new();
         flows.insert("default".to_string(), default_flow());
         flows.insert("subtask".to_string(), subtask_flow());
-        WorkflowConfig { version: 1, flows }
+        WorkflowConfig {
+            version: 1,
+            flows,
+            vibe: VibeConfig::default(),
+        }
     }
 
     // ========================================================================
@@ -721,7 +780,11 @@ mod tests {
                 integration: IntegrationConfig::new("work"),
             },
         );
-        let workflow = WorkflowConfig { version: 1, flows };
+        let workflow = WorkflowConfig {
+            version: 1,
+            flows,
+            vibe: VibeConfig::default(),
+        };
 
         let default_specs = workflow.agent_model_specs("default");
         assert_eq!(
@@ -820,7 +883,11 @@ mod tests {
                 integration: IntegrationConfig::new("work"),
             },
         );
-        let config = WorkflowConfig { version: 1, flows };
+        let config = WorkflowConfig {
+            version: 1,
+            flows,
+            vibe: VibeConfig::default(),
+        };
         let json = serde_json::to_value(&config).unwrap();
         let keys: Vec<&str> = json["flows"]
             .as_object()
@@ -1015,6 +1082,7 @@ flows:
         let workflow = WorkflowConfig {
             version: 1,
             flows: IndexMap::new(),
+            vibe: VibeConfig::default(),
         };
         let errors = workflow.validate();
         assert!(!errors.is_empty());
@@ -1031,7 +1099,11 @@ flows:
                 integration: IntegrationConfig::new("work"),
             },
         );
-        let workflow = WorkflowConfig { version: 1, flows };
+        let workflow = WorkflowConfig {
+            version: 1,
+            flows,
+            vibe: VibeConfig::default(),
+        };
         let errors = workflow.validate();
         assert!(errors.iter().any(|e| e.contains("has no stages")));
     }
@@ -1098,7 +1170,11 @@ flows:
                 integration: IntegrationConfig::new("planning"), // "planning" not in this flow!
             },
         );
-        let workflow = WorkflowConfig { version: 1, flows };
+        let workflow = WorkflowConfig {
+            version: 1,
+            flows,
+            vibe: VibeConfig::default(),
+        };
         let errors = workflow.validate();
         assert!(
             errors
@@ -1376,5 +1452,81 @@ flows:
         let workflow = test_default_workflow();
         let names = workflow.route_to_stage_names("default", "nonexistent");
         assert!(names.is_empty());
+    }
+
+    // ========================================================================
+    // VibeConfig
+    // ========================================================================
+
+    #[test]
+    fn test_vibe_config_default() {
+        let config = VibeConfig::default();
+        assert_eq!(config.prompt, "vibe.md");
+        assert!(config.model.is_none());
+    }
+
+    #[test]
+    fn test_workflow_config_vibe_defaults_when_absent() {
+        let yaml = r"
+version: 2
+flows:
+  default:
+    stages:
+      - name: work
+        artifact: summary
+    integration:
+      on_failure: work
+";
+        let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(workflow.vibe.prompt, "vibe.md");
+        assert!(workflow.vibe.model.is_none());
+    }
+
+    #[test]
+    fn test_workflow_config_vibe_overrides() {
+        let yaml = r"
+version: 2
+flows:
+  default:
+    stages:
+      - name: work
+        artifact: summary
+    integration:
+      on_failure: work
+vibe:
+  prompt: custom-vibe.md
+  model: claude-opus-4-8
+";
+        let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(workflow.vibe.prompt, "custom-vibe.md");
+        assert_eq!(workflow.vibe.model.as_deref(), Some("claude-opus-4-8"));
+    }
+
+    #[test]
+    fn test_build_vibe_stage_config() {
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        let vibe_stage = workflow.build_vibe_stage_config();
+        assert_eq!(vibe_stage.name, "vibe");
+        assert_eq!(vibe_stage.prompt_path(), Some("vibe.md".to_string()));
+        assert!(vibe_stage.model.is_none());
+    }
+
+    #[test]
+    fn test_build_vibe_stage_config_with_model() {
+        let yaml = r"
+version: 2
+flows:
+  default:
+    stages:
+      - name: work
+        artifact: summary
+    integration:
+      on_failure: work
+vibe:
+  model: custom-model
+";
+        let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        let vibe_stage = workflow.build_vibe_stage_config();
+        assert_eq!(vibe_stage.model.as_deref(), Some("custom-model"));
     }
 }

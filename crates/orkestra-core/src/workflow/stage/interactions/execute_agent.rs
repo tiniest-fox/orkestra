@@ -17,6 +17,7 @@ use crate::workflow::prompt::PromptService;
 use crate::workflow::stage::agents::{ExecutionError, ExecutionHandle};
 use crate::workflow::stage::session::SessionSpawnContext;
 use crate::workflow::stage::types::ActivityLogEntry;
+use orkestra_types::config::VIBE_STAGE;
 use orkestra_types::domain::PromptSection;
 use orkestra_types::runtime::ResourceStore;
 
@@ -72,15 +73,23 @@ pub(crate) fn execute(
         artifact_names.len()
     );
 
+    // Compute effective stage config once. Vibe is a virtual stage not in the
+    // workflow's flow list, so we build it from the workflow's vibe config.
+    let owned_vibe_config;
+    let stage_config = if stage == VIBE_STAGE {
+        owned_vibe_config = workflow.build_vibe_stage_config();
+        Some(&owned_vibe_config)
+    } else {
+        workflow.stage(&task.flow, stage)
+    };
+
     // 1. Get JSON schema (needed for BOTH first spawn and resume)
-    let json_schema = get_stage_schema(workflow, prompt_service, task, stage)?;
+    let json_schema = get_stage_schema(workflow, prompt_service, task, stage, stage_config)?;
     let compact_json_schema = orkestra_schema::compact_schema(&json_schema)
         .map_err(|e| ExecutionError::ConfigError(format!("Invalid JSON schema: {e}")))?;
 
     // 2. Resolve the provider to check capabilities
-    let model_spec = workflow
-        .stage(&task.flow, stage)
-        .and_then(|s| s.model.clone());
+    let model_spec = stage_config.and_then(|s| s.model.clone());
     let resolved = registry.resolve(model_spec.as_deref())?;
 
     // 3. Extract feedback from trigger (used by both system prompt and user message)
@@ -100,9 +109,8 @@ pub(crate) fn execute(
     )?;
 
     // 5. Apply tool restrictions (split into prompt text + CLI patterns)
-    let effective_tools = workflow
-        .stage(&task.flow, stage)
-        .map_or(&[] as &[ToolRestriction], |s| s.disallowed_tools.as_slice());
+    let effective_tools =
+        stage_config.map_or(&[] as &[ToolRestriction], |s| s.disallowed_tools.as_slice());
     let (system_prompt, disallowed_patterns) =
         apply_tool_restrictions(system_prompt, effective_tools)?;
 
@@ -119,6 +127,19 @@ pub(crate) fn execute(
         sibling_tasks,
         parent_resources,
     )?;
+
+    // 6b. For vibe stage, append valid exit destinations so the agent knows where it can route.
+    let user_prompt = if stage == VIBE_STAGE && !spawn_context.is_resume {
+        let destinations = workflow.vibe_valid_destinations(task);
+        let dest_list: String = destinations
+            .iter()
+            .map(|d| format!("- {d}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{user_prompt}\n\n## Valid Exit Destinations\n\n{dest_list}")
+    } else {
+        user_prompt
+    };
 
     // 7. Apply provider fallback: prepend system prompt if provider lacks CLI flag support.
     let (mut user_prompt, system_prompt_for_config) = apply_provider_fallbacks(
@@ -498,14 +519,23 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
 // -- Schema & Provider --
 
 /// Get JSON schema for the stage.
+///
+/// For vibe, delegates to `build_vibe_schema` (single source of truth).
+/// For all other stages, uses the canonical `get_agent_schema` path.
 fn get_stage_schema(
     workflow: &WorkflowConfig,
     prompt_service: &PromptService,
     task: &Task,
     stage: &str,
+    stage_config: Option<&crate::workflow::config::StageConfig>,
 ) -> Result<String, ExecutionError> {
-    let stage_config = workflow
-        .stage(&task.flow, stage)
+    if stage == VIBE_STAGE {
+        return Ok(crate::workflow::execution::build_vibe_schema(
+            workflow, task,
+        ));
+    }
+
+    let stage_config = stage_config
         .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
 
     let route_to_stages = workflow.route_to_stage_names(&task.flow, stage);

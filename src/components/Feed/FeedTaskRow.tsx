@@ -21,6 +21,7 @@ interface FeedTaskRowProps {
   onOpenPr?: () => void;
   onArchive?: () => void;
   onDelete?: () => void;
+  onVibe?: () => void;
   onClick?: () => void;
   actionsSlot?: React.ReactNode;
 }
@@ -40,6 +41,7 @@ function FeedTaskRowInner({
   onOpenPr,
   onArchive,
   onDelete,
+  onVibe,
   onClick,
   actionsSlot,
 }: FeedTaskRowProps) {
@@ -63,6 +65,7 @@ function FeedTaskRowInner({
       onOpenPr={onOpenPr}
       onArchive={onArchive}
       onDelete={onDelete}
+      onVibe={onVibe}
       onClick={onClick}
       actionsSlot={actionsSlot}
     />

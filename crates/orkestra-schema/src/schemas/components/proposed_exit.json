@@ -1,0 +1,20 @@
+{
+  "properties": {
+    "destination": {
+      "type": "string",
+      "description": "Target stage to transition to, or 'done' to mark the Trak complete."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Brief explanation of why this destination was chosen."
+    },
+    "content": {
+      "type": "string",
+      "description": "Summary of work done during the vibe session."
+    },
+    "activity_log": {
+      "type": "string",
+      "description": "Terse bullet points covering decisions made and changes applied."
+    }
+  }
+}

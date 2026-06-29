@@ -12,3 +12,4 @@ pub mod park_plain_text;
 pub mod process_gate_failure;
 pub mod process_gate_success;
 pub mod process_output;
+pub mod record_proposed_exit;

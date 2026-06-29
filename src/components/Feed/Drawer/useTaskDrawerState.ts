@@ -73,6 +73,8 @@ export interface TaskDrawerState {
   handleAddressFeedback: () => Promise<void>;
   handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>;
   handleToggleAutoMode: () => Promise<void>;
+  handleEnterVibe: () => Promise<void>;
+  handleConfirmVibeExit: (destination: string) => Promise<void>;
   optimisticAutoMode: boolean | null;
 }
 
@@ -422,6 +424,18 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     }
   }, [transport, task.id, task.auto_mode, optimisticAutoMode]);
 
+  const handleEnterVibe = useCallback(async () => {
+    applyOptimistic(task.id, { type: "enter_vibe" });
+    return callAndClose("enter_vibe");
+  }, [callAndClose, applyOptimistic, task.id]);
+
+  const handleConfirmVibeExit = useCallback(
+    async (destination: string) => {
+      return callAndClose("confirm_vibe_exit", { destination });
+    },
+    [callAndClose],
+  );
+
   return {
     answers,
     setAnswer,
@@ -462,6 +476,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleAddressFeedback,
     handleSubmitAnswers,
     handleToggleAutoMode,
+    handleEnterVibe,
+    handleConfirmVibeExit,
     optimisticAutoMode,
   };
 }

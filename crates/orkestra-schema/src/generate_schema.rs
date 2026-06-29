@@ -20,6 +20,9 @@ const SUBTASKS_COMPONENT: &str = include_str!("schemas/components/subtasks.json"
 /// Approval schema component - for stages with `approval` capability.
 const APPROVAL_COMPONENT: &str = include_str!("schemas/components/approval.json");
 
+/// Proposed exit schema component - for vibe stage sessions.
+const PROPOSED_EXIT_COMPONENT: &str = include_str!("schemas/components/proposed_exit.json");
+
 /// Terminal states schema component - failed, blocked.
 const TERMINAL_COMPONENT: &str = include_str!("schemas/components/terminal.json");
 
@@ -50,6 +53,7 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
     let questions = load_component(QUESTIONS_COMPONENT);
     let subtasks_component = load_component(SUBTASKS_COMPONENT);
     let approval = load_component(APPROVAL_COMPONENT);
+    let proposed_exit = load_component(PROPOSED_EXIT_COMPONENT);
 
     // Build the list of valid type values.
     // For subtask stages, the artifact is embedded in the subtasks output,
@@ -68,6 +72,9 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
     }
     if config.has_approval {
         type_enum.insert(0, "approval".to_string());
+    }
+    if !config.proposed_exit_destinations.is_empty() {
+        type_enum.push("proposed_exit".to_string());
     }
 
     // Build properties object
@@ -162,6 +169,26 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
         }
     }
 
+    // Add proposed_exit properties if destinations are configured
+    if !config.proposed_exit_destinations.is_empty() {
+        if let Some(pe_props) = proposed_exit.get("properties") {
+            properties["destination"] = json!({
+                "type": "string",
+                "enum": config.proposed_exit_destinations,
+                "description": "Target stage to transition to, or 'done' to mark the Trak complete."
+            });
+            if let Some(rationale) = pe_props.get("rationale") {
+                properties["rationale"] = rationale.clone();
+            }
+            if let Some(content) = pe_props.get("content") {
+                properties["content"] = content.clone();
+            }
+            if let Some(al) = pe_props.get("activity_log") {
+                properties["activity_log"] = al.clone();
+            }
+        }
+    }
+
     // Add resources property for stages with non-terminal output types.
     // Terminal states (failed, blocked) don't support resources — agents in an
     // error state shouldn't register external references. The flat schema cannot
@@ -220,6 +247,7 @@ mod tests {
             produces_subtasks: false,
             has_approval: false,
             route_to_stages: &[],
+            proposed_exit_destinations: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -247,6 +275,7 @@ mod tests {
             produces_subtasks: false,
             has_approval: false,
             route_to_stages: &[],
+            proposed_exit_destinations: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -272,6 +301,7 @@ mod tests {
             produces_subtasks: true,
             has_approval: false,
             route_to_stages: &[],
+            proposed_exit_destinations: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -306,18 +336,21 @@ mod tests {
                 produces_subtasks: false,
                 has_approval: false,
                 route_to_stages: &[],
+                proposed_exit_destinations: &[],
             },
             SchemaConfig {
                 artifact_name: "breakdown",
                 produces_subtasks: true,
                 has_approval: false,
                 route_to_stages: &[],
+                proposed_exit_destinations: &[],
             },
             SchemaConfig {
                 artifact_name: "verdict",
                 produces_subtasks: false,
                 has_approval: true,
                 route_to_stages: &[],
+                proposed_exit_destinations: &[],
             },
         ];
 
@@ -340,6 +373,7 @@ mod tests {
             produces_subtasks: false,
             has_approval: true,
             route_to_stages: &[],
+            proposed_exit_destinations: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -370,6 +404,7 @@ mod tests {
             produces_subtasks: false,
             has_approval: true,
             route_to_stages: &stages,
+            proposed_exit_destinations: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -392,6 +427,7 @@ mod tests {
             produces_subtasks: false,
             has_approval: true,
             route_to_stages: &[],
+            proposed_exit_destinations: &[],
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -404,6 +440,77 @@ mod tests {
         assert!(
             route_to.get("enum").is_none(),
             "route_to should not have enum constraint when no stages provided"
+        );
+    }
+
+    #[test]
+    fn test_generate_schema_with_proposed_exit_destinations() {
+        let destinations = vec!["work".to_string(), "done".to_string()];
+        let config = SchemaConfig {
+            artifact_name: "vibe",
+            produces_subtasks: false,
+            has_approval: false,
+            route_to_stages: &[],
+            proposed_exit_destinations: &destinations,
+        };
+        let schema = execute(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        let type_enum = parsed
+            .get("properties")
+            .unwrap()
+            .get("type")
+            .unwrap()
+            .get("enum")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert!(
+            type_enum.iter().any(|v| v == "proposed_exit"),
+            "proposed_exit should be in type enum"
+        );
+
+        let props = parsed.get("properties").unwrap();
+        let destination = props
+            .get("destination")
+            .expect("destination property must be present");
+        let dest_enum = destination
+            .get("enum")
+            .expect("destination must have enum constraint");
+        assert!(dest_enum.as_array().unwrap().iter().any(|v| v == "work"));
+        assert!(dest_enum.as_array().unwrap().iter().any(|v| v == "done"));
+        assert!(
+            props.get("rationale").is_some(),
+            "rationale must be present"
+        );
+    }
+
+    #[test]
+    fn test_generate_schema_without_proposed_exit_destinations() {
+        let config = SchemaConfig {
+            artifact_name: "summary",
+            produces_subtasks: false,
+            has_approval: false,
+            route_to_stages: &[],
+            proposed_exit_destinations: &[],
+        };
+        let schema = execute(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        let type_enum = parsed
+            .get("properties")
+            .unwrap()
+            .get("type")
+            .unwrap()
+            .get("enum")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert!(
+            !type_enum.iter().any(|v| v == "proposed_exit"),
+            "proposed_exit should not be in type enum when no destinations configured"
         );
     }
 }

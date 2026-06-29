@@ -466,6 +466,12 @@ export interface DerivedTaskState {
   can_bypass: boolean;
   /** Whether the assistant agent is currently active for this task (chat tasks only). */
   assistant_active: boolean;
+  /** Whether the task is currently in vibe mode. */
+  is_vibing: boolean;
+  /** The destination proposed by the vibe agent, if awaiting approval. */
+  vibe_proposed_destination: string | null;
+  /** Valid destinations for vibe exit (stage names in origin flow, plus "done"). */
+  vibe_valid_destinations: string[];
 }
 
 /**

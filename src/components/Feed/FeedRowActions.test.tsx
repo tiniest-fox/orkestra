@@ -109,6 +109,57 @@ describe("FeedRowActions — chat task", () => {
   });
 });
 
+describe("FeedRowActions — Vibe button", () => {
+  it("shows Vibe button in needs_review state when onVibe is provided and not already vibing", () => {
+    const props = makeProps({ onVibe: vi.fn() });
+    render(<FeedRowActions {...props} />);
+    expect(screen.getByText("Vibe")).toBeInTheDocument();
+  });
+
+  it("does not show Vibe button in needs_review state when onVibe is not provided", () => {
+    const props = makeProps();
+    render(<FeedRowActions {...props} />);
+    expect(screen.queryByText("Vibe")).not.toBeInTheDocument();
+  });
+
+  it("does not show Vibe button when task is already vibing", () => {
+    const props = makeProps({
+      task: createMockWorkflowTaskView({ derived: { needs_review: true, is_vibing: true } }),
+      onVibe: vi.fn(),
+    });
+    render(<FeedRowActions {...props} />);
+    expect(screen.queryByText("Vibe")).not.toBeInTheDocument();
+  });
+
+  it("calls onVibe and stops propagation when Vibe is clicked", () => {
+    const parentClick = vi.fn();
+    const props = makeProps({ onVibe: vi.fn() });
+
+    render(
+      // biome-ignore lint/a11y/useSemanticElements: test-only wrapper
+      // biome-ignore lint/a11y/useKeyWithClickEvents: test-only wrapper
+      // biome-ignore lint/a11y/useFocusableInteractive: test-only wrapper
+      <div role="button" onClick={parentClick}>
+        <FeedRowActions {...props} />
+      </div>,
+    );
+
+    fireEvent.click(screen.getByText("Vibe"));
+
+    expect(props.onVibe).toHaveBeenCalledTimes(1);
+    expect(parentClick).not.toHaveBeenCalled();
+  });
+
+  it("shows Vibe button in done state (no PR) when onVibe is provided", () => {
+    const props = makeProps({
+      task: createMockWorkflowTaskView({ state: { type: "done" } }),
+      onVibe: vi.fn(),
+    });
+    render(<FeedRowActions {...props} />);
+    expect(screen.getByText("Vibe")).toBeInTheDocument();
+  });
+});
+
 describe("FeedRowActions — Archive button (merged PR)", () => {
   it("renders Archive button when task is done with merged PR", () => {
     const props = makeProps({

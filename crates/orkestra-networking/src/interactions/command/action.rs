@@ -71,6 +71,33 @@ pub fn archive(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPaylo
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
+/// Enters vibe mode from `AwaitingApproval` or Done.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub fn enter_vibe(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.enter_vibe(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+}
+
+/// Override the vibe exit destination and enter the commit pipeline.
+///
+/// Expected params: `{ "task_id": "<id>", "destination": "<stage-or-done>" }`
+pub fn confirm_vibe_exit(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let destination = params
+        .get("destination")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("destination"))?
+        .to_string();
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api
+        .confirm_vibe_exit(&task_id, &destination)
+        .map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+}
+
 /// Rejects with line-level PR comments.
 ///
 /// Expected params: `{ "task_id": "<id>", "comments": [...], "guidance": "<guidance>" }`

@@ -85,3 +85,53 @@ pub fn execute(
         dynamic_sections,
     })
 }
+
+/// Build a complete agent configuration from a pre-resolved stage config.
+///
+/// Like `execute`, but accepts `stage` directly instead of looking it up
+/// by name in the workflow. Use for virtual stages (e.g., vibe) that are
+/// not registered in any flow's stage list.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_with_stage<'a>(
+    templates: &Handlebars<'static>,
+    workflow: &'a WorkflowConfig,
+    stage: &'a orkestra_types::config::StageConfig,
+    task: &'a Task,
+    stage_name: &str,
+    artifact_names: &[String],
+    agent_definition: &str,
+    json_schema: &str,
+    universal_prompt: Option<&str>,
+    feedback: Option<&'a str>,
+    integration_error: Option<IntegrationErrorContext<'a>>,
+    show_direct_structured_output_hint: bool,
+    sibling_tasks: &[SiblingTaskContext],
+    parent_resources: Option<&ResourceStore>,
+) -> Result<ResolvedAgentConfig, AgentConfigError> {
+    let builder = PromptBuilder::new(workflow);
+    let ctx = builder
+        .build_context_with_stage(
+            stage,
+            task,
+            artifact_names,
+            feedback,
+            integration_error,
+            show_direct_structured_output_hint,
+            sibling_tasks,
+            parent_resources,
+        )
+        .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
+
+    let system_prompt =
+        super::system_prompt::execute(templates, agent_definition, universal_prompt, &ctx);
+    let user_message = super::user_message::execute(templates, &ctx);
+    let dynamic_sections = super::dynamic_sections::execute(&ctx);
+
+    Ok(ResolvedAgentConfig {
+        system_prompt,
+        prompt: user_message,
+        json_schema: json_schema.to_string(),
+        session_type: stage_name.to_string(),
+        dynamic_sections,
+    })
+}

@@ -101,6 +101,8 @@ export function createDemoTransport(): Transport {
         case "interrupt":
         case "resume":
         case "send_message":
+        case "enter_vibe":
+        case "confirm_vibe_exit":
           return resolve(null);
         case "get_token_usage":
           return resolve({

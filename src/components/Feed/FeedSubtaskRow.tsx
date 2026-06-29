@@ -16,6 +16,7 @@ interface FeedSubtaskRowProps {
   onOpenPr?: () => void;
   onArchive?: () => void;
   onDelete?: () => void;
+  onVibe?: () => void;
   onClick?: () => void;
 }
 
@@ -31,6 +32,7 @@ export function FeedSubtaskRow({
   onOpenPr,
   onArchive,
   onDelete,
+  onVibe,
   onClick,
 }: FeedSubtaskRowProps) {
   return (
@@ -48,6 +50,7 @@ export function FeedSubtaskRow({
       onOpenPr={onOpenPr}
       onArchive={onArchive}
       onDelete={onDelete}
+      onVibe={onVibe}
       onClick={onClick}
     />
   );

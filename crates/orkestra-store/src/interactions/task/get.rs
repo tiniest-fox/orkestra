@@ -12,7 +12,7 @@ pub fn execute(conn: &Connection, id: &str) -> WorkflowResult<Option<Task>> {
                 auto_mode, created_at, updated_at, completed_at,
                 base_branch, flow, short_id, base_commit, pr_url, interactive,
                 resources, is_chat, auto_pr,
-                auto_resolve, auto_resolve_count, resolved_feedback_ids
+                auto_resolve, auto_resolve_count, resolved_feedback_ids, vibe_origin
          FROM workflow_tasks WHERE id = ?",
         params![id],
         super::from_row::execute,

@@ -70,6 +70,12 @@ pub struct DerivedTaskState {
     /// Whether the assistant agent is actively running for this task (chat tasks only).
     #[serde(default)]
     pub assistant_active: bool,
+    /// Whether the task is currently in vibe mode.
+    pub is_vibing: bool,
+    /// The destination proposed by the vibe agent, if awaiting approval.
+    pub vibe_proposed_destination: Option<String>,
+    /// Valid destinations for vibe exit (stage names in origin flow, plus "done").
+    pub vibe_valid_destinations: Vec<String>,
 }
 
 /// A pending rejection from a reviewer agent awaiting human confirmation.
@@ -179,6 +185,16 @@ impl DerivedTaskState {
             subtask_progress,
             can_bypass: task.can_bypass(),
             assistant_active,
+            is_vibing: task.vibe_origin.is_some(),
+            vibe_proposed_destination: task
+                .vibe_origin
+                .as_ref()
+                .and_then(|v| v.proposed_destination.clone()),
+            vibe_valid_destinations: if task.vibe_origin.is_some() {
+                workflow.vibe_valid_destinations(task)
+            } else {
+                Vec::new()
+            },
         }
     }
 }

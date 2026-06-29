@@ -183,6 +183,62 @@ describe("ArtifactLogCard", () => {
     expect(screen.queryByText(/Running: checks.sh/)).not.toBeInTheDocument();
   });
 
+  // Vibe button
+
+  it("renders vibe button when needsReview and onVibe provided", () => {
+    const onApprove = vi.fn();
+    const onVibe = vi.fn();
+    render(
+      <ArtifactLogCard
+        artifact={baseArtifact}
+        needsReview
+        onApprove={onApprove}
+        onVibe={onVibe}
+        loading={false}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Vibe" })).toBeInTheDocument();
+  });
+
+  it("calls onVibe when vibe button is clicked", () => {
+    const onApprove = vi.fn();
+    const onVibe = vi.fn();
+    render(
+      <ArtifactLogCard
+        artifact={baseArtifact}
+        needsReview
+        onApprove={onApprove}
+        onVibe={onVibe}
+        loading={false}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Vibe" }));
+    expect(onVibe).toHaveBeenCalledOnce();
+  });
+
+  it("does not render vibe button when onVibe is not provided", () => {
+    const onApprove = vi.fn();
+    render(
+      <ArtifactLogCard artifact={baseArtifact} needsReview onApprove={onApprove} loading={false} />,
+    );
+    expect(screen.queryByRole("button", { name: "Vibe" })).not.toBeInTheDocument();
+  });
+
+  it("disables vibe button when loading", () => {
+    const onApprove = vi.fn();
+    const onVibe = vi.fn();
+    render(
+      <ArtifactLogCard
+        artifact={baseArtifact}
+        needsReview
+        onApprove={onApprove}
+        onVibe={onVibe}
+        loading
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Vibe" })).toBeDisabled();
+  });
+
   it("shows ChevronDown icon when collapsed (not ChevronRight)", () => {
     render(<ArtifactLogCard artifact={baseArtifact} />);
     // ChevronDown renders as an svg with lucide class; ChevronRight should not be present

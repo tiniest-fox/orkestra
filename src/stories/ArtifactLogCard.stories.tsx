@@ -121,6 +121,16 @@ export const LatestRejected: Story = {
   },
 };
 
+/** Latest artifact with both Approve and Vibe buttons — Vibe uses secondary variant to differentiate. */
+export const LatestNeedsReviewWithVibe: Story = {
+  args: {
+    needsReview: true,
+    onApprove: () => {},
+    onVibe: () => {},
+    loading: false,
+  },
+};
+
 /** Feed card — no approve action, no superseded dimming. Basic collapsed card. */
 export const FeedSimple: Story = {
   args: {},

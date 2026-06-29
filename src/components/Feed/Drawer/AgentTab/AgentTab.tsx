@@ -118,6 +118,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     allAnswered,
     handleApprove,
     handleConfirmVibeExit,
+    handleEnterVibe,
   } = state;
   const taskId = task.id;
   const pendingQuestions = task.derived.pending_questions;
@@ -148,6 +149,8 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
       rejectionTarget,
       handleApprove,
       loading,
+      handleEnterVibe,
+      derived.is_vibing,
     );
 
     return {
@@ -161,6 +164,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     latestArtifactId,
     derived.has_questions,
     derived.needs_review,
+    derived.is_vibing,
     pendingQuestions,
     taskId,
     answers,
@@ -171,6 +175,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     answeredCount,
     allAnswered,
     handleApprove,
+    handleEnterVibe,
     verdict,
     rejectionTarget,
     gateInfo,
@@ -363,14 +368,23 @@ function VibeExitCard({
   );
 }
 
-/** Build the approve/reject actions object for the latest artifact, or undefined if not in review. */
+/** Build the approve/reject/vibe actions object for the latest artifact, or undefined if not in review. */
 function buildArtifactActions(
   needsReview: boolean,
   verdict: "approved" | "rejected" | undefined,
   rejectionTarget: string | undefined,
   onApprove: () => Promise<void>,
   loading: boolean,
+  onVibe: (() => Promise<void>) | undefined,
+  isVibing: boolean,
 ): ArtifactContext["actions"] {
   if (!needsReview) return undefined;
-  return { needsReview: true, verdict, rejectionTarget, onApprove, loading };
+  return {
+    needsReview: true,
+    verdict,
+    rejectionTarget,
+    onApprove,
+    onVibe: isVibing ? undefined : onVibe,
+    loading,
+  };
 }

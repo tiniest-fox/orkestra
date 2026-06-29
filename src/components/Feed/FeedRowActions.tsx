@@ -105,19 +105,6 @@ export function FeedRowActions({
         >
           Approve
         </Button>
-        {onVibe && !derived.is_vibing && (
-          <Button
-            variant="secondary"
-            size="sm"
-            className={btnCls}
-            onClick={(e) => {
-              e.stopPropagation();
-              onVibe();
-            }}
-          >
-            Vibe
-          </Button>
-        )}
       </div>
     );
   }

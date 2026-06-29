@@ -745,6 +745,12 @@ Note: `Array.prototype.findLast` is ES2023 — use `[...arr].reverse().find()` f
 
 **`virtualItems` sort order**: TanStack Virtual guarantees `virtualItems` is sorted ascending by `start`. The reverse-find pattern relies on this guarantee — a `reduce`-based approach would make the intent explicit if the sort assumption ever feels fragile.
 
+## ArtifactLogCard / MessageList Action Button Coupling
+
+`ArtifactLogCard.tsx` and `VirtualItemRenderer`'s `artifact-header` case in `MessageList.tsx` are intentionally duplicated for the same action buttons (Approve, Vibe). The split exists because Virtua needs separate header/body virtual items for sticky positioning — the artifact card header floats above the body while the user scrolls through content. Both paths must stay in sync whenever button behavior changes.
+
+**When adding a new action button to artifact cards:** add it to both `ArtifactLogCard.tsx` AND the `artifact-header` branch of `VirtualItemRenderer` in `MessageList.tsx`. Wiring flows through `ArtifactContext.actions`, which is built in `AgentTab.tsx`'s `buildArtifactActions()`.
+
 ## Testing
 
 - Tests use Vitest + React Testing Library.

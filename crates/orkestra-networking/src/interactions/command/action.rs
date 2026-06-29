@@ -191,10 +191,13 @@ pub fn push_pr_changes(ctx: &CommandContext, params: &Value) -> Result<Value, Er
 /// Expected params: `{ "task_id": "<id>" }`
 pub fn force_push_pr_changes(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(params)?;
-    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api
-        .force_push_pr_changes(&task_id)
-        .map_err(ErrorPayload::from)?;
+    let task = {
+        let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        api.force_push_pr_changes(&task_id)
+            .map_err(ErrorPayload::from)?
+    };
+    // Lock released — spawn best-effort description audit in background
+    spawn_pr_description_audit(&ctx.api, &task_id);
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 

@@ -64,6 +64,10 @@ Key behaviors:
 
 Use these when building prompts that need concrete output examples.
 
+## Schema Component Convention
+
+Component JSON files (in `schemas/components/`) define properties but do **not** mark fields as `required`. The parent schema generator (`generate_schema.rs`) is the single source of truth for required fields — it merges component properties into the top-level schema and handles required field lists centrally. Don't add a `required` array to individual component files.
+
 ## Anti-patterns
 
 - **Don't add I/O.** This crate is pure logic. File reading, network calls, etc. belong elsewhere.

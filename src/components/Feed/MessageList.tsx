@@ -144,12 +144,13 @@ export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
 
 /** Context passed from AgentTab so artifact_produced entries render with actions. */
 export interface ArtifactContext {
-  /** Actions for the latest regular artifact (approve/reject). */
+  /** Actions for the latest regular artifact (approve/reject/vibe). */
   actions?: {
     needsReview: boolean;
     verdict?: "approved" | "rejected";
     rejectionTarget?: string;
     onApprove: () => void;
+    onVibe?: () => void;
     loading: boolean;
   };
   /** When the latest artifact has pending questions, render this element instead of ArtifactLogCard. */
@@ -477,6 +478,7 @@ export const AgentEntry = memo(function AgentEntry({
               verdict={actions?.verdict}
               rejectionTarget={actions?.rejectionTarget}
               onApprove={actions?.onApprove}
+              onVibe={actions?.onVibe}
               loading={actions?.loading}
             />
             {resourcesElement}
@@ -652,6 +654,18 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
               </span>
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-2">
+              {actions?.needsReview && actions.onVibe && (
+                <Button
+                  variant="secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.onVibe?.();
+                  }}
+                  disabled={actions.loading}
+                >
+                  Vibe
+                </Button>
+              )}
               {actions?.needsReview && (
                 <Button
                   variant="violet"

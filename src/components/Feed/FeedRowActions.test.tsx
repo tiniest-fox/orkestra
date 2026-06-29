@@ -110,10 +110,10 @@ describe("FeedRowActions — chat task", () => {
 });
 
 describe("FeedRowActions — Vibe button", () => {
-  it("shows Vibe button in needs_review state when onVibe is provided and not already vibing", () => {
+  it("does not show Vibe button in needs_review state — moved to artifact card", () => {
     const props = makeProps({ onVibe: vi.fn() });
     render(<FeedRowActions {...props} />);
-    expect(screen.getByText("Vibe")).toBeInTheDocument();
+    expect(screen.queryByText("Vibe")).not.toBeInTheDocument();
   });
 
   it("does not show Vibe button in needs_review state when onVibe is not provided", () => {
@@ -131,9 +131,12 @@ describe("FeedRowActions — Vibe button", () => {
     expect(screen.queryByText("Vibe")).not.toBeInTheDocument();
   });
 
-  it("calls onVibe and stops propagation when Vibe is clicked", () => {
+  it("calls onVibe and stops propagation when Vibe is clicked in done state", () => {
     const parentClick = vi.fn();
-    const props = makeProps({ onVibe: vi.fn() });
+    const props = makeProps({
+      task: createMockWorkflowTaskView({ state: { type: "done" } }),
+      onVibe: vi.fn(),
+    });
 
     render(
       // biome-ignore lint/a11y/useSemanticElements: test-only wrapper

@@ -19,6 +19,7 @@ interface ArtifactLogCardProps {
   verdict?: "approved" | "rejected";
   rejectionTarget?: string;
   onApprove?: () => void;
+  onVibe?: () => void;
   loading?: boolean;
   /** When true, renders without white card background so the card blends into the chat canvas. */
   superseded?: boolean;
@@ -34,6 +35,7 @@ export function ArtifactLogCard({
   verdict,
   rejectionTarget,
   onApprove,
+  onVibe,
   loading,
   superseded,
   gateEntries,
@@ -109,6 +111,18 @@ export function ArtifactLogCard({
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0 ml-2">
+              {needsReview && onVibe && (
+                <Button
+                  variant="secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onVibe();
+                  }}
+                  disabled={loading}
+                >
+                  Vibe
+                </Button>
+              )}
               {needsReview && (
                 <Button
                   variant="violet"

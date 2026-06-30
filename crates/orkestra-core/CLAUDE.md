@@ -136,14 +136,19 @@ std::thread::spawn(move || {
 
 ### Background Threads for Integration
 
-Merge and PR creation run on background threads to avoid blocking the tick loop:
+Merge, PR creation, and PR update run on background threads to avoid blocking the tick loop:
 
 - `integration::merge::run_integration()` — merges branch, handles conflicts
 - `integration::pr_creation::run_pr_creation()` — creates PR via GitHub API
+- `integration::pr_update::run_pr_update()` — pushes updated branch for tasks with an open PR after new work lands
 
 These threads take cloned inputs (no lock held) and call back via `Arc<Mutex<WorkflowApi>>`.
 
+**Background operations signal completion via callbacks, not event emission.** `run_pr_creation` uses a `pr_creation_succeeded` callback that re-acquires the lock to write state — not an `OrchestratorEvent`. New background operations should follow this callback-first pattern. Passing `_events` to an orchestrator method is fine for synchronous work, but events can't be emitted from inside background threads without a different mechanism.
+
 **Known gap in `run_pr_creation`**: lock-poison and save errors inside the callback are silently dropped (`if let Ok(api) = api.lock() { let _ = ... }`). The merge path logs lock-poison via `workflow_warn!`; the PR path doesn't. This won't cause incorrect behavior but makes PR creation failures harder to diagnose. If you're debugging a PR creation issue and see no log output, add `workflow_warn!` calls on the error arms to match the merge path.
+
+**`audit_pr_description_sync` takes `Arc<Mutex<WorkflowApi>>`** — CLI callers wrap the API in a temporary `Mutex` to satisfy this signature (`Mutex::new(api)`). Currently two CLI handlers do this (`handle_open_pr_task`, `handle_push_pr_task`). If a third caller appears, refactor the function signature to accept `&WorkflowApi` directly.
 
 ### Title/Commit Generators Are Internal
 

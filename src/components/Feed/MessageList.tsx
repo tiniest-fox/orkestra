@@ -1,7 +1,7 @@
 // Shared conversation-style message list for AssistantDrawer and Logs tab.
 
 import DOMPurify from "dompurify";
-import { ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldX } from "lucide-react";
+import { ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldX, X, Zap } from "lucide-react";
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeStringify from "rehype-stringify";
@@ -107,6 +107,11 @@ export interface AgentMessage {
 
 export type DisplayMessage = UserMessage | AgentMessage;
 
+export interface QueuedMessageItem {
+  id: string;
+  text: string;
+}
+
 export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
   const messages: DisplayMessage[] = [];
   let agentEntries: LogEntry[] = [];
@@ -193,7 +198,8 @@ type VirtualItem =
       isBlockEnd: boolean;
     }
   | { kind: "extra"; content: React.ReactNode }
-  | { kind: "spinner" };
+  | { kind: "spinner" }
+  | { kind: "queued"; id: string; text: string };
 
 // ============================================================================
 // buildVirtualItems
@@ -211,6 +217,7 @@ export function buildVirtualItems(
     taskResources?: Record<string, WorkflowResource>;
     isAgentRunning: boolean;
     lastAgentExtra?: React.ReactNode;
+    queuedMessages?: QueuedMessageItem[];
   },
 ): VirtualItem[] {
   const items: VirtualItem[] = [];
@@ -321,6 +328,13 @@ export function buildVirtualItems(
   // Append spinner
   if (opts.isAgentRunning) {
     items.push({ kind: "spinner" });
+  }
+
+  // Append queued messages after spinner so they appear below the "Working…" indicator
+  if (opts.queuedMessages) {
+    for (const qm of opts.queuedMessages) {
+      items.push({ kind: "queued", id: qm.id, text: qm.text });
+    }
   }
 
   return items;
@@ -551,6 +565,9 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
   onToggleArtifactBody,
   gateView,
   onToggleGateView,
+  onEditQueued,
+  onDeleteQueued,
+  onInjectQueued,
 }: {
   item: VirtualItem;
   contentFilter?: (content: string) => string;
@@ -560,6 +577,9 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
   onToggleArtifactBody?: () => void;
   gateView?: boolean;
   onToggleGateView?: () => void;
+  onEditQueued?: (id: string) => void;
+  onDeleteQueued?: (id: string) => void;
+  onInjectQueued?: (id: string) => void;
 }) {
   const isMobile = useIsMobile();
   switch (item.kind) {
@@ -796,6 +816,60 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
           <span className="font-mono text-forge-mono-sm">Working…</span>
         </div>
       );
+    case "queued": {
+      return (
+        <div className={`flex justify-end ${isMobile ? "px-2" : "px-6"} py-1`}>
+          <div className="max-w-[90%] group">
+            {/* biome-ignore lint/a11y/useSemanticElements: contains inner <button> elements */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onEditQueued?.(item.id)}
+              onKeyDown={() => {}}
+              className="bg-surface-3 rounded-xl rounded-tr-none px-4 py-2.5 border border-dashed border-border cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="font-mono text-forge-mono-label bg-surface-2 text-text-tertiary px-1.5 py-0.5 rounded">
+                  Queued
+                </span>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    aria-label="Send now"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onInjectQueued?.(item.id);
+                    }}
+                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-colors"
+                  >
+                    <Zap size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Delete queued message"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteQueued?.(item.id);
+                    }}
+                    className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+              <div className={`text-forge-body text-text-primary ${PROSE_CLASSES}`}>
+                <ReactMarkdown
+                  remarkPlugins={richContentPlugins}
+                  components={richContentComponents}
+                >
+                  {item.text}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 });
 
@@ -839,6 +913,14 @@ export interface MessageListProps {
    * Use when the user submits a message so the feed jumps to the latest activity.
    */
   scrollToBottomTrigger?: number;
+  /** Messages queued while the agent is running — displayed below the spinner. */
+  queuedMessages?: QueuedMessageItem[];
+  /** Called when a queued message body is clicked — loads the text into the compose area. */
+  onEditQueued?: (id: string) => void;
+  /** Called when the delete button on a queued message is clicked. */
+  onDeleteQueued?: (id: string) => void;
+  /** Called when the "Send now" button on a queued message is clicked. */
+  onInjectQueued?: (id: string) => void;
 }
 
 export function MessageList({
@@ -857,6 +939,10 @@ export function MessageList({
   initialLabel,
   containerRef,
   scrollToBottomTrigger,
+  queuedMessages,
+  onEditQueued,
+  onDeleteQueued,
+  onInjectQueued,
 }: MessageListProps) {
   const isScrollContainer = containerRef != null;
 
@@ -920,6 +1006,7 @@ export function MessageList({
         taskResources,
         isAgentRunning,
         lastAgentExtra,
+        queuedMessages,
       }),
     [
       messages,
@@ -932,6 +1019,7 @@ export function MessageList({
       taskResources,
       isAgentRunning,
       lastAgentExtra,
+      queuedMessages,
     ],
   );
 
@@ -1142,6 +1230,9 @@ export function MessageList({
                       onToggleArtifactBody: handleToggleArtifactBody,
                       gateView,
                       onToggleGateView: handleToggleGateView,
+                      onEditQueued,
+                      onDeleteQueued,
+                      onInjectQueued,
                     };
                     // biome-ignore lint/suspicious/noArrayIndexKey: append-only list, no reordering
                     return <VirtualItemRenderer key={i} {...p} />;
@@ -1165,6 +1256,9 @@ export function MessageList({
               initialLabel,
               gateView,
               onToggleGateView: handleToggleGateView,
+              onEditQueued,
+              onDeleteQueued,
+              onInjectQueued,
             };
             // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
             return <VirtualItemRenderer key={i} {...p} />;

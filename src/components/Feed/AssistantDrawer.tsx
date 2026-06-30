@@ -19,7 +19,7 @@ import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
 import { ModalPanel } from "../ui/ModalPanel";
 import { ChatComposeArea, type PendingImage } from "./ChatComposeArea";
-import { buildDisplayMessages, MessageList } from "./MessageList";
+import { buildDisplayMessages, MessageList, type QueuedMessageItem } from "./MessageList";
 import { ProposalCard } from "./ProposalCard";
 import { QuestionCard } from "./QuestionCard";
 
@@ -90,7 +90,7 @@ export function AssistantDrawer({
   const [chatTask, setChatTask] = useState<WorkflowTask | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [acceptLoading, setAcceptLoading] = useState(false);
-  const [queuedMessages, setQueuedMessages] = useState<Array<{ id: string; text: string }>>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessageItem[]>([]);
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -483,16 +483,13 @@ export function AssistantDrawer({
   }, [inputValue, triggerScroll]);
 
   // -- Edit queued message: remove from queue and load into input --
-  const handleEditQueued = useCallback(
-    (id: string) => {
-      const msg = queuedMessages.find((m) => m.id === id);
-      if (!msg) return;
-      setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
-      setInputValue(msg.text);
-      textareaRef.current?.focus();
-    },
-    [queuedMessages],
-  );
+  const handleEditQueued = useCallback((id: string) => {
+    const msg = queueRef.current.find((m) => m.id === id);
+    if (!msg) return;
+    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+    setInputValue(msg.text);
+    textareaRef.current?.focus();
+  }, []);
 
   // -- Delete queued message --
   const handleDeleteQueued = useCallback((id: string) => {
@@ -502,25 +499,40 @@ export function AssistantDrawer({
   // -- Inject queued message: stop agent and send immediately --
   const handleInjectQueued = useCallback(
     async (id: string) => {
-      const msg = queuedMessages.find((m) => m.id === id);
+      const msg = queueRef.current.find((m) => m.id === id);
       if (!msg || !activeSessionId) return;
+      // Claim the send slot before awaiting stop — prevents auto-send from starting
+      // while assistant_stop is in-flight and transitioning isAgentRunning to false.
+      if (isSendingRef.current) return;
+      isSendingRef.current = true;
       setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+      setSending(true);
+      setOptimisticMessage(msg.text);
+      triggerScroll();
       try {
         await transport.call("assistant_stop", { session_id: activeSessionId });
-        await sendQueued(msg.text);
+        await sendAndRefresh(msg.text);
       } catch (err) {
         if (!isDisconnectError(err)) showError(extractErrorMessage(err));
+        setOptimisticMessage(null);
+        setQueuedMessages((prev) => [{ id: msg.id, text: msg.text }, ...prev]);
+      } finally {
+        isSendingRef.current = false;
+        setSending(false);
       }
     },
-    [queuedMessages, activeSessionId, transport, sendQueued, showError],
+    [activeSessionId, transport, sendAndRefresh, setOptimisticMessage, triggerScroll, showError],
   );
 
   // -- Auto-send: fire next queued message when agent stops --
-  // biome-ignore lint/correctness/useExhaustiveDependencies: queueRef and sendQueued intentionally omitted — queueRef avoids re-firing on queue changes; sendQueued is stable
+  // biome-ignore lint/correctness/useExhaustiveDependencies: queueRef, isSendingRef, and sendQueued intentionally omitted — refs are stable, sendQueued is stable
   useEffect(() => {
     const wasRunning = prevAgentRunningRef.current;
     prevAgentRunningRef.current = isAgentRunning;
     if (wasRunning && !isAgentRunning && queueRef.current.length > 0) {
+      // Skip if inject already owns the send slot — avoids removing a queued message
+      // that inject won't be able to send (isSendingRef guard blocks sendQueued).
+      if (isSendingRef.current) return;
       const [next, ...rest] = queueRef.current;
       setQueuedMessages(rest);
       sendQueued(next.text);

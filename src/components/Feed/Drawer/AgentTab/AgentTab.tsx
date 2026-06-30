@@ -31,6 +31,7 @@ interface AgentTabProps {
 
 export function AgentTab({ task, logs, logsError, state, logContainerRef }: AgentTabProps) {
   const { derived } = task;
+  const isGateRunning = task.state.type === "gate_running";
   const isMobile = useIsMobile();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -187,6 +188,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
   // Failed, Blocked, Interrupted.
   const showInputBar =
     derived.is_working ||
+    isGateRunning ||
     derived.has_questions ||
     derived.is_interrupted ||
     derived.is_failed ||
@@ -196,7 +198,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
   // Input bar agent active state:
   // Working → treat as agentActive (shows stop, disables textarea)
   // All other states → not active (user can type and send)
-  const inputAgentActive = derived.is_working;
+  const inputAgentActive = derived.is_working || isGateRunning;
 
   const onInterruptOrStop = state.handleInterrupt;
 
@@ -245,7 +247,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
       <FeedLogList
         logs={logs}
         error={logsError}
-        isAgentRunning={derived.is_working || !!optimisticMessage}
+        isAgentRunning={derived.is_working || isGateRunning || !!optimisticMessage}
         artifactContext={artifactContext}
         latestArtifactId={latestArtifactId}
         taskResources={task.resources}

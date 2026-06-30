@@ -85,7 +85,11 @@ export function applyOptimisticTransition(
     }
 
     case "interrupt": {
-      if (task.state.type === "agent_working" || task.state.type === "queued") {
+      if (
+        task.state.type === "agent_working" ||
+        task.state.type === "queued" ||
+        task.state.type === "gate_running"
+      ) {
         return {
           ...task,
           state: { type: "interrupted", stage: task.state.stage },

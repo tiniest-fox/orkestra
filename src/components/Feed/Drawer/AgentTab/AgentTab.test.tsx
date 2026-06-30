@@ -32,6 +32,7 @@ vi.mock("../../ChatComposeArea", () => ({
   ChatComposeArea: (props: {
     placeholder?: string;
     onSend?: () => void;
+    onStop?: () => void;
     agentActive?: boolean;
   }) => (
     <div data-testid="chat-compose-area">
@@ -40,6 +41,11 @@ vi.mock("../../ChatComposeArea", () => ({
       <button type="button" data-testid="send-btn" onClick={props.onSend}>
         Send
       </button>
+      {props.agentActive && (
+        <button type="button" aria-label="Stop" onClick={props.onStop}>
+          Stop
+        </button>
+      )}
     </div>
   ),
 }));
@@ -195,6 +201,16 @@ describe("AgentTab — compose area visibility and behavior", () => {
   it("inputAgentActive is true when working", () => {
     renderAgentTab({ is_working: true });
     expect(screen.getByTestId("agent-active").textContent).toBe("true");
+  });
+
+  it("renders ChatComposeArea with Stop button when gate_running", () => {
+    const task = createMockWorkflowTaskView({ state: { type: "gate_running", stage: "work" } });
+    const state = makeState();
+    render(
+      <AgentTab task={task} logs={[]} logsError={null} state={state} logContainerRef={vi.fn()} />,
+    );
+    expect(screen.getByTestId("chat-compose-area")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeDefined();
   });
 });
 

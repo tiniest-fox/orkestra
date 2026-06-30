@@ -218,6 +218,20 @@ describe("applyOptimisticTransition — interrupt", () => {
     expect(result?.state).toEqual({ type: "interrupted", stage: "work" });
   });
 
+  it("transitions gate_running to interrupted", () => {
+    const config = createConfig();
+    const task = createMockWorkflowTaskView({
+      state: { type: "gate_running", stage: "work" },
+    });
+
+    const result = applyOptimisticTransition(task, { type: "interrupt" }, config);
+
+    expect(result).not.toBeNull();
+    expect(result?.state).toEqual({ type: "interrupted", stage: "work" });
+    expect(result?.derived.is_working).toBe(false);
+    expect(result?.derived.is_interrupted).toBe(true);
+  });
+
   it("returns null when not interruptable", () => {
     const config = createConfig();
     const task = createMockWorkflowTaskView({

@@ -101,7 +101,7 @@ export const SendingWithImages: Story = {
   },
 };
 
-/** AgentRunning — shows the stop button. */
+/** AgentRunning — shows the stop button only (no queue prop). */
 export const AgentRunning: Story = {
   args: {
     value: "",
@@ -111,6 +111,36 @@ export const AgentRunning: Story = {
     agentActive: true,
     onSend: () => {},
     onStop: () => {},
+    placeholder: "Ask the assistant…",
+  },
+};
+
+/** AgentActiveWithQueue — stop and queue buttons shown side by side with text ready to queue. */
+export const AgentActiveWithQueue: Story = {
+  args: {
+    value: "Can you also add a test for the error path?",
+    onChange: () => {},
+    textareaRef: createRef<HTMLTextAreaElement>(),
+    sending: false,
+    agentActive: true,
+    onSend: () => {},
+    onStop: () => {},
+    onQueue: () => {},
+    placeholder: "Ask the assistant…",
+  },
+};
+
+/** AgentActiveWithQueueEmpty — queue button disabled when input is empty. */
+export const AgentActiveWithQueueEmpty: Story = {
+  args: {
+    value: "",
+    onChange: () => {},
+    textareaRef: createRef<HTMLTextAreaElement>(),
+    sending: false,
+    agentActive: true,
+    onSend: () => {},
+    onStop: () => {},
+    onQueue: () => {},
     placeholder: "Ask the assistant…",
   },
 };

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTransport } from "../transport";
 import { extractErrorMessage } from "../utils/errors";
+import { parsePortDeclaration } from "../utils/portDeclaration";
 import { usePolling } from "./usePolling";
 
 // ============================================================================
@@ -28,6 +29,7 @@ interface RunLogs {
 export interface UseRunScriptResult {
   status: RunStatus;
   lines: string[];
+  ports: Record<string, number>;
   loading: boolean;
   error: string | null;
   start: () => Promise<void>;
@@ -46,6 +48,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
     exit_code: null,
   });
   const [lines, setLines] = useState<string[]>([]);
+  const [ports, setPorts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +64,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
     generationRef.current += 1;
     setStatus({ running: false, pid: null, exit_code: null });
     setLines([]);
+    setPorts({});
     sinceLineRef.current = 0;
     setError(null);
     setLoading(false);
@@ -91,6 +95,14 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       if (gen !== generationRef.current) return;
       if (result.lines.length > 0) {
         setLines((prev) => [...prev, ...result.lines]);
+        const newPorts: Record<string, number> = {};
+        for (const line of result.lines) {
+          const decl = parsePortDeclaration(line);
+          if (decl) newPorts[decl.label] = decl.port;
+        }
+        if (Object.keys(newPorts).length > 0) {
+          setPorts((prev) => ({ ...prev, ...newPorts }));
+        }
       }
       sinceLineRef.current = result.total_lines;
       // Refresh status along with log poll to detect process exit
@@ -131,6 +143,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       if (gen !== generationRef.current) return;
       // Clear previous output and reset line offset
       setLines([]);
+      setPorts({});
       sinceLineRef.current = 0;
       const newStatus = await transport.call<RunStatus>("get_run_status", { task_id: taskId });
       if (gen !== generationRef.current) return;
@@ -159,6 +172,14 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       if (gen !== generationRef.current) return;
       if (result.lines.length > 0) {
         setLines((prev) => [...prev, ...result.lines]);
+        const newPorts: Record<string, number> = {};
+        for (const line of result.lines) {
+          const decl = parsePortDeclaration(line);
+          if (decl) newPorts[decl.label] = decl.port;
+        }
+        if (Object.keys(newPorts).length > 0) {
+          setPorts((prev) => ({ ...prev, ...newPorts }));
+        }
       }
       sinceLineRef.current = result.total_lines;
       const newStatus = await transport.call<RunStatus>("get_run_status", { task_id: taskId });
@@ -172,5 +193,5 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
     }
   }, [taskId, loading, transport]);
 
-  return { status, lines, loading, error, start, stop };
+  return { status, lines, ports, loading, error, start, stop };
 }

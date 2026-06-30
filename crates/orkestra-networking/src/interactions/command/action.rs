@@ -466,8 +466,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_ne!(
-            err.code,
-            "INVALID_PARAMS",
+            err.code, "INVALID_PARAMS",
             "should fail for task lookup, not params"
         );
     }
@@ -488,8 +487,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_ne!(
-            err.code,
-            "INVALID_PARAMS",
+            err.code, "INVALID_PARAMS",
             "should fail for task lookup, not params"
         );
     }

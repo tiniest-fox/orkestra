@@ -730,9 +730,6 @@ fn handle_orchestrator_event(
             );
             let _ = window.emit("task-updated", task_id);
         }
-        OrchestratorEvent::PrUpdatePushed { task_id } => {
-            let _ = window.emit("task-updated", task_id);
-        }
     }
 }
 

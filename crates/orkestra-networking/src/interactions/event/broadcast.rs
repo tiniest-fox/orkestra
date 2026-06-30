@@ -78,8 +78,7 @@ pub fn execute(event: &OrchestratorEvent, api: &Arc<Mutex<WorkflowApi>>) -> Vec<
         | OrchestratorEvent::PrCreationCompleted { task_id, .. }
         | OrchestratorEvent::GateSpawned { task_id, .. }
         | OrchestratorEvent::GatePassed { task_id, .. }
-        | OrchestratorEvent::GateFailed { task_id, .. }
-        | OrchestratorEvent::PrUpdatePushed { task_id } => {
+        | OrchestratorEvent::GateFailed { task_id, .. } => {
             vec![Event::task_updated(task_id)]
         }
     }

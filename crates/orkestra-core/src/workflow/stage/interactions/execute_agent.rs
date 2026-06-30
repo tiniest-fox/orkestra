@@ -208,10 +208,16 @@ pub(crate) fn execute(
         env
     };
 
-    // 9. Build run config with session info, model spec, system prompt, and env
+    // 9. Build run config with session info, model spec, system prompt, and env.
+    // Vibe passes None so --json-schema is not sent to Claude Code; the schema
+    // reference is already embedded in the user prompt via append_schema_reference.
     let stage_config = ResolvedStageConfig {
         user_prompt,
-        json_schema,
+        json_schema: if stage == VIBE_STAGE {
+            None
+        } else {
+            Some(json_schema)
+        },
         system_prompt: system_prompt_for_config,
         model_spec,
         disallowed_tool_patterns: disallowed_patterns,
@@ -254,7 +260,8 @@ pub(crate) fn execute(
 /// Resolved stage configuration for building `RunConfig`.
 struct ResolvedStageConfig {
     user_prompt: String,
-    json_schema: String,
+    /// `None` for vibe stage — schema is in the prompt text but not passed as a CLI flag.
+    json_schema: Option<String>,
     system_prompt: Option<String>,
     model_spec: Option<String>,
     disallowed_tool_patterns: Vec<String>,
@@ -704,8 +711,11 @@ fn build_run_config(
     project_subpath: Option<&Path>,
 ) -> RunConfig {
     let working_dir = get_working_dir(prompt_service, task, project_subpath);
-    let mut run_config = RunConfig::new(working_dir, resolved.user_prompt, resolved.json_schema)
-        .with_task_id(&task.id);
+    let mut run_config = match resolved.json_schema {
+        Some(schema) => RunConfig::new(working_dir, resolved.user_prompt, schema),
+        None => RunConfig::new_without_schema(working_dir, resolved.user_prompt),
+    }
+    .with_task_id(&task.id);
 
     // Only set session when we have a caller-provided session ID.
     // Providers that generate their own IDs (OpenCode) start without one.

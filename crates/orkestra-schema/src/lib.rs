@@ -23,6 +23,7 @@ pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
         has_approval: false,
         route_to_stages: &[],
         proposed_exit_destinations: &[],
+        exit_only: false,
     })
 });
 

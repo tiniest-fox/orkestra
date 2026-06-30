@@ -60,13 +60,17 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
     // so the artifact type name is excluded from the enum.
     // For approval stages, the artifact is embedded in the approval output,
     // so the artifact type name is also excluded.
+    // For exit-only stages (vibe), only proposed_exit and terminal states are valid.
     let mut type_enum = vec!["failed".to_string(), "blocked".to_string()];
 
-    if !config.produces_subtasks && !config.has_approval {
+    if !config.produces_subtasks && !config.has_approval && !config.exit_only {
         type_enum.insert(0, config.artifact_name.to_string());
     }
-    // Questions are always available — agents can ask for clarification at any stage.
-    type_enum.push("questions".to_string());
+    // Questions are always available — except in exit-only mode (vibe), where the
+    // only valid structured output is a proposed_exit signal.
+    if !config.exit_only {
+        type_enum.push("questions".to_string());
+    }
     if config.produces_subtasks {
         type_enum.push("subtasks".to_string());
     }
@@ -86,9 +90,10 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
         }
     });
 
-    // Add artifact content property (only for non-subtask stages).
+    // Add artifact content property (only for non-subtask, non-exit-only stages).
     // For subtask stages, content comes from the subtasks component instead.
-    if !config.produces_subtasks {
+    // For exit-only stages (vibe), content comes from the proposed_exit component instead.
+    if !config.produces_subtasks && !config.exit_only {
         if let Some(artifact_props) = artifact.get("properties") {
             if let Some(content) = artifact_props.get("content") {
                 properties["content"] = content.clone();
@@ -96,8 +101,9 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
         }
     }
 
-    // Add activity_log property for non-subtask, non-approval stages
-    if !config.produces_subtasks && !config.has_approval {
+    // Add activity_log property for non-subtask, non-approval, non-exit-only stages.
+    // For exit-only stages (vibe), activity_log comes from the proposed_exit component instead.
+    if !config.produces_subtasks && !config.has_approval && !config.exit_only {
         if let Some(artifact_props) = artifact.get("properties") {
             if let Some(activity_log) = artifact_props.get("activity_log") {
                 properties["activity_log"] = activity_log.clone();
@@ -203,7 +209,9 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
     }
 
     // Build the complete schema
-    let description = if config.produces_subtasks {
+    let description = if config.exit_only {
+        "Stage output. Use 'proposed_exit' with 'destination' when ready to exit vibe mode, or use terminal types (failed/blocked).".to_string()
+    } else if config.produces_subtasks {
         "Stage output. Use 'subtasks' with 'content' for the artifact and structured subtask data, or use terminal types (failed/blocked).".to_string()
     } else {
         format!(
@@ -248,6 +256,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -276,6 +285,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -302,6 +312,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -337,6 +348,7 @@ mod tests {
                 has_approval: false,
                 route_to_stages: &[],
                 proposed_exit_destinations: &[],
+                exit_only: false,
             },
             SchemaConfig {
                 artifact_name: "breakdown",
@@ -344,6 +356,7 @@ mod tests {
                 has_approval: false,
                 route_to_stages: &[],
                 proposed_exit_destinations: &[],
+                exit_only: false,
             },
             SchemaConfig {
                 artifact_name: "verdict",
@@ -351,6 +364,7 @@ mod tests {
                 has_approval: true,
                 route_to_stages: &[],
                 proposed_exit_destinations: &[],
+                exit_only: false,
             },
         ];
 
@@ -374,6 +388,7 @@ mod tests {
             has_approval: true,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -405,6 +420,7 @@ mod tests {
             has_approval: true,
             route_to_stages: &stages,
             proposed_exit_destinations: &[],
+            exit_only: false,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -428,6 +444,7 @@ mod tests {
             has_approval: true,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -452,6 +469,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
             proposed_exit_destinations: &destinations,
+            exit_only: true,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();
@@ -469,6 +487,15 @@ mod tests {
         assert!(
             type_enum.iter().any(|v| v == "proposed_exit"),
             "proposed_exit should be in type enum"
+        );
+        // In exit-only mode, artifact name and questions are excluded
+        assert!(
+            !type_enum.iter().any(|v| v == "vibe"),
+            "artifact name should not be in type enum for exit-only schema"
+        );
+        assert!(
+            !type_enum.iter().any(|v| v == "questions"),
+            "questions should not be in type enum for exit-only schema"
         );
 
         let props = parsed.get("properties").unwrap();
@@ -494,6 +521,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         };
         let schema = execute(&config);
         let parsed: Value = serde_json::from_str(&schema).unwrap();

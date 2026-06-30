@@ -31,8 +31,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
         .create_parser(&resolved.provider_name)
         .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-    // Parse the schema for validation
-    let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
+    let schema = parse_json_schema(config.json_schema.as_deref());
 
     // Build process config with resolved model ID (extracts prompt and working_dir)
     let (process_config, prompt, working_dir) =
@@ -143,6 +142,11 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
 }
 
 // -- Helpers --
+
+/// Parse the optional JSON schema string for output validation.
+fn parse_json_schema(json_schema: Option<&str>) -> Option<serde_json::Value> {
+    json_schema.and_then(|s| serde_json::from_str(s).ok())
+}
 
 /// Check if a stream JSON line contains an error event from the agent.
 fn extract_stream_error(line: &str) -> Option<String> {

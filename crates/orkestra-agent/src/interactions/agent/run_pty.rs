@@ -73,13 +73,13 @@ pub fn execute(
         .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
     // Parse schema for validation — fail fast on invalid JSON rather than silently ignoring it
-    let schema: Option<serde_json::Value> = if config.json_schema.trim().is_empty() {
-        None
-    } else {
+    let schema: Option<serde_json::Value> = if let Some(ref s) = config.json_schema {
         Some(
-            serde_json::from_str(&config.json_schema)
+            serde_json::from_str(s)
                 .map_err(|e| RunError::SpawnFailed(format!("invalid JSON schema: {e}")))?,
         )
+    } else {
+        None
     };
 
     // Clone before config is consumed

@@ -29,7 +29,10 @@ pub fn execute(
         prompt_sections: _,
     } = config;
 
-    let mut process_config = ProcessConfig::new(json_schema);
+    let mut process_config = match json_schema {
+        Some(schema) => ProcessConfig::new(schema),
+        None => ProcessConfig::for_chat(),
+    };
 
     if let Some(sid) = session_id {
         process_config = process_config.with_session(sid, is_resume);

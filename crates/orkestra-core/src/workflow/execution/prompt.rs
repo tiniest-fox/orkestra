@@ -128,6 +128,7 @@ pub fn get_agent_schema(
         has_approval: stage_config.has_agentic_gate(),
         route_to_stages,
         proposed_exit_destinations: &[],
+        exit_only: false,
     };
     Some(crate::prompts::generate_stage_schema(&schema_config))
 }
@@ -144,6 +145,7 @@ pub fn build_vibe_schema(workflow: &WorkflowConfig, task: &Task) -> String {
         has_approval: false,
         route_to_stages: &[],
         proposed_exit_destinations: &destinations,
+        exit_only: true,
     };
     crate::prompts::generate_stage_schema(&schema_config)
 }

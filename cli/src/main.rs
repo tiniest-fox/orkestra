@@ -439,8 +439,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
         TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
-        TaskAction::OpenPr { .. } => unreachable!("handled above"),
-        TaskAction::PushPr { .. } => unreachable!("handled above"),
+        TaskAction::OpenPr { .. } | TaskAction::PushPr { .. } => unreachable!("handled above"),
         TaskAction::RetryPr { id } => handle_retry_pr_task(&api, &id, pretty),
         TaskAction::PullPr { id } => handle_pull_pr_task(&api, &id, pretty),
         TaskAction::Retry { id, instructions } => {

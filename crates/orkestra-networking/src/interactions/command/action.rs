@@ -465,7 +465,11 @@ mod tests {
         // Fails because the task doesn't exist — not because of params.
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert_ne!(err.code, "INVALID_PARAMS", "should fail for task lookup, not params");
+        assert_ne!(
+            err.code,
+            "INVALID_PARAMS",
+            "should fail for task lookup, not params"
+        );
     }
 
     #[test]
@@ -479,11 +483,14 @@ mod tests {
     #[test]
     fn force_push_pr_changes_nonexistent_task_returns_error() {
         let ctx = make_ctx();
-        let result =
-            force_push_pr_changes(&ctx, &serde_json::json!({ "task_id": "nonexistent" }));
+        let result = force_push_pr_changes(&ctx, &serde_json::json!({ "task_id": "nonexistent" }));
         // Fails because the task doesn't exist — not because of params.
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert_ne!(err.code, "INVALID_PARAMS", "should fail for task lookup, not params");
+        assert_ne!(
+            err.code,
+            "INVALID_PARAMS",
+            "should fail for task lookup, not params"
+        );
     }
 }

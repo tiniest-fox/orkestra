@@ -1494,3 +1494,252 @@ fn auto_pr_without_pr_service_fails_gracefully() {
         task.state
     );
 }
+
+// =============================================================================
+// PR Update (auto-push) Tests
+// =============================================================================
+
+/// When a task with an open PR returns to Done with uncommitted changes,
+/// the orchestrator auto-pushes on the next tick.
+#[test]
+fn orchestrator_auto_pushes_pr_update_on_pending_changes() {
+    use super::helpers::workflows;
+    use orkestra_git::SyncStatus;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task an open PR (simulating a previous PR creation)
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Capture push calls before the tick
+    let pre_push_calls = ctx.mock_git_service().get_push_branch_calls();
+
+    // Signal uncommitted changes in the worktree
+    ctx.mock_git_service().set_has_pending_changes(true);
+
+    // Tick — orchestrator should detect the open PR + pending changes and push
+    ctx.advance();
+
+    let post_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    let new_push_calls: Vec<_> = post_push_calls.iter().skip(pre_push_calls.len()).collect();
+    assert!(
+        !new_push_calls.is_empty(),
+        "orchestrator should push when pending changes exist for a task with an open PR"
+    );
+
+    // Task should remain Done
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done after auto-push, got: {:?}",
+        task.state
+    );
+
+    // Also verify via sync_status path: reset pending, set ahead=1
+    ctx.mock_git_service().set_has_pending_changes(false);
+    ctx.mock_git_service().set_sync_status(Some(SyncStatus {
+        ahead: 1,
+        behind: 0,
+        diverged: false,
+    }));
+
+    let pre_push_calls2 = ctx.mock_git_service().get_push_branch_calls();
+    ctx.advance();
+    let post_push_calls2 = ctx.mock_git_service().get_push_branch_calls();
+    let new_push_calls2: Vec<_> = post_push_calls2
+        .iter()
+        .skip(pre_push_calls2.len())
+        .collect();
+    assert!(
+        !new_push_calls2.is_empty(),
+        "orchestrator should push when branch is ahead of origin for a task with an open PR"
+    );
+}
+
+/// Task with open PR but no pending changes — orchestrator does NOT push.
+#[test]
+fn orchestrator_skips_pr_update_when_no_pending_changes() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task an open PR
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // No pending changes, sync_status is None (default) — nothing to push
+    let pre_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    ctx.advance();
+    let post_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    let new_push_calls: Vec<_> = post_push_calls.iter().skip(pre_push_calls.len()).collect();
+
+    assert!(
+        new_push_calls.is_empty(),
+        "orchestrator should NOT push when there are no pending changes or unpushed commits, got: {new_push_calls:?}"
+    );
+}
+
+// =============================================================================
+// find_pr_update_candidate Unit Tests
+// =============================================================================
+
+/// `find_pr_update_candidate` returns `None` when `has_integrating` is true.
+#[test]
+fn find_pr_update_candidate_skips_when_integrating() {
+    use orkestra_core::workflow::domain::TickSnapshot;
+    use orkestra_core::workflow::integration::interactions::find_pr_update_candidate;
+    use orkestra_core::workflow::runtime::TaskState;
+    use orkestra_types::domain::TaskHeader;
+
+    let header = TaskHeader {
+        id: "task-1".to_string(),
+        title: String::new(),
+        description: String::new(),
+        state: TaskState::Done,
+        parent_id: None,
+        short_id: None,
+        depends_on: Vec::new(),
+        branch_name: Some("task/task-1".to_string()),
+        worktree_path: Some("/tmp/worktree".to_string()),
+        base_branch: "main".to_string(),
+        base_commit: String::new(),
+        pr_url: Some("https://github.com/test/repo/pull/1".to_string()),
+        auto_mode: false,
+        auto_pr: false,
+        auto_resolve: false,
+        flow: "default".to_string(),
+        is_chat: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+        completed_at: None,
+    };
+    // An integrating task in the snapshot sets has_integrating = true.
+    let integrating_header = TaskHeader {
+        id: "integrating-task".to_string(),
+        state: TaskState::Integrating,
+        title: String::new(),
+        description: String::new(),
+        parent_id: None,
+        short_id: None,
+        depends_on: Vec::new(),
+        branch_name: Some("task/integrating-task".to_string()),
+        worktree_path: Some("/tmp/worktree2".to_string()),
+        base_branch: "main".to_string(),
+        base_commit: String::new(),
+        pr_url: None,
+        auto_mode: false,
+        auto_pr: false,
+        auto_resolve: false,
+        flow: "default".to_string(),
+        is_chat: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+        completed_at: None,
+    };
+
+    let snapshot = TickSnapshot::build(vec![header, integrating_header]);
+    assert!(
+        snapshot.has_integrating,
+        "Snapshot should have has_integrating=true"
+    );
+    let result = find_pr_update_candidate::execute(&snapshot);
+    assert!(
+        result.is_none(),
+        "find_pr_update_candidate should return None when has_integrating is true"
+    );
+}
+
+/// `find_pr_update_candidate` returns `None` for subtask headers.
+#[test]
+fn find_pr_update_candidate_skips_subtasks() {
+    use orkestra_core::workflow::domain::TickSnapshot;
+    use orkestra_core::workflow::integration::interactions::find_pr_update_candidate;
+    use orkestra_core::workflow::runtime::TaskState;
+    use orkestra_types::domain::TaskHeader;
+
+    let subtask_header = TaskHeader {
+        id: "subtask-1".to_string(),
+        title: String::new(),
+        description: String::new(),
+        state: TaskState::Done,
+        parent_id: Some("parent-id".to_string()), // it's a subtask
+        short_id: None,
+        depends_on: Vec::new(),
+        branch_name: Some("task/subtask-1".to_string()),
+        worktree_path: Some("/tmp/worktree".to_string()),
+        base_branch: "task/parent-id".to_string(),
+        base_commit: String::new(),
+        pr_url: Some("https://github.com/test/repo/pull/1".to_string()),
+        auto_mode: false,
+        auto_pr: false,
+        auto_resolve: false,
+        flow: "default".to_string(),
+        is_chat: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+        completed_at: None,
+    };
+
+    let snapshot = TickSnapshot::build(vec![subtask_header]);
+    let result = find_pr_update_candidate::execute(&snapshot);
+    assert!(
+        result.is_none(),
+        "find_pr_update_candidate should return None for subtask headers (parent_id is Some)"
+    );
+}
+
+/// `find_pr_update_candidate` returns `None` for tasks without an open PR.
+#[test]
+fn find_pr_update_candidate_requires_open_pr() {
+    use orkestra_core::workflow::domain::TickSnapshot;
+    use orkestra_core::workflow::integration::interactions::find_pr_update_candidate;
+    use orkestra_core::workflow::runtime::TaskState;
+    use orkestra_types::domain::TaskHeader;
+
+    let header = TaskHeader {
+        id: "task-1".to_string(),
+        title: String::new(),
+        description: String::new(),
+        state: TaskState::Done,
+        parent_id: None,
+        short_id: None,
+        depends_on: Vec::new(),
+        branch_name: Some("task/task-1".to_string()),
+        worktree_path: Some("/tmp/worktree".to_string()),
+        base_branch: "main".to_string(),
+        base_commit: String::new(),
+        pr_url: None, // no open PR
+        auto_mode: false,
+        auto_pr: false,
+        auto_resolve: false,
+        flow: "default".to_string(),
+        is_chat: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+        completed_at: None,
+    };
+
+    let snapshot = TickSnapshot::build(vec![header]);
+    let result = find_pr_update_candidate::execute(&snapshot);
+    assert!(
+        result.is_none(),
+        "find_pr_update_candidate should return None when task has no open PR"
+    );
+}

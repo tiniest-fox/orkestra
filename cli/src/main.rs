@@ -14,7 +14,7 @@ use orkestra_core::{
     utility::UtilityRunner,
     workflow::{
         adapters::GhPrService,
-        create_pr_sync,
+        audit_pr_description_sync, create_pr_sync,
         domain::{IterationTrigger, LogEntry, PrCheckData, TaskTokenUsage},
         load_workflow_for_project,
         runtime::Outcome,
@@ -388,11 +388,14 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         }
     };
 
-    // OpenPr needs Arc<Mutex<WorkflowApi>> for create_pr_sync — handle it before
-    // borrowing api for the other branches. PushPr and other PR commands take
-    // &WorkflowApi directly and stay in the match below.
+    // OpenPr and PushPr consume api by value (need Mutex/Arc wrapping) — handle them before
+    // borrowing api for the other branches.
     if let TaskAction::OpenPr { id } = &action {
         handle_open_pr_task(Arc::new(Mutex::new(api)), id, pretty);
+        return;
+    }
+    if let TaskAction::PushPr { id } = &action {
+        handle_push_pr_task(api, id, pretty);
         return;
     }
 
@@ -436,9 +439,8 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
         TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
-        TaskAction::OpenPr { .. } => unreachable!("handled above"),
+        TaskAction::OpenPr { .. } | TaskAction::PushPr { .. } => unreachable!("handled above"),
         TaskAction::RetryPr { id } => handle_retry_pr_task(&api, &id, pretty),
-        TaskAction::PushPr { id } => handle_push_pr_task(&api, &id, pretty),
         TaskAction::PullPr { id } => handle_pull_pr_task(&api, &id, pretty),
         TaskAction::Retry { id, instructions } => {
             handle_retry_task(&api, &id, instructions.as_deref(), pretty);
@@ -1189,17 +1191,18 @@ fn handle_retry_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
     }
 }
 
-fn handle_push_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
-    let task = match api.commit_and_push_pr_changes(id) {
+fn handle_push_pr_task(api: WorkflowApi, id: &str, pretty: bool) {
+    let mutex_api = Mutex::new(api);
+    let task = match mutex_api.lock().unwrap().commit_and_push_pr_changes(id) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error pushing PR changes: {e}");
             std::process::exit(1);
         }
     };
-    // TODO: wire PR description audit for CLI push
-    // The CLI accesses WorkflowApi directly (not Arc<Mutex<WorkflowApi>>), so
-    // audit_pr_description_sync cannot be called here without restructuring main.
+    // Lock released after the block above — run audit synchronously so it
+    // completes before the CLI process exits.
+    audit_pr_description_sync(&mutex_api, id);
 
     if pretty {
         if let Some(pr_url) = &task.pr_url {

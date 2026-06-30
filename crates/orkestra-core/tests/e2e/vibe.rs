@@ -476,6 +476,8 @@ fn test_derived_state_vibe_fields() {
 /// Verifies the plan acceptance criterion: "Each vibe entry starts a fresh session".
 #[test]
 fn test_vibe_reentry_starts_fresh_session() {
+    use orkestra_core::workflow::domain::PrCommentData;
+
     let workflow = disable_auto_merge(simple_workflow());
     let ctx = TestEnv::with_git(&workflow, &["worker", "vibe"]);
 
@@ -519,7 +521,6 @@ fn test_vibe_reentry_starts_fresh_session() {
     );
 
     // Reject the proposed exit — sends task back to vibe
-    use orkestra_core::workflow::domain::PrCommentData;
     let comment = PrCommentData {
         id: None,
         author: "human".to_string(),

@@ -192,6 +192,10 @@ pub struct OrchestratorLoop {
     sync_background: bool,
     /// Project root for PID lock file acquisition. `None` in tests (no locking).
     project_root: Option<PathBuf>,
+    /// Task IDs currently being processed for PR update (push + audit).
+    /// Guards against duplicate concurrent spawns when the tick fires before
+    /// the background thread finishes.
+    pr_update_in_flight: Arc<Mutex<HashSet<String>>>,
 }
 
 impl OrchestratorLoop {
@@ -216,6 +220,7 @@ impl OrchestratorLoop {
             stop_flag: Arc::new(AtomicBool::new(false)),
             sync_background: false,
             project_root: None,
+            pr_update_in_flight: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -797,6 +802,10 @@ impl OrchestratorLoop {
             integration_interactions::find_pr_candidate::execute(snapshot)
         {
             self.start_pr_creation(candidate, events);
+        } else if let Some(candidate) =
+            integration_interactions::find_pr_update_candidate::execute(snapshot)
+        {
+            self.start_pr_update(candidate, events);
         }
         Ok(())
     }
@@ -1037,6 +1046,86 @@ impl OrchestratorLoop {
                 error: e.to_string(),
             });
         }
+    }
+
+    /// Push unpushed changes for a task with an open PR and audit the description.
+    ///
+    /// Checks for uncommitted changes (`has_pending_changes`) or committed-but-unpushed
+    /// changes (`sync_status_for_branch`). If neither, skips silently.
+    /// Push failures are logged and skipped — the next tick will re-check.
+    /// The `pr_update_in_flight` guard prevents duplicate concurrent spawns for the
+    /// same task when the tick fires again before the background thread finishes.
+    fn start_pr_update(&self, header: &TaskHeader, _events: &mut Vec<OrchestratorEvent>) {
+        let task_id = header.id.clone();
+
+        // Re-entrance guard: skip if a push is already in flight for this task.
+        {
+            let Ok(in_flight) = self.pr_update_in_flight.lock() else {
+                return;
+            };
+            if in_flight.contains(&task_id) {
+                return;
+            }
+        }
+
+        let worktree_path = match &header.worktree_path {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let branch = match &header.branch_name {
+            Some(b) => b.clone(),
+            None => return,
+        };
+
+        let Some(git) = &self.git_service else { return };
+
+        let has_pending = git
+            .has_pending_changes(std::path::Path::new(&worktree_path))
+            .unwrap_or(false);
+        let has_unpushed = git
+            .sync_status_for_branch(&branch)
+            .ok()
+            .flatten()
+            .is_some_and(|s| s.ahead > 0);
+
+        if !has_pending && !has_unpushed {
+            return;
+        }
+
+        // Mark in-flight before spawning so the next tick skips this task.
+        if let Ok(mut in_flight) = self.pr_update_in_flight.lock() {
+            in_flight.insert(task_id.clone());
+        }
+
+        let api = Arc::clone(&self.api);
+        let in_flight_guard = Arc::clone(&self.pr_update_in_flight);
+        let run = move || {
+            if let Err(e) = Self::run_pr_update(&api, &task_id) {
+                orkestra_debug!("pr_update", "PR update push failed for {task_id}: {e}");
+            }
+            // Release the guard so the next tick re-evaluates whether there's more to push.
+            if let Ok(mut in_flight) = in_flight_guard.lock() {
+                in_flight.remove(&task_id);
+            }
+        };
+
+        if self.sync_background {
+            run();
+        } else {
+            std::thread::spawn(run);
+        }
+    }
+
+    fn run_pr_update(api: &Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowResult<()> {
+        {
+            let api = api.lock().map_err(|_| WorkflowError::Lock)?;
+            api.commit_and_push_pr_changes(task_id)?;
+        }
+        // Lock released — audit is best-effort
+        crate::workflow::integration::pr_description_audit::spawn_pr_description_audit(
+            api, task_id,
+        );
+        Ok(())
     }
 }
 

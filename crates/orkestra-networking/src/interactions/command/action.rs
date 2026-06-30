@@ -191,10 +191,13 @@ pub fn push_pr_changes(ctx: &CommandContext, params: &Value) -> Result<Value, Er
 /// Expected params: `{ "task_id": "<id>" }`
 pub fn force_push_pr_changes(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(params)?;
-    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
-    let task = api
-        .force_push_pr_changes(&task_id)
-        .map_err(ErrorPayload::from)?;
+    let task = {
+        let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        api.force_push_pr_changes(&task_id)
+            .map_err(ErrorPayload::from)?
+    };
+    // Lock released — spawn best-effort description audit in background
+    spawn_pr_description_audit(&ctx.api, &task_id);
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
@@ -410,4 +413,82 @@ fn extract_param<T: for<'de> serde::Deserialize<'de>>(
         .ok_or_else(|| ErrorPayload::invalid_params(format!("missing field: {field}")))?;
     serde_json::from_value(v.clone())
         .map_err(|e| ErrorPayload::invalid_params(format!("invalid '{field}': {e}")))
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    use orkestra_core::adapters::sqlite::DatabaseConnection;
+    use orkestra_core::workflow::{
+        config::{StageConfig, WorkflowConfig},
+        execution::ProviderRegistry,
+        SqliteWorkflowStore, WorkflowApi, WorkflowStore,
+    };
+
+    fn test_workflow() -> WorkflowConfig {
+        WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
+    }
+
+    fn make_ctx() -> Arc<CommandContext> {
+        let conn = DatabaseConnection::in_memory().expect("in-memory DB");
+        let raw_conn = conn.shared();
+        let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
+        let api = WorkflowApi::new(test_workflow(), store.clone());
+        Arc::new(CommandContext::new(
+            Arc::new(Mutex::new(api)),
+            raw_conn,
+            PathBuf::new(),
+            Arc::new(ProviderRegistry::new("claudecode")),
+            store,
+        ))
+    }
+
+    #[test]
+    fn push_pr_changes_missing_task_id_returns_invalid_params() {
+        let ctx = make_ctx();
+        let result = push_pr_changes(&ctx, &serde_json::json!({}));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "INVALID_PARAMS");
+    }
+
+    #[test]
+    fn push_pr_changes_nonexistent_task_returns_error() {
+        let ctx = make_ctx();
+        let result = push_pr_changes(&ctx, &serde_json::json!({ "task_id": "nonexistent" }));
+        // Fails because the task doesn't exist — not because of params.
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_ne!(
+            err.code, "INVALID_PARAMS",
+            "should fail for task lookup, not params"
+        );
+    }
+
+    #[test]
+    fn force_push_pr_changes_missing_task_id_returns_invalid_params() {
+        let ctx = make_ctx();
+        let result = force_push_pr_changes(&ctx, &serde_json::json!({}));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "INVALID_PARAMS");
+    }
+
+    #[test]
+    fn force_push_pr_changes_nonexistent_task_returns_error() {
+        let ctx = make_ctx();
+        let result = force_push_pr_changes(&ctx, &serde_json::json!({ "task_id": "nonexistent" }));
+        // Fails because the task doesn't exist — not because of params.
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_ne!(
+            err.code, "INVALID_PARAMS",
+            "should fail for task lookup, not params"
+        );
+    }
 }

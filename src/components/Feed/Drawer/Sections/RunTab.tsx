@@ -4,6 +4,7 @@ import { ArrowDown, ExternalLink, Play, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RunStatus } from "../../../../hooks/useRunScript";
 import { AnsiText } from "../../../../utils/ansi";
+import { openExternal } from "../../../../utils/openExternal";
 
 // ============================================================================
 // Types
@@ -98,7 +99,7 @@ export function RunTab({ status, lines, ports, loading, error, start, stop }: Ru
           <button
             key={label}
             type="button"
-            onClick={() => window.open(`http://localhost:${port}`, "_blank")}
+            onClick={() => openExternal(`http://localhost:${port}`)}
             className="flex items-center gap-1 px-2 py-0.5 rounded border border-border text-forge-mono-sm text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
           >
             <span className="font-medium">{label}</span>

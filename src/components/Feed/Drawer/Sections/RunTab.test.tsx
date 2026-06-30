@@ -2,9 +2,14 @@
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunStatus } from "../../../../hooks/useRunScript";
+import { openExternal } from "../../../../utils/openExternal";
 import { RunTab } from "./RunTab";
+
+vi.mock("../../../../utils/openExternal", () => ({
+  openExternal: vi.fn(),
+}));
 
 const defaultStatus: RunStatus = { running: false, pid: null, exit_code: null };
 
@@ -27,11 +32,7 @@ function makeProps(overrides?: {
 
 describe("RunTab port chips", () => {
   beforeEach(() => {
-    vi.stubGlobal("open", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    vi.mocked(openExternal).mockReset();
   });
 
   it("renders no port chips when ports is empty", () => {
@@ -60,7 +61,7 @@ describe("RunTab port chips", () => {
     expect(screen.getByText("4000")).toBeInTheDocument();
   });
 
-  it("clicking a chip opens localhost URL in a new tab", async () => {
+  it("clicking a chip opens localhost URL via openExternal", async () => {
     const user = userEvent.setup();
     render(<RunTab {...makeProps({ ports: { Rails: 3000 } })} />);
 
@@ -70,7 +71,7 @@ describe("RunTab port chips", () => {
     expect(chip).not.toBeNull();
 
     if (chip) await user.click(chip);
-    expect(window.open).toHaveBeenCalledWith("http://localhost:3000", "_blank");
+    expect(openExternal).toHaveBeenCalledWith("http://localhost:3000");
   });
 
   it("clicking each chip opens the correct port", async () => {
@@ -80,6 +81,6 @@ describe("RunTab port chips", () => {
     const label = screen.getByText("React");
     const chip = label.closest("button");
     if (chip) await user.click(chip);
-    expect(window.open).toHaveBeenCalledWith("http://localhost:3002", "_blank");
+    expect(openExternal).toHaveBeenCalledWith("http://localhost:3002");
   });
 });

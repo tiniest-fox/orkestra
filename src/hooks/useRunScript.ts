@@ -37,6 +37,19 @@ export interface UseRunScriptResult {
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+function extractPorts(lines: string[]): Record<string, number> {
+  const ports: Record<string, number> = {};
+  for (const line of lines) {
+    const decl = parsePortDeclaration(line);
+    if (decl) ports[decl.label] = decl.port;
+  }
+  return ports;
+}
+
+// ============================================================================
 // Hook
 // ============================================================================
 
@@ -95,11 +108,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       if (gen !== generationRef.current) return;
       if (result.lines.length > 0) {
         setLines((prev) => [...prev, ...result.lines]);
-        const newPorts: Record<string, number> = {};
-        for (const line of result.lines) {
-          const decl = parsePortDeclaration(line);
-          if (decl) newPorts[decl.label] = decl.port;
-        }
+        const newPorts = extractPorts(result.lines);
         if (Object.keys(newPorts).length > 0) {
           setPorts((prev) => ({ ...prev, ...newPorts }));
         }
@@ -172,11 +181,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       if (gen !== generationRef.current) return;
       if (result.lines.length > 0) {
         setLines((prev) => [...prev, ...result.lines]);
-        const newPorts: Record<string, number> = {};
-        for (const line of result.lines) {
-          const decl = parsePortDeclaration(line);
-          if (decl) newPorts[decl.label] = decl.port;
-        }
+        const newPorts = extractPorts(result.lines);
         if (Object.keys(newPorts).length > 0) {
           setPorts((prev) => ({ ...prev, ...newPorts }));
         }

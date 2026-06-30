@@ -6,7 +6,6 @@ import { useIsMobile } from "../../../../hooks/useIsMobile";
 import { useOptimisticMessage } from "../../../../hooks/useOptimisticMessage";
 import type { LogEntry, WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
 import { titleCase } from "../../../../utils/titleCase";
-import { Button } from "../../../ui/Button";
 import { ChatComposeArea } from "../../ChatComposeArea";
 import { FeedLogList } from "../../FeedLogList";
 import type { ArtifactContext } from "../../MessageList";
@@ -154,18 +153,34 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
       derived.is_vibing,
     );
 
+    const vibeExit =
+      derived.is_vibing && derived.needs_review && derived.vibe_proposed_destination !== null
+        ? {
+            proposedDestination: derived.vibe_proposed_destination as string,
+            validDestinations: derived.vibe_valid_destinations,
+            selectedDestination: selectedVibeDestination,
+            onDestinationChange: setSelectedVibeDestination,
+            onConfirm: () => handleConfirmVibeExit(selectedVibeDestination),
+            loading,
+          }
+        : undefined;
+
     return {
       actions,
       questionsElement,
       gateEntries: gateInfo?.entries,
       isGateRunning: gateInfo?.isRunning,
       gatePassed: gateInfo?.passed,
+      vibeExit,
     };
   }, [
     latestArtifactId,
     derived.has_questions,
     derived.needs_review,
     derived.is_vibing,
+    derived.vibe_proposed_destination,
+    derived.vibe_valid_destinations,
+    selectedVibeDestination,
     pendingQuestions,
     taskId,
     answers,
@@ -177,6 +192,7 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     allAnswered,
     handleApprove,
     handleEnterVibe,
+    handleConfirmVibeExit,
     verdict,
     rejectionTarget,
     gateInfo,
@@ -216,33 +232,8 @@ export function AgentTab({ task, logs, logsError, state, logContainerRef }: Agen
     state.handleSendMessage();
   }, [state.handleSendMessage, state.message, triggerScroll, setOptimisticMessage]);
 
-  const showVibeExitCard =
-    derived.is_vibing && derived.needs_review && derived.vibe_proposed_destination !== null;
-
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Vibe mode indicator — shown when actively vibing (not in review) */}
-      {derived.is_vibing && derived.is_working && (
-        <div className={`shrink-0 ${isMobile ? "px-2" : "px-6"} pt-3`}>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-accent/10 border border-accent/20">
-            <span className="text-forge-mono-sm font-medium text-accent">Vibe mode active</span>
-          </div>
-        </div>
-      )}
-
-      {/* Vibe exit review card — shown when agent proposes an exit destination */}
-      {showVibeExitCard && (
-        <VibeExitCard
-          proposedDestination={derived.vibe_proposed_destination as string}
-          validDestinations={derived.vibe_valid_destinations}
-          selectedDestination={selectedVibeDestination}
-          onDestinationChange={setSelectedVibeDestination}
-          onConfirm={() => handleConfirmVibeExit(selectedVibeDestination)}
-          loading={loading}
-          isMobile={isMobile}
-        />
-      )}
-
       {/* Log timeline — containerRef enables auto-scroll and hotkey scrolling */}
       <FeedLogList
         logs={logs}
@@ -314,59 +305,6 @@ function buildQuestionsElement(
       answeredCount={answeredCount}
       allAnswered={allAnswered}
     />
-  );
-}
-
-// ============================================================================
-// VibeExitCard
-// ============================================================================
-
-interface VibeExitCardProps {
-  proposedDestination: string;
-  validDestinations: string[];
-  selectedDestination: string;
-  onDestinationChange: (v: string) => void;
-  onConfirm: () => void;
-  loading: boolean;
-  isMobile: boolean;
-}
-
-/** Card shown when the vibe agent proposes exiting to a stage. */
-function VibeExitCard({
-  proposedDestination,
-  validDestinations,
-  selectedDestination,
-  onDestinationChange,
-  onConfirm,
-  loading,
-  isMobile,
-}: VibeExitCardProps) {
-  return (
-    <div className={`shrink-0 ${isMobile ? "px-2" : "px-6"} pt-3 pb-2`}>
-      <div className="rounded-panel-sm border border-border bg-surface p-3 flex flex-col gap-3">
-        <div className="text-forge-body text-text-secondary">
-          Agent proposes exiting to:{" "}
-          <span className="font-medium text-text-primary">{proposedDestination}</span>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={selectedDestination}
-            onChange={(e) => onDestinationChange(e.target.value)}
-            disabled={loading}
-            className="flex-1 min-w-0 font-sans text-forge-body text-text-primary bg-surface-2 border border-border rounded px-2 py-1.5 focus:outline-none focus:border-text-tertiary transition-colors"
-          >
-            {validDestinations.map((dest) => (
-              <option key={dest} value={dest}>
-                {dest}
-              </option>
-            ))}
-          </select>
-          <Button variant="primary" size="sm" onClick={onConfirm} disabled={loading}>
-            {loading ? "Confirming…" : "Confirm Exit"}
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }
 

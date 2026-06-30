@@ -89,31 +89,34 @@ export function NewTaskForm({ config, onClose, onCreate, prewarmId }: NewTaskFor
     <>
       <DrawerHeader title="New Trak" onClose={onClose} />
 
-      {/* Description */}
-      <div className="px-4 pt-4 pb-3">
-        <label
-          htmlFor="new-task-description"
-          className="block font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] mb-1.5 select-none"
-        >
-          Description
-        </label>
-        <textarea
-          id="new-task-description"
-          ref={textareaRef}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="What needs to be done?"
-          rows={3}
-          className="w-full font-sans text-[13px] text-text-primary bg-canvas border border-border rounded px-3 py-2 resize-none placeholder:text-text-quaternary focus:outline-none focus:border-accent transition-colors min-h-[80px]"
-        />
-      </div>
-
-      {/* Flow picker */}
-      {hasFlows && (
-        <div className="px-4 pb-3">
-          <FlowPicker flows={flows} selected={selectedFlow} onChange={setSelectedFlow} />
+      {/* Scrollable body: description + flow picker */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {/* Description */}
+        <div className="px-4 pt-4 pb-3">
+          <label
+            htmlFor="new-task-description"
+            className="block font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] mb-1.5 select-none"
+          >
+            Description
+          </label>
+          <textarea
+            id="new-task-description"
+            ref={textareaRef}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What needs to be done?"
+            rows={3}
+            className="w-full font-sans text-[13px] text-text-primary bg-canvas border border-border rounded px-3 py-2 resize-none placeholder:text-text-quaternary focus:outline-none focus:border-accent transition-colors min-h-[80px]"
+          />
         </div>
-      )}
+
+        {/* Flow picker */}
+        {hasFlows && (
+          <div className="px-4 pb-3">
+            <FlowPicker flows={flows} selected={selectedFlow} onChange={setSelectedFlow} />
+          </div>
+        )}
+      </div>
 
       {/* Footer */}
       <div className="flex flex-col gap-3 px-4 py-3 border-t border-border bg-canvas">

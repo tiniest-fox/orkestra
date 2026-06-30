@@ -10,6 +10,7 @@ AI-powered Trak orchestration for software development. Orkestra spawns AI codin
 - Subtask decomposition with dependency tracking
 - Human-in-the-loop approvals and feedback at every stage
 - Desktop app (Tauri) + CLI interface
+- Run tab: launch and monitor your dev server with live log streaming and port chips
 
 ## Prerequisites
 
@@ -33,6 +34,29 @@ pnpm tauri dev
 cargo build
 bin/ork trak create -t "My first Trak" -d "Description here"
 ```
+
+## Run Tab
+
+The Orkestra desktop app's Run tab executes `.orkestra/scripts/run.sh` and streams its output as a live log. Use it to start your project's development server and monitor output alongside your Traks.
+
+Declare named ports from your run script using `ORKESTRA_PORT` — they appear as clickable chips in the Run tab's control bar:
+
+```bash
+#!/bin/bash
+# .orkestra/scripts/run.sh
+
+bundle exec rails server -p 3000 &
+pnpm dev --port 4000 &
+
+echo "ORKESTRA_PORT Rails=3000"
+echo "ORKESTRA_PORT Frontend=4000"
+
+wait
+```
+
+Each chip shows `Label : port` and opens `http://localhost:<port>` in your browser when clicked. Ports persist in the bar for the lifetime of the run, even as log output scrolls past.
+
+The `ORKESTRA_PORT` sentinel can appear anywhere in stdout or stderr: before, during, or after the server starts. Multiple servers, multiple ports — declare as many as you need.
 
 ## Architecture Overview
 

@@ -12,6 +12,15 @@ import { Button } from "../ui/Button";
 import { richContentComponents, richContentPlugins } from "../ui/RichContent";
 import { ArtifactBadge } from "./OutcomeBadge";
 
+interface VibeExitProps {
+  proposedDestination: string;
+  validDestinations: string[];
+  selectedDestination: string;
+  onDestinationChange: (v: string) => void;
+  onConfirm: () => void;
+  loading: boolean;
+}
+
 interface ArtifactLogCardProps {
   artifact: WorkflowArtifact;
   /** When provided, renders enhanced header with approve button (latest artifact in drawer). */
@@ -21,6 +30,8 @@ interface ArtifactLogCardProps {
   onApprove?: () => void;
   onVibe?: () => void;
   loading?: boolean;
+  /** When set, replaces the Approve button with a destination picker + Confirm Exit button. */
+  vibeExit?: VibeExitProps;
   /** When true, renders without white card background so the card blends into the chat canvas. */
   superseded?: boolean;
   /** Gate log entries to render inline below the artifact body when expanded. */
@@ -37,6 +48,7 @@ export function ArtifactLogCard({
   onApprove,
   onVibe,
   loading,
+  vibeExit,
   superseded,
   gateEntries,
   bodyOnly,
@@ -123,17 +135,46 @@ export function ArtifactLogCard({
                   Vibe
                 </Button>
               )}
-              {needsReview && (
-                <Button
-                  variant="violet"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onApprove();
-                  }}
-                  disabled={loading}
-                >
-                  Approve
-                </Button>
+              {vibeExit ? (
+                <>
+                  <select
+                    value={vibeExit.selectedDestination}
+                    onChange={(e) => vibeExit.onDestinationChange(e.target.value)}
+                    disabled={vibeExit.loading}
+                    onClick={(e) => e.stopPropagation()}
+                    className="font-sans text-forge-body text-text-primary bg-surface-2 border border-border rounded px-2 py-1 focus:outline-none focus:border-text-tertiary transition-colors"
+                  >
+                    {vibeExit.validDestinations.map((dest) => (
+                      <option key={dest} value={dest}>
+                        {dest}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="violet"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      vibeExit.onConfirm();
+                    }}
+                    disabled={vibeExit.loading}
+                  >
+                    {vibeExit.loading ? "Confirming…" : "Confirm Exit"}
+                  </Button>
+                </>
+              ) : (
+                needsReview && (
+                  <Button
+                    variant="violet"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onApprove?.();
+                    }}
+                    disabled={loading}
+                  >
+                    Approve
+                  </Button>
+                )
               )}
               {expanded ? (
                 <ChevronUp className="w-4 h-4 text-text-tertiary" />

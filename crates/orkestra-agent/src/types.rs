@@ -23,8 +23,8 @@ pub struct RunConfig {
     pub working_dir: PathBuf,
     /// The prompt to send to the agent.
     pub prompt: String,
-    /// JSON schema for structured output (required).
-    pub json_schema: String,
+    /// JSON schema for structured output. `None` for vibe stage (conversational — no `--json-schema` flag).
+    pub json_schema: Option<String>,
     /// Session ID (generated upfront, always present).
     pub session_id: Option<String>,
     /// Whether this is a resume (use --resume) or first spawn (use --session-id).
@@ -49,9 +49,7 @@ pub struct RunConfig {
 }
 
 impl RunConfig {
-    /// Create a new run configuration.
-    ///
-    /// JSON schema is required - we always need structured output from agents.
+    /// Create a new run configuration with a JSON schema for structured output.
     pub fn new(
         working_dir: impl Into<PathBuf>,
         prompt: impl Into<String>,
@@ -60,7 +58,25 @@ impl RunConfig {
         Self {
             working_dir: working_dir.into(),
             prompt: prompt.into(),
-            json_schema: json_schema.into(),
+            json_schema: Some(json_schema.into()),
+            session_id: None,
+            is_resume: false,
+            task_id: None,
+            model: None,
+            system_prompt: None,
+            disallowed_tools: Vec::new(),
+            env: None,
+            prompt_sections: Vec::new(),
+        }
+    }
+
+    /// Create a run configuration without a JSON schema. Used for vibe stage where
+    /// the agent converses freely and only emits JSON for the exit signal.
+    pub fn new_without_schema(working_dir: impl Into<PathBuf>, prompt: impl Into<String>) -> Self {
+        Self {
+            working_dir: working_dir.into(),
+            prompt: prompt.into(),
+            json_schema: None,
             session_id: None,
             is_resume: false,
             task_id: None,
@@ -246,7 +262,7 @@ mod tests {
 
         assert_eq!(config.working_dir, PathBuf::from("/tmp/work"));
         assert_eq!(config.prompt, "Do the thing");
-        assert_eq!(config.json_schema, r#"{"type":"object"}"#);
+        assert_eq!(config.json_schema, Some(r#"{"type":"object"}"#.to_string()));
         assert_eq!(config.session_id, Some("session-123".to_string()));
         assert!(config.is_resume);
         assert_eq!(config.system_prompt, None);

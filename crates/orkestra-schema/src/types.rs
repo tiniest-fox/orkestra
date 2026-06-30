@@ -20,4 +20,8 @@ pub struct SchemaConfig<'a> {
     /// When non-empty, adds `proposed_exit` to the type enum with an enum-constrained
     /// `destination` field.
     pub proposed_exit_destinations: &'a [String],
+    /// When true, the schema only allows `proposed_exit` and terminal states (`failed`,
+    /// `blocked`). The regular artifact type and `questions` are excluded. Used for vibe
+    /// mode sessions where the only valid structured output is an exit signal.
+    pub exit_only: bool,
 }

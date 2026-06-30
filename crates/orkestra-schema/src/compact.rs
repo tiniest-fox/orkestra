@@ -67,6 +67,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         });
         let compact = execute(&schema).unwrap();
         let parsed: Value = serde_json::from_str(&compact).unwrap();
@@ -92,6 +93,7 @@ mod tests {
             has_approval: false,
             route_to_stages: &[],
             proposed_exit_destinations: &[],
+            exit_only: false,
         });
         let compact = execute(&schema).unwrap();
         let parsed: Value = serde_json::from_str(&compact).unwrap();

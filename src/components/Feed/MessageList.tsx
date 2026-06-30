@@ -161,6 +161,15 @@ export interface ArtifactContext {
   isGateRunning?: boolean;
   /** True when gate_completed with passed=true. */
   gatePassed?: boolean;
+  /** When set, replaces the Approve button with a destination picker + Confirm Exit button. */
+  vibeExit?: {
+    proposedDestination: string;
+    validDestinations: string[];
+    selectedDestination: string;
+    onDestinationChange: (v: string) => void;
+    onConfirm: () => void;
+    loading: boolean;
+  };
 }
 
 // ============================================================================
@@ -480,6 +489,7 @@ export const AgentEntry = memo(function AgentEntry({
               onApprove={actions?.onApprove}
               onVibe={actions?.onVibe}
               loading={actions?.loading}
+              vibeExit={artifactContext.vibeExit}
             />
             {resourcesElement}
           </>
@@ -666,17 +676,48 @@ const VirtualItemRenderer = memo(function VirtualItemRenderer({
                   Vibe
                 </Button>
               )}
-              {actions?.needsReview && (
-                <Button
-                  variant="violet"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    actions.onApprove?.();
-                  }}
-                  disabled={actions.loading}
-                >
-                  Approve
-                </Button>
+              {item.artifactContext.vibeExit ? (
+                <>
+                  <select
+                    value={item.artifactContext.vibeExit.selectedDestination}
+                    onChange={(e) =>
+                      item.artifactContext.vibeExit?.onDestinationChange(e.target.value)
+                    }
+                    disabled={item.artifactContext.vibeExit.loading}
+                    onClick={(e) => e.stopPropagation()}
+                    className="font-sans text-forge-body text-text-primary bg-surface-2 border border-border rounded px-2 py-1 focus:outline-none focus:border-text-tertiary transition-colors"
+                  >
+                    {item.artifactContext.vibeExit.validDestinations.map((dest) => (
+                      <option key={dest} value={dest}>
+                        {dest}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="violet"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      item.artifactContext.vibeExit?.onConfirm();
+                    }}
+                    disabled={item.artifactContext.vibeExit.loading}
+                  >
+                    {item.artifactContext.vibeExit.loading ? "Confirming…" : "Confirm Exit"}
+                  </Button>
+                </>
+              ) : (
+                actions?.needsReview && (
+                  <Button
+                    variant="violet"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      actions.onApprove?.();
+                    }}
+                    disabled={actions.loading}
+                  >
+                    Approve
+                  </Button>
+                )
               )}
               {item.artifactContext.gateEntries && item.artifactContext.gateEntries.length > 0 && (
                 <button

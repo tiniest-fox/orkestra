@@ -506,15 +506,15 @@ const otherStages = flowStages.filter(s => s.name !== task.derived.current_stage
 
 ## Tauri URL Opening: Use `openExternal`, Not `window.open()`
 
-`window.open(url, "_blank")` is silently broken in Tauri's webview — it either does nothing or opens inside the webview itself rather than the system browser. Use `openExternal` from `@tauri-apps/plugin-opener` instead:
+`window.open(url, "_blank")` is silently broken in Tauri's webview — it either does nothing or opens inside the webview itself rather than the system browser. Use the `openExternal` utility from `src/utils/openExternal.ts` instead:
 
 ```ts
-import { openExternal } from "@tauri-apps/plugin-opener";
+import { openExternal } from "../../utils/openExternal";
 
-await openExternal(`http://localhost:${port}`);
+openExternal(`http://localhost:${port}`);
 ```
 
-`@tauri-apps/plugin-opener` is already installed. This applies to any clickable URL that should open in the system browser — port chips, external links, "open in browser" buttons.
+The function is synchronous (returns `void`) — no `await` needed. Adjust the relative import path based on your file's location. This applies to any clickable URL that should open in the system browser — port chips, external links, "open in browser" buttons.
 
 ## Tauri Dialog Gotcha: `window.confirm()` is Non-Blocking
 

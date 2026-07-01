@@ -348,6 +348,8 @@ struct ProjectResponse {
     /// Whether the project repo has a `.devcontainer/devcontainer.json`.
     has_devcontainer: bool,
     git_status: Option<GitStatusResponse>,
+    parent_project_id: Option<String>,
+    subfolder: Option<String>,
 }
 
 impl ProjectResponse {
@@ -370,6 +372,8 @@ impl ProjectResponse {
             error_message: proj.error_message.clone(),
             has_devcontainer,
             git_status,
+            parent_project_id: proj.parent_project_id.clone(),
+            subfolder: proj.subfolder.clone(),
         }
     }
 }
@@ -1343,6 +1347,7 @@ where
                     StatusCode::BAD_REQUEST
                 }
                 ServiceError::SecretsKeyNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+                ServiceError::HasChildProjects(_) => StatusCode::CONFLICT,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };
             Err((status, Json(serde_json::json!({"error": e.to_string()}))).into_response())

@@ -12,7 +12,7 @@ pub fn execute(conn: &Arc<Mutex<Connection>>) -> Result<Vec<Project>, ServiceErr
     let mut stmt = guard.prepare(
         "SELECT id, name, path, daemon_port, shared_secret, status,
                 error_message, pid, created_at, container_id,
-                cpu_limit, memory_limit_mb
+                cpu_limit, memory_limit_mb, parent_project_id, subfolder
          FROM service_projects
          ORDER BY created_at ASC",
     )?;

@@ -50,6 +50,8 @@ export interface Project {
   git_status?: GitStatusInfo;
   cpu_limit?: number;
   memory_limit_mb?: number;
+  parent_project_id?: string;
+  subfolder?: string;
 }
 
 export interface GithubStatus {

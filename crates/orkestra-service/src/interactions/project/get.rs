@@ -13,7 +13,7 @@ pub fn execute(conn: &Arc<Mutex<Connection>>, id: &str) -> Result<Project, Servi
         .query_row(
             "SELECT id, name, path, daemon_port, shared_secret, status,
                     error_message, pid, created_at, container_id,
-                    cpu_limit, memory_limit_mb
+                    cpu_limit, memory_limit_mb, parent_project_id, subfolder
              FROM service_projects WHERE id = ?",
             params![id],
             map_row,
@@ -47,6 +47,8 @@ pub(super) fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         container_id: row.get(9)?,
         cpu_limit: row.get(10)?,
         memory_limit_mb: row.get(11)?,
+        parent_project_id: row.get(12)?,
+        subfolder: row.get(13)?,
     })
 }
 

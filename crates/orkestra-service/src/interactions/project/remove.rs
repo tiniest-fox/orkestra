@@ -14,6 +14,16 @@ pub fn execute(conn: &Arc<Mutex<Connection>>, id: &str) -> Result<(), ServiceErr
     guard.execute_batch("BEGIN")?;
 
     let result = (|| {
+        // Block removal when subfolder children exist.
+        let child_count: i64 = guard.query_row(
+            "SELECT COUNT(*) FROM service_projects WHERE parent_project_id = ?",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if child_count > 0 {
+            return Err(ServiceError::HasChildProjects(id.to_string()));
+        }
+
         // Remove associated daemon tokens first (no FK cascade in SQLite by default).
         guard.execute(
             "DELETE FROM daemon_tokens WHERE project_id = ?",
@@ -74,6 +84,37 @@ mod tests {
         let conn = conn();
         let err = execute(&conn, "bogus").unwrap_err();
         assert!(matches!(err, ServiceError::ProjectNotFound(_)));
+    }
+
+    #[test]
+    fn blocks_removal_with_children() {
+        let conn = conn();
+        let parent =
+            crate::interactions::project::add::execute(&conn, "Parent", "/parent", 3850, "s")
+                .unwrap();
+
+        // Insert a child row pointing to the parent.
+        {
+            let guard = conn.lock().unwrap();
+            guard
+                .execute(
+                    "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret, parent_project_id)
+                     VALUES ('child1', 'Child', '/parent/sub', 3852, 's', ?)",
+                    rusqlite::params![parent.id],
+                )
+                .unwrap();
+        }
+
+        // Removal of parent must fail.
+        let err = execute(&conn, &parent.id).unwrap_err();
+        assert!(matches!(err, ServiceError::HasChildProjects(_)));
+
+        // Remove the child first, then the parent succeeds.
+        execute(&conn, "child1").unwrap();
+        execute(&conn, &parent.id).unwrap();
+        assert!(crate::interactions::project::list::execute(&conn)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

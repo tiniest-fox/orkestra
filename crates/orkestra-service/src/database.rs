@@ -110,6 +110,11 @@ ALTER TABLE service_projects ADD COLUMN cpu_limit REAL;
 ALTER TABLE service_projects ADD COLUMN memory_limit_mb INTEGER;
 ";
 
+const MIGRATION_V5: &str = "
+ALTER TABLE service_projects ADD COLUMN parent_project_id TEXT REFERENCES service_projects(id);
+ALTER TABLE service_projects ADD COLUMN subfolder TEXT;
+";
+
 fn run_migrations(conn: &Connection) -> Result<(), ServiceError> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 1 {
@@ -128,6 +133,10 @@ fn run_migrations(conn: &Connection) -> Result<(), ServiceError> {
         conn.execute_batch(MIGRATION_V4)?;
         conn.pragma_update(None, "user_version", 4)?;
     }
+    if version < 5 {
+        conn.execute_batch(MIGRATION_V5)?;
+        conn.pragma_update(None, "user_version", 5)?;
+    }
     Ok(())
 }
 
@@ -145,7 +154,9 @@ pub(crate) fn apply_migrations_for_test(conn: &Connection) {
 mod tests {
     use rusqlite::Connection;
 
-    use super::{run_migrations, MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4};
+    use super::{
+        run_migrations, MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4, MIGRATION_V5,
+    };
 
     fn migrated_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -245,5 +256,37 @@ mod tests {
             .unwrap();
         assert_eq!(cpu, Some(2.0));
         assert_eq!(mem, Some(4096));
+    }
+
+    #[test]
+    fn migration_v5_adds_subfolder_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATION_V1).unwrap();
+        conn.execute_batch(MIGRATION_V2).unwrap();
+        conn.execute_batch(MIGRATION_V3).unwrap();
+        conn.execute_batch(MIGRATION_V4).unwrap();
+        conn.execute_batch(MIGRATION_V5).unwrap();
+        // Both new columns accept NULL.
+        conn.execute(
+            "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret, parent_project_id, subfolder)
+             VALUES ('x', 'x', '/x', 3850, 's', NULL, NULL)",
+            [],
+        )
+        .unwrap();
+        // Non-NULL subfolder also succeeds.
+        conn.execute(
+            "INSERT INTO service_projects (id, name, path, daemon_port, shared_secret, subfolder)
+             VALUES ('y', 'y', '/y/sub', 3851, 's', 'sub')",
+            [],
+        )
+        .unwrap();
+        let subfolder: Option<String> = conn
+            .query_row(
+                "SELECT subfolder FROM service_projects WHERE id = 'y'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(subfolder, Some("sub".to_string()));
     }
 }

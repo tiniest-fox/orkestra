@@ -419,6 +419,34 @@ describe("ProjectRow", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
+  // -- Open Subfolder menu item --
+
+  it("shows Open Subfolder in overflow menu for running non-subfolder project", () => {
+    renderRow(runningProject());
+    openMenu();
+    expect(screen.getByRole("button", { name: "Open Subfolder" })).toBeInTheDocument();
+  });
+
+  it("hides Open Subfolder for subfolder projects (parent_project_id set)", () => {
+    renderRow({ ...runningProject(), parent_project_id: "parent-1" });
+    openMenu();
+    expect(screen.queryByRole("button", { name: "Open Subfolder" })).not.toBeInTheDocument();
+  });
+
+  it("hides Open Subfolder for non-running projects", () => {
+    renderRow(stoppedProject());
+    openMenu();
+    expect(screen.queryByRole("button", { name: "Open Subfolder" })).not.toBeInTheDocument();
+  });
+
+  it("calls onOpenSubfolder when Open Subfolder clicked", async () => {
+    const onOpenSubfolder = vi.fn();
+    renderRow(runningProject(), { onOpenSubfolder });
+    openMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Open Subfolder" }));
+    await waitFor(() => expect(onOpenSubfolder).toHaveBeenCalledOnce());
+  });
+
   // -- Mobile layout --
 
   it("shows mobile log row below project info for transitioning project on mobile", () => {

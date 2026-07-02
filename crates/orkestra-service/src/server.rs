@@ -413,8 +413,10 @@ async fn list_projects_handler(
     // Use repo_root_path() so subfolder projects check the parent repo root
     // where .devcontainer/devcontainer.json actually lives.
     let has_devcontainer_flags: Vec<bool> = {
-        let root_paths: Vec<std::path::PathBuf> =
-            projects.iter().map(super::types::Project::repo_root_path).collect();
+        let root_paths: Vec<std::path::PathBuf> = projects
+            .iter()
+            .map(super::types::Project::repo_root_path)
+            .collect();
         let count = root_paths.len();
         tokio::task::spawn_blocking(move || {
             root_paths
@@ -1021,6 +1023,14 @@ async fn add_subfolder_handler(
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "Parent project is not running"})),
+        )
+            .into_response();
+    }
+
+    if let Err(msg) = validate_project_name(&body.name) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
         )
             .into_response();
     }

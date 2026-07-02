@@ -15,7 +15,7 @@ use tracing::{error, info, warn};
 use crate::interactions::daemon;
 use crate::interactions::devcontainer;
 use crate::interactions::project;
-use crate::types::{DevcontainerConfig, Project, ProjectStatus, ServiceError};
+use crate::types::{compute_repo_root, DevcontainerConfig, Project, ProjectStatus, ServiceError};
 
 // ============================================================================
 // DaemonSupervisor
@@ -120,15 +120,7 @@ impl DaemonSupervisor {
 
         for (project_id, project_path, container_id, subfolder) in &projects_with_containers {
             // For subfolder projects, devcontainer.json lives at the repo root, not the subfolder.
-            let repo_root = {
-                let mut root = PathBuf::from(project_path);
-                if let Some(sub) = subfolder {
-                    for _ in PathBuf::from(sub).components() {
-                        root.pop();
-                    }
-                }
-                root
-            };
+            let repo_root = compute_repo_root(project_path, subfolder.as_deref());
             let path = repo_root.as_path();
 
             if devcontainer::find_container::execute(project_id).is_some() {

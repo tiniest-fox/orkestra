@@ -111,16 +111,24 @@ impl Project {
     /// For regular projects this equals `self.path`. For subfolder projects
     /// it strips the subfolder suffix to return the parent repo's clone path.
     pub fn repo_root_path(&self) -> PathBuf {
-        match &self.subfolder {
-            Some(sub) => {
-                let mut root = PathBuf::from(&self.path);
-                for _ in PathBuf::from(sub).components() {
-                    root.pop();
-                }
-                root
+        compute_repo_root(&self.path, self.subfolder.as_deref())
+    }
+}
+
+/// Compute the repo root path from a project path and optional subfolder.
+///
+/// Extracted as a standalone function so call sites that hold raw `(path, subfolder)`
+/// data (e.g., `startup_cleanup`) share the same logic as `Project::repo_root_path()`.
+pub fn compute_repo_root(path: &str, subfolder: Option<&str>) -> PathBuf {
+    match subfolder {
+        Some(sub) => {
+            let mut root = PathBuf::from(path);
+            for _ in PathBuf::from(sub).components() {
+                root.pop();
             }
-            None => PathBuf::from(&self.path),
+            root
         }
+        None => PathBuf::from(path),
     }
 }
 

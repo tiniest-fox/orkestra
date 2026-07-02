@@ -65,6 +65,7 @@ export function ProjectList({
                 onCancel={actions.onCancel}
                 onManageSecrets={actions.onManageSecrets}
                 onManageResourceLimits={actions.onManageResourceLimits}
+                onOpenSubfolder={actions.onOpenSubfolder}
                 isFocused={focusedId === project.id}
                 onMouseEnter={() => onFocusRow(project.id)}
               />

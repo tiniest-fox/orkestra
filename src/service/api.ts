@@ -125,6 +125,24 @@ export async function addProject(repoUrl: string, name: string): Promise<void> {
   await requireOk(res);
 }
 
+export async function listDirectories(projectId: string): Promise<string[]> {
+  const res = await apiFetch(`/api/projects/${projectId}/directories`);
+  await requireOk(res);
+  return res.json();
+}
+
+export async function addSubfolderProject(
+  projectId: string,
+  name: string,
+  subfolder: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/projects/${projectId}/subfolder`, {
+    method: "POST",
+    body: JSON.stringify({ name, subfolder }),
+  });
+  await requireOk(res);
+}
+
 export async function removeProject(id: string): Promise<void> {
   const res = await apiFetch(`/api/projects/${id}`, { method: "DELETE" });
   await requireOk(res);

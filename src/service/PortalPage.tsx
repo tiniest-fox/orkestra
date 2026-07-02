@@ -34,6 +34,7 @@ import { ServiceFilterBar } from "./components/ServiceFilterBar";
 import { ServiceHeader } from "./components/ServiceHeader";
 import { ServiceMobileTabBar } from "./components/ServiceMobileTabBar";
 import { ServiceStatusLine } from "./components/ServiceStatusLine";
+import { SubfolderPicker } from "./components/SubfolderPicker";
 import { SERVICE_TITLE } from "./constants";
 
 // ============================================================================
@@ -68,6 +69,7 @@ export function PortalPage() {
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [secretsProjectId, setSecretsProjectId] = useState<string | null>(null);
   const [resourceLimitsProjectId, setResourceLimitsProjectId] = useState<string | null>(null);
+  const [subfolderTarget, setSubfolderTarget] = useState<{ id: string; name: string } | null>(null);
 
   // -- New state --
   const [filterText, setFilterText] = useState("");
@@ -135,7 +137,8 @@ export function PortalPage() {
     showAddModal ||
     pairingCode !== null ||
     secretsProjectId !== null ||
-    resourceLimitsProjectId !== null;
+    resourceLimitsProjectId !== null ||
+    subfolderTarget !== null;
 
   // -- Navigation --
 
@@ -204,6 +207,7 @@ export function PortalPage() {
         onCancel: () => runAction(id, "stopping", () => stopProject(id)),
         onManageSecrets: () => setSecretsProjectId(id),
         onManageResourceLimits: () => setResourceLimitsProjectId(id),
+        onOpenSubfolder: () => setSubfolderTarget({ id: project.id, name: project.name }),
       });
     }
     return map;
@@ -377,6 +381,23 @@ export function PortalPage() {
             />
           );
         })()}
+      <ModalPanel
+        isOpen={subfolderTarget !== null}
+        onClose={() => setSubfolderTarget(null)}
+        className="left-0 right-0 mx-auto top-[15%] w-full max-w-[520px] px-4"
+      >
+        {subfolderTarget && (
+          <SubfolderPicker
+            projectId={subfolderTarget.id}
+            projectName={subfolderTarget.name}
+            onClose={() => setSubfolderTarget(null)}
+            onComplete={() => {
+              setSubfolderTarget(null);
+              loadProjects();
+            }}
+          />
+        )}
+      </ModalPanel>
     </div>
   );
 }

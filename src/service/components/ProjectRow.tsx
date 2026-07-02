@@ -32,6 +32,7 @@ export interface ProjectRowActions {
   onCancel: () => void;
   onManageSecrets: () => void;
   onManageResourceLimits: () => void;
+  onOpenSubfolder: () => void;
 }
 
 export interface ProjectRowProps extends ProjectRowActions {
@@ -93,6 +94,7 @@ export function ProjectRow({
   onCancel,
   onManageSecrets,
   onManageResourceLimits,
+  onOpenSubfolder,
   isFocused,
   onMouseEnter,
 }: ProjectRowProps) {
@@ -279,6 +281,16 @@ export function ProjectRow({
                   : ""}
               </Dropdown.Item>
             </>
+          )}
+          {!transitioning && project.status === "running" && !project.parent_project_id && (
+            <Dropdown.Item
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenSubfolder();
+              }}
+            >
+              Open Subfolder
+            </Dropdown.Item>
           )}
           {!transitioning && canRebuild && (
             <Dropdown.Item

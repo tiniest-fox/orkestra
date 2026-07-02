@@ -643,6 +643,33 @@ async fn remove_project_handler(
         }
     };
 
+    // Fail fast: reject before any destructive side effects if child projects exist.
+    {
+        let conn = Arc::clone(&state.conn);
+        let check_id = id.clone();
+        let has_children = run_blocking(move || {
+            let guard = conn.lock().expect("db mutex poisoned");
+            let count: i64 = guard.query_row(
+                "SELECT COUNT(*) FROM service_projects WHERE parent_project_id = ?",
+                rusqlite::params![check_id],
+                |row| row.get(0),
+            )?;
+            Ok::<_, ServiceError>(count > 0)
+        })
+        .await;
+        match has_children {
+            Ok(true) => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({"error": "Cannot remove project with subfolder projects. Remove subfolder projects first."})),
+                )
+                    .into_response();
+            }
+            Ok(false) => {}
+            Err(r) => return r,
+        }
+    }
+
     // Abort any in-flight provisioning task before stopping the daemon.
     state.abort_provision(&id);
 

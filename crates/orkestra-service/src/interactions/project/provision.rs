@@ -100,6 +100,77 @@ pub async fn execute(
     }
 }
 
+/// Provision a subfolder project: skip cloning, initialise `.orkestra` in the
+/// subfolder, then start a container with the parent repo mounted and spawn the daemon.
+///
+/// Runs as a background task. On any failure, updates the project status to
+/// `Error` with the error message.
+#[cfg(unix)]
+pub async fn execute_subfolder(
+    conn: Arc<Mutex<Connection>>,
+    supervisor: Arc<DaemonSupervisor>,
+    project: Project,
+    secrets_key: Option<String>,
+) {
+    let project_id = project.id.clone();
+    let subfolder_path = PathBuf::from(&project.path);
+    let log_path = subfolder_path
+        .join(".orkestra")
+        .join(".logs")
+        .join("debug.log");
+
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    append_log(&log_path, "=== Provisioning subfolder project ===");
+
+    // Step 1: Update status to "starting".
+    let _ = tokio::task::spawn_blocking({
+        let conn = Arc::clone(&conn);
+        let id = project_id.clone();
+        move || project::update_status::execute(&conn, &id, ProjectStatus::Starting, None, None)
+    })
+    .await;
+
+    // Step 2: Initialise .orkestra in the subfolder.
+    let orkestra_dir = subfolder_path.join(".orkestra");
+    let init_result = tokio::task::spawn_blocking({
+        let dir = orkestra_dir.clone();
+        move || {
+            orkestra_core::ensure_orkestra_project(&dir)
+                .map_err(|e| ServiceError::Other(e.to_string()))
+        }
+    })
+    .await;
+
+    if let Err(e) = flatten(init_result) {
+        tracing::error!("Orkestra init failed for {project_id}: {e}");
+        append_log(&log_path, &format!("Orkestra init failed: {e}"));
+        set_error(&conn, &project_id, &e.to_string()).await;
+        return;
+    }
+
+    // Steps 3–8: Container setup and daemon spawn using the parent repo root.
+    let repo_path = project.repo_root_path();
+    if let Err(e) = container_and_spawn(
+        &conn,
+        &supervisor,
+        project,
+        repo_path,
+        true,  /* run_setup */
+        false, /* force_build */
+        &log_path,
+        secrets_key,
+    )
+    .await
+    {
+        tracing::error!("Container setup failed for {project_id}: {e}");
+        append_log(&log_path, &format!("Container setup failed: {e}"));
+        set_error(&conn, &project_id, &e.to_string()).await;
+    }
+}
+
 /// Create a container for an already-provisioned project and spawn the daemon.
 ///
 /// Called when starting a stopped project or rebuilding its container.
@@ -115,8 +186,10 @@ pub async fn start_containers_and_spawn(
     secrets_key: Option<String>,
 ) {
     let project_id = project.id.clone();
-    let path = PathBuf::from(&project.path);
-    let log_path = path.join(".orkestra").join(".logs").join("debug.log");
+    let log_path = PathBuf::from(&project.path)
+        .join(".orkestra")
+        .join(".logs")
+        .join("debug.log");
 
     // Update status to "starting" so the UI shows progress.
     let _ = tokio::task::spawn_blocking({
@@ -137,7 +210,7 @@ pub async fn start_containers_and_spawn(
     // even contacts the remote. Hiding the directory lets git run normally;
     // the RAII guard restores it on drop — even on panic.
     append_log(&log_path, "Pulling latest code...");
-    let pull_path = path.clone();
+    let pull_path = project.repo_root_path();
     let pull_log = log_path.clone();
     let _ = tokio::task::spawn_blocking(move || {
         let _guard = WorktreesGuard::new(&pull_path);
@@ -152,11 +225,12 @@ pub async fn start_containers_and_spawn(
     })
     .await;
 
+    let repo_path = project.repo_root_path();
     if let Err(e) = container_and_spawn(
         &conn,
         &supervisor,
         project,
-        path,
+        repo_path,
         run_setup,
         force_build,
         &log_path,
@@ -174,13 +248,17 @@ pub async fn start_containers_and_spawn(
 
 /// Steps 4–9: detect → prepare image → start container → inject orkd + ork →
 /// store `container_id` → optionally run setup → spawn daemon.
+///
+/// `repo_path` is the repo root used for mounting and devcontainer detection.
+/// For regular projects this is the same as `project.path`; for subfolder
+/// projects it is the parent repo root (`project.repo_root_path()`).
 #[cfg(unix)]
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn container_and_spawn(
     conn: &Arc<Mutex<Connection>>,
     supervisor: &Arc<DaemonSupervisor>,
     project: Project,
-    path: PathBuf,
+    repo_path: PathBuf,
     run_setup: bool,
     force_build: bool,
     log_path: &Path,
@@ -194,7 +272,7 @@ async fn container_and_spawn(
 
     // Step 4: Detect devcontainer config.
     let config = tokio::task::spawn_blocking({
-        let p = path.clone();
+        let p = repo_path.clone();
         move || devcontainer::detect::execute(&p)
     })
     .await
@@ -204,7 +282,7 @@ async fn container_and_spawn(
     append_log(log_path, "\n=== Preparing Docker image ===");
     let image = tokio::task::spawn_blocking({
         let config = config.clone();
-        let p = path.clone();
+        let p = repo_path.clone();
         let id = project_id.clone();
         let lp = log_path.to_path_buf();
         move || devcontainer::prepare_image::execute(&config, &p, &id, Some(&lp))
@@ -222,7 +300,7 @@ async fn container_and_spawn(
     let _ = tokio::task::spawn_blocking({
         let id = project_id.clone();
         let config = config.clone();
-        let p = path.clone();
+        let p = repo_path.clone();
         let od = override_dir.clone();
         move || {
             stop_existing_container(&id, &config, &p, &od);
@@ -262,7 +340,7 @@ async fn container_and_spawn(
     append_log(log_path, "\n=== Starting container ===");
     let container_id = tokio::task::spawn_blocking({
         let config = config.clone();
-        let p = path.clone();
+        let p = repo_path.clone();
         let id = project_id.clone();
         let od = override_dir.clone();
         let lp = log_path.to_path_buf();
@@ -363,7 +441,7 @@ async fn container_and_spawn(
         let cid = container_id.clone();
         let plugins = plugins_from_config(&config).to_vec();
         let config = config.clone();
-        let p = path.clone();
+        let p = repo_path.clone();
         let lp = log_path.to_path_buf();
         if let Err(e) = tokio::task::spawn_blocking(move || {
             devcontainer::run_setup::execute(&cid, &config, &p, Some(&lp))

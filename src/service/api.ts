@@ -50,6 +50,8 @@ export interface Project {
   git_status?: GitStatusInfo;
   cpu_limit?: number;
   memory_limit_mb?: number;
+  parent_project_id?: string;
+  subfolder?: string;
 }
 
 export interface GithubStatus {
@@ -119,6 +121,24 @@ export async function addProject(repoUrl: string, name: string): Promise<void> {
   const res = await apiFetch("/api/projects", {
     method: "POST",
     body: JSON.stringify({ repo_url: repoUrl, name }),
+  });
+  await requireOk(res);
+}
+
+export async function listDirectories(projectId: string): Promise<string[]> {
+  const res = await apiFetch(`/api/projects/${projectId}/directories`);
+  await requireOk(res);
+  return res.json();
+}
+
+export async function addSubfolderProject(
+  projectId: string,
+  name: string,
+  subfolder: string,
+): Promise<void> {
+  const res = await apiFetch(`/api/projects/${projectId}/subfolder`, {
+    method: "POST",
+    body: JSON.stringify({ name, subfolder }),
   });
   await requireOk(res);
 }

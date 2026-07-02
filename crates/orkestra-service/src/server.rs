@@ -142,6 +142,11 @@ pub(crate) fn build_router(state: OrkServiceState, extra_routes: Option<Router>)
             "/api/projects/{id}/resource-limits",
             get(get_resource_limits_handler).put(set_resource_limits_handler),
         )
+        .route(
+            "/api/projects/{id}/directories",
+            get(list_directories_handler),
+        )
+        .route("/api/projects/{id}/subfolder", post(add_subfolder_handler))
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -348,6 +353,8 @@ struct ProjectResponse {
     /// Whether the project repo has a `.devcontainer/devcontainer.json`.
     has_devcontainer: bool,
     git_status: Option<GitStatusResponse>,
+    parent_project_id: Option<String>,
+    subfolder: Option<String>,
 }
 
 impl ProjectResponse {
@@ -370,6 +377,8 @@ impl ProjectResponse {
             error_message: proj.error_message.clone(),
             has_devcontainer,
             git_status,
+            parent_project_id: proj.parent_project_id.clone(),
+            subfolder: proj.subfolder.clone(),
         }
     }
 }
@@ -401,21 +410,26 @@ async fn list_projects_handler(
 
     // Compute devcontainer flags in a blocking context — Path::exists() is a
     // synchronous syscall that must not run on the async worker thread.
+    // Use repo_root_path() so subfolder projects check the parent repo root
+    // where .devcontainer/devcontainer.json actually lives.
     let has_devcontainer_flags: Vec<bool> = {
-        let paths: Vec<String> = projects.iter().map(|p| p.path.clone()).collect();
+        let root_paths: Vec<std::path::PathBuf> = projects
+            .iter()
+            .map(super::types::Project::repo_root_path)
+            .collect();
+        let count = root_paths.len();
         tokio::task::spawn_blocking(move || {
-            paths
+            root_paths
                 .iter()
-                .map(|path| {
-                    std::path::Path::new(path)
-                        .join(".devcontainer")
+                .map(|root| {
+                    root.join(".devcontainer")
                         .join("devcontainer.json")
                         .exists()
                 })
                 .collect::<Vec<_>>()
         })
         .await
-        .unwrap_or_else(|_| vec![false; projects.len()])
+        .unwrap_or_else(|_| vec![false; count])
     };
 
     let git_statuses: Vec<Option<GitStatusResponse>> = {
@@ -598,8 +612,8 @@ async fn remove_project_handler(
     State(state): State<OrkServiceState>,
     Path(id): Path<String>,
 ) -> Response<Body> {
-    // Fetch project to verify it exists and capture its path for cleanup.
-    let project_path = {
+    // Fetch full project to verify it exists, capture its path, and detect subfolder projects.
+    let project = {
         let fetch_result = tokio::task::spawn_blocking({
             let conn = Arc::clone(&state.conn);
             let id = id.clone();
@@ -625,9 +639,36 @@ async fn remove_project_handler(
                 )
                     .into_response();
             }
-            Ok(Ok(project)) => project.path,
+            Ok(Ok(p)) => p,
         }
     };
+
+    // Fail fast: reject before any destructive side effects if child projects exist.
+    {
+        let conn = Arc::clone(&state.conn);
+        let check_id = id.clone();
+        let has_children = run_blocking(move || {
+            let guard = conn.lock().expect("db mutex poisoned");
+            let count: i64 = guard.query_row(
+                "SELECT COUNT(*) FROM service_projects WHERE parent_project_id = ?",
+                rusqlite::params![check_id],
+                |row| row.get(0),
+            )?;
+            Ok::<_, ServiceError>(count > 0)
+        })
+        .await;
+        match has_children {
+            Ok(true) => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({"error": "Cannot remove project with subfolder projects. Remove subfolder projects first."})),
+                )
+                    .into_response();
+            }
+            Ok(false) => {}
+            Err(r) => return r,
+        }
+    }
 
     // Abort any in-flight provisioning task before stopping the daemon.
     state.abort_provision(&id);
@@ -658,10 +699,15 @@ async fn remove_project_handler(
 
     // Best-effort: delete the cloned directory from disk so that re-adding the
     // same repo doesn't fail with "destination path already exists".
-    let path = std::path::PathBuf::from(&project_path);
-    if let Err(e) = std::fs::remove_dir_all(&path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!("Failed to delete project directory {}: {e}", path.display());
+    //
+    // Subfolder projects share the parent repo clone — skip deletion to avoid
+    // destroying user source code inside the parent repo.
+    if project.parent_project_id.is_none() {
+        let path = std::path::PathBuf::from(&project.path);
+        if let Err(e) = std::fs::remove_dir_all(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!("Failed to delete project directory {}: {e}", path.display());
+            }
         }
     }
 
@@ -953,6 +999,198 @@ async fn git_push_handler(
     {
         Ok(()) => Json(serde_json::json!({})).into_response(),
         Err(r) => r,
+    }
+}
+
+// -- Subfolder --
+
+/// `GET /api/projects/{id}/directories` — list top-level non-hidden directories.
+async fn list_directories_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    let proj = match fetch_project(&state, &id).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    match run_blocking(move || project::list_directories::execute(std::path::Path::new(&proj.path)))
+        .await
+    {
+        Ok(dirs) => Json(dirs).into_response(),
+        Err(r) => r,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AddSubfolderRequest {
+    name: String,
+    subfolder: String,
+}
+
+/// `POST /api/projects/{id}/subfolder` — create a subfolder project from a parent.
+///
+/// Validates that the subfolder exists on disk and has no existing `.orkestra`,
+/// then inserts the record, starts provisioning in the background, and returns
+/// the new project.
+async fn add_subfolder_handler(
+    State(state): State<OrkServiceState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<AddSubfolderRequest>,
+) -> Response<Body> {
+    let ws_base = ws_base_from_headers(&headers);
+
+    let parent = match fetch_project(&state, &id).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    if parent.status != ProjectStatus::Running {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Parent project is not running"})),
+        )
+            .into_response();
+    }
+
+    if let Err(msg) = validate_project_name(&body.name) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        )
+            .into_response();
+    }
+
+    // Reject path traversal attempts before touching the filesystem.
+    if let Err(msg) = validate_project_name(&body.subfolder) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        )
+            .into_response();
+    }
+
+    let subfolder_path = std::path::PathBuf::from(&parent.path).join(&body.subfolder);
+
+    // Verify the resolved path is actually under the parent. With validate_project_name
+    // blocking ".." the join is safe, but this guard catches any remaining edge cases.
+    if !subfolder_path.starts_with(&parent.path) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Subfolder path escapes parent project directory"})),
+        )
+            .into_response();
+    }
+
+    // Filesystem checks must run off the async thread.
+    let (is_dir, has_orkestra) = {
+        let p = subfolder_path.clone();
+        tokio::task::spawn_blocking(move || (p.is_dir(), p.join(".orkestra").exists()))
+            .await
+            .unwrap_or((false, false))
+    };
+
+    if !is_dir {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("Subfolder '{}' does not exist or is not a directory", body.subfolder)})),
+        )
+            .into_response();
+    }
+    if has_orkestra {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"error": "Subfolder already has an .orkestra directory"})),
+        )
+            .into_response();
+    }
+
+    let conn = Arc::clone(&state.conn);
+    let (start, end) = state.config.port_range;
+    let port = match run_blocking({
+        let conn2 = Arc::clone(&conn);
+        move || port::find_available::execute(&conn2, start, end)
+    })
+    .await
+    {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    let proj = match insert_subfolder_project(&conn, &parent.id, &parent.path, &body, port).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    let supervisor = Arc::clone(&state.supervisor);
+    let proj_for_bg = proj.clone();
+    let secrets_key = state.secrets_key.clone();
+    {
+        let handles = Arc::clone(&state.provision_handles);
+        let bg_id = proj_for_bg.id.clone();
+        let handle = tokio::spawn(async move {
+            project::provision::execute_subfolder(conn, supervisor, proj_for_bg, secrets_key).await;
+            handles
+                .lock()
+                .expect("provision_handles poisoned")
+                .remove(&bg_id);
+        });
+        state.track_provision(&proj.id, handle.abort_handle());
+    }
+
+    Json(ProjectResponse::from_project(
+        &proj, None, None, &ws_base, false, None,
+    ))
+    .into_response()
+}
+
+/// Insert a subfolder project record, returning the project or an HTTP error response.
+async fn insert_subfolder_project(
+    conn: &Arc<Mutex<Connection>>,
+    parent_id: &str,
+    parent_path: &str,
+    body: &AddSubfolderRequest,
+    port: u16,
+) -> Result<crate::types::Project, Response<Body>> {
+    let shared_secret = generate_shared_secret();
+    let project_path = std::path::PathBuf::from(parent_path)
+        .join(&body.subfolder)
+        .to_string_lossy()
+        .into_owned();
+    let parent_id = parent_id.to_string();
+    let subfolder = body.subfolder.clone();
+    let name = body.name.clone();
+    let conn2 = Arc::clone(conn);
+    match tokio::task::spawn_blocking(move || {
+        project::add_subfolder::execute(
+            &conn2,
+            &name,
+            &project_path,
+            port,
+            &shared_secret,
+            &parent_id,
+            &subfolder,
+        )
+    })
+    .await
+    {
+        Ok(Ok(p)) => Ok(p),
+        Ok(Err(ServiceError::DuplicatePath(p))) => Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"error": format!("Project path already exists: {p}")})),
+        )
+            .into_response()),
+        Ok(Err(e)) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response()),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response()),
     }
 }
 
@@ -1343,6 +1581,7 @@ where
                     StatusCode::BAD_REQUEST
                 }
                 ServiceError::SecretsKeyNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+                ServiceError::HasChildProjects(_) => StatusCode::CONFLICT,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };
             Err((status, Json(serde_json::json!({"error": e.to_string()}))).into_response())
@@ -1595,5 +1834,33 @@ mod tests {
         assert!(validate_project_name("null\0byte").is_err());
         assert!(validate_project_name("/absolute").is_err());
         assert!(validate_project_name("/etc/passwd").is_err());
+    }
+
+    // -- Subfolder validation --
+    // validate_project_name is reused for body.subfolder in add_subfolder_handler.
+
+    #[test]
+    fn subfolder_accepts_valid_paths() {
+        // Simple directory name
+        assert!(validate_project_name("frontend").is_ok());
+        // Nested path (e.g., monorepo packages/web)
+        assert!(validate_project_name("packages/frontend").is_ok());
+        // Underscores, hyphens, digits
+        assert!(validate_project_name("my_app-v2").is_ok());
+    }
+
+    #[test]
+    fn subfolder_rejects_traversal() {
+        // Cannot escape the parent repo root
+        assert!(validate_project_name("../sibling-repo").is_err());
+        assert!(validate_project_name("packages/../../../etc").is_err());
+        // No absolute paths
+        assert!(validate_project_name("/etc/passwd").is_err());
+        // No backslashes
+        assert!(validate_project_name("src\\core").is_err());
+        // No null bytes
+        assert!(validate_project_name("src\0evil").is_err());
+        // Cannot be empty
+        assert!(validate_project_name("").is_err());
     }
 }

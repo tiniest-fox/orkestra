@@ -39,7 +39,7 @@ pub fn execute(
     let project = guard.query_row(
         "SELECT id, name, path, daemon_port, shared_secret, status,
                 error_message, pid, created_at, container_id,
-                cpu_limit, memory_limit_mb
+                cpu_limit, memory_limit_mb, parent_project_id, subfolder
          FROM service_projects WHERE id = ?",
         params![id],
         super::get::map_row,

@@ -15,7 +15,7 @@ use tracing::{error, info, warn};
 use crate::interactions::daemon;
 use crate::interactions::devcontainer;
 use crate::interactions::project;
-use crate::types::{DevcontainerConfig, Project, ProjectStatus, ServiceError};
+use crate::types::{compute_repo_root, DevcontainerConfig, Project, ProjectStatus, ServiceError};
 
 // ============================================================================
 // DaemonSupervisor
@@ -106,18 +106,22 @@ impl DaemonSupervisor {
         let projects_with_containers = {
             let guard = self.conn.lock().expect("db mutex poisoned");
             let mut stmt = guard.prepare(
-                "SELECT id, path, container_id FROM service_projects WHERE container_id IS NOT NULL",
+                "SELECT id, path, container_id, subfolder FROM service_projects WHERE container_id IS NOT NULL",
             )?;
-            let rows: Vec<(String, String, String)> = stmt
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            let rows: Vec<(String, String, String, Option<String>)> = stmt
+                .query_map([], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })?
                 .collect::<Result<_, _>>()?;
             rows
         };
 
         let mut stopped = 0;
 
-        for (project_id, project_path, container_id) in &projects_with_containers {
-            let path = Path::new(project_path);
+        for (project_id, project_path, container_id, subfolder) in &projects_with_containers {
+            // For subfolder projects, devcontainer.json lives at the repo root, not the subfolder.
+            let repo_root = compute_repo_root(project_path, subfolder.as_deref());
+            let path = repo_root.as_path();
 
             if devcontainer::find_container::execute(project_id).is_some() {
                 let config = devcontainer::detect::execute(path);
@@ -207,10 +211,10 @@ impl DaemonSupervisor {
         let project = project::get::execute(&self.conn, project_id)?;
 
         if let Some(ref container_id) = project.container_id {
-            let path = Path::new(&project.path);
-            let config = devcontainer::detect::execute(path);
+            let root = project.repo_root_path();
+            let config = devcontainer::detect::execute(&root);
             let override_dir = self.data_dir.join("projects").join(project_id);
-            let compose_file_buf = compose_file_for(&config, path);
+            let compose_file_buf = compose_file_for(&config, &root);
 
             if let Err(e) = devcontainer::stop_container::execute(
                 &config,
@@ -379,10 +383,10 @@ impl DaemonSupervisor {
         if let Ok(projects) = project::list::execute(&self.conn) {
             for proj in projects {
                 if let Some(ref container_id) = proj.container_id {
-                    let path = Path::new(&proj.path);
-                    let config = devcontainer::detect::execute(path);
+                    let root = proj.repo_root_path();
+                    let config = devcontainer::detect::execute(&root);
                     let override_dir = self.data_dir.join("projects").join(&proj.id);
-                    let compose_file_buf = compose_file_for(&config, path);
+                    let compose_file_buf = compose_file_for(&config, &root);
 
                     if let Err(e) = devcontainer::stop_container::execute(
                         &config,
@@ -450,10 +454,16 @@ fn spawn_and_poll(
         ServiceError::Other(format!("No container running for project {}", project.id))
     })?;
 
+    let container_project_root = match &project.subfolder {
+        Some(sub) => format!("/workspace/{sub}"),
+        None => "/workspace".to_string(),
+    };
+
     let mut child = devcontainer::exec_orkd::execute(
         container_id,
         project.daemon_port,
         &project.shared_secret,
+        &container_project_root,
     )?;
 
     // Drain stderr in a background thread so the buffer never fills up and

@@ -101,6 +101,35 @@ pub struct Project {
     pub container_id: Option<String>,
     pub cpu_limit: Option<f64>,
     pub memory_limit_mb: Option<i64>,
+    pub parent_project_id: Option<String>,
+    pub subfolder: Option<String>,
+}
+
+impl Project {
+    /// Filesystem path to the git repository root.
+    ///
+    /// For regular projects this equals `self.path`. For subfolder projects
+    /// it strips the subfolder suffix to return the parent repo's clone path.
+    pub fn repo_root_path(&self) -> PathBuf {
+        compute_repo_root(&self.path, self.subfolder.as_deref())
+    }
+}
+
+/// Compute the repo root path from a project path and optional subfolder.
+///
+/// Extracted as a standalone function so call sites that hold raw `(path, subfolder)`
+/// data (e.g., `startup_cleanup`) share the same logic as `Project::repo_root_path()`.
+pub fn compute_repo_root(path: &str, subfolder: Option<&str>) -> PathBuf {
+    match subfolder {
+        Some(sub) => {
+            let mut root = PathBuf::from(path);
+            for _ in PathBuf::from(sub).components() {
+                root.pop();
+            }
+            root
+        }
+        None => PathBuf::from(path),
+    }
 }
 
 /// Per-project CPU and memory resource limits.
@@ -181,6 +210,58 @@ pub enum ServiceError {
     SecretsKeyNotConfigured,
     #[error("{0}")]
     ValidationError(String),
+    #[error("Cannot remove project {0}: has active subfolder projects")]
+    HasChildProjects(String),
     #[error("{0}")]
     Other(String),
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn base_project(path: &str) -> Project {
+        Project {
+            id: "id".to_string(),
+            name: "name".to_string(),
+            path: path.to_string(),
+            daemon_port: 3850,
+            shared_secret: "s".to_string(),
+            status: ProjectStatus::Stopped,
+            error_message: None,
+            pid: None,
+            created_at: "2024-01-01".to_string(),
+            container_id: None,
+            cpu_limit: None,
+            memory_limit_mb: None,
+            parent_project_id: None,
+            subfolder: None,
+        }
+    }
+
+    #[test]
+    fn repo_root_path_regular_project() {
+        let p = base_project("/repos/myapp");
+        assert_eq!(p.repo_root_path(), PathBuf::from("/repos/myapp"));
+    }
+
+    #[test]
+    fn repo_root_path_subfolder_project() {
+        let mut p = base_project("/repos/myapp/frontend");
+        p.subfolder = Some("frontend".to_string());
+        assert_eq!(p.repo_root_path(), PathBuf::from("/repos/myapp"));
+    }
+
+    #[test]
+    fn repo_root_path_nested_subfolder() {
+        let mut p = base_project("/repos/myapp/packages/ui");
+        p.subfolder = Some("packages/ui".to_string());
+        assert_eq!(p.repo_root_path(), PathBuf::from("/repos/myapp"));
+    }
 }

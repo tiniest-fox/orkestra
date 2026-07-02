@@ -1084,24 +1084,17 @@ async fn add_subfolder_handler(
     }
 
     // Filesystem checks must run off the async thread.
-    let (is_dir, has_orkestra) = {
+    let is_dir = {
         let p = subfolder_path.clone();
-        tokio::task::spawn_blocking(move || (p.is_dir(), p.join(".orkestra").exists()))
+        tokio::task::spawn_blocking(move || p.is_dir())
             .await
-            .unwrap_or((false, false))
+            .unwrap_or(false)
     };
 
     if !is_dir {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": format!("Subfolder '{}' does not exist or is not a directory", body.subfolder)})),
-        )
-            .into_response();
-    }
-    if has_orkestra {
-        return (
-            StatusCode::CONFLICT,
-            Json(serde_json::json!({"error": "Subfolder already has an .orkestra directory"})),
         )
             .into_response();
     }

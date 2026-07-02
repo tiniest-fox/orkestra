@@ -64,3 +64,23 @@ Agent provider keys (`CLAUDE_CODE_OAUTH_TOKEN`, `OPENCODE_API_KEY`) follow the s
 `secret::decrypt_all::execute` takes `secrets_key: Option<&str>` and returns an empty vec when the key is absent (graceful degradation for container env-var injection — containers start normally even without secrets configured).
 
 `secret::get::execute` and `secret::set::execute` take `secrets_key: &str` — callers must unwrap and 503 before calling these. Do not add `Option` handling inside get/set.
+
+## Subfolder Projects: Always Use `repo_root_path()`
+
+`project.path` includes the subfolder suffix for subfolder projects (e.g., `/repos/myapp/frontend`). Any code that needs the filesystem path for devcontainer config, git operations, or container mounts must use `project.repo_root_path()` instead — it strips the subfolder to return the parent repo's clone path.
+
+When working with raw `(path, subfolder)` data rather than a `Project` struct (e.g., `startup_cleanup`), use the standalone `compute_repo_root(path, subfolder)` function from `types.rs` — it shares the same logic as `repo_root_path()`.
+
+**Pattern:** `project.path` → storage/identification. `project.repo_root_path()` → filesystem operations.
+
+## Explicit Column Selection in `startup_cleanup`
+
+`daemon_supervisor.rs::startup_cleanup` selects `service_projects` columns by name in a raw SQL query. When you add a new column to the `service_projects` schema, you **must** also add it to the `SELECT` list in `startup_cleanup` or startup logic will be blind to it — the column exists in the DB but the deserialized `Project` struct will have its default/`None` value.
+
+The same applies to `shutdown_all` and any other raw SQL paths that deserialize full `Project` structs.
+
+## Destructive Handler Precondition Ordering
+
+Handlers that perform irreversible side effects (stopping a daemon, destroying a container, removing a directory) must validate all preconditions **before** the first destructive call. The canonical case: `remove_project_handler` checks for child subfolder projects via an inline SQL query before calling `abort_provision` or `stop_daemon`. If the check were after the daemon stop, a 409 rejection would leave the parent daemon killed with no way to recover short of manual restart.
+
+**Rule:** Gather all facts. Validate all guards. Only then begin side effects.

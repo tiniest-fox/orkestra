@@ -226,6 +226,8 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
 
     args.push("-e".to_string());
     args.push("HOME=/home/orkestra".to_string());
+    args.push("-e".to_string());
+    args.push("XDG_CACHE_HOME=/home/orkestra/.local/cache".to_string());
 
     // Inject Claude OAuth token so the agent can authenticate.
     if let Some(ref token) = config.claude_code_oauth_token {
@@ -541,6 +543,10 @@ fn build_compose_override(
 
     let mut environment = String::new();
     let _ = writeln!(environment, "{I}HOME: /home/orkestra");
+    let _ = writeln!(
+        environment,
+        "{I}XDG_CACHE_HOME: /home/orkestra/.local/cache"
+    );
     let _ = writeln!(environment, "{I}GIT_AUTHOR_EMAIL: \"{git_email}\"");
     let _ = writeln!(environment, "{I}GIT_COMMITTER_EMAIL: \"{git_email}\"");
     let _ = writeln!(environment, "{I}GIT_AUTHOR_NAME: \"{git_name}\"");
@@ -1281,6 +1287,25 @@ mod tests {
         assert!(!yaml.contains("OPENCODE_API_KEY"));
         // Other secrets still appear.
         assert!(yaml.contains("OTHER_KEY: \"value\""));
+    }
+
+    #[test]
+    fn build_docker_run_args_includes_xdg_cache_home() {
+        let config = default_run_config();
+        let args = build_docker_run_args(&config);
+        assert!(
+            args.contains(&"XDG_CACHE_HOME=/home/orkestra/.local/cache".to_string()),
+            "XDG_CACHE_HOME must be unconditionally injected"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_includes_xdg_cache_home() {
+        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
+        assert!(
+            yaml.contains("XDG_CACHE_HOME: /home/orkestra/.local/cache"),
+            "XDG_CACHE_HOME must be unconditionally injected in compose override"
+        );
     }
 
     #[test]

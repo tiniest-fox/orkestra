@@ -90,11 +90,12 @@ else
     USERNAME=orkestra
 fi
 
-# Ensure the home directory and XDG cache dir exist and are owned by uid 1000.
-# .local/cache is created explicitly so XDG_CACHE_HOME (set in orkestra-env.sh)
-# is always writable — some base images create ~/.cache as root.
-mkdir -p /home/orkestra /home/orkestra/.local/cache
+# Ensure the home directory and XDG cache dirs exist and are owned by uid 1000.
+# .local/cache is created explicitly so XDG_CACHE_HOME is always writable.
+# .cache is created explicitly so opencode's fallback path is also writable.
+mkdir -p /home/orkestra /home/orkestra/.local/cache /home/orkestra/.cache
 chown -R 1000:1000 /home/orkestra/.local
+chown 1000:1000 /home/orkestra/.cache
 chown 1000:1000 /home/orkestra
 
 # -- Configure git --

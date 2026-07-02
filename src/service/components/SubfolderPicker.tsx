@@ -60,7 +60,7 @@ export function SubfolderPicker({
         ) : directories.length === 0 && !error ? (
           <p className="text-sm text-text-secondary text-center py-4">No subdirectories found.</p>
         ) : (
-          <div className="max-h-[280px] overflow-y-auto -mx-4 px-4">
+          <div className="-mx-4 px-4">
             {directories.map((dir) => (
               <button
                 key={dir}
@@ -68,7 +68,6 @@ export function SubfolderPicker({
                 disabled={creating !== null}
                 className="w-full text-left flex items-center gap-4 px-2 py-2 rounded-panel-sm hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => handleSelect(dir)}
-                onKeyDown={() => {}}
               >
                 <span className="text-sm font-medium text-text-primary truncate">{dir}</span>
               </button>

@@ -410,21 +410,24 @@ async fn list_projects_handler(
 
     // Compute devcontainer flags in a blocking context — Path::exists() is a
     // synchronous syscall that must not run on the async worker thread.
+    // Use repo_root_path() so subfolder projects check the parent repo root
+    // where .devcontainer/devcontainer.json actually lives.
     let has_devcontainer_flags: Vec<bool> = {
-        let paths: Vec<String> = projects.iter().map(|p| p.path.clone()).collect();
+        let root_paths: Vec<std::path::PathBuf> =
+            projects.iter().map(super::types::Project::repo_root_path).collect();
+        let count = root_paths.len();
         tokio::task::spawn_blocking(move || {
-            paths
+            root_paths
                 .iter()
-                .map(|path| {
-                    std::path::Path::new(path)
-                        .join(".devcontainer")
+                .map(|root| {
+                    root.join(".devcontainer")
                         .join("devcontainer.json")
                         .exists()
                 })
                 .collect::<Vec<_>>()
         })
         .await
-        .unwrap_or_else(|_| vec![false; projects.len()])
+        .unwrap_or_else(|_| vec![false; count])
     };
 
     let git_statuses: Vec<Option<GitStatusResponse>> = {
@@ -607,8 +610,8 @@ async fn remove_project_handler(
     State(state): State<OrkServiceState>,
     Path(id): Path<String>,
 ) -> Response<Body> {
-    // Fetch project to verify it exists and capture its path for cleanup.
-    let project_path = {
+    // Fetch full project to verify it exists, capture its path, and detect subfolder projects.
+    let project = {
         let fetch_result = tokio::task::spawn_blocking({
             let conn = Arc::clone(&state.conn);
             let id = id.clone();
@@ -634,7 +637,7 @@ async fn remove_project_handler(
                 )
                     .into_response();
             }
-            Ok(Ok(project)) => project.path,
+            Ok(Ok(p)) => p,
         }
     };
 
@@ -667,10 +670,15 @@ async fn remove_project_handler(
 
     // Best-effort: delete the cloned directory from disk so that re-adding the
     // same repo doesn't fail with "destination path already exists".
-    let path = std::path::PathBuf::from(&project_path);
-    if let Err(e) = std::fs::remove_dir_all(&path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!("Failed to delete project directory {}: {e}", path.display());
+    //
+    // Subfolder projects share the parent repo clone — skip deletion to avoid
+    // destroying user source code inside the parent repo.
+    if project.parent_project_id.is_none() {
+        let path = std::path::PathBuf::from(&project.path);
+        if let Err(e) = std::fs::remove_dir_all(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!("Failed to delete project directory {}: {e}", path.display());
+            }
         }
     }
 
@@ -1017,15 +1025,43 @@ async fn add_subfolder_handler(
             .into_response();
     }
 
-    let subfolder_path = std::path::Path::new(&parent.path).join(&body.subfolder);
-    if !subfolder_path.is_dir() {
+    // Reject path traversal attempts before touching the filesystem.
+    if let Err(msg) = validate_project_name(&body.subfolder) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        )
+            .into_response();
+    }
+
+    let subfolder_path = std::path::PathBuf::from(&parent.path).join(&body.subfolder);
+
+    // Verify the resolved path is actually under the parent. With validate_project_name
+    // blocking ".." the join is safe, but this guard catches any remaining edge cases.
+    if !subfolder_path.starts_with(&parent.path) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Subfolder path escapes parent project directory"})),
+        )
+            .into_response();
+    }
+
+    // Filesystem checks must run off the async thread.
+    let (is_dir, has_orkestra) = {
+        let p = subfolder_path.clone();
+        tokio::task::spawn_blocking(move || (p.is_dir(), p.join(".orkestra").exists()))
+            .await
+            .unwrap_or((false, false))
+    };
+
+    if !is_dir {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": format!("Subfolder '{}' does not exist or is not a directory", body.subfolder)})),
         )
             .into_response();
     }
-    if subfolder_path.join(".orkestra").exists() {
+    if has_orkestra {
         return (
             StatusCode::CONFLICT,
             Json(serde_json::json!({"error": "Subfolder already has an .orkestra directory"})),
@@ -1081,7 +1117,10 @@ async fn insert_subfolder_project(
     port: u16,
 ) -> Result<crate::types::Project, Response<Body>> {
     let shared_secret = generate_shared_secret();
-    let project_path = format!("{parent_path}/{}", body.subfolder);
+    let project_path = std::path::PathBuf::from(parent_path)
+        .join(&body.subfolder)
+        .to_string_lossy()
+        .into_owned();
     let parent_id = parent_id.to_string();
     let subfolder = body.subfolder.clone();
     let name = body.name.clone();
@@ -1758,5 +1797,33 @@ mod tests {
         assert!(validate_project_name("null\0byte").is_err());
         assert!(validate_project_name("/absolute").is_err());
         assert!(validate_project_name("/etc/passwd").is_err());
+    }
+
+    // -- Subfolder validation --
+    // validate_project_name is reused for body.subfolder in add_subfolder_handler.
+
+    #[test]
+    fn subfolder_accepts_valid_paths() {
+        // Simple directory name
+        assert!(validate_project_name("frontend").is_ok());
+        // Nested path (e.g., monorepo packages/web)
+        assert!(validate_project_name("packages/frontend").is_ok());
+        // Underscores, hyphens, digits
+        assert!(validate_project_name("my_app-v2").is_ok());
+    }
+
+    #[test]
+    fn subfolder_rejects_traversal() {
+        // Cannot escape the parent repo root
+        assert!(validate_project_name("../sibling-repo").is_err());
+        assert!(validate_project_name("packages/../../../etc").is_err());
+        // No absolute paths
+        assert!(validate_project_name("/etc/passwd").is_err());
+        // No backslashes
+        assert!(validate_project_name("src\\core").is_err());
+        // No null bytes
+        assert!(validate_project_name("src\0evil").is_err());
+        // Cannot be empty
+        assert!(validate_project_name("").is_err());
     }
 }

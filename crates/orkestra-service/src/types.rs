@@ -113,8 +113,7 @@ impl Project {
     pub fn repo_root_path(&self) -> PathBuf {
         match &self.subfolder {
             Some(sub) => {
-                let p = PathBuf::from(&self.path);
-                let mut root = p.clone();
+                let mut root = PathBuf::from(&self.path);
                 for _ in PathBuf::from(sub).components() {
                     root.pop();
                 }

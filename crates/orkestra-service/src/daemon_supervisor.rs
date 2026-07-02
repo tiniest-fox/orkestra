@@ -450,10 +450,16 @@ fn spawn_and_poll(
         ServiceError::Other(format!("No container running for project {}", project.id))
     })?;
 
+    let container_project_root = match &project.subfolder {
+        Some(sub) => format!("/workspace/{sub}"),
+        None => "/workspace".to_string(),
+    };
+
     let mut child = devcontainer::exec_orkd::execute(
         container_id,
         project.daemon_port,
         &project.shared_secret,
+        &container_project_root,
     )?;
 
     // Drain stderr in a background thread so the buffer never fills up and

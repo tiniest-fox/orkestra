@@ -142,6 +142,11 @@ pub(crate) fn build_router(state: OrkServiceState, extra_routes: Option<Router>)
             "/api/projects/{id}/resource-limits",
             get(get_resource_limits_handler).put(set_resource_limits_handler),
         )
+        .route(
+            "/api/projects/{id}/directories",
+            get(list_directories_handler),
+        )
+        .route("/api/projects/{id}/subfolder", post(add_subfolder_handler))
         .route("/api/github/repos", get(github_repos_handler))
         .route("/api/github/status", get(github_status_handler))
         .route("/api/pairing-code", post(generate_pairing_code_handler))
@@ -957,6 +962,159 @@ async fn git_push_handler(
     {
         Ok(()) => Json(serde_json::json!({})).into_response(),
         Err(r) => r,
+    }
+}
+
+// -- Subfolder --
+
+/// `GET /api/projects/{id}/directories` — list top-level non-hidden directories.
+async fn list_directories_handler(
+    State(state): State<OrkServiceState>,
+    Path(id): Path<String>,
+) -> Response<Body> {
+    let proj = match fetch_project(&state, &id).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    match run_blocking(move || project::list_directories::execute(std::path::Path::new(&proj.path)))
+        .await
+    {
+        Ok(dirs) => Json(dirs).into_response(),
+        Err(r) => r,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AddSubfolderRequest {
+    name: String,
+    subfolder: String,
+}
+
+/// `POST /api/projects/{id}/subfolder` — create a subfolder project from a parent.
+///
+/// Validates that the subfolder exists on disk and has no existing `.orkestra`,
+/// then inserts the record, starts provisioning in the background, and returns
+/// the new project.
+async fn add_subfolder_handler(
+    State(state): State<OrkServiceState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<AddSubfolderRequest>,
+) -> Response<Body> {
+    let ws_base = ws_base_from_headers(&headers);
+
+    let parent = match fetch_project(&state, &id).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    if parent.status != ProjectStatus::Running {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Parent project is not running"})),
+        )
+            .into_response();
+    }
+
+    let subfolder_path = std::path::Path::new(&parent.path).join(&body.subfolder);
+    if !subfolder_path.is_dir() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("Subfolder '{}' does not exist or is not a directory", body.subfolder)})),
+        )
+            .into_response();
+    }
+    if subfolder_path.join(".orkestra").exists() {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"error": "Subfolder already has an .orkestra directory"})),
+        )
+            .into_response();
+    }
+
+    let conn = Arc::clone(&state.conn);
+    let (start, end) = state.config.port_range;
+    let port = match run_blocking({
+        let conn2 = Arc::clone(&conn);
+        move || port::find_available::execute(&conn2, start, end)
+    })
+    .await
+    {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    let proj = match insert_subfolder_project(&conn, &parent.id, &parent.path, &body, port).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+
+    let supervisor = Arc::clone(&state.supervisor);
+    let proj_for_bg = proj.clone();
+    let secrets_key = state.secrets_key.clone();
+    {
+        let handles = Arc::clone(&state.provision_handles);
+        let bg_id = proj_for_bg.id.clone();
+        let handle = tokio::spawn(async move {
+            project::provision::execute_subfolder(conn, supervisor, proj_for_bg, secrets_key).await;
+            handles
+                .lock()
+                .expect("provision_handles poisoned")
+                .remove(&bg_id);
+        });
+        state.track_provision(&proj.id, handle.abort_handle());
+    }
+
+    Json(ProjectResponse::from_project(
+        &proj, None, None, &ws_base, false, None,
+    ))
+    .into_response()
+}
+
+/// Insert a subfolder project record, returning the project or an HTTP error response.
+async fn insert_subfolder_project(
+    conn: &Arc<Mutex<Connection>>,
+    parent_id: &str,
+    parent_path: &str,
+    body: &AddSubfolderRequest,
+    port: u16,
+) -> Result<crate::types::Project, Response<Body>> {
+    let shared_secret = generate_shared_secret();
+    let project_path = format!("{parent_path}/{}", body.subfolder);
+    let parent_id = parent_id.to_string();
+    let subfolder = body.subfolder.clone();
+    let name = body.name.clone();
+    let conn2 = Arc::clone(conn);
+    match tokio::task::spawn_blocking(move || {
+        project::add_subfolder::execute(
+            &conn2,
+            &name,
+            &project_path,
+            port,
+            &shared_secret,
+            &parent_id,
+            &subfolder,
+        )
+    })
+    .await
+    {
+        Ok(Ok(p)) => Ok(p),
+        Ok(Err(ServiceError::DuplicatePath(p))) => Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"error": format!("Project path already exists: {p}")})),
+        )
+            .into_response()),
+        Ok(Err(e)) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response()),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response()),
     }
 }
 

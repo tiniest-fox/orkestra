@@ -22,6 +22,8 @@ interface ChatComposeAreaProps {
   agentActive: boolean;
   onSend: () => void;
   onStop: () => void;
+  /** When provided and agentActive is true, Enter queues instead of blocking. */
+  onQueue?: () => void;
   placeholder?: string;
   error?: string | null;
   /** Applied to the outer wrapper — use for padding and background. */
@@ -44,6 +46,7 @@ export const ChatComposeArea = memo(function ChatComposeArea({
   agentActive,
   onSend,
   onStop,
+  onQueue,
   placeholder = "Send a message…",
   error,
   className = "",
@@ -109,7 +112,11 @@ export const ChatComposeArea = memo(function ChatComposeArea({
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
-      if (!agentActive && (value.trim() || pendingImages?.length) && !sending) onSend();
+      if (agentActive && onQueue && value.trim() && !sending) {
+        onQueue();
+      } else if (!agentActive && (value.trim() || pendingImages?.length) && !sending) {
+        onSend();
+      }
     }
     if (e.key === "." && e.metaKey && agentActive) {
       e.preventDefault();
@@ -164,19 +171,37 @@ export const ChatComposeArea = memo(function ChatComposeArea({
           className="flex-1 font-sans text-forge-body bg-surface border border-border rounded-xl px-3.5 py-2.5 outline-none resize-none overflow-hidden text-text-primary placeholder:text-text-quaternary focus:border-text-quaternary transition-colors leading-relaxed disabled:opacity-40 min-h-[42px] max-h-[120px]"
         />
         {agentActive ? (
-          <button
-            type="button"
-            onClick={onStop}
-            aria-label="Stop"
-            className={`shrink-0 h-10 rounded-full bg-status-warning hover:opacity-90 flex items-center justify-center text-white transition-opacity gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
-          >
-            <Square size={13} fill="currentColor" />
-            {!isMobile && (
-              <span className="font-mono text-forge-mono-sm font-semibold">
-                Stop<span className="opacity-60 ml-1.5">⌘.</span>
-              </span>
+          <div className="flex items-end gap-1.5">
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Stop"
+              className={`shrink-0 h-10 rounded-full bg-status-warning hover:opacity-90 flex items-center justify-center text-white transition-opacity gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
+            >
+              <Square size={13} fill="currentColor" />
+              {!isMobile && (
+                <span className="font-mono text-forge-mono-sm font-semibold">
+                  Stop<span className="opacity-60 ml-1.5">⌘.</span>
+                </span>
+              )}
+            </button>
+            {onQueue && (
+              <button
+                type="button"
+                onClick={onQueue}
+                disabled={!value.trim() || sending}
+                aria-label="Queue message"
+                className={`shrink-0 h-10 rounded-full bg-accent hover:bg-accent-hover flex items-center justify-center text-white transition-colors disabled:opacity-30 gap-1.5 ${isMobile ? "w-10" : "px-4"}`}
+              >
+                <ArrowUp size={15} />
+                {!isMobile && (
+                  <span className="font-mono text-forge-mono-sm font-semibold">
+                    Queue<span className="opacity-60 ml-1.5">↵</span>
+                  </span>
+                )}
+              </button>
             )}
-          </button>
+          </div>
         ) : (
           <button
             type="button"

@@ -19,7 +19,7 @@ import { type DrawerAction, DrawerHeader } from "../ui/Drawer/DrawerHeader";
 import { HotkeyScope } from "../ui/HotkeyScope";
 import { ModalPanel } from "../ui/ModalPanel";
 import { ChatComposeArea, type PendingImage } from "./ChatComposeArea";
-import { buildDisplayMessages, MessageList } from "./MessageList";
+import { buildDisplayMessages, MessageList, type QueuedMessageItem } from "./MessageList";
 import { ProposalCard } from "./ProposalCard";
 import { QuestionCard } from "./QuestionCard";
 
@@ -90,9 +90,16 @@ export function AssistantDrawer({
   const [chatTask, setChatTask] = useState<WorkflowTask | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [acceptLoading, setAcceptLoading] = useState(false);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessageItem[]>([]);
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Prevents concurrent sendQueued calls (auto-send + inject racing).
+  const isSendingRef = useRef(false);
+  const prevAgentRunningRef = useRef(false);
+  // Always-current snapshot of queuedMessages, read by auto-send effect without a dep.
+  const queueRef = useRef(queuedMessages);
+  queueRef.current = queuedMessages;
   const { optimisticMessage, setOptimisticMessage, scrollTrigger, triggerScroll } =
     useOptimisticMessage(logs);
 
@@ -294,6 +301,7 @@ export function AssistantDrawer({
       setShowSessionList(false);
       setInputValue("");
       setOptimisticMessage(null);
+      setQueuedMessages([]);
       setPendingImages((prev) => {
         for (const img of prev) URL.revokeObjectURL(img.previewUrl);
         return [];
@@ -443,12 +451,107 @@ export function AssistantDrawer({
     }
   }, [transport, activeSessionId, taskId, fetchTaskSession, showError]);
 
+  // -- Shared send helper for queued message dispatch (auto-send and inject) --
+  const sendQueued = useCallback(
+    async (text: string) => {
+      if (isSendingRef.current) return;
+      isSendingRef.current = true;
+      setSending(true);
+      setOptimisticMessage(text);
+      triggerScroll();
+      try {
+        await sendAndRefresh(text);
+      } catch (err) {
+        if (!isDisconnectError(err)) showError(extractErrorMessage(err));
+        setOptimisticMessage(null);
+        setQueuedMessages((prev) => [{ id: crypto.randomUUID(), text }, ...prev]);
+      } finally {
+        isSendingRef.current = false;
+        setSending(false);
+      }
+    },
+    [sendAndRefresh, setOptimisticMessage, triggerScroll, showError],
+  );
+
+  // -- Queue message while agent is running --
+  const handleQueue = useCallback(() => {
+    const text = inputValue.trim();
+    if (!text) return;
+    setQueuedMessages((prev) => [...prev, { id: crypto.randomUUID(), text }]);
+    setInputValue("");
+    triggerScroll();
+  }, [inputValue, triggerScroll]);
+
+  // -- Edit queued message: remove from queue and load into input --
+  const handleEditQueued = useCallback((id: string) => {
+    const msg = queueRef.current.find((m) => m.id === id);
+    if (!msg) return;
+    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+    setInputValue(msg.text);
+    textareaRef.current?.focus();
+  }, []);
+
+  // -- Delete queued message --
+  const handleDeleteQueued = useCallback((id: string) => {
+    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
+  // -- Inject queued message: stop agent and send immediately --
+  const handleInjectQueued = useCallback(
+    async (id: string) => {
+      const msg = queueRef.current.find((m) => m.id === id);
+      if (!msg || !activeSessionId) return;
+      // Claim the send slot before awaiting stop — prevents auto-send from starting
+      // while assistant_stop is in-flight and transitioning isAgentRunning to false.
+      if (isSendingRef.current) return;
+      isSendingRef.current = true;
+      setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+      setSending(true);
+      setOptimisticMessage(msg.text);
+      triggerScroll();
+      try {
+        await transport.call("assistant_stop", { session_id: activeSessionId });
+        await sendAndRefresh(msg.text);
+      } catch (err) {
+        if (!isDisconnectError(err)) showError(extractErrorMessage(err));
+        setOptimisticMessage(null);
+        setQueuedMessages((prev) => [{ id: msg.id, text: msg.text }, ...prev]);
+      } finally {
+        isSendingRef.current = false;
+        setSending(false);
+      }
+    },
+    [activeSessionId, transport, sendAndRefresh, setOptimisticMessage, triggerScroll, showError],
+  );
+
+  // -- Auto-send: fire next queued message when agent stops --
+  // biome-ignore lint/correctness/useExhaustiveDependencies: queueRef, isSendingRef, and sendQueued intentionally omitted — refs are stable, sendQueued is stable
+  useEffect(() => {
+    const wasRunning = prevAgentRunningRef.current;
+    prevAgentRunningRef.current = isAgentRunning;
+    if (wasRunning && !isAgentRunning && queueRef.current.length > 0) {
+      // Skip if inject already owns the send slot — avoids removing a queued message
+      // that inject won't be able to send (isSendingRef guard blocks sendQueued).
+      if (isSendingRef.current) return;
+      const [next, ...rest] = queueRef.current;
+      setQueuedMessages(rest);
+      sendQueued(next.text);
+    }
+  }, [isAgentRunning]);
+
+  // -- Clear queue when active session changes --
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeSessionId is the trigger; setQueuedMessages is a stable setter
+  useEffect(() => {
+    setQueuedMessages([]);
+  }, [activeSessionId]);
+
   // -- New session --
   const handleNewSession = useCallback(() => {
     setActiveSessionId(null);
     setShowSessionList(false);
     setInputValue("");
     setOptimisticMessage(null);
+    setQueuedMessages([]);
     setPendingImages((prev) => {
       for (const img of prev) URL.revokeObjectURL(img.previewUrl);
       return [];
@@ -619,6 +722,10 @@ export function AssistantDrawer({
             emptyText="Start a conversation with the assistant."
             lastAgentExtra={lastAgentExtra}
             scrollToBottomTrigger={scrollTrigger}
+            queuedMessages={queuedMessages}
+            onEditQueued={handleEditQueued}
+            onDeleteQueued={handleDeleteQueued}
+            onInjectQueued={handleInjectQueued}
           />
 
           {/* Compose Area */}
@@ -630,6 +737,7 @@ export function AssistantDrawer({
             agentActive={isAgentRunning}
             onSend={handleSend}
             onStop={handleStop}
+            onQueue={isAgentRunning ? handleQueue : undefined}
             placeholder="Ask the assistant…"
             onResize={handleComposeResize}
             className="shrink-0 px-6 pb-4 bg-canvas"

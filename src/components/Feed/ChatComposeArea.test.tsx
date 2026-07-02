@@ -238,6 +238,54 @@ describe("ChatComposeArea — drop handler", () => {
   });
 });
 
+describe("ChatComposeArea — queue mode (agentActive + onQueue)", () => {
+  beforeEach(() => {
+    mockUseIsMobile.mockReset();
+    mockUseIsMobile.mockReturnValue(false);
+  });
+
+  it("calls onQueue when Enter pressed and agentActive with onQueue prop", () => {
+    const onQueue = vi.fn();
+    const props = makeProps({ agentActive: true, onQueue });
+    render(<ChatComposeArea {...props} />);
+
+    const textarea = screen.getByRole("textbox");
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    expect(onQueue).toHaveBeenCalledTimes(1);
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it("does not call onSend when Enter pressed and agentActive with onQueue prop", () => {
+    const onQueue = vi.fn();
+    const props = makeProps({ agentActive: true, onQueue });
+    render(<ChatComposeArea {...props} />);
+
+    const textarea = screen.getByRole("textbox");
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it("shows Queue button alongside Stop button when agentActive and onQueue provided", () => {
+    const onQueue = vi.fn();
+    const props = makeProps({ agentActive: true, onQueue });
+    render(<ChatComposeArea {...props} />);
+
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Queue message" })).toBeInTheDocument();
+  });
+
+  it("Queue button is disabled when input is empty", () => {
+    const onQueue = vi.fn();
+    const props = makeProps({ agentActive: true, onQueue, value: "" });
+    render(<ChatComposeArea {...props} />);
+
+    const queueButton = screen.getByRole("button", { name: "Queue message" });
+    expect(queueButton).toBeDisabled();
+  });
+});
+
 describe("ChatComposeArea — image remove button", () => {
   beforeEach(() => {
     mockUseIsMobile.mockReset();

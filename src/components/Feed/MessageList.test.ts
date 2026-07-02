@@ -493,6 +493,39 @@ describe("buildVirtualItems", () => {
     expect(standaloneGateItems).toHaveLength(0);
   });
 
+  // Queued message tests
+
+  it("renders queued messages as kind:queued items in virtual list", () => {
+    const queuedMessages = [
+      { id: "q1", text: "First queued message" },
+      { id: "q2", text: "Second queued message" },
+    ];
+    const items = buildVirtualItems([], { ...defaultOpts, queuedMessages });
+    const queuedItems = items.filter((i) => i.kind === "queued");
+    expect(queuedItems).toHaveLength(2);
+    if (queuedItems[0].kind === "queued") {
+      expect(queuedItems[0].id).toBe("q1");
+      expect(queuedItems[0].text).toBe("First queued message");
+    }
+    if (queuedItems[1].kind === "queued") {
+      expect(queuedItems[1].id).toBe("q2");
+    }
+  });
+
+  it("includes queued items after spinner when agent running and messages queued", () => {
+    const queuedMessages = [{ id: "q1", text: "waiting message" }];
+    const items = buildVirtualItems([], {
+      ...defaultOpts,
+      isAgentRunning: true,
+      queuedMessages,
+    });
+    const spinnerIndex = items.findIndex((i) => i.kind === "spinner");
+    const queuedIndex = items.findIndex((i) => i.kind === "queued");
+    expect(spinnerIndex).toBeGreaterThan(-1);
+    expect(queuedIndex).toBeGreaterThan(-1);
+    expect(queuedIndex).toBeGreaterThan(spinnerIndex);
+  });
+
   it("passes latestArtifactId so superseded entries can be identified", () => {
     const baseArtifact: WorkflowArtifact = {
       name: "plan",

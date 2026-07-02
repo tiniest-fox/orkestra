@@ -115,6 +115,7 @@ export function DrawerTabContent({
       <RunTab
         status={runScript.status}
         lines={runScript.lines}
+        ports={runScript.ports}
         loading={runScript.loading}
         error={runScript.error}
         start={runScript.start}

@@ -504,6 +504,18 @@ const otherStages = flowStages.filter(s => s.name !== task.derived.current_stage
 
 `resolveFlowStageNames` is also used by `optimisticTransitions.ts` and `pipelineSegments.ts` as the single source of truth for flow-aware stage name lists.
 
+## Tauri URL Opening: Use `openExternal`, Not `window.open()`
+
+`window.open(url, "_blank")` is silently broken in Tauri's webview — it either does nothing or opens inside the webview itself rather than the system browser. Use the `openExternal` utility from `src/utils/openExternal.ts` instead:
+
+```ts
+import { openExternal } from "../../utils/openExternal";
+
+openExternal(`http://localhost:${port}`);
+```
+
+The function is synchronous (returns `void`) — no `await` needed. Adjust the relative import path based on your file's location. This applies to any clickable URL that should open in the system browser — port chips, external links, "open in browser" buttons.
+
 ## Tauri Dialog Gotcha: `window.confirm()` is Non-Blocking
 
 <!-- compound: lewdly-known-dormouse -->

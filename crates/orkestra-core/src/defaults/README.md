@@ -65,6 +65,19 @@ The default workflow includes an automated compound stage that runs after review
 
 The compound agent updates `CLAUDE.md` files, agent prompts, and code comments. It never modifies code.
 
+## Run Tab
+
+The Orkestra desktop app includes a Run tab for starting and monitoring your project's dev server. It executes `.orkestra/scripts/run.sh` and streams its output as a live log.
+
+To make ports accessible from the Run tab's control bar, emit `ORKESTRA_PORT` lines from your run script:
+
+```bash
+echo "ORKESTRA_PORT Rails=3000"
+echo "ORKESTRA_PORT API=4000"
+```
+
+Each declared port appears as a labeled chip in the control bar. Clicking a chip opens `http://localhost:<port>` in your browser. Ports persist in the bar for the lifetime of the run, even as log output scrolls past.
+
 ## Integration
 
 After a Trak is approved, Orkestra merges its worktree branch into the main branch. If merging fails (e.g., a conflict), the Trak returns to the stage named in `integration.on_failure` in `workflow.yaml` — by default the `work` stage — so the agent can resolve the conflict.
@@ -74,7 +87,7 @@ After a Trak is approved, Orkestra merges its worktree branch into the main bran
 - **`workflow.yaml`** — Stage pipeline configuration
 - **`ORKESTRA.md`** — Optional project-level instructions injected into every stage agent's system prompt. Write plain text or Markdown. Leave empty (the default) to add nothing to the prompt.
 - **`agents/`** — Agent prompt templates; customize these per project to guide agent behavior
-- **`scripts/`** — Shell scripts: `worktree_setup.sh` and `worktree_cleanup.sh` run when worktrees are created/removed; `checks.sh` is the default gate script
+- **`scripts/`** — Shell scripts: `worktree_setup.sh` and `worktree_cleanup.sh` run when worktrees are created/removed; `checks.sh` is the default gate script; `run.sh` is an optional dev server launcher
 - **`.database/`** — SQLite database (gitignored)
 - **`.logs/`** — Agent output logs (gitignored)
 - **`.worktrees/`** — Per-Trak git worktrees (gitignored)

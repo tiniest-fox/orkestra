@@ -1,9 +1,10 @@
-//! Run tab — terminal-like log display with Start/Stop controls for the run script.
+// Run tab — terminal-like log display with Start/Stop controls and declared port chips.
 
-import { ArrowDown, Play, Square } from "lucide-react";
+import { ArrowDown, ExternalLink, Play, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RunStatus } from "../../../../hooks/useRunScript";
 import { AnsiText } from "../../../../utils/ansi";
+import { openExternal } from "../../../../utils/openExternal";
 
 // ============================================================================
 // Types
@@ -12,6 +13,7 @@ import { AnsiText } from "../../../../utils/ansi";
 interface RunTabProps {
   status: RunStatus;
   lines: string[];
+  ports: Record<string, number>;
   loading: boolean;
   error: string | null;
   start: () => Promise<void>;
@@ -22,7 +24,7 @@ interface RunTabProps {
 // Component
 // ============================================================================
 
-export function RunTab({ status, lines, loading, error, start, stop }: RunTabProps) {
+export function RunTab({ status, lines, ports, loading, error, start, stop }: RunTabProps) {
   // -- Auto-scroll --
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -93,6 +95,19 @@ export function RunTab({ status, lines, loading, error, start, stop }: RunTabPro
           </button>
         )}
         <span className={`text-[11px] font-medium ${statusClass}`}>{statusText}</span>
+        {Object.entries(ports).map(([label, port]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => openExternal(`http://localhost:${port}`)}
+            className="flex items-center gap-1 px-2 py-0.5 rounded border border-border text-forge-mono-sm text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
+          >
+            <span className="font-medium">{label}</span>
+            <span className="text-text-quaternary">:</span>
+            <span>{port}</span>
+            <ExternalLink size={9} className="text-text-quaternary ml-0.5" />
+          </button>
+        ))}
         {error && (
           <span className="text-[11px] text-status-error ml-auto truncate max-w-xs" title={error}>
             {error}

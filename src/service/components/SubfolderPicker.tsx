@@ -43,7 +43,7 @@ export function SubfolderPicker({
     setCreating(dir);
     setError(null);
     try {
-      await addSubfolderProject(projectId, dir, dir);
+      await addSubfolderProject(projectId, `${projectName}/${dir}`, dir);
       onComplete();
     } catch (err) {
       setError(extractErrorMessage(err));

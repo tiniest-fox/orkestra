@@ -83,7 +83,7 @@ describe("SubfolderPicker", () => {
     await user.click(screen.getByText("src"));
 
     await waitFor(() => {
-      expect(mockAddSubfolderProject).toHaveBeenCalledWith("proj-1", "src", "src");
+      expect(mockAddSubfolderProject).toHaveBeenCalledWith("proj-1", "my-repo/src", "src");
       expect(onComplete).toHaveBeenCalled();
     });
   });

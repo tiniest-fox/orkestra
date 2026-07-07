@@ -471,6 +471,160 @@ fn test_derived_state_vibe_fields() {
     );
 }
 
+/// `send_to_stage` while in vibe mode leaves a stale `vibe_origin` (with no
+/// `proposed_destination`). When the redirected stage later commits and
+/// `finalize_advancement` runs, it takes the vibe branch and fails on the
+/// missing `proposed_destination`, leaving the task permanently stuck in
+/// `Committed`.
+#[test]
+fn test_send_to_stage_clears_vibe_origin() {
+    let workflow = disable_auto_merge(multi_stage_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["worker", "vibe"]);
+
+    let task = ctx.create_task("Vibe redirect test", "Test send_to_stage clears vibe", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingApproval
+
+    // Enter vibe mode — sets vibe_origin with proposed_destination: None
+    ctx.api().enter_vibe(&task_id).unwrap();
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.vibe_origin.is_some());
+
+    // Vibe agent produces a plain artifact (not a ProposedExit)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "vibe".to_string(),
+            content: "Some vibe work".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn vibe agent + process output → AwaitingApproval{vibe}
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { ref stage } if stage == "vibe"),
+        "Expected AwaitingApproval{{vibe}}, got {:?}",
+        task.state
+    );
+
+    // Human redirects to work stage via send_to_stage (implicit vibe exit)
+    ctx.api()
+        .send_to_stage(&task_id, "work", "Go implement this in work stage")
+        .unwrap();
+
+    // vibe_origin should be cleared — redirect is an implicit vibe exit
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.vibe_origin.is_none(),
+        "vibe_origin should be cleared after send_to_stage (implicit vibe exit), but was {:?}",
+        task.vibe_origin
+    );
+
+    // Verify the task can complete normally: work stage → approve → finalize
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implemented".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingApproval{work}
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // finalize → should advance to review (not fail on stale vibe_origin)
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(&task.state, TaskState::Queued { stage } if stage == "review"),
+        "Expected Queued{{review}} after normal advancement, got {:?} (task stuck due to stale vibe_origin)",
+        task.state
+    );
+}
+
+/// Generic `approve` on a vibe task that hasn't gone through `ProposedExit`
+/// enters the commit pipeline without setting `proposed_destination`. When
+/// `finalize_advancement` runs, it finds `vibe_origin` with no destination
+/// and returns `InvalidState`, leaving the task permanently stuck in
+/// `Committed`.
+#[test]
+fn test_approve_rejects_vibe_task_without_proposed_destination() {
+    let workflow = disable_auto_merge(simple_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["worker", "vibe"]);
+
+    let task = ctx.create_task("Vibe approve test", "Test approve guards vibe", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingApproval
+
+    // Enter vibe mode
+    ctx.api().enter_vibe(&task_id).unwrap();
+
+    // Vibe agent produces a plain artifact — NOT a ProposedExit
+    // (proposed_destination remains None)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "vibe".to_string(),
+            content: "Did some vibe work".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn vibe agent + process output → AwaitingApproval{vibe}
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { ref stage } if stage == "vibe"),
+        "Expected AwaitingApproval{{vibe}}, got {:?}",
+        task.state
+    );
+    assert!(
+        task.vibe_origin.is_some(),
+        "vibe_origin should be set"
+    );
+    assert!(
+        task.vibe_origin.as_ref().unwrap().proposed_destination.is_none(),
+        "proposed_destination should be None (no ProposedExit from agent)"
+    );
+
+    // Generic approve should be rejected for vibe tasks without proposed_destination.
+    // Without the fix, approve succeeds here but the task gets permanently stuck
+    // later when finalize_advancement fails on the missing destination.
+    let result = ctx.api().approve(&task_id);
+    assert!(
+        result.is_err(),
+        "approve should reject vibe tasks without proposed_destination, \
+         but it succeeded — task will get stuck in Committed with no recovery path"
+    );
+}
+
 /// Vibe re-entry: entering vibe twice creates a fresh session with no memory of the first.
 ///
 /// Verifies the plan acceptance criterion: "Each vibe entry starts a fresh session".

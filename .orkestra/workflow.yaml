@@ -244,6 +244,72 @@ flows:
     integration:
       on_failure: build
 
+  # Bug fix pipeline: investigate → fix → review.
+  # Use this flow for reproducible bugs that need a regression test.
+  # The investigate stage finds the root cause and writes a failing test that
+  # demonstrates the bug; the gate passes only when tests fail (proving the bug
+  # is demonstrated). The fix stage makes the failing test pass with a minimal
+  # code change. The review stage approves or rejects the complete fix.
+  bugfix:
+    stages:
+      - name: investigate
+        description: Researches the bug, identifies the root cause, and writes a failing test that demonstrates it
+        artifact: investigation
+        prompt: investigator.md
+        model: opus
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-expect-test-failure.sh"
+          timeout_seconds: 1200
+        disallowed_tools:
+          - pattern: "Bash(*cargo test*)"
+            message: "Testing runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo build*)"
+            message: "Building is handled by the gate that runs after you complete your work"
+          - pattern: "Bash(*cargo clippy*)"
+            message: "Linting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo fmt*)"
+            message: "Formatting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(pnpm tauri*)"
+            message: "Never run the app — it spawns nested agent processes and causes errors"
+          - pattern: "Bash(pnpm dev*)"
+            message: "Never run the app dev server — it's not needed for implementation"
+          - pattern: "Bash(*cargo run*)"
+            message: "Never run the app binary — it spawns nested agent processes and causes errors"
+
+      - name: fix
+        description: Implements the minimal code change to make the failing test pass
+        artifact: summary
+        prompt: bugfix_worker.md
+        model: sonnet
+        gate:
+          command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+          timeout_seconds: 1200
+        disallowed_tools:
+          - pattern: "Bash(*cargo test*)"
+            message: "Testing runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo build*)"
+            message: "Building is handled by the gate that runs after you complete your work"
+          - pattern: "Bash(*cargo clippy*)"
+            message: "Linting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(*cargo fmt*)"
+            message: "Formatting runs automatically in the gate after you complete your work"
+          - pattern: "Bash(pnpm tauri*)"
+            message: "Never run the app — it spawns nested agent processes and causes errors"
+          - pattern: "Bash(pnpm dev*)"
+            message: "Never run the app dev server — it's not needed for implementation"
+          - pattern: "Bash(*cargo run*)"
+            message: "Never run the app binary — it spawns nested agent processes and causes errors"
+
+      - name: review
+        description: Reviews completed work and produces an approval or rejection verdict
+        artifact: verdict
+        prompt: reviewer.md
+        model: opus
+        gate: true
+
+    integration:
+      on_failure: fix
+
   opencode:
     stages:
       - name: think

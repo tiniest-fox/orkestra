@@ -620,9 +620,75 @@ fn test_approve_rejects_vibe_task_without_proposed_destination() {
     // later when finalize_advancement fails on the missing destination.
     let result = ctx.api().approve(&task_id);
     assert!(
-        result.is_err(),
-        "approve should reject vibe tasks without proposed_destination, \
-         but it succeeded — task will get stuck in Committed with no recovery path"
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "Expected InvalidTransition for vibe task without proposed_destination, got {result:?}"
+    );
+}
+
+/// `set_auto_mode(true)` on a vibe task with no `proposed_destination` enters the commit
+/// pipeline, triggering the same stuck-in-Committed failure as generic `approve`.
+///
+/// The fix pushes the vibe guard into `enter_commit_pipeline::execute`, so all callers
+/// (approve, `set_auto_mode`, `auto_advance_or_review`) are protected from a single location.
+#[test]
+fn test_set_auto_mode_rejects_vibe_task_without_proposed_destination() {
+    let workflow = disable_auto_merge(simple_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["worker", "vibe"]);
+
+    let task = ctx.create_task(
+        "Vibe auto-mode test",
+        "Test set_auto_mode guards vibe",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingApproval
+
+    // Enter vibe mode
+    ctx.api().enter_vibe(&task_id).unwrap();
+
+    // Vibe agent produces a plain artifact — NOT a ProposedExit (proposed_destination stays None)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "vibe".to_string(),
+            content: "Did some vibe work".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn vibe agent + process output → AwaitingApproval{vibe}
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { ref stage } if stage == "vibe"),
+        "Expected AwaitingApproval{{vibe}}, got {:?}",
+        task.state
+    );
+    assert!(
+        task.vibe_origin
+            .as_ref()
+            .is_some_and(|o| o.proposed_destination.is_none()),
+        "proposed_destination should be None (no ProposedExit from agent)"
+    );
+
+    // set_auto_mode(true) should be rejected — it would otherwise call enter_commit_pipeline
+    // on a vibe task with no proposed_destination, leaving the task permanently stuck.
+    let result = ctx.api().set_auto_mode(&task_id, true);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "Expected InvalidTransition when set_auto_mode(true) on vibe task without proposed_destination, got {result:?}"
     );
 }
 

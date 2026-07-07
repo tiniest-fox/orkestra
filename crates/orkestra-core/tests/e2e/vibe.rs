@@ -605,12 +605,13 @@ fn test_approve_rejects_vibe_task_without_proposed_destination() {
         "Expected AwaitingApproval{{vibe}}, got {:?}",
         task.state
     );
+    assert!(task.vibe_origin.is_some(), "vibe_origin should be set");
     assert!(
-        task.vibe_origin.is_some(),
-        "vibe_origin should be set"
-    );
-    assert!(
-        task.vibe_origin.as_ref().unwrap().proposed_destination.is_none(),
+        task.vibe_origin
+            .as_ref()
+            .unwrap()
+            .proposed_destination
+            .is_none(),
         "proposed_destination should be None (no ProposedExit from agent)"
     );
 

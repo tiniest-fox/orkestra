@@ -51,6 +51,20 @@ pub fn execute(
         return Ok(task);
     }
 
+    // Guard: vibe tasks must have a proposed_destination before entering the commit pipeline.
+    // Without it, finalize_advancement takes the vibe branch and fails on the missing destination,
+    // leaving the task permanently stuck in Committed with no recovery path.
+    if task
+        .vibe_origin
+        .as_ref()
+        .is_some_and(|o| o.proposed_destination.is_none())
+    {
+        return Err(WorkflowError::InvalidTransition(
+            "Cannot use generic approve while in vibe mode; use confirm-vibe-exit with a destination"
+                .into(),
+        ));
+    }
+
     orkestra_debug!(
         "action",
         "approve {}: from stage {}",

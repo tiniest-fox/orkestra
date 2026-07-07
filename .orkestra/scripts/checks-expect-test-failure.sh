@@ -1,0 +1,414 @@
+#!/bin/bash
+#
+# Gate script for the investigate stage of the bugfix flow.
+#
+# Inverts the normal test success condition: passes when at least one test FAILS,
+# meaning the investigator successfully wrote a test that demonstrates the bug.
+#
+# Outcome matrix:
+#   Test failure detected (compiled + ran, some failed) → exit 0 [PASS — bug demonstrated]
+#   All tests pass across all changed crates            → exit 1 [FAIL — test doesn't demonstrate bug]
+#   Compilation failure (no "test result:" in output)   → exit 1 [FAIL — fix compilation first]
+#
+# Formatting and linting run normally and must pass before the test check.
+#
+# Usage: .orkestra/scripts/checks-expect-test-failure.sh [OPTIONS]
+#
+# Options:
+#   --verbose      Show full output (default is minimal pass/fail only)
+#
+# Exit codes:
+#   0 - Test failures detected (gate passes — bug is demonstrated)
+#   1 - All tests passed, compilation failed, or fmt/lint checks failed
+
+set -e
+
+# This project uses mise for tool management. Activate it so cargo, node, pnpm
+# etc. are available when running from the .app bundle or agent worktrees.
+eval "$(mise activate bash --shims)" 2>/dev/null || true
+
+# Parse arguments
+VERBOSE=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Suppress cargo progress bars in quiet mode (they bypass shell redirection)
+if ! $VERBOSE; then
+    export CARGO_TERM_PROGRESS_WHEN=never
+fi
+
+# =============================================================================
+# Lock management for shared target directory
+# =============================================================================
+# See checks.sh for detailed explanation. Same locking mechanism.
+
+LOCK_DIR="${ORKESTRA_PROJECT_ROOT:-.}/.orkestra/target.lock.d"
+LOCK_PID_FILE="$LOCK_DIR/pid"
+LOCK_HELD=false
+
+acquire_lock() {
+    if $LOCK_HELD; then
+        return
+    fi
+
+    local max_wait=300  # 5 minutes max wait
+    local waited=0
+
+    while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+        if [ -f "$LOCK_PID_FILE" ]; then
+            local lock_pid=$(cat "$LOCK_PID_FILE" 2>/dev/null)
+            if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+                $VERBOSE && echo -e "${YELLOW:-}[WARN]${NC:-} Removing stale lock (PID $lock_pid is dead)"
+                rm -rf "$LOCK_DIR"
+                continue
+            fi
+        fi
+
+        if [ $waited -ge $max_wait ]; then
+            echo "ERROR: Timed out waiting for target lock after ${max_wait}s"
+            exit 1
+        fi
+
+        $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Waiting for target lock (held by PID $(cat "$LOCK_PID_FILE" 2>/dev/null || echo "unknown"))..."
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    echo $$ > "$LOCK_PID_FILE"
+    LOCK_HELD=true
+
+    trap 'if $LOCK_HELD; then rm -rf "$LOCK_DIR"; fi' EXIT
+
+    $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock acquired, running cargo checks..." || true
+}
+
+release_lock() {
+    if $LOCK_HELD; then
+        rm -rf "$LOCK_DIR"
+        LOCK_HELD=false
+        $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock released" || true
+    fi
+}
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Track failures
+FAILED_CHECKS=()
+FAILED_OUTPUTS=()
+
+# Track the test-failure gate state across all crates
+TESTS_HAVE_FAILURES=false
+HAS_COMPILATION_ERROR=false
+
+# Helper functions
+info()    { $VERBOSE && echo -e "${BLUE}[INFO]${NC} $1" || true; }
+success() { echo -e "${GREEN}[PASS]${NC} $1"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
+fail()    { echo -e "${RED}[FAIL]${NC} $1"; }
+
+run_check() {
+    local name="$1"
+    shift
+    local cmd="$@"
+    local start_time=$(date +%s)
+
+    if $VERBOSE; then
+        echo ""
+        echo -e "${BLUE}[INFO]${NC} Running: $name"
+        echo "  Command: $cmd"
+        echo ""
+        if eval "$cmd"; then
+            local elapsed=$(( $(date +%s) - start_time ))
+            success "$name (${elapsed}s)"
+        else
+            local elapsed=$(( $(date +%s) - start_time ))
+            fail "$name (${elapsed}s)"
+            FAILED_CHECKS+=("$name")
+        fi
+    else
+        local output
+        local exit_code
+        output=$(eval "$cmd" 2>&1) && exit_code=0 || exit_code=$?
+        local elapsed=$(( $(date +%s) - start_time ))
+
+        if [ $exit_code -eq 0 ]; then
+            success "$name (${elapsed}s)"
+        else
+            fail "$name (${elapsed}s)"
+            FAILED_CHECKS+=("$name")
+            FAILED_OUTPUTS+=("$(echo "$output" | tail -50)")
+        fi
+    fi
+}
+
+# Run cargo test and interpret the result in inverted fashion:
+#   "test result: FAILED" in output → TESTS_HAVE_FAILURES=true (good!)
+#   non-zero exit, no "test result:" → compilation failure → HAS_COMPILATION_ERROR=true
+#   exit 0, all tests pass → noted, but wait until summary to decide if gate passes
+run_expect_test_failure() {
+    local name="$1"
+    shift
+    local cmd="$@"
+    local start_time=$(date +%s)
+
+    local output
+    local exit_code=0
+    output=$(eval "$cmd" 2>&1) || exit_code=$?
+    local elapsed=$(( $(date +%s) - start_time ))
+
+    if $VERBOSE; then
+        echo ""
+        echo -e "${BLUE}[INFO]${NC} Running: $name"
+        echo "  Command: $cmd"
+        echo ""
+        echo "$output"
+    fi
+
+    if echo "$output" | grep -q "test result: FAILED"; then
+        # Tests compiled and ran — at least one failed — bug is demonstrated
+        success "$name: test failures detected — bug is demonstrated (${elapsed}s)"
+        TESTS_HAVE_FAILURES=true
+    elif [ $exit_code -ne 0 ]; then
+        # Non-zero exit without "test result:" = compilation or link failure
+        fail "$name: compilation failed — fix compilation errors before the gate can verify test failures (${elapsed}s)"
+        HAS_COMPILATION_ERROR=true
+        FAILED_CHECKS+=("$name")
+        FAILED_OUTPUTS+=("$(echo "$output" | tail -50)")
+    else
+        # All tests passed in this crate — note it without failing yet
+        # (the investigator may have added the failing test to a different crate)
+        warn "$name: all tests passed in this crate (${elapsed}s)"
+    fi
+}
+
+# =============================================================================
+# Detect branches (use ORKESTRA_* env vars if available)
+# =============================================================================
+
+get_base_branch() {
+    if [ -n "$ORKESTRA_BASE_BRANCH" ]; then
+        echo "$ORKESTRA_BASE_BRANCH"
+        return
+    fi
+
+    for branch in main master; do
+        if git rev-parse --verify "$branch" &>/dev/null; then
+            echo "$branch"
+            return
+        fi
+    done
+    git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main"
+}
+
+get_current_branch() {
+    if [ -n "$ORKESTRA_BRANCH" ]; then
+        echo "$ORKESTRA_BRANCH"
+        return
+    fi
+    git branch --show-current
+}
+
+BASE_BRANCH=$(get_base_branch)
+CURRENT_BRANCH=$(get_current_branch)
+
+if $VERBOSE; then
+    info "Base branch: $BASE_BRANCH"
+    info "Current branch: $CURRENT_BRANCH"
+    info "Mode: expect-test-failure (investigate stage — gate passes when tests FAIL)"
+    if [ -n "$ORKESTRA_TASK_ID" ]; then
+        info "Orkestra task: $ORKESTRA_TASK_ID"
+        [ -n "$ORKESTRA_TASK_TITLE" ] && info "Task title: $ORKESTRA_TASK_TITLE"
+    fi
+fi
+
+# =============================================================================
+# Get changed files
+# =============================================================================
+
+if [ "$CURRENT_BRANCH" = "$BASE_BRANCH" ]; then
+    if [ -n "$(git status --porcelain)" ]; then
+        info "On primary branch with uncommitted changes - checking working tree"
+        CHANGED_FILES=$(git diff --name-only HEAD)
+    else
+        info "On primary branch - checking last commit"
+        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+    fi
+else
+    MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)
+    COMMITTED_CHANGES=$(git diff --name-only "$MERGE_BASE" HEAD)
+    UNCOMMITTED_CHANGES=$(git diff --name-only HEAD)
+    CHANGED_FILES=$(echo -e "${COMMITTED_CHANGES}\n${UNCOMMITTED_CHANGES}" | sort -u | grep -v '^$' || true)
+fi
+
+if [ -z "$CHANGED_FILES" ]; then
+    echo "No changes detected - nothing to check"
+    exit 0
+fi
+
+if $VERBOSE; then
+    echo ""
+    info "Changed files:"
+    echo "$CHANGED_FILES" | sed 's/^/  /'
+    echo ""
+fi
+
+# =============================================================================
+# Categorize changes (no reverse dep expansion — same as checks-lite.sh)
+# =============================================================================
+
+# All workspace crates — used to invalidate mtime fingerprints for ALL crates
+ALL_CRATES=(
+    orkestra-types orkestra-schema orkestra-debug orkestra-process
+    orkestra-parser orkestra-store orkestra-git orkestra-prompt
+    orkestra-utility orkestra-agent orkestra-core
+)
+
+# Helper: check if array contains a value
+array_contains() {
+    local needle="$1"; shift
+    for item in "$@"; do [ "$item" = "$needle" ] && return 0; done
+    return 1
+}
+
+HAS_FRONTEND=false
+CHANGED_CRATES=()
+
+while IFS= read -r file; do
+    case "$file" in
+        src/*|package.json|pnpm-lock.yaml|biome.json|tsconfig*.json|vite.config.ts|vitest.config.ts|tailwind.config.js|postcss.config.js|index.html|knip.json)
+            HAS_FRONTEND=true
+            ;;
+        crates/*/Cargo.toml|crates/*/build.rs|crates/*/*/*)
+            # Compilation-relevant crate files only (excludes root-level docs)
+            crate_name="${file#crates/}"
+            crate_name="${crate_name%%/*}"
+            if ! array_contains "$crate_name" "${CHANGED_CRATES[@]}"; then
+                CHANGED_CRATES+=("$crate_name")
+            fi
+            ;;
+    esac
+done <<< "$CHANGED_FILES"
+
+HAS_RUST=false
+if [ ${#CHANGED_CRATES[@]} -gt 0 ]; then
+    HAS_RUST=true
+fi
+
+if $VERBOSE; then
+    echo "Change categories:"
+    echo "  Frontend (src/):        $HAS_FRONTEND"
+    echo "  Changed crates:         ${CHANGED_CRATES[*]:-none}"
+    echo "  (No reverse dep expansion — parent check handles integration)"
+    echo ""
+fi
+
+# =============================================================================
+# Run checks
+# =============================================================================
+
+# Frontend checks (normal — frontend tests must pass)
+if $HAS_FRONTEND; then
+    $VERBOSE && info "=== Frontend Checks ==="
+
+    if [ ! -d "node_modules" ]; then
+        run_check "pnpm install" "pnpm install"
+    fi
+
+    run_check "Frontend lint+format fix (biome)" "pnpm check:fix"
+    run_check "Frontend lint+format verify (biome)" "pnpm check --error-on-warnings"
+    run_check "Frontend type check" "pnpm exec tsc --noEmit"
+    run_check "Frontend tests" "pnpm test:run"
+fi
+
+# Rust checks — formatting and linting must pass; tests are expected to fail
+if $HAS_RUST; then
+    $VERBOSE && info "=== Rust Checks (investigate stage — expecting test failures) ==="
+
+    # Ensure frontend is built (Tauri requires dist/ to exist for clippy)
+    if [ ! -d "dist" ]; then
+        $VERBOSE && info "Building frontend (required for Tauri build)..."
+        if [ ! -d "node_modules" ]; then
+            run_check "pnpm install" "pnpm install"
+        fi
+        run_check "Frontend build" "pnpm build"
+    fi
+
+    # Formatting must pass even though tests are expected to fail
+    run_check "Cargo fmt fix" "cargo fmt --all"
+    run_check "Cargo fmt verify" "cargo fmt --all --check"
+
+    # Acquire lock for cargo commands that use the shared target/ directory
+    acquire_lock
+
+    # Invalidate mtime fingerprints for ALL workspace crates (see checks-lite.sh)
+    if [ -L "target" ]; then
+        for crate in "${ALL_CRATES[@]}"; do
+            touch "crates/$crate/src/lib.rs"
+        done
+        touch cli/src/main.rs
+        touch src-tauri/src/main.rs
+    fi
+
+    # Clippy must pass — code quality is not compromised by the failing test
+    for crate in "${CHANGED_CRATES[@]}"; do
+        run_check "$crate clippy fix" "cargo clippy --fix -p $crate --all-targets --allow-dirty --allow-staged"
+        run_check "$crate clippy verify" "cargo clippy -p $crate --all-targets -- -D warnings"
+    done
+
+    # Tests: gate passes when failures are detected, fails when all pass or compilation fails
+    for crate in "${CHANGED_CRATES[@]}"; do
+        run_expect_test_failure "$crate tests" "cargo test -p $crate"
+    done
+
+    release_lock
+fi
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+echo ""
+echo "=========================================="
+
+if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
+    # fmt, clippy, or compilation errors — report them
+    fail "Some checks failed:"
+    for i in "${!FAILED_CHECKS[@]}"; do
+        echo ""
+        echo -e "${RED}--- ${FAILED_CHECKS[$i]} ---${NC}"
+        if [ -n "${FAILED_OUTPUTS[$i]:-}" ]; then
+            echo "${FAILED_OUTPUTS[$i]}"
+        fi
+    done
+    exit 1
+elif $TESTS_HAVE_FAILURES; then
+    success "Gate passed — test failures detected, bug is demonstrated"
+    exit 0
+else
+    fail "No test failures detected across changed crates"
+    echo ""
+    echo "The test you wrote must FAIL with the current code to pass this gate."
+    echo "This proves the bug exists. The fix stage will make the test pass."
+    echo ""
+    echo "Common causes:"
+    echo "  - The test exercises working code rather than the broken code path"
+    echo "  - The test assertion is too loose and accepts the buggy output"
+    echo "  - The test is not yet committed (uncommitted tests are included in changed files, but check git status)"
+    exit 1
+fi

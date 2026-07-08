@@ -5,6 +5,7 @@
 
 use orkestra_core::workflow::{
     config::{IntegrationConfig, StageConfig, WorkflowConfig},
+    domain::{Question, QuestionAnswer, QuestionOption},
     ports::WorkflowError,
     runtime::TaskState,
 };
@@ -798,4 +799,102 @@ fn test_vibe_reentry_starts_fresh_session() {
         task.state
     );
     assert!(task.vibe_origin.is_none(), "vibe_origin should be cleared");
+}
+
+// =============================================================================
+// Question flow tests
+// =============================================================================
+
+/// Vibe agent asks questions → system pauses at `AwaitingApproval` → human answers →
+/// task resumes in vibe stage with Answers trigger.
+#[test]
+fn test_vibe_agent_can_ask_questions() {
+    let workflow = disable_auto_merge(simple_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["worker", "vibe"]);
+
+    let task = ctx.create_task("Vibe question test", "Test vibe question flow", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingApproval
+
+    // Enter vibe mode
+    ctx.api().enter_vibe(&task_id).unwrap();
+
+    // Vibe agent asks questions
+    let questions = vec![
+        Question::new("What should I focus on next?")
+            .with_context("Need direction from the user")
+            .with_options(vec![
+                QuestionOption::new("Add tests"),
+                QuestionOption::new("Refactor the code"),
+            ]),
+        Question::new("Should I also update the docs?"),
+    ];
+    ctx.set_output(&task_id, MockAgentOutput::Questions(questions));
+    ctx.advance(); // spawn vibe agent + process questions output
+
+    // Task should be awaiting review (questions surfaced)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Expected AwaitingApproval after questions, got {:?}",
+        task.state
+    );
+
+    // vibe_origin should still be set
+    assert!(
+        task.vibe_origin.is_some(),
+        "vibe_origin should remain set while awaiting question answers"
+    );
+
+    // Pending questions should be retrievable
+    let pending = ctx.api().get_pending_questions(&task_id).unwrap();
+    assert_eq!(pending.len(), 2, "Should have 2 pending questions");
+
+    // Human answers questions
+    let answers = vec![
+        QuestionAnswer::new(
+            "What should I focus on next?",
+            "Add tests",
+            chrono::Utc::now().to_rfc3339(),
+        ),
+        QuestionAnswer::new(
+            "Should I also update the docs?",
+            "Yes please",
+            chrono::Utc::now().to_rfc3339(),
+        ),
+    ];
+
+    let task = ctx
+        .api()
+        .answer_questions(&task_id, answers)
+        .expect("Should answer questions");
+
+    // After answering, task should be queued for vibe stage again
+    assert!(
+        matches!(&task.state, TaskState::Queued { stage } if stage == "vibe"),
+        "Expected Queued{{vibe}} after answering questions, got {:?}",
+        task.state
+    );
+
+    // No more pending questions
+    let pending = ctx.api().get_pending_questions(&task_id).unwrap();
+    assert!(pending.is_empty(), "Pending questions should be cleared");
+
+    // vibe_origin should still be set (still in vibe mode)
+    assert!(
+        task.vibe_origin.is_some(),
+        "vibe_origin should remain set after answering questions"
+    );
 }

@@ -69,6 +69,7 @@ pub fn execute(
     )?;
 
     task.state = TaskState::queued(target_stage);
+    task.vibe_origin = None;
     task.updated_at = now;
 
     store.save_task(&task)?;

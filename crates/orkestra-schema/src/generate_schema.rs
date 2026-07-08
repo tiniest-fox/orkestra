@@ -66,11 +66,8 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
     if !config.produces_subtasks && !config.has_approval && !config.exit_only {
         type_enum.insert(0, config.artifact_name.to_string());
     }
-    // Questions are always available — except in exit-only mode (vibe), where the
-    // only valid structured output is a proposed_exit signal.
-    if !config.exit_only {
-        type_enum.push("questions".to_string());
-    }
+    // Questions are always available, including in exit-only mode (vibe).
+    type_enum.push("questions".to_string());
     if config.produces_subtasks {
         type_enum.push("subtasks".to_string());
     }
@@ -210,7 +207,7 @@ pub fn execute(config: &SchemaConfig<'_>) -> String {
 
     // Build the complete schema
     let description = if config.exit_only {
-        "Stage output. Use 'proposed_exit' with 'destination' when ready to exit vibe mode, or use terminal types (failed/blocked).".to_string()
+        "Stage output. Use 'proposed_exit' with 'destination' when ready to exit vibe mode, 'questions' to ask clarifying questions, or use terminal types (failed/blocked).".to_string()
     } else if config.produces_subtasks {
         "Stage output. Use 'subtasks' with 'content' for the artifact and structured subtask data, or use terminal types (failed/blocked).".to_string()
     } else {
@@ -488,14 +485,14 @@ mod tests {
             type_enum.iter().any(|v| v == "proposed_exit"),
             "proposed_exit should be in type enum"
         );
-        // In exit-only mode, artifact name and questions are excluded
+        // In exit-only mode, artifact name is excluded but questions are allowed
         assert!(
             !type_enum.iter().any(|v| v == "vibe"),
             "artifact name should not be in type enum for exit-only schema"
         );
         assert!(
-            !type_enum.iter().any(|v| v == "questions"),
-            "questions should not be in type enum for exit-only schema"
+            type_enum.iter().any(|v| v == "questions"),
+            "questions should be in type enum for exit-only schema"
         );
 
         let props = parsed.get("properties").unwrap();

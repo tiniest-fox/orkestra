@@ -158,6 +158,17 @@ fn extract_opencode_api_key(
     (resolved, remaining)
 }
 
+/// Named volume for persisting Claude Code session `.jsonl` files across container restarts.
+///
+/// Returns the volume name for the given project. The volume is auto-created by Docker
+/// on first `docker run` and should be removed on project deletion.
+pub fn claude_sessions_volume_name(project_id: &str) -> String {
+    format!("orkestra-claude-sessions-{project_id}")
+}
+
+/// Container path where Claude Code stores per-project session history.
+const CLAUDE_SESSIONS_MOUNT_PATH: &str = "/home/orkestra/.claude/projects";
+
 /// All resolved inputs needed to build `docker run` arguments.
 struct DockerRunConfig {
     container_name: String,
@@ -177,6 +188,8 @@ struct DockerRunConfig {
     cpu_limit: Option<String>,
     memory_limit: Option<String>,
     extra_mounts: Vec<String>,
+    /// Named volume for persisting Claude session files.
+    claude_sessions_volume: String,
 }
 
 /// Build the `docker run` argument list from resolved config values.
@@ -217,6 +230,14 @@ fn build_docker_run_args(config: &DockerRunConfig) -> Vec<String> {
     // into the per-project image.
     args.push("-v".to_string());
     args.push(toolbox_mount);
+
+    // Per-project named volume that persists Claude Code session history
+    // (.jsonl files) across container restarts.
+    args.push("-v".to_string());
+    args.push(format!(
+        "{}:{CLAUDE_SESSIONS_MOUNT_PATH}",
+        config.claude_sessions_volume
+    ));
 
     // User-declared mounts from devcontainer.json `mounts` field.
     for mount in &config.extra_mounts {
@@ -307,6 +328,7 @@ fn docker_run(
         cpu_limit: resource_limits.cpu_limit.map(|v| format!("{v:.1}")),
         memory_limit: resource_limits.memory_limit_mb.map(|v| format!("{v}m")),
         extra_mounts: extra_mounts.to_vec(),
+        claude_sessions_volume: claude_sessions_volume_name(project_id),
     };
     let args = build_docker_run_args(&config);
 
@@ -351,6 +373,7 @@ fn compose_up(
     let override_path = override_dir.join("orkestra-override.yml");
     let (claude_token, _) = extract_claude_token(secrets);
     let (opencode_key, _) = extract_opencode_api_key(secrets);
+    let sessions_volume = claude_sessions_volume_name(project_id);
     let override_content = build_compose_override(
         service,
         port,
@@ -359,6 +382,7 @@ fn compose_up(
         opencode_key.as_deref(),
         resource_limits,
         extra_mounts,
+        &sessions_volume,
     );
     std::fs::write(&override_path, override_content)
         .map_err(|e| ServiceError::Other(format!("Failed to write compose override: {e}")))?;
@@ -502,13 +526,15 @@ fn is_named_volume(mount_spec: &str) -> bool {
 /// requirements into the project's app service.
 ///
 /// Mirrors the mounts and environment variables that `docker_run` sets for
-/// non-compose containers: toolbox volume, git identity, `HOME`, `GH_TOKEN`,
-/// and `CLAUDE_CODE_OAUTH_TOKEN`.
+/// non-compose containers: toolbox volume, claude sessions volume, git identity,
+/// `HOME`, `GH_TOKEN`, and `CLAUDE_CODE_OAUTH_TOKEN`.
 ///
 /// `claude_code_oauth_token` — when `Some`, injects the token as `CLAUDE_CODE_OAUTH_TOKEN`
 ///   in the service environment. Resolved by the caller (secret → service env var).
 /// `opencode_api_key` — when `Some`, injects the key as `OPENCODE_API_KEY`
 ///   in the service environment. Resolved by the caller (secret → service env var).
+/// `claude_sessions_volume` — named volume for persisting Claude session `.jsonl` files.
+#[allow(clippy::too_many_arguments)]
 fn build_compose_override(
     service: &str,
     port: u16,
@@ -517,6 +543,7 @@ fn build_compose_override(
     opencode_api_key: Option<&str>,
     resource_limits: &ResourceLimits,
     extra_mounts: &[String],
+    claude_sessions_volume: &str,
 ) -> String {
     const I: &str = "      "; // 6-space indent for items under a 4-space key
 
@@ -536,6 +563,10 @@ fn build_compose_override(
     let _ = writeln!(
         volumes,
         "{I}- {TOOLBOX_VOLUME_NAME}:{TOOLBOX_MOUNT_PATH}:ro"
+    );
+    let _ = writeln!(
+        volumes,
+        "{I}- {claude_sessions_volume}:{CLAUDE_SESSIONS_MOUNT_PATH}"
     );
     for mount in extra_mounts {
         let _ = writeln!(volumes, "{I}- \"{mount}\"");
@@ -596,6 +627,8 @@ fn build_compose_override(
     let _ = writeln!(root_volumes, "volumes:");
     let _ = writeln!(root_volumes, "  {TOOLBOX_VOLUME_NAME}:");
     let _ = writeln!(root_volumes, "    external: true");
+    // Sessions volume is auto-created by Docker Compose (not external).
+    let _ = writeln!(root_volumes, "  {claude_sessions_volume}:");
     for mount in extra_mounts {
         if is_named_volume(mount) {
             let name = mount.split(':').next().unwrap_or("");
@@ -661,7 +694,16 @@ mod tests {
             ("WITH_BACKSLASH".to_string(), r"val\ue".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
 
         // Plain value is quoted but not escaped.
         assert!(yaml.contains("PLAIN: \"simple_value\""));
@@ -681,7 +723,16 @@ mod tests {
             "PEM_KEY".to_string(),
             "-----BEGIN KEY-----\nbase64data\n-----END KEY-----".to_string(),
         )];
-        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
         // Literal newlines must be escaped as \n in the YAML double-quoted string.
         assert!(yaml.contains(r#"PEM_KEY: "-----BEGIN KEY-----\nbase64data\n-----END KEY-----""#));
         // The value must NOT contain unescaped literal newlines.
@@ -690,7 +741,16 @@ mod tests {
 
     #[test]
     fn build_compose_override_no_secrets_produces_valid_structure() {
-        let yaml = build_compose_override("myservice", 8080, &[], None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "myservice",
+            8080,
+            &[],
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("myservice:"));
@@ -821,7 +881,16 @@ mod tests {
             ("API_KEY".to_string(), "mykey".to_string()),
         ];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
 
         // Git identity env vars use the secret values.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -844,7 +913,16 @@ mod tests {
             "project@example.com".to_string(),
         )];
 
-        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
 
         // Email uses the secret value.
         assert!(yaml.contains("GIT_AUTHOR_EMAIL: \"project@example.com\""));
@@ -875,6 +953,7 @@ mod tests {
             cpu_limit: None,
             memory_limit: None,
             extra_mounts: vec![],
+            claude_sessions_volume: "test-sessions-vol".to_string(),
         }
     }
 
@@ -1001,6 +1080,7 @@ mod tests {
                 memory_limit_mb: Some(4096),
             },
             &[],
+            "test-sessions-vol",
         );
         assert!(yaml.contains("cpus: 2.0"), "cpus should be in YAML");
         assert!(
@@ -1011,7 +1091,16 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_resource_limits_when_none() {
-        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
         assert!(!yaml.contains("cpus:"), "cpus should be absent");
         assert!(!yaml.contains("mem_limit:"), "mem_limit should be absent");
     }
@@ -1043,9 +1132,12 @@ mod tests {
     fn build_docker_run_args_no_extra_mounts_when_empty() {
         let config = default_run_config();
         let args = build_docker_run_args(&config);
-        // Exactly 2 -v flags: workspace + toolbox.
+        // Exactly 3 -v flags: workspace + toolbox + claude sessions.
         let v_count = args.iter().filter(|a| *a == "-v").count();
-        assert_eq!(v_count, 2, "expect workspace and toolbox -v flags");
+        assert_eq!(
+            v_count, 3,
+            "expect workspace, toolbox, and sessions -v flags"
+        );
     }
 
     #[test]
@@ -1086,6 +1178,7 @@ mod tests {
                 "cache-vol:/root/.cache".to_string(),
                 "/host:/container:ro".to_string(),
             ],
+            "test-sessions-vol",
         );
         assert!(yaml.contains("- \"cache-vol:/root/.cache\""));
         assert!(yaml.contains("- \"/host:/container:ro\""));
@@ -1101,6 +1194,7 @@ mod tests {
             None,
             &no_limits(),
             &["cache-vol:/root/.cache".to_string()],
+            "test-sessions-vol",
         );
         assert!(
             yaml.contains("  cache-vol:\n"),
@@ -1122,6 +1216,7 @@ mod tests {
             None,
             &no_limits(),
             &["/host/path:/container/path:ro".to_string()],
+            "test-sessions-vol",
         );
         // Only the toolbox volume should appear in the root-level volumes section.
         let root_section = yaml.rsplit("volumes:\n").next().unwrap_or("");
@@ -1138,6 +1233,7 @@ mod tests {
             None,
             &no_limits(),
             &[],
+            "test-sessions-vol",
         );
         assert!(
             yaml.contains("CLAUDE_CODE_OAUTH_TOKEN: \"sk-ant-abc\""),
@@ -1147,7 +1243,16 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_claude_token_when_none() {
-        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
         assert!(
             !yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"),
             "CLAUDE_CODE_OAUTH_TOKEN must be absent when None"
@@ -1164,7 +1269,16 @@ mod tests {
             ),
             ("OTHER_KEY".to_string(), "value".to_string()),
         ];
-        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
         // Should not appear as a plain key-value secret injection.
         // (The param is None so it won't appear at all in this call.)
         assert!(!yaml.contains("CLAUDE_CODE_OAUTH_TOKEN"));
@@ -1260,6 +1374,7 @@ mod tests {
             Some("oc-key-abc"),
             &no_limits(),
             &[],
+            "test-sessions-vol",
         );
         assert!(
             yaml.contains("OPENCODE_API_KEY: \"oc-key-abc\""),
@@ -1269,7 +1384,16 @@ mod tests {
 
     #[test]
     fn build_compose_override_omits_opencode_key_when_none() {
-        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
         assert!(
             !yaml.contains("OPENCODE_API_KEY"),
             "OPENCODE_API_KEY must be absent when None"
@@ -1282,7 +1406,16 @@ mod tests {
             ("OPENCODE_API_KEY".to_string(), "from-secret".to_string()),
             ("OTHER_KEY".to_string(), "value".to_string()),
         ];
-        let yaml = build_compose_override("app", 3000, &secrets, None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &secrets,
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
         // Should not appear as a plain key-value secret injection.
         assert!(!yaml.contains("OPENCODE_API_KEY"));
         // Other secrets still appear.
@@ -1301,10 +1434,80 @@ mod tests {
 
     #[test]
     fn build_compose_override_includes_xdg_cache_home() {
-        let yaml = build_compose_override("app", 3000, &[], None, None, &no_limits(), &[]);
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "test-sessions-vol",
+        );
         assert!(
             yaml.contains("XDG_CACHE_HOME: /home/orkestra/.local/cache"),
             "XDG_CACHE_HOME must be unconditionally injected in compose override"
+        );
+    }
+
+    // -- claude sessions volume tests --
+
+    #[test]
+    fn build_docker_run_args_mounts_claude_sessions_volume() {
+        let config = DockerRunConfig {
+            claude_sessions_volume: "orkestra-claude-sessions-proj123".to_string(),
+            ..default_run_config()
+        };
+        let args = build_docker_run_args(&config);
+        let v_positions: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-v")
+            .map(|(i, _)| i)
+            .collect();
+        let mounted: Vec<&String> = v_positions.iter().map(|&i| &args[i + 1]).collect();
+        assert!(
+            mounted
+                .iter()
+                .any(|m| m.starts_with("orkestra-claude-sessions-proj123:")),
+            "sessions volume must appear as a -v mount"
+        );
+        assert!(
+            mounted
+                .iter()
+                .any(|m| m.contains("/home/orkestra/.claude/projects")),
+            "sessions volume must be mounted at /home/orkestra/.claude/projects"
+        );
+    }
+
+    #[test]
+    fn build_compose_override_mounts_claude_sessions_volume() {
+        let yaml = build_compose_override(
+            "app",
+            3000,
+            &[],
+            None,
+            None,
+            &no_limits(),
+            &[],
+            "orkestra-claude-sessions-proj123",
+        );
+        assert!(
+            yaml.contains("- orkestra-claude-sessions-proj123:/home/orkestra/.claude/projects"),
+            "sessions volume must appear in service volumes"
+        );
+        assert!(
+            yaml.contains("  orkestra-claude-sessions-proj123:\n"),
+            "sessions volume must be declared in root volumes section"
+        );
+    }
+
+    #[test]
+    fn claude_sessions_volume_name_follows_pattern() {
+        use super::claude_sessions_volume_name;
+        assert_eq!(
+            claude_sessions_volume_name("my-project"),
+            "orkestra-claude-sessions-my-project"
         );
     }
 

@@ -1512,6 +1512,39 @@ mod tests {
     }
 
     #[test]
+    fn setup_script_chowns_claude_sessions_parent_dir() {
+        let mount_path = std::path::Path::new(CLAUDE_SESSIONS_MOUNT_PATH);
+        let parent = mount_path
+            .parent()
+            .expect("mount path must have a parent directory");
+        let parent_str = parent.to_str().unwrap();
+
+        // Docker creates intermediate directories as root when mounting a
+        // named volume. The toolbox setup script must chown the parent of
+        // the sessions mount path so Claude Code can create sibling
+        // directories (session-env, plugins, etc.) under ~/.claude/.
+        let dockerfile = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("Dockerfile.toolbox"),
+        )
+        .expect("Dockerfile.toolbox must exist");
+
+        let chowns_parent = dockerfile
+            .lines()
+            .any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("chown")
+                    && trimmed.contains("1000")
+                    && trimmed.contains(parent_str)
+            });
+        assert!(
+            chowns_parent,
+            "setup.sh must chown {parent_str} so uid 1000 can write to it \
+             after Docker creates it as root for the sessions volume mount"
+        );
+    }
+
+    #[test]
     fn is_named_volume_correctly_classifies() {
         assert!(is_named_volume("myvolume:/mnt/cache"));
         assert!(is_named_volume(

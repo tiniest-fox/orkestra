@@ -1555,7 +1555,7 @@ mod tests {
             });
             let setup_chowns_dir = dockerfile.lines().any(|line| {
                 let trimmed = line.trim();
-                trimmed.contains("chown") && trimmed.contains("1000") && trimmed.contains(dir)
+                trimmed.starts_with("chown") && trimmed.contains("1000") && trimmed.contains(dir)
             });
             assert!(
                 setup_creates_dir && setup_chowns_dir,

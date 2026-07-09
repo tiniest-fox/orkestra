@@ -1512,6 +1512,59 @@ mod tests {
     }
 
     #[test]
+    fn setup_script_chowns_agent_home_directories() {
+        use super::CLAUDE_SESSIONS_MOUNT_PATH;
+
+        let dockerfile = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Dockerfile.toolbox"),
+        )
+        .expect("Dockerfile.toolbox must exist");
+
+        // Docker creates intermediate directories as root when mounting a
+        // named volume. The toolbox setup script must chown every parent
+        // directory that Docker may auto-create, plus directories that
+        // agents need at runtime (XDG_DATA_HOME for OpenCode, etc.).
+        //
+        // When adding a new volume mount under /home/orkestra, add its
+        // parent here. When adding support for a new agent that writes to
+        // a home subdirectory, add that path here.
+        let sessions_parent = std::path::Path::new(CLAUDE_SESSIONS_MOUNT_PATH)
+            .parent()
+            .expect("mount path must have a parent directory")
+            .to_str()
+            .unwrap();
+
+        let required_dirs: &[(&str, &str)] = &[
+            (
+                sessions_parent,
+                "Docker creates ~/.claude/ as root for the sessions volume mount; \
+                 Claude Code needs it writable for session-env, plugins, etc.",
+            ),
+            (
+                "/home/orkestra/.local/share",
+                "OpenCode (Bun) uses XDG_DATA_HOME (~/.local/share) at startup; \
+                 mkdir fails with EACCES if ~/.local/share does not exist \
+                 and ~/.local is root-owned.",
+            ),
+        ];
+
+        for (dir, reason) in required_dirs {
+            let setup_creates_dir = dockerfile.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("mkdir") && trimmed.contains(dir)
+            });
+            let setup_chowns_dir = dockerfile.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("chown") && trimmed.contains("1000") && trimmed.contains(dir)
+            });
+            assert!(
+                setup_creates_dir && setup_chowns_dir,
+                "setup.sh must mkdir and chown {dir}: {reason}"
+            );
+        }
+    }
+
+    #[test]
     fn is_named_volume_correctly_classifies() {
         assert!(is_named_volume("myvolume:/mnt/cache"));
         assert!(is_named_volume(

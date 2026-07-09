@@ -1512,32 +1512,56 @@ mod tests {
     }
 
     #[test]
-    fn setup_script_chowns_claude_sessions_parent_dir() {
+    fn setup_script_chowns_agent_home_directories() {
         use super::CLAUDE_SESSIONS_MOUNT_PATH;
-        let mount_path = std::path::Path::new(CLAUDE_SESSIONS_MOUNT_PATH);
-        let parent = mount_path
-            .parent()
-            .expect("mount path must have a parent directory");
-        let parent_str = parent.to_str().unwrap();
 
-        // Docker creates intermediate directories as root when mounting a
-        // named volume. The toolbox setup script must chown the parent of
-        // the sessions mount path so Claude Code can create sibling
-        // directories (session-env, plugins, etc.) under ~/.claude/.
         let dockerfile = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Dockerfile.toolbox"),
         )
         .expect("Dockerfile.toolbox must exist");
 
-        let chowns_parent = dockerfile.lines().any(|line| {
-            let trimmed = line.trim();
-            trimmed.starts_with("chown") && trimmed.contains("1000") && trimmed.contains(parent_str)
-        });
-        assert!(
-            chowns_parent,
-            "setup.sh must chown {parent_str} so uid 1000 can write to it \
-             after Docker creates it as root for the sessions volume mount"
-        );
+        // Docker creates intermediate directories as root when mounting a
+        // named volume. The toolbox setup script must chown every parent
+        // directory that Docker may auto-create, plus directories that
+        // agents need at runtime (XDG_DATA_HOME for OpenCode, etc.).
+        //
+        // When adding a new volume mount under /home/orkestra, add its
+        // parent here. When adding support for a new agent that writes to
+        // a home subdirectory, add that path here.
+        let sessions_parent = std::path::Path::new(CLAUDE_SESSIONS_MOUNT_PATH)
+            .parent()
+            .expect("mount path must have a parent directory")
+            .to_str()
+            .unwrap();
+
+        let required_dirs: &[(&str, &str)] = &[
+            (
+                sessions_parent,
+                "Docker creates ~/.claude/ as root for the sessions volume mount; \
+                 Claude Code needs it writable for session-env, plugins, etc.",
+            ),
+            (
+                "/home/orkestra/.local/share",
+                "OpenCode (Bun) uses XDG_DATA_HOME (~/.local/share) at startup; \
+                 mkdir fails with EACCES if ~/.local/share does not exist \
+                 and ~/.local is root-owned.",
+            ),
+        ];
+
+        for (dir, reason) in required_dirs {
+            let setup_creates_dir = dockerfile.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("mkdir") && trimmed.contains(dir)
+            });
+            let setup_chowns_dir = dockerfile.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("chown") && trimmed.contains("1000") && trimmed.contains(dir)
+            });
+            assert!(
+                setup_creates_dir && setup_chowns_dir,
+                "setup.sh must mkdir and chown {dir}: {reason}"
+            );
+        }
     }
 
     #[test]

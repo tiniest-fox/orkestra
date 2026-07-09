@@ -25,6 +25,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use orkestra_git::{Git2GitService, GitService};
 
 use crate::daemon_supervisor::DaemonSupervisor;
+use crate::interactions::devcontainer::start_container::claude_sessions_volume_name;
 use crate::interactions::{daemon_token, github, port, project, resource_limits, secret};
 use crate::types::{ProjectStatus, ServiceConfig, ServiceError};
 
@@ -709,6 +710,19 @@ async fn remove_project_handler(
                 tracing::warn!("Failed to delete project directory {}: {e}", path.display());
             }
         }
+    }
+
+    // Best-effort: remove the per-project Claude session volume so disk space
+    // is reclaimed. Failures are non-fatal — the volume may not exist if the
+    // container was never started.
+    {
+        let volume_name = claude_sessions_volume_name(&id);
+        let _ = std::process::Command::new("docker")
+            .args(["volume", "rm", &volume_name])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
 
     StatusCode::OK.into_response()

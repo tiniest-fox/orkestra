@@ -84,3 +84,22 @@ The same applies to `shutdown_all` and any other raw SQL paths that deserialize 
 Handlers that perform irreversible side effects (stopping a daemon, destroying a container, removing a directory) must validate all preconditions **before** the first destructive call. The canonical case: `remove_project_handler` checks for child subfolder projects via an inline SQL query before calling `abort_provision` or `stop_daemon`. If the check were after the daemon stop, a 409 rejection would leave the parent daemon killed with no way to recover short of manual restart.
 
 **Rule:** Gather all facts. Validate all guards. Only then begin side effects.
+
+## Container Home Directory Ownership
+
+When Docker mounts a named volume at a path whose parent doesn't yet exist, it auto-creates all intermediate directories as **root** — even though the container runs as uid 1000 (`orkestra`). Any sibling directory the agent tries to create under that parent will fail with `EACCES`.
+
+**The pattern:** `setup.sh` in `Dockerfile.toolbox` must explicitly `mkdir -p` and `chown 1000:1000` every `/home/orkestra` subdirectory that Docker might auto-create or that agents need to write into at runtime.
+
+Current required directories (lines ~96-100 of `Dockerfile.toolbox`):
+
+| Directory | Why it must be explicit |
+|-----------|------------------------|
+| `/home/orkestra/.claude` | Docker creates it as root for the `~/.claude/projects` sessions volume mount; Claude Code needs it writable for `session-env`, `plugins/`, etc. |
+| `/home/orkestra/.local/share` | OpenCode (Bun) uses `XDG_DATA_HOME` (`~/.local/share`) at startup; fails with `EACCES` if the directory is root-owned. |
+
+**When to update this list:** Any time you add a new named volume mount under `/home/orkestra/`, or add support for an agent that writes to a new home subdirectory, you must:
+
+1. Add the directory to the `mkdir -p` line in `Dockerfile.toolbox`'s `setup.sh`
+2. Add an explicit `chown 1000:1000 <dir>` line (the recursive `chown -R /home/orkestra/.local` is not sufficient — it must be a separate line naming the exact path)
+3. Add the path to the `required_dirs` table in the `setup_script_chowns_agent_home_directories` test in `start_container.rs` — the test enforces this invariant and will fail if you miss a directory

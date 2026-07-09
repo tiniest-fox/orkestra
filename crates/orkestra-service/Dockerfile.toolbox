@@ -93,9 +93,14 @@ fi
 # Ensure the home directory and XDG cache dirs exist and are owned by uid 1000.
 # .local/cache is created explicitly so XDG_CACHE_HOME is always writable.
 # .cache is created explicitly so opencode's fallback path is also writable.
-mkdir -p /home/orkestra /home/orkestra/.local/cache /home/orkestra/.cache
+# .claude is created explicitly so Docker does not auto-create it as root when
+# mounting the sessions volume at ~/.claude/projects.
+# .local/share is created explicitly so OpenCode (Bun) can write XDG_DATA_HOME.
+mkdir -p /home/orkestra /home/orkestra/.local/cache /home/orkestra/.local/share /home/orkestra/.cache /home/orkestra/.claude
 chown -R 1000:1000 /home/orkestra/.local
 chown 1000:1000 /home/orkestra/.cache
+chown 1000:1000 /home/orkestra/.claude
+chown 1000:1000 /home/orkestra/.local/share
 chown 1000:1000 /home/orkestra
 
 # -- Configure git --

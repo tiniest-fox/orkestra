@@ -1513,6 +1513,7 @@ mod tests {
 
     #[test]
     fn setup_script_chowns_claude_sessions_parent_dir() {
+        use super::CLAUDE_SESSIONS_MOUNT_PATH;
         let mount_path = std::path::Path::new(CLAUDE_SESSIONS_MOUNT_PATH);
         let parent = mount_path
             .parent()
@@ -1524,19 +1525,14 @@ mod tests {
         // the sessions mount path so Claude Code can create sibling
         // directories (session-env, plugins, etc.) under ~/.claude/.
         let dockerfile = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("Dockerfile.toolbox"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Dockerfile.toolbox"),
         )
         .expect("Dockerfile.toolbox must exist");
 
-        let chowns_parent = dockerfile
-            .lines()
-            .any(|line| {
-                let trimmed = line.trim();
-                trimmed.starts_with("chown")
-                    && trimmed.contains("1000")
-                    && trimmed.contains(parent_str)
-            });
+        let chowns_parent = dockerfile.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with("chown") && trimmed.contains("1000") && trimmed.contains(parent_str)
+        });
         assert!(
             chowns_parent,
             "setup.sh must chown {parent_str} so uid 1000 can write to it \

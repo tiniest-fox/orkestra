@@ -1,4 +1,21 @@
 FROM ubuntu:24.04
+# Force apt onto HTTPS mirrors. Some build hosts block outbound port 80, which
+# breaks the base image's default http:// archive.ubuntu.com/ports.ubuntu.com
+# sources (the latter is used on arm64). Both mirrors also serve over HTTPS.
+RUN for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
+        [ -f "$f" ] && sed -i \
+            -e 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' \
+            -e 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' "$f"; \
+    done; true
+# The base image ships no CA trust store, so the HTTPS sources above can't be
+# verified yet. Bootstrap ca-certificates over an unverified HTTPS connection;
+# every apt call after this one gets full certificate verification. Package
+# authenticity is still enforced independently via apt's GPG-signed Release
+# files, regardless of the TLS verification setting.
+RUN apt-get update -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false && \
+    apt-get install -y --no-install-recommends ca-certificates \
+        -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false && \
+    rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git build-essential ca-certificates unzip gnupg \
     pkg-config libssl-dev \

@@ -247,7 +247,7 @@ pub async fn start_containers_and_spawn(
 // -- Helpers --
 
 /// Steps 4–9: detect → prepare image → start container → inject orkd + ork →
-/// store `container_id` → optionally run setup → spawn daemon.
+/// store `container_id` → optionally run setup → connect network → spawn daemon.
 ///
 /// `repo_path` is the repo root used for mounting and devcontainer detection.
 /// For regular projects this is the same as `project.path`; for subfolder
@@ -407,17 +407,6 @@ async fn container_and_spawn(
     .await
     .map_err(|e| ServiceError::Other(e.to_string()))??;
 
-    // Step 6e: Connect project container to service container's Docker networks.
-    // This allows the service to reach the daemon by container name (DooD).
-    tracing::info!(project_id = %project_id, "Connecting container to Docker networks");
-    tokio::task::spawn_blocking({
-        let cid = container_id.clone();
-        let id = project_id.clone();
-        move || devcontainer::connect_network::execute(&cid, &id)
-    })
-    .await
-    .map_err(|e| ServiceError::Other(e.to_string()))??;
-
     // Step 7: Store container_id.
     {
         let conn = Arc::clone(conn);
@@ -465,6 +454,19 @@ async fn container_and_spawn(
         .await
         .map_err(|e| ServiceError::Other(e.to_string()))??;
     }
+
+    // Step 8c: Connect project container to service container's Docker networks.
+    // This allows the service to reach the daemon by container name (DooD).
+    // Runs after run_setup to avoid disrupting the container's compose-network
+    // DNS resolver during postCreateCommand's readiness-wait loops.
+    tracing::info!(project_id = %project_id, "Connecting container to Docker networks");
+    tokio::task::spawn_blocking({
+        let cid = container_id.clone();
+        let id = project_id.clone();
+        move || devcontainer::connect_network::execute(&cid, &id)
+    })
+    .await
+    .map_err(|e| ServiceError::Other(e.to_string()))??;
 
     // Step 9: Spawn daemon.
     append_log(log_path, "\n=== Starting daemon ===");

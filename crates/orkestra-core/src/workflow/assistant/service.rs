@@ -1443,6 +1443,62 @@ mod tests {
         reset_lost_session(&store, "nonexistent", "2026-04-15T20:30:00Z").unwrap();
     }
 
+    /// After a session loss, recovery resets spawn_count to 0 so the next
+    /// message starts a fresh conversation. But once that fresh spawn
+    /// completes, spawn_count goes back to 1, causing the NEXT message to
+    /// use `--resume` — which fails again in environments that don't
+    /// persist Claude Code sessions (e.g., containers). This creates an
+    /// infinite alternating cycle: fresh-start → success, resume → fail,
+    /// fresh-start → success, resume → fail, ...
+    ///
+    /// The session should track that a session loss occurred and suppress
+    /// resume attempts until a resume actually succeeds.
+    #[test]
+    fn session_loss_does_not_cause_resume_retry_cycle() {
+        let store: Arc<dyn crate::workflow::ports::WorkflowStore> =
+            Arc::new(InMemoryWorkflowStore::new());
+        let now = "2026-07-01T00:00:00Z";
+
+        // Create session with an initial spawn that completed successfully
+        let mut session = AssistantSession::new("s1", now);
+        session.claude_session_id = Some("uuid-original".to_string());
+        session.agent_spawned(100, now);
+        session.agent_finished(now);
+        store.save_assistant_session(&session).unwrap();
+        assert_eq!(session.spawn_count, 1);
+
+        // Session loss detected on the next resume attempt.
+        // reset_lost_session generates a fresh UUID and zeros spawn_count.
+        reset_lost_session(&store, "s1", now).unwrap();
+        let session = store.get_assistant_session("s1").unwrap().unwrap();
+        assert_eq!(session.spawn_count, 0, "reset should zero spawn_count");
+
+        // Recovery: fresh spawn using --session-id (spawn_count was 0).
+        // This succeeds — the fresh start always works.
+        let mut session = store.get_assistant_session("s1").unwrap().unwrap();
+        session.agent_spawned(200, now); // spawn_count → 1
+        session.agent_finished(now);
+        store.save_assistant_session(&session).unwrap();
+
+        // Critical check: the NEXT spawn decision.
+        // spawn_count is 1 again, so the current code would use --resume.
+        // In an environment where Claude Code doesn't persist sessions,
+        // --resume will fail again, producing another "session was lost"
+        // error and restarting the cycle.
+        let session = store.get_assistant_session("s1").unwrap().unwrap();
+        let would_resume = session.spawn_count > 0;
+        assert!(
+            !would_resume,
+            "After a session loss, the system should not blindly retry \
+             --resume on the next spawn. spawn_count={}, \
+             claude_session_id={:?}. Without tracking resume failures, \
+             every other message fails in environments that don't persist \
+             Claude Code sessions.",
+            session.spawn_count,
+            session.claude_session_id,
+        );
+    }
+
     // ========================================================================
     // touch_task tests — spawn and finish transitions
     // ========================================================================

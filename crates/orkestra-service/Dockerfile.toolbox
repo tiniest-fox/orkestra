@@ -114,11 +114,17 @@ fi
 # .cache is created explicitly so opencode's fallback path is also writable.
 # .claude is created explicitly so Docker does not auto-create it as root when
 # mounting the sessions volume at ~/.claude/projects.
+# .claude/projects is created explicitly so Docker does not auto-create it as
+# root when mounting the named sessions volume there; Claude Code (uid 1000)
+# must be able to create per-project subdirectories and write session files.
+# chown -R covers .claude/projects (the volume mount root) and any other
+# subdirectories Claude Code writes at runtime (plugins/, session-env, etc.),
+# including files already in the volume that were root-owned before this fix.
 # .local/share is created explicitly so OpenCode (Bun) can write XDG_DATA_HOME.
-mkdir -p /home/orkestra /home/orkestra/.local/cache /home/orkestra/.local/share /home/orkestra/.cache /home/orkestra/.claude
+mkdir -p /home/orkestra /home/orkestra/.local/cache /home/orkestra/.local/share /home/orkestra/.cache /home/orkestra/.claude /home/orkestra/.claude/projects
 chown -R 1000:1000 /home/orkestra/.local
 chown 1000:1000 /home/orkestra/.cache
-chown 1000:1000 /home/orkestra/.claude
+chown -R 1000:1000 /home/orkestra/.claude
 chown 1000:1000 /home/orkestra/.local/share
 chown 1000:1000 /home/orkestra
 
@@ -177,6 +183,7 @@ chmod +x /opt/orkestra/setup.sh
 TOOLBOX_BUILD
 
 # Version marker — written from the TOOLBOX_VERSION build-arg passed by ensure_toolbox_image().
-# Never edit this manually; bump TOOLBOX_VERSION in ensure_toolbox_volume.rs instead.
+# The value is the SHA-256 hash of this Dockerfile's content, computed at runtime.
+# Any change to this file produces a new hash and triggers a fresh image build.
 ARG TOOLBOX_VERSION=unknown
 RUN echo "${TOOLBOX_VERSION}" > /opt/orkestra/.version

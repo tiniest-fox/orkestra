@@ -24,7 +24,7 @@ The toolbox is Orkestra's adapter: it runs inside *any* project container (inclu
 
 - All Orkestra-specific configuration belongs here, not in the project devcontainer.
 - `setup.sh` is the right place for: resolving/creating uid 1000, git identity, tool store paths (e.g. pnpm `store-dir`), and any other per-user setup.
-- Toolbox changes require bumping `TOOLBOX_VERSION` in `crates/orkestra-service/src/interactions/devcontainer/ensure_toolbox_volume.rs` to trigger a volume rebuild.
+- Toolbox changes automatically trigger a volume rebuild: `ensure_toolbox_volume.rs` derives the version from the SHA-256 hash of `Dockerfile.toolbox`, so any file change produces a new hash and a fresh image build.
 
 **Decision rule:** If a change would break the devcontainer in Codespaces or a local VS Code setup, it belongs in the toolbox, not the devcontainer.
 

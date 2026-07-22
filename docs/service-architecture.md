@@ -56,7 +56,7 @@ stopped → cloning → starting → running
 
 5. **Prepare image** — pulls or builds the image for this project's devcontainer variant (see [Image Model](#image-model)).
 
-6. **Ensure toolbox volume** — builds `orkestra-toolbox:v{N}` and populates the `orkestra-toolbox` Docker volume if stale (runs at most once per service lifetime via `OnceCell`).
+6. **Ensure toolbox volume** — builds `orkestra-toolbox:{hash}` (where `hash` is the SHA-256 of `Dockerfile.toolbox`) and populates the `orkestra-toolbox` Docker volume if stale (runs at most once per service lifetime via `OnceCell`).
 
 7. **Start container** — `docker run -d` (or `docker compose up -d`) with:
    - Workspace bind-mount: `{repo_path}:/workspace`
@@ -120,7 +120,7 @@ Contents:
 - Git credential helper — `/opt/orkestra/bin/git-credential-gh-token` (reads `GH_TOKEN`)
 - Setup script — `/opt/orkestra/setup.sh`
 
-**Versioning:** `TOOLBOX_VERSION` in `ensure_toolbox_volume.rs` is the single source of truth. Bump it to trigger a full rebuild. The version is baked into the image tag (`orkestra-toolbox:v{N}`) and a marker file (`/opt/orkestra/.version`). The service checks the marker on startup; if it doesn't match, it rebuilds the image and repopulates the volume.
+**Versioning:** `ensure_toolbox_volume.rs` computes a SHA-256 hash of the Dockerfile content at runtime and uses the first 16 hex chars as the version marker. The marker is baked into the image tag (`orkestra-toolbox:{hash}`) and a marker file (`/opt/orkestra/.version`). The service checks the marker on startup; if it doesn't match, it rebuilds the image and repopulates the volume. No manual version bump is needed — any change to `Dockerfile.toolbox` automatically triggers a rebuild.
 
 ## The Toolbox
 

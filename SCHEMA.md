@@ -142,6 +142,7 @@ Tracks agent sessions for project-level assistant chat. Unlike stage sessions (w
 | `title` | TEXT | | Optional user-provided title for the session |
 | `agent_pid` | INTEGER | | Process ID of the running agent |
 | `spawn_count` | INTEGER | NOT NULL, DEFAULT 0 | Number of times the agent process has been spawned for this session |
+| `session_fresh` | INTEGER | NOT NULL, DEFAULT 0 | Set after session-loss recovery so the next spawn does not increment `spawn_count` (breaking the resume retry cycle) |
 | `session_state` | TEXT | NOT NULL, DEFAULT 'active' | Session lifecycle state: `spawning`, `active`, `completed`, `abandoned` |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp |

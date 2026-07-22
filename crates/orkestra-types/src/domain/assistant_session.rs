@@ -69,8 +69,16 @@ pub struct AssistantSession {
     /// Number of times an agent has been spawned for this session.
     /// Used to determine if the next spawn should use `--resume` (count > 0) or `--session-id` (count == 0).
     /// Incremented at spawn time (not exit time) so crashes still result in correct resume behavior.
+    /// After a session loss, `reset_lost_session` zeros this field and sets `session_fresh = true`
+    /// so the recovery spawn does NOT increment it — keeping it at 0 and preventing a resume retry cycle.
     #[serde(default)]
     pub spawn_count: u32,
+
+    /// Set by `reset_lost_session` to mark that the next spawn is a post-loss recovery.
+    /// When true, `agent_spawned` clears this flag without incrementing `spawn_count`,
+    /// so the spawn after the recovery also uses `--session-id` rather than `--resume`.
+    #[serde(default)]
+    pub session_fresh: bool,
 
     /// Current state of the session.
     #[serde(default)]
@@ -105,6 +113,7 @@ impl AssistantSession {
             title: None,
             agent_pid: None,
             spawn_count: 0,
+            session_fresh: false,
             session_state: SessionState::Active,
             created_at: created.clone(),
             updated_at: created,
@@ -147,9 +156,18 @@ impl AssistantSession {
     /// Increments `spawn_count` so that if the agent crashes, the next spawn
     /// knows to use `--resume` instead of `--session-id`. This is more robust
     /// than incrementing on exit, since crashes skip the exit handler.
+    ///
+    /// When `session_fresh` is set (post-loss recovery), the increment is skipped
+    /// and the flag is cleared. This keeps `spawn_count` at 0 after the recovery
+    /// spawn, ensuring the next message also uses `--session-id` rather than
+    /// `--resume`, breaking the infinite retry cycle.
     pub fn agent_spawned(&mut self, pid: u32, updated_at: impl Into<String>) {
         self.agent_pid = Some(pid);
-        self.spawn_count += 1;
+        if self.session_fresh {
+            self.session_fresh = false;
+        } else {
+            self.spawn_count += 1;
+        }
         self.updated_at = updated_at.into();
     }
 
@@ -292,6 +310,33 @@ mod tests {
         let parsed: AssistantSession = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.task_id, Some("task-xyz".to_string()));
         assert_eq!(parsed, session);
+    }
+
+    #[test]
+    fn test_agent_spawned_when_session_fresh() {
+        let mut session = AssistantSession::new("as-1", "now");
+        session.claude_session_id = Some("new-uuid".to_string());
+        session.session_fresh = true;
+
+        // Recovery spawn: spawn_count stays 0, session_fresh cleared
+        session.agent_spawned(1111, "t1");
+        assert_eq!(
+            session.spawn_count, 0,
+            "recovery spawn must not increment spawn_count"
+        );
+        assert!(
+            !session.session_fresh,
+            "session_fresh must be cleared after recovery spawn"
+        );
+        assert_eq!(session.agent_pid, Some(1111));
+
+        // Subsequent spawn (no longer fresh): increments normally
+        session.agent_spawned(2222, "t2");
+        assert_eq!(
+            session.spawn_count, 1,
+            "next spawn must increment spawn_count"
+        );
+        assert!(!session.session_fresh);
     }
 
     #[test]

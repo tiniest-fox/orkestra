@@ -7,7 +7,8 @@ use crate::types::parse_session_state;
 /// Convert a row to an `AssistantSession`.
 ///
 /// Column order: id, `claude_session_id`, title, `agent_pid`,
-/// `spawn_count`, `session_state`, `created_at`, `updated_at`, `task_id`, `session_type`
+/// `spawn_count`, `session_state`, `created_at`, `updated_at`, `task_id`, `session_type`,
+/// `session_fresh`
 #[allow(clippy::cast_sign_loss)]
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<AssistantSession> {
     let agent_pid: Option<i32> = row.get(3)?;
@@ -20,6 +21,7 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<AssistantSession> {
     let session_type = session_type_str
         .parse::<SessionType>()
         .unwrap_or(SessionType::Assistant);
+    let session_fresh: i32 = row.get(10).unwrap_or(0);
 
     Ok(AssistantSession {
         id: row.get(0)?,
@@ -27,6 +29,7 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<AssistantSession> {
         title: row.get(2)?,
         agent_pid: agent_pid.map(|p| p as u32),
         spawn_count: spawn_count as u32,
+        session_fresh: session_fresh != 0,
         session_state: parse_session_state(&state_str),
         created_at: row.get(6)?,
         updated_at: row.get(7)?,

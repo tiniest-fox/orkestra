@@ -313,6 +313,33 @@ mod tests {
     }
 
     #[test]
+    fn test_agent_spawned_when_session_fresh() {
+        let mut session = AssistantSession::new("as-1", "now");
+        session.claude_session_id = Some("new-uuid".to_string());
+        session.session_fresh = true;
+
+        // Recovery spawn: spawn_count stays 0, session_fresh cleared
+        session.agent_spawned(1111, "t1");
+        assert_eq!(
+            session.spawn_count, 0,
+            "recovery spawn must not increment spawn_count"
+        );
+        assert!(
+            !session.session_fresh,
+            "session_fresh must be cleared after recovery spawn"
+        );
+        assert_eq!(session.agent_pid, Some(1111));
+
+        // Subsequent spawn (no longer fresh): increments normally
+        session.agent_spawned(2222, "t2");
+        assert_eq!(
+            session.spawn_count, 1,
+            "next spawn must increment spawn_count"
+        );
+        assert!(!session.session_fresh);
+    }
+
+    #[test]
     fn test_crash_recovery() {
         let mut session = AssistantSession::new("as-1", "now");
         session.claude_session_id = Some("test-uuid".to_string());

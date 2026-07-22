@@ -1461,6 +1461,10 @@ mod tests {
             new_id, "stale-session",
             "claude_session_id should be a new UUID, not the lost one"
         );
+        assert!(
+            reloaded.session_fresh,
+            "session_fresh must be true after reset so the recovery spawn does not increment spawn_count"
+        );
         assert_eq!(reloaded.updated_at, later);
     }
 

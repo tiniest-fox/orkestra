@@ -73,14 +73,7 @@ This approach works for any project — the devcontainer doesn't need to know ab
 
 ## Toolbox Versioning
 
-The toolbox image is cached by version tag. After any change to `Dockerfile.toolbox` or `setup.sh`, bump `TOOLBOX_VERSION` in `ensure_toolbox_volume.rs`:
-
-```rust
-// crates/orkestra-service/src/interactions/devcontainer/ensure_toolbox_volume.rs
-const TOOLBOX_VERSION: &str = "2";  // increment this
-```
-
-This triggers a full image rebuild and volume repopulation on next service start.
+The toolbox image is cached by a SHA-256 hash of `Dockerfile.toolbox`. Any change to the file produces a new hash, which causes a full image rebuild and volume repopulation on the next service start. No manual version bump is needed.
 
 ## Decision Rule
 

@@ -1,16 +1,10 @@
 //! Build the toolbox image (if needed) and populate the shared toolbox volume.
 
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::types::ServiceError;
-
-/// Toolbox version — the single source of truth.
-///
-/// Bump this string to trigger a full image rebuild and volume repopulation.
-/// The image tag (`orkestra-toolbox:v{N}`) and Dockerfile version marker are
-/// both derived from this value — never edit them separately.
-const TOOLBOX_VERSION: &str = "15";
 
 const TOOLBOX_DOCKERFILE_PATH: &str = "/etc/orkestra/Dockerfile.toolbox";
 pub const TOOLBOX_VOLUME_NAME: &str = "orkestra-toolbox";
@@ -18,36 +12,55 @@ pub const TOOLBOX_MOUNT_PATH: &str = "/opt/orkestra";
 
 /// Ensure the toolbox volume is present and up to date.
 ///
-/// 1. Checks the version marker inside the volume; returns immediately if current.
-/// 2. Builds `orkestra-toolbox:v{TOOLBOX_VERSION}` from the embedded Dockerfile (skips if already present).
-/// 3. Creates the volume (if missing) and copies toolbox contents into it.
+/// 1. Reads the embedded Dockerfile and computes its SHA-256 hash.
+/// 2. Checks the version marker inside the volume; returns immediately if it matches.
+/// 3. Builds `orkestra-toolbox:{hash}` from the embedded Dockerfile (skips if already present).
+/// 4. Creates the volume (if missing) and copies toolbox contents into it.
+///
+/// The hash-based version means any change to `Dockerfile.toolbox` automatically
+/// triggers a rebuild — no manual version bump required.
 pub fn execute() -> Result<(), ServiceError> {
-    if volume_version_matches()? {
+    let hash = dockerfile_hash()?;
+
+    if volume_version_matches(&hash)? {
         return Ok(());
     }
 
-    ensure_toolbox_image()?;
-    populate_volume()?;
+    ensure_toolbox_image(&hash)?;
+    populate_volume(&hash)?;
 
     Ok(())
 }
 
 // -- Helpers --
 
-/// Returns the image tag for the current toolbox version, e.g. `orkestra-toolbox:v1`.
+/// Compute a short SHA-256 hex digest of the embedded Dockerfile.
 ///
-/// The tag includes the version so that a version bump forces a fresh image build;
-/// `docker image inspect` on the old tag will fail and trigger a rebuild.
-fn toolbox_image_tag() -> String {
-    format!("orkestra-toolbox:v{TOOLBOX_VERSION}")
+/// The first 16 hex characters (8 bytes) are returned — sufficient collision
+/// resistance for local Docker image tags and volume version markers.
+fn dockerfile_hash() -> Result<String, ServiceError> {
+    let content = std::fs::read(TOOLBOX_DOCKERFILE_PATH).map_err(|e| {
+        ServiceError::Other(format!(
+            "Failed to read toolbox Dockerfile at {TOOLBOX_DOCKERFILE_PATH}: {e}"
+        ))
+    })?;
+    let mut hasher = Sha256::new();
+    hasher.update(&content);
+    let result = hasher.finalize();
+    Ok(format!("{result:x}")[..16].to_string())
 }
 
-/// Return true if the volume already contains the expected version marker.
+/// Returns the Docker image tag for the given content hash.
+fn toolbox_image_tag(hash: &str) -> String {
+    format!("orkestra-toolbox:{hash}")
+}
+
+/// Return true if the volume already contains a version marker matching `hash`.
 ///
-/// Returns `Ok(false)` when the version is absent or mismatched (volume missing,
+/// Returns `Ok(false)` when the marker is absent or mismatched (volume missing,
 /// marker unreadable, etc.) so the caller rebuilds. Returns `Err` only if docker
 /// itself cannot be spawned.
-fn volume_version_matches() -> Result<bool, ServiceError> {
+fn volume_version_matches(hash: &str) -> Result<bool, ServiceError> {
     let output = Command::new("docker")
         .args([
             "run",
@@ -71,7 +84,7 @@ fn volume_version_matches() -> Result<bool, ServiceError> {
     }
 
     let version = String::from_utf8_lossy(&output.stdout);
-    Ok(version.trim() == TOOLBOX_VERSION)
+    Ok(version.trim() == hash)
 }
 
 /// Build the toolbox image from the embedded Dockerfile if not already present.
@@ -79,8 +92,8 @@ fn volume_version_matches() -> Result<bool, ServiceError> {
 /// Uses the stdin-pipe pattern so no host filesystem path is required — this
 /// works correctly in a `DooD` (Docker-outside-of-Docker) setup where the service
 /// container and the host daemon have different views of the filesystem.
-fn ensure_toolbox_image() -> Result<(), ServiceError> {
-    let tag = toolbox_image_tag();
+fn ensure_toolbox_image(hash: &str) -> Result<(), ServiceError> {
+    let tag = toolbox_image_tag(hash);
 
     // Fast path: image already present on the host.
     let inspect = Command::new("docker")
@@ -104,15 +117,15 @@ fn ensure_toolbox_image() -> Result<(), ServiceError> {
 
     // Build by piping Dockerfile content via stdin — no build context needed
     // since the Dockerfile embeds setup.sh inline (no COPY instructions).
-    // Pass TOOLBOX_VERSION as a build-arg so the Dockerfile can write the version
-    // marker without duplicating the value.
+    // Pass the content hash as TOOLBOX_VERSION so the Dockerfile writes it as
+    // the version marker, making volume_version_matches() self-consistent.
     let mut child = Command::new("docker")
         .args([
             "build",
             "-t",
             &tag,
             "--build-arg",
-            &format!("TOOLBOX_VERSION={TOOLBOX_VERSION}"),
+            &format!("TOOLBOX_VERSION={hash}"),
             "-",
         ])
         .stdin(Stdio::piped())
@@ -149,8 +162,8 @@ fn ensure_toolbox_image() -> Result<(), ServiceError> {
 }
 
 /// Create the toolbox volume (if absent) and copy image contents into it.
-fn populate_volume() -> Result<(), ServiceError> {
-    let tag = toolbox_image_tag();
+fn populate_volume(hash: &str) -> Result<(), ServiceError> {
+    let tag = toolbox_image_tag(hash);
 
     // Ensure the named volume exists (idempotent).
     let create = Command::new("docker")

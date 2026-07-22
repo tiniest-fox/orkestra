@@ -183,6 +183,7 @@ chmod +x /opt/orkestra/setup.sh
 TOOLBOX_BUILD
 
 # Version marker — written from the TOOLBOX_VERSION build-arg passed by ensure_toolbox_image().
-# Never edit this manually; bump TOOLBOX_VERSION in ensure_toolbox_volume.rs instead.
+# The value is the SHA-256 hash of this Dockerfile's content, computed at runtime.
+# Any change to this file produces a new hash and triggers a fresh image build.
 ARG TOOLBOX_VERSION=unknown
 RUN echo "${TOOLBOX_VERSION}" > /opt/orkestra/.version

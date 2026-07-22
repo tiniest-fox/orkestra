@@ -20,6 +20,7 @@ rand = "0.8"
 num_cpus = "1"
 aes-gcm = "0.10"
 hex = "0.4"
+sha2 = "0.10"
 axum = { version = "0.8", features = ["ws"] }
 tokio-tungstenite = "0.28"
 futures-util = "0.3"

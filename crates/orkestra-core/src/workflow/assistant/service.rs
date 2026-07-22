@@ -1443,9 +1443,9 @@ mod tests {
         reset_lost_session(&store, "nonexistent", "2026-04-15T20:30:00Z").unwrap();
     }
 
-    /// After a session loss, recovery resets spawn_count to 0 so the next
+    /// After a session loss, recovery resets `spawn_count` to 0 so the next
     /// message starts a fresh conversation. But once that fresh spawn
-    /// completes, spawn_count goes back to 1, causing the NEXT message to
+    /// completes, `spawn_count` goes back to 1, causing the NEXT message to
     /// use `--resume` — which fails again in environments that don't
     /// persist Claude Code sessions (e.g., containers). This creates an
     /// infinite alternating cycle: fresh-start → success, resume → fail,
@@ -1494,8 +1494,7 @@ mod tests {
              claude_session_id={:?}. Without tracking resume failures, \
              every other message fails in environments that don't persist \
              Claude Code sessions.",
-            session.spawn_count,
-            session.claude_session_id,
+            session.spawn_count, session.claude_session_id,
         );
     }
 

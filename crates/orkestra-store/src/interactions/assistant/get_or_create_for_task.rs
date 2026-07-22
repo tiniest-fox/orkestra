@@ -20,8 +20,9 @@ pub fn execute(
     conn.execute(
         "INSERT OR IGNORE INTO assistant_sessions (
             id, claude_session_id, title, agent_pid, spawn_count,
-            session_state, created_at, updated_at, task_id, session_type
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            session_state, created_at, updated_at, task_id, session_type,
+            session_fresh
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             new_session.id,
             new_session.claude_session_id,
@@ -33,6 +34,7 @@ pub fn execute(
             new_session.updated_at,
             new_session.task_id,
             session_type_str,
+            i32::from(new_session.session_fresh),
         ],
     )
     .map_err(|e| WorkflowError::Storage(e.to_string()))?;

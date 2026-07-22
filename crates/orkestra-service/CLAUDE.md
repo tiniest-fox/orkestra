@@ -101,5 +101,7 @@ Current required directories (lines ~96-100 of `Dockerfile.toolbox`):
 **When to update this list:** Any time you add a new named volume mount under `/home/orkestra/`, or add support for an agent that writes to a new home subdirectory, you must:
 
 1. Add the directory to the `mkdir -p` line in `Dockerfile.toolbox`'s `setup.sh`
-2. Add an explicit `chown 1000:1000 <dir>` line (the recursive `chown -R /home/orkestra/.local` is not sufficient — it must be a separate line naming the exact path)
-3. Add the path to the `required_dirs` table in the `setup_script_chowns_agent_home_directories` test in `start_container.rs` — the test enforces this invariant and will fail if you miss a directory
+2. Add either a `chown -R 1000:1000 <parent>` line (if the parent already has a recursive chown that covers the new path) or an explicit `chown 1000:1000 <dir>` line
+3. Add the path (or its parent, if covered by `-R`) to the `required_dirs` table in the `setup_script_chowns_agent_home_directories` test in `start_container.rs` — the test enforces this invariant and will fail if you miss a directory
+
+Note: `.claude` uses `chown -R` so that `~/.claude/projects` (the named volume mount point) and any other subdirectories Claude Code writes at runtime are all covered in one line. `setup_script_chowns_sessions_volume_mount_path` accepts either explicit or `-R` coverage of the parent.

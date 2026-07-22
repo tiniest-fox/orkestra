@@ -506,8 +506,9 @@ enum CompletionDiagnostic {
     /// for inclusion in the surfaced error message.
     SilentFailure { stderr: String },
     /// Agent failed because Claude Code lost the resume session. Triggers state
-    /// reset so the next message starts fresh.
-    SessionLost,
+    /// reset so the next message starts fresh. Stderr is captured to surface the
+    /// exact Claude Code error (including the session ID) to the user.
+    SessionLost { stderr: String },
 }
 
 /// Classify a finished agent run into one of three buckets.
@@ -518,7 +519,9 @@ fn analyze_completion(produced_visible_content: bool, stderr: &str) -> Completio
         return CompletionDiagnostic::Healthy;
     }
     if stderr.contains(SESSION_LOST_SENTINEL) {
-        return CompletionDiagnostic::SessionLost;
+        return CompletionDiagnostic::SessionLost {
+            stderr: stderr.to_string(),
+        };
     }
     CompletionDiagnostic::SilentFailure {
         stderr: stderr.to_string(),
@@ -531,11 +534,16 @@ fn analyze_completion(produced_visible_content: bool, stderr: &str) -> Completio
 fn format_diagnostic_message(diagnostic: &CompletionDiagnostic) -> Option<String> {
     match diagnostic {
         CompletionDiagnostic::Healthy => None,
-        CompletionDiagnostic::SessionLost => Some(
-            "The assistant session was lost (Claude Code no longer has the conversation). \
-             Your next message will start a fresh conversation."
-                .to_string(),
-        ),
+        CompletionDiagnostic::SessionLost { stderr } => {
+            let base = "The assistant session was lost (Claude Code no longer has the \
+                        conversation). Your next message will start a fresh conversation.";
+            let trimmed = stderr.trim();
+            if trimmed.is_empty() {
+                Some(base.to_string())
+            } else {
+                Some(format!("{base}\n\nstderr:\n{trimmed}"))
+            }
+        }
         CompletionDiagnostic::SilentFailure { stderr } => {
             let trimmed = stderr.trim();
             if trimmed.is_empty() {
@@ -566,8 +574,10 @@ fn is_visible_log_entry(entry: &LogEntry) -> bool {
 
 /// Reset a session whose Claude Code conversation was lost.
 ///
-/// Generates a fresh `claude_session_id` and zeroes `spawn_count` so the next
-/// spawn uses `--session-id <new>` instead of `--resume <stale>`.
+/// Generates a fresh `claude_session_id`, zeroes `spawn_count`, and sets
+/// `session_fresh` so that the recovery spawn does not re-increment `spawn_count`.
+/// This keeps `spawn_count` at 0 after recovery, preventing the next message from
+/// retrying `--resume` and triggering another session-loss error.
 fn reset_lost_session(
     store: &Arc<dyn WorkflowStore>,
     session_id: &str,
@@ -578,6 +588,7 @@ fn reset_lost_session(
     };
     session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
     session.spawn_count = 0;
+    session.session_fresh = true;
     session.updated_at = now.to_string();
     store.save_assistant_session(&session)?;
     Ok(())
@@ -682,7 +693,7 @@ fn read_assistant_output(
             orkestra_debug!("assistant", "Failed to append diagnostic log entry: {}", e);
         }
     }
-    if matches!(diagnostic, CompletionDiagnostic::SessionLost) {
+    if matches!(diagnostic, CompletionDiagnostic::SessionLost { .. }) {
         if let Err(e) = reset_lost_session(store, session_id, &now) {
             orkestra_debug!("assistant", "Failed to reset lost session: {}", e);
         }
@@ -1324,7 +1335,12 @@ mod tests {
     fn analyze_completion_session_lost_takes_priority() {
         let stderr = "some preamble\nNo conversation found with session ID: abc-123\nmore noise";
         let result = analyze_completion(false, stderr);
-        assert_eq!(result, CompletionDiagnostic::SessionLost);
+        assert_eq!(
+            result,
+            CompletionDiagnostic::SessionLost {
+                stderr: stderr.to_string()
+            }
+        );
     }
 
     #[test]
@@ -1344,10 +1360,23 @@ mod tests {
 
     #[test]
     fn format_diagnostic_message_session_lost_explains_recovery() {
-        let msg = format_diagnostic_message(&CompletionDiagnostic::SessionLost)
-            .expect("session lost should produce a message");
+        let msg = format_diagnostic_message(&CompletionDiagnostic::SessionLost {
+            stderr: String::new(),
+        })
+        .expect("session lost should produce a message");
         assert!(msg.contains("session was lost"));
         assert!(msg.contains("fresh conversation"));
+    }
+
+    #[test]
+    fn format_diagnostic_message_session_lost_includes_stderr() {
+        let msg = format_diagnostic_message(&CompletionDiagnostic::SessionLost {
+            stderr: "No conversation found with session ID abc-123\n".to_string(),
+        })
+        .expect("session lost should produce a message");
+        assert!(msg.contains("session was lost"));
+        assert!(msg.contains("stderr:"));
+        assert!(msg.contains("abc-123"));
     }
 
     #[test]

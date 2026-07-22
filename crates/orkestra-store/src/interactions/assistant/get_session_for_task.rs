@@ -13,7 +13,8 @@ pub fn execute(
     let type_str = session_type.to_string();
     conn.query_row(
         "SELECT id, claude_session_id, title, agent_pid, spawn_count,
-                session_state, created_at, updated_at, task_id, session_type
+                session_state, created_at, updated_at, task_id, session_type,
+                session_fresh
          FROM assistant_sessions WHERE task_id = ?1 AND session_type = ?2",
         params![task_id, type_str],
         super::from_row::execute,

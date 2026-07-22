@@ -1538,7 +1538,8 @@ mod tests {
             (
                 sessions_parent,
                 "Docker creates ~/.claude/ as root for the sessions volume mount; \
-                 Claude Code needs it writable for session-env, plugins, etc.",
+                 Claude Code needs it writable for session-env, plugins, etc. \
+                 chown -R covers ~/.claude/projects and all other subdirectories.",
             ),
             (
                 "/home/orkestra/.local/share",
@@ -1565,12 +1566,12 @@ mod tests {
     }
 
     /// The Claude sessions volume is mounted at `CLAUDE_SESSIONS_MOUNT_PATH`
-    /// (`/home/orkestra/.claude/projects`). Docker creates new named-volume
-    /// mount points as root. The setup script must explicitly `chown 1000:1000`
-    /// this path so Claude Code (uid 1000) can create per-project subdirectories
-    /// and write session `.jsonl` files. Without this, `--resume <id>` fails
-    /// with "No conversation found with session ID" because the session was
-    /// never persisted (EACCES on the root-owned volume root).
+    /// (`/home/orkestra/.claude/projects`). Docker creates named-volume mount
+    /// points as root. The setup script must ensure uid 1000 owns this path —
+    /// either by an explicit `chown 1000:1000 <path>` or by a recursive
+    /// `chown -R 1000:1000 <parent>` that covers it. Without this, `--resume`
+    /// fails with "No conversation found with session ID" because the session
+    /// was never persisted (EACCES on the root-owned volume root).
     #[test]
     fn setup_script_chowns_sessions_volume_mount_path() {
         use super::CLAUDE_SESSIONS_MOUNT_PATH;
@@ -1580,20 +1581,31 @@ mod tests {
         )
         .expect("Dockerfile.toolbox must exist");
 
+        let claude_parent = std::path::Path::new(CLAUDE_SESSIONS_MOUNT_PATH)
+            .parent()
+            .expect("mount path must have a parent directory")
+            .to_str()
+            .unwrap();
+
+        // Accept either an explicit chown of the exact path, or a recursive chown
+        // of the parent directory (which covers the mount point and all contents).
         let setup_chowns_mount = dockerfile.lines().any(|line| {
             let trimmed = line.trim();
-            trimmed.starts_with("chown")
-                && trimmed.contains("1000")
-                && trimmed.contains(CLAUDE_SESSIONS_MOUNT_PATH)
+            if !trimmed.starts_with("chown") || !trimmed.contains("1000") {
+                return false;
+            }
+            trimmed.contains(CLAUDE_SESSIONS_MOUNT_PATH)
+                || (trimmed.contains("-R") && trimmed.contains(claude_parent))
         });
 
         assert!(
             setup_chowns_mount,
-            "setup.sh must `chown 1000:1000 {CLAUDE_SESSIONS_MOUNT_PATH}` — \
-             Docker creates named-volume mount points as root, so Claude Code \
-             (uid 1000) cannot write session files without explicit ownership fix. \
-             This causes assistant sessions to fail on resume with \
-             'No conversation found with session ID'."
+            "setup.sh must ensure uid 1000 owns {CLAUDE_SESSIONS_MOUNT_PATH} — \
+             either via `chown 1000:1000 {CLAUDE_SESSIONS_MOUNT_PATH}` or \
+             `chown -R 1000:1000 {claude_parent}`. Docker creates named-volume \
+             mount points as root, so Claude Code (uid 1000) cannot write session \
+             files without explicit ownership fix. This causes assistant sessions \
+             to fail on resume with 'No conversation found with session ID'."
         );
     }
 

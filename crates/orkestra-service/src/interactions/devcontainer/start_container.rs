@@ -1564,6 +1564,39 @@ mod tests {
         }
     }
 
+    /// The Claude sessions volume is mounted at `CLAUDE_SESSIONS_MOUNT_PATH`
+    /// (`/home/orkestra/.claude/projects`). Docker creates new named-volume
+    /// mount points as root. The setup script must explicitly `chown 1000:1000`
+    /// this path so Claude Code (uid 1000) can create per-project subdirectories
+    /// and write session `.jsonl` files. Without this, `--resume <id>` fails
+    /// with "No conversation found with session ID" because the session was
+    /// never persisted (EACCES on the root-owned volume root).
+    #[test]
+    fn setup_script_chowns_sessions_volume_mount_path() {
+        use super::CLAUDE_SESSIONS_MOUNT_PATH;
+
+        let dockerfile = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Dockerfile.toolbox"),
+        )
+        .expect("Dockerfile.toolbox must exist");
+
+        let setup_chowns_mount = dockerfile.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with("chown")
+                && trimmed.contains("1000")
+                && trimmed.contains(CLAUDE_SESSIONS_MOUNT_PATH)
+        });
+
+        assert!(
+            setup_chowns_mount,
+            "setup.sh must `chown 1000:1000 {CLAUDE_SESSIONS_MOUNT_PATH}` — \
+             Docker creates named-volume mount points as root, so Claude Code \
+             (uid 1000) cannot write session files without explicit ownership fix. \
+             This causes assistant sessions to fail on resume with \
+             'No conversation found with session ID'."
+        );
+    }
+
     #[test]
     fn is_named_volume_correctly_classifies() {
         assert!(is_named_volume("myvolume:/mnt/cache"));

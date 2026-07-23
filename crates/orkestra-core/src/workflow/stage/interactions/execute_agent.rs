@@ -209,14 +209,20 @@ pub(crate) fn execute(
     };
 
     // 9. Build run config with session info, model spec, system prompt, and env.
-    // Vibe passes None so --json-schema is not sent to Claude Code; the schema
-    // reference is already embedded in the user prompt via append_schema_reference.
+    // Vibe passes json_schema=None so --json-schema is not sent to Claude Code (the schema
+    // reference is already embedded in the user prompt via append_schema_reference), but
+    // validation_schema=Some(...) so classify_output still validates against the vibe schema.
     let stage_config = ResolvedStageConfig {
         user_prompt,
         json_schema: if stage == VIBE_STAGE {
             None
         } else {
+            Some(json_schema.clone())
+        },
+        validation_schema: if stage == VIBE_STAGE {
             Some(json_schema)
+        } else {
+            None
         },
         system_prompt: system_prompt_for_config,
         model_spec,
@@ -262,6 +268,9 @@ struct ResolvedStageConfig {
     user_prompt: String,
     /// `None` for vibe stage — schema is in the prompt text but not passed as a CLI flag.
     json_schema: Option<String>,
+    /// Schema used only for output validation, not passed as a CLI flag.
+    /// `Some` for vibe stage — validates output without passing `--json-schema` to the CLI.
+    validation_schema: Option<String>,
     system_prompt: Option<String>,
     model_spec: Option<String>,
     disallowed_tool_patterns: Vec<String>,
@@ -744,6 +753,10 @@ fn build_run_config(
 
     if !resolved.prompt_sections.is_empty() {
         run_config = run_config.with_prompt_sections(resolved.prompt_sections);
+    }
+
+    if let Some(vs) = resolved.validation_schema {
+        run_config = run_config.with_validation_schema(vs);
     }
 
     run_config

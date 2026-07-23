@@ -281,6 +281,16 @@ pub fn retry_pr(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayl
     Ok(serde_json::to_value(task).unwrap_or(Value::Null))
 }
 
+/// Finishes a task immediately, entering the commit pipeline from any bypassable state.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub fn finish_task(ctx: &CommandContext, params: &Value) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(params)?;
+    let api = ctx.api.lock().map_err(|_| ErrorPayload::lock_error())?;
+    let task = api.finish_task(&task_id).map_err(ErrorPayload::from)?;
+    Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+}
+
 /// Skips the current stage, advancing to the next with a message.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }`

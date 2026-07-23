@@ -9401,6 +9401,68 @@ fn test_restart_stage_from_blocked() {
     );
 }
 
+/// `finish_task` enters Finishing state and the orchestrator processes the commit pipeline.
+///
+/// Verifies the full path: `finish_task` → Finishing → orchestrator picks up → next stage queued.
+#[test]
+fn test_finish_task_advances_through_orchestrator() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = ctx.create_task("Test finish task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at planning
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("planning"));
+
+    // finish_task → Finishing
+    let task = ctx.api().finish_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Finishing { ref stage } if stage == "planning"),
+        "Task should be Finishing at planning after finish_task, got: {:?}",
+        task.state
+    );
+
+    // Orchestrator processes the commit pipeline: Finishing → Finished → advance to work
+    ctx.advance();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        !matches!(task.state, TaskState::Finishing { .. }),
+        "Orchestrator should have processed Finishing state, got: {:?}",
+        task.state
+    );
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Task should advance to work stage after finishing planning, got: {:?}",
+        task.state
+    );
+}
+
 /// Test cursor-based incremental log fetching.
 ///
 /// Verifies that:

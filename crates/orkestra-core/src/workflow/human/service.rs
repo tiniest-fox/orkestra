@@ -199,6 +199,16 @@ impl WorkflowApi {
         )
     }
 
+    /// Finish a task immediately, entering the commit pipeline from any bypassable state.
+    pub fn finish_task(&self, task_id: &str) -> WorkflowResult<Task> {
+        human::finish_task::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
+            &self.workflow,
+            task_id,
+        )
+    }
+
     /// Send a task to a specific stage in its pipeline with a message.
     pub fn send_to_stage(
         &self,
@@ -989,6 +999,68 @@ mod tests {
             }
             other => panic!("Expected Redirect trigger, got {other:?}"),
         }
+    }
+
+    // ========================================================================
+    // finish_task tests
+    // ========================================================================
+
+    #[test]
+    fn test_finish_task_from_awaiting_approval() {
+        let (api, task) = api_with_task_at_stage("planning");
+
+        let result = api.finish_task(&task.id).unwrap();
+
+        assert!(matches!(result.state, TaskState::Finishing { stage } if stage == "planning"));
+    }
+
+    #[test]
+    fn test_finish_task_from_interrupted() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.state = TaskState::interrupted("planning");
+        api.store.save_task(&task).unwrap();
+
+        api.iteration_service
+            .create_iteration(&task.id, "planning", None)
+            .unwrap();
+
+        let result = api.finish_task(&task.id).unwrap();
+
+        assert!(matches!(result.state, TaskState::Finishing { stage } if stage == "planning"));
+    }
+
+    #[test]
+    fn test_finish_task_wrong_state() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.state = TaskState::agent_working("planning");
+        api.store.save_task(&task).unwrap();
+
+        let result = api.finish_task(&task.id);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_finish_task_from_vibe_mode() {
+        use crate::workflow::domain::VibeOrigin;
+
+        let (api, mut task) = api_with_task_at_stage("planning");
+        task.vibe_origin = Some(VibeOrigin {
+            flow: "default".to_string(),
+            stage: Some("planning".to_string()),
+            proposed_destination: None,
+        });
+        api.store.save_task(&task).unwrap();
+
+        let result = api.finish_task(&task.id);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 
     // ========================================================================

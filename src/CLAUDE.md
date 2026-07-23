@@ -461,7 +461,7 @@ onApprove: async (taskId) => {
 },
 ```
 
-This applies to every `.catch()` or `catch (err)` block in `FeedView.tsx`, `AssistantDrawer.tsx`, `InteractiveDrawer.tsx`, `SubtasksSection.tsx`, and any new component with feed actions. Reviewers check all action handlers — missing guards are a guaranteed HIGH finding.
+This applies to every `.catch()` or `catch (err)` block in `FeedView.tsx`, `AssistantDrawer.tsx`, `InteractiveDrawer.tsx`, `SubtasksSection.tsx`, and any new component with feed actions. **When adding a new `transport.call()` to an existing component, audit all existing catch blocks in that file** — pre-existing missing guards in a changed file are a guaranteed HIGH finding. Reviewers check all action handlers in every changed file.
 
 For new handlers that users care about (e.g., submitting feedback, line comments), handle the error explicitly and store it in a `useState` error variable that the UI renders:
 

@@ -9,6 +9,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
+use chrono::DateTime;
+
 use orkestra_types::runtime::{
     artifact_file_path, artifacts_directory, ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
 };
@@ -135,10 +137,23 @@ fn fetch_branch_commits(worktree_path: &Path, base_branch: &str) -> Vec<CommitEn
 }
 
 /// Merge iteration log entries and git commits into a single chronologically sorted timeline.
+///
+/// Parses both timestamps with `chrono` before comparing so that git commits using local
+/// timezone offsets (e.g., `+09:00`, `-04:00` from `%aI`) sort correctly relative to
+/// iteration timestamps stored in UTC. Lexicographic comparison would produce wrong order
+/// when the two sources use different offset strings.
 fn build_timeline(logs: &[ActivityLogEntry], commits: Vec<CommitEntry>) -> Vec<ActivityEntry> {
     let mut entries: Vec<ActivityEntry> = logs.iter().cloned().map(ActivityEntry::Log).collect();
     entries.extend(commits.into_iter().map(ActivityEntry::Commit));
-    entries.sort_by(|a, b| a.sort_key().cmp(b.sort_key()));
+    entries.sort_by(|a, b| {
+        let parse = |s: &str| DateTime::parse_from_rfc3339(s).ok();
+        match (parse(a.sort_key()), parse(b.sort_key())) {
+            (Some(a_dt), Some(b_dt)) => a_dt.cmp(&b_dt),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.sort_key().cmp(b.sort_key()),
+        }
+    });
     entries
 }
 
@@ -536,5 +551,29 @@ mod tests {
         let timeline = build_timeline(&[], commits);
         let formatted = format_activity_log(&timeline);
         assert_eq!(formatted, "> **[abc]** msg — *author*\n\n");
+    }
+
+    #[test]
+    fn test_build_timeline_sorts_across_timezones() {
+        // commit at 2026-07-23T08:00:00+09:00 = 2026-07-22T23:00:00 UTC (before the iteration)
+        // iteration at 2026-07-23T00:00:00+00:00 (after the commit in UTC)
+        // Lexicographically: "2026-07-23T00..." < "2026-07-23T08..." → iteration sorts first (WRONG)
+        // Chronologically: commit (2026-07-22T23:00 UTC) sorts first (CORRECT)
+        let logs = vec![make_log("work", 1, "content", "2026-07-23T00:00:00+00:00")];
+        let commits = vec![make_commit(
+            "abc",
+            "early commit",
+            "A",
+            "2026-07-23T08:00:00+09:00",
+        )];
+
+        let timeline = build_timeline(&logs, commits);
+        assert_eq!(timeline.len(), 2);
+        // commit (08:00+09:00 = 23:00 UTC prev day) sorts before log (00:00 UTC)
+        assert!(
+            matches!(timeline[0], ActivityEntry::Commit(_)),
+            "commit with +09:00 offset that is earlier in UTC must sort before UTC iteration"
+        );
+        assert!(matches!(timeline[1], ActivityEntry::Log(_)));
     }
 }

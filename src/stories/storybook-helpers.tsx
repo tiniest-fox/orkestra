@@ -49,6 +49,7 @@ export function createMockTransport(): Transport {
           return resolve(null);
         case "enter_vibe":
         case "confirm_vibe_exit":
+        case "finish_task":
           return resolve(null);
         case "get_token_usage":
           return resolve({

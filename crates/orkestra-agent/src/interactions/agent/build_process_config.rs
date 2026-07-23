@@ -27,6 +27,7 @@ pub fn execute(
         disallowed_tools,
         env,
         prompt_sections: _,
+        validation_schema: _,
     } = config;
 
     let mut process_config = match json_schema {

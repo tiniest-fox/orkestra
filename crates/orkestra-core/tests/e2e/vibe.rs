@@ -805,6 +805,78 @@ fn test_vibe_reentry_starts_fresh_session() {
 // Question flow tests
 // =============================================================================
 
+/// Vibe agent produces a disallowed output type → `MalformedOutput` retry → success.
+///
+/// Validates that vibe schema enforcement (via `validation_schema`) routes bad output
+/// through the existing `MalformedOutput` → auto-retry path.
+#[test]
+fn test_vibe_malformed_output_triggers_retry() {
+    let workflow = disable_auto_merge(simple_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["worker", "vibe"]);
+
+    let task = ctx.create_task("Vibe retry", "Test malformed retry in vibe", None);
+    let task_id = task.id.clone();
+
+    // Get to AwaitingApproval at work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingApproval
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(matches!(task.state, TaskState::AwaitingApproval { .. }));
+
+    // Enter vibe
+    ctx.api().enter_vibe(&task_id).unwrap();
+
+    // Queue: first spawn returns malformed, second returns valid ProposedExit
+    ctx.set_malformed_output(&task_id, "validation failed: type 'plan' not in enum");
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::ProposedExit {
+            destination: "done".to_string(),
+            rationale: "Ready".to_string(),
+            content: None,
+        },
+    );
+
+    ctx.advance(); // spawn vibe (malformed) + process → retry queued
+    ctx.advance(); // spawn retry (ProposedExit) + process → AwaitingApproval{vibe}
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Expected AwaitingApproval after retry, got {:?}",
+        task.state
+    );
+
+    let origin = task
+        .vibe_origin
+        .as_ref()
+        .expect("vibe_origin should be set");
+    assert_eq!(
+        origin.proposed_destination.as_deref(),
+        Some("done"),
+        "proposed_destination should be set from retry ProposedExit"
+    );
+
+    // Verify iteration count: original malformed + retry success = 2 vibe iterations
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let vibe_iters: Vec<_> = iterations.iter().filter(|i| i.stage == "vibe").collect();
+    assert_eq!(
+        vibe_iters.len(),
+        2,
+        "Should have 2 vibe iterations (malformed + retry), got: {vibe_iters:?}"
+    );
+}
+
 /// Vibe agent asks questions → system pauses at `AwaitingApproval` → human answers →
 /// task resumes in vibe stage with Answers trigger.
 #[test]

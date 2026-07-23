@@ -25,6 +25,9 @@ pub struct RunConfig {
     pub prompt: String,
     /// JSON schema for structured output. `None` for vibe stage (conversational — no `--json-schema` flag).
     pub json_schema: Option<String>,
+    /// Schema used only for output validation, not passed as a CLI flag.
+    /// When set, takes precedence over `json_schema` for `classify_output`.
+    pub validation_schema: Option<String>,
     /// Session ID (generated upfront, always present).
     pub session_id: Option<String>,
     /// Whether this is a resume (use --resume) or first spawn (use --session-id).
@@ -59,6 +62,7 @@ impl RunConfig {
             working_dir: working_dir.into(),
             prompt: prompt.into(),
             json_schema: Some(json_schema.into()),
+            validation_schema: None,
             session_id: None,
             is_resume: false,
             task_id: None,
@@ -77,6 +81,7 @@ impl RunConfig {
             working_dir: working_dir.into(),
             prompt: prompt.into(),
             json_schema: None,
+            validation_schema: None,
             session_id: None,
             is_resume: false,
             task_id: None,
@@ -135,6 +140,14 @@ impl RunConfig {
     #[must_use]
     pub fn with_prompt_sections(mut self, sections: Vec<PromptSection>) -> Self {
         self.prompt_sections = sections;
+        self
+    }
+
+    /// Set a schema used only for output validation, not passed as a CLI flag.
+    /// When set, takes precedence over `json_schema` in `classify_output`.
+    #[must_use]
+    pub fn with_validation_schema(mut self, schema: impl Into<String>) -> Self {
+        self.validation_schema = Some(schema.into());
         self
     }
 }

@@ -38,8 +38,13 @@ pub fn execute(
         .create_parser(&resolved.provider_name)
         .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-    // Parse the schema for validation — fail fast on invalid JSON rather than silently ignoring it
-    let schema: Option<serde_json::Value> = if let Some(ref s) = config.json_schema {
+    // Parse the schema for validation — prefer validation_schema (vibe), fall back to json_schema.
+    // Fail fast on invalid JSON rather than silently ignoring it.
+    let schema_str = config
+        .validation_schema
+        .as_ref()
+        .or(config.json_schema.as_ref());
+    let schema: Option<serde_json::Value> = if let Some(s) = schema_str {
         Some(
             serde_json::from_str(s)
                 .map_err(|e| RunError::SpawnFailed(format!("invalid JSON schema: {e}")))?,

@@ -173,4 +173,49 @@ mod tests {
             "expected ParseFailed for invalid JSON, got: {result:?}"
         );
     }
+
+    #[test]
+    fn vibe_schema_rejects_artifact_type() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["proposed_exit", "questions", "failed", "blocked"]}
+            },
+            "required": ["type"]
+        });
+        let parser = MockParser {
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "plan", "content": "some plan"}"#.to_string(),
+            ),
+        };
+        let result = execute(&parser, "output", Some(&schema));
+        assert!(
+            matches!(result, OutputClassification::ParseFailed(_)),
+            "vibe schema should reject artifact-like types, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn vibe_schema_accepts_proposed_exit() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["proposed_exit", "questions", "failed", "blocked"]},
+                "destination": {"type": "string"},
+                "rationale": {"type": "string"}
+            },
+            "required": ["type"]
+        });
+        let parser = MockParser {
+            extract_result: ExtractionResult::Found(
+                r#"{"type": "proposed_exit", "destination": "work", "rationale": "done"}"#
+                    .to_string(),
+            ),
+        };
+        let result = execute(&parser, "output", Some(&schema));
+        assert!(
+            matches!(result, OutputClassification::Success(_)),
+            "vibe schema should accept proposed_exit, got: {result:?}"
+        );
+    }
 }

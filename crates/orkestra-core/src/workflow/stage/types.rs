@@ -17,7 +17,7 @@ pub struct ActivityLogEntry {
 
 /// A git commit on the task branch.
 #[derive(Debug, Clone, Serialize)]
-pub struct CommitEntry {
+pub(crate) struct CommitEntry {
     pub hash: String,
     pub message: String,
     pub author: String,
@@ -26,7 +26,7 @@ pub struct CommitEntry {
 
 /// A single entry in the activity log timeline.
 #[derive(Debug, Clone)]
-pub enum ActivityEntry {
+pub(crate) enum ActivityEntry {
     Log(ActivityLogEntry),
     Commit(CommitEntry),
 }

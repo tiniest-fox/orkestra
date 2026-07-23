@@ -145,15 +145,7 @@ fn fetch_branch_commits(worktree_path: &Path, base_branch: &str) -> Vec<CommitEn
 fn build_timeline(logs: &[ActivityLogEntry], commits: Vec<CommitEntry>) -> Vec<ActivityEntry> {
     let mut entries: Vec<ActivityEntry> = logs.iter().cloned().map(ActivityEntry::Log).collect();
     entries.extend(commits.into_iter().map(ActivityEntry::Commit));
-    entries.sort_by(|a, b| {
-        let parse = |s: &str| DateTime::parse_from_rfc3339(s).ok();
-        match (parse(a.sort_key()), parse(b.sort_key())) {
-            (Some(a_dt), Some(b_dt)) => a_dt.cmp(&b_dt),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.sort_key().cmp(b.sort_key()),
-        }
-    });
+    entries.sort_by_cached_key(|entry| DateTime::parse_from_rfc3339(entry.sort_key()).ok());
     entries
 }
 

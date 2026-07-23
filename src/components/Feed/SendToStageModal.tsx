@@ -40,13 +40,16 @@ export function SendToStageModal({
   }
 
   const isRestart = targetStage === currentStage;
+  const isFinish = targetStage === "__finished__";
 
   async function handleSubmit() {
-    if (!targetStage || !message.trim() || loading) return;
+    if (!targetStage || (!isFinish && !message.trim()) || loading) return;
     setLoading(true);
     setError(null);
     try {
-      if (isRestart) {
+      if (isFinish) {
+        await transport.call("finish_task", { task_id: taskId });
+      } else if (isRestart) {
         await transport.call("restart_stage", {
           task_id: taskId,
           message: message.trim(),
@@ -93,24 +96,27 @@ export function SendToStageModal({
                   {titleCase(stage.name) + (stage.name === currentStage ? " (restart)" : "")}
                 </option>
               ))}
+              <option value="__finished__">Finished</option>
             </select>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="send-to-stage-message"
-              className="font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] select-none"
-            >
-              Reason
-            </label>
-            <textarea
-              id="send-to-stage-message"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Why are you changing the stage?"
-              rows={3}
-              className="w-full font-sans text-forge-body text-text-primary bg-canvas border border-border rounded px-3 py-2 resize-none placeholder:text-text-quaternary focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
+          {!isFinish && (
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="send-to-stage-message"
+                className="font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] select-none"
+              >
+                Reason
+              </label>
+              <textarea
+                id="send-to-stage-message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Why are you changing the stage?"
+                rows={3}
+                className="w-full font-sans text-forge-body text-text-primary bg-canvas border border-border rounded px-3 py-2 resize-none placeholder:text-text-quaternary focus:outline-none focus:border-accent transition-colors"
+              />
+            </div>
+          )}
         </div>
         {error && <p className="text-forge-body text-status-error">{error}</p>}
         <div className="flex justify-end gap-2">
@@ -121,15 +127,19 @@ export function SendToStageModal({
             variant="primary"
             size="sm"
             onClick={handleSubmit}
-            disabled={!targetStage || !message.trim() || loading}
+            disabled={!targetStage || (!isFinish && !message.trim()) || loading}
           >
             {loading
-              ? isRestart
-                ? "Restarting…"
-                : "Changing…"
-              : isRestart
-                ? "Restart Stage"
-                : "Change Stage"}
+              ? isFinish
+                ? "Finishing…"
+                : isRestart
+                  ? "Restarting…"
+                  : "Changing…"
+              : isFinish
+                ? "Finish"
+                : isRestart
+                  ? "Restart Stage"
+                  : "Change Stage"}
           </Button>
         </div>
       </div>

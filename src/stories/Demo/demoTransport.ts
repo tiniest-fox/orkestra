@@ -103,6 +103,7 @@ export function createDemoTransport(): Transport {
         case "send_message":
         case "enter_vibe":
         case "confirm_vibe_exit":
+        case "finish_task":
           return resolve(null);
         case "get_token_usage":
           return resolve({

@@ -94,6 +94,11 @@ fn format_task_definition(task: &Task) -> String {
 ///
 /// Returns an empty vec on any failure (no git binary, invalid branch, no worktree),
 /// preserving existing behavior of showing only iteration entries when commits can't be fetched.
+///
+/// The `%x1e`/`%x00` separator format duplicates `orkestra-git/src/interactions/commit/log.rs`.
+/// This is intentional: Clear Boundaries (#1) outranks Single Source of Truth (#2). Threading
+/// `GitService` through three service layers to reach this function would add significant coupling
+/// for a non-critical enrichment step. If a third call site appears, reconsider.
 fn fetch_branch_commits(worktree_path: &Path, base_branch: &str) -> Vec<CommitEntry> {
     if base_branch.is_empty() {
         return Vec::new();

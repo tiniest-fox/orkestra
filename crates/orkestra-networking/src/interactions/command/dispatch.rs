@@ -143,6 +143,7 @@ pub async fn execute(
         "retry_pr" => run_sync(ctx, params, action::retry_pr).await,
         "skip_stage" => run_sync(ctx, params, action::skip_stage).await,
         "send_to_stage" => run_sync(ctx, params, action::send_to_stage).await,
+        "finish_task" => run_sync(ctx, params, action::finish_task).await,
         "restart_stage" => run_sync(ctx, params, action::restart_stage).await,
         "send_message" => run_sync(ctx, params, action::send_message).await,
         "promote_to_flow" => run_sync(ctx, params, action::promote_to_flow).await,

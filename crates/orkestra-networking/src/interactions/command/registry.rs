@@ -30,6 +30,7 @@ pub const SHARED_COMMANDS: &[&str] = &[
     "retry_pr",
     "skip_stage",
     "send_to_stage",
+    "finish_task",
     "restart_stage",
     "send_message",
     "promote_to_flow",

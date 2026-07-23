@@ -10,6 +10,7 @@ pub mod approve;
 pub mod archive;
 pub mod confirm_vibe_exit;
 pub mod enter_vibe;
+pub mod finish_task;
 pub mod interrupt;
 pub mod promote_to_flow;
 pub mod reject_with_comments;

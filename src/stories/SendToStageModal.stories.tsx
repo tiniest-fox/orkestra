@@ -38,3 +38,13 @@ export const RestartCurrent: Story = {
     stages: [stages[0]],
   },
 };
+
+export const FinishedSelected: Story = {
+  play: async ({ canvasElement }) => {
+    const select = canvasElement.querySelector("select");
+    if (select) {
+      select.value = "__finished__";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  },
+};

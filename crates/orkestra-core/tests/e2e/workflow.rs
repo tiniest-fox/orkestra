@@ -9463,6 +9463,59 @@ fn test_finish_task_advances_through_orchestrator() {
     );
 }
 
+/// `finish_task` from the last pipeline stage marks the task Done.
+///
+/// Verifies that finishing a task at the terminal stage goes all the way to `Done` rather than
+/// advancing to a non-existent next stage.
+#[test]
+fn test_finish_task_from_last_stage_marks_done() {
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("planning", "plan")
+        .with_prompt("planner.md")
+        .with_gate(GateConfig::Agentic)]);
+    let ctx = TestEnv::with_git(&workflow, &["planner"]);
+
+    let task = ctx.create_task("Test finish from last stage", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance to AwaitingApproval at planning (the only and last stage)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan → AwaitingApproval at planning
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval at planning, got: {:?}",
+        task.state
+    );
+
+    // finish_task → Finishing
+    let task = ctx.api().finish_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Finishing { ref stage } if stage == "planning"),
+        "Task should be Finishing at planning after finish_task, got: {:?}",
+        task.state
+    );
+
+    // Orchestrator processes the commit pipeline — last stage has no successor, so task goes Done
+    ctx.advance();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_done(),
+        "Task should be Done after finishing the last pipeline stage, got: {:?}",
+        task.state
+    );
+}
+
 /// Test cursor-based incremental log fetching.
 ///
 /// Verifies that:

@@ -523,6 +523,7 @@ impl StageExecutionService {
                 stage: i.stage.clone(),
                 iteration_number: i.iteration_number,
                 content: i.activity_log.clone().unwrap(),
+                timestamp: i.started_at.clone(),
             })
             .collect();
 

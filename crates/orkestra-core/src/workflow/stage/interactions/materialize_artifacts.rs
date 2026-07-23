@@ -3,18 +3,20 @@
 //! Writes all task artifacts to `.orkestra/.artifacts/{name}.md` before agent
 //! spawn so agents can read them on demand instead of receiving them inline.
 //! Always writes `trak.md` with task identity and description. Also writes
-//! the activity log to `activity_log.md` when entries exist.
+//! the activity log to `activity_log.md` when iteration entries or git commits exist.
 
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
+
+use chrono::DateTime;
 
 use orkestra_types::runtime::{
     artifact_file_path, artifacts_directory, ACTIVITY_LOG_ARTIFACT_NAME, TASK_ARTIFACT_NAME,
 };
 
 use crate::workflow::domain::Task;
-use crate::workflow::stage::types::ActivityLogEntry;
+use crate::workflow::stage::types::{ActivityEntry, ActivityLogEntry, CommitEntry};
 
 /// Materialize all task artifacts and the activity log to the worktree.
 ///
@@ -60,9 +62,12 @@ pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Resu
             .map_err(|e| std::io::Error::other(format!("{}: {}", file_path.display(), e)))?;
     }
 
-    // Write activity log file
-    if has_activity_logs {
-        let content = format_activity_log(activity_logs);
+    // Write activity log file (iterations + git commits merged chronologically)
+    let commits = fetch_branch_commits(worktree_path, &task.base_branch);
+    let has_timeline_content = has_activity_logs || !commits.is_empty();
+    if has_timeline_content {
+        let timeline = build_timeline(activity_logs, commits);
+        let content = format_activity_log(&timeline);
         let file_path = worktree_path.join(artifact_file_path(ACTIVITY_LOG_ARTIFACT_NAME));
         fs::write(&file_path, content)
             .map_err(|e| std::io::Error::other(format!("{}: {}", file_path.display(), e)))?;
@@ -85,12 +90,86 @@ fn format_task_definition(task: &Task) -> String {
     )
 }
 
-/// Format activity log entries into markdown content.
+/// Fetch git commits in the range `base_branch..HEAD` from the worktree.
 ///
-/// Each entry is formatted as `[{stage}]\n{content}\n\n`.
-fn format_activity_log(logs: &[ActivityLogEntry]) -> String {
-    logs.iter().fold(String::new(), |mut s, log| {
-        write!(s, "[{}]\n{}\n\n", log.stage, log.content).expect("write to String is infallible");
+/// Returns an empty vec on any failure (no git binary, invalid branch, no worktree),
+/// preserving existing behavior of showing only iteration entries when commits can't be fetched.
+///
+/// The `%x1e`/`%x00` separator format duplicates `orkestra-git/src/interactions/commit/log.rs`.
+/// This is intentional: Clear Boundaries (#1) outranks Single Source of Truth (#2). Threading
+/// `GitService` through three service layers to reach this function would add significant coupling
+/// for a non-critical enrichment step. If a third call site appears, reconsider.
+fn fetch_branch_commits(worktree_path: &Path, base_branch: &str) -> Vec<CommitEntry> {
+    if base_branch.is_empty() {
+        return Vec::new();
+    }
+    let output = std::process::Command::new("git")
+        .args([
+            "log",
+            "-200",
+            "--format=%x1e%h%x00%s%x00%an%x00%aI",
+            &format!("{base_branch}..HEAD"),
+        ])
+        .current_dir(worktree_path)
+        .output();
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .split('\x1e')
+        .filter_map(|record| {
+            let record = record.trim();
+            if record.is_empty() {
+                return None;
+            }
+            let parts: Vec<&str> = record.splitn(4, '\0').collect();
+            if parts.len() == 4 {
+                Some(CommitEntry {
+                    hash: parts[0].to_string(),
+                    message: parts[1].to_string(),
+                    author: parts[2].to_string(),
+                    timestamp: parts[3].to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Merge iteration log entries and git commits into a single chronologically sorted timeline.
+///
+/// Parses both timestamps with `chrono` before comparing so that git commits using local
+/// timezone offsets (e.g., `+09:00`, `-04:00` from `%aI`) sort correctly relative to
+/// iteration timestamps stored in UTC. Lexicographic comparison would produce wrong order
+/// when the two sources use different offset strings.
+fn build_timeline(logs: &[ActivityLogEntry], commits: Vec<CommitEntry>) -> Vec<ActivityEntry> {
+    let mut entries: Vec<ActivityEntry> = logs.iter().cloned().map(ActivityEntry::Log).collect();
+    entries.extend(commits.into_iter().map(ActivityEntry::Commit));
+    entries.sort_by_cached_key(|entry| DateTime::parse_from_rfc3339(entry.sort_key()).ok());
+    entries
+}
+
+/// Format a merged timeline of iteration entries and commits into markdown content.
+///
+/// Iteration entries: `[{stage}]\n{content}\n\n`
+/// Commit entries: `> **[{hash}]** {message} — *{author}*\n\n`
+fn format_activity_log(entries: &[ActivityEntry]) -> String {
+    entries.iter().fold(String::new(), |mut s, entry| {
+        match entry {
+            ActivityEntry::Log(log) => {
+                write!(s, "[{}]\n{}\n\n", log.stage, log.content)
+                    .expect("write to String is infallible");
+            }
+            ActivityEntry::Commit(c) => {
+                write!(s, "> **[{}]** {} — *{}*\n\n", c.hash, c.message, c.author)
+                    .expect("write to String is infallible");
+            }
+        }
         s
     })
 }
@@ -105,6 +184,29 @@ mod tests {
     use crate::workflow::domain::Task;
     use orkestra_types::runtime::{Artifact, ACTIVITY_LOG_ARTIFACT_NAME};
     use tempfile::TempDir;
+
+    fn make_log(
+        stage: &str,
+        iteration_number: u32,
+        content: &str,
+        timestamp: &str,
+    ) -> ActivityLogEntry {
+        ActivityLogEntry {
+            stage: stage.to_string(),
+            iteration_number,
+            content: content.to_string(),
+            timestamp: timestamp.to_string(),
+        }
+    }
+
+    fn make_commit(hash: &str, message: &str, author: &str, timestamp: &str) -> CommitEntry {
+        CommitEntry {
+            hash: hash.to_string(),
+            message: message.to_string(),
+            author: author.to_string(),
+            timestamp: timestamp.to_string(),
+        }
+    }
 
     #[test]
     fn test_no_worktree_returns_empty() {
@@ -299,11 +401,12 @@ mod tests {
         let task =
             Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
 
-        let logs = vec![ActivityLogEntry {
-            stage: "work".to_string(),
-            iteration_number: 1,
-            content: "- Implemented the feature".to_string(),
-        }];
+        let logs = vec![make_log(
+            "work",
+            1,
+            "- Implemented the feature",
+            "2024-01-01T10:00:00Z",
+        )];
 
         let result = execute(&task, &logs).unwrap();
         assert_eq!(result, vec![ACTIVITY_LOG_ARTIFACT_NAME]);
@@ -331,11 +434,12 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "Plan content", "planning", "now"));
 
-        let logs = vec![ActivityLogEntry {
-            stage: "work".to_string(),
-            iteration_number: 1,
-            content: "- Did the work".to_string(),
-        }];
+        let logs = vec![make_log(
+            "work",
+            1,
+            "- Did the work",
+            "2024-01-01T10:00:00Z",
+        )];
 
         let result = execute(&task, &logs).unwrap();
         assert_eq!(result.len(), 2);
@@ -368,20 +472,105 @@ mod tests {
 
     #[test]
     fn test_activity_log_format() {
-        let logs = vec![
-            ActivityLogEntry {
-                stage: "work".to_string(),
-                iteration_number: 1,
-                content: "- Line one".to_string(),
-            },
-            ActivityLogEntry {
-                stage: "review".to_string(),
-                iteration_number: 2,
-                content: "- Line two".to_string(),
-            },
+        let entries = vec![
+            ActivityEntry::Log(make_log("work", 1, "- Line one", "2024-01-01T10:00:00Z")),
+            ActivityEntry::Log(make_log("review", 2, "- Line two", "2024-01-01T11:00:00Z")),
         ];
 
-        let formatted = format_activity_log(&logs);
+        let formatted = format_activity_log(&entries);
         assert_eq!(formatted, "[work]\n- Line one\n\n[review]\n- Line two\n\n");
+    }
+
+    #[test]
+    fn test_commit_entry_format() {
+        let entries = vec![ActivityEntry::Commit(make_commit(
+            "abc1234",
+            "Fix the bug",
+            "Alice",
+            "2024-01-01T10:00:00Z",
+        ))];
+
+        let formatted = format_activity_log(&entries);
+        assert_eq!(formatted, "> **[abc1234]** Fix the bug — *Alice*\n\n");
+    }
+
+    #[test]
+    fn test_interleaved_timeline() {
+        let logs = vec![
+            make_log("work", 1, "Implemented feature", "2024-01-01T09:00:00Z"),
+            make_log("review", 2, "Approved", "2024-01-01T11:30:00Z"),
+        ];
+        let commits = vec![
+            make_commit("abc1234", "Add tests", "Bob", "2024-01-01T10:00:00Z"),
+            make_commit("def5678", "Refactor", "Bob", "2024-01-01T11:00:00Z"),
+        ];
+
+        let timeline = build_timeline(&logs, commits);
+        let formatted = format_activity_log(&timeline);
+
+        // Iteration at 09:00, commit at 10:00, commit at 11:00, iteration at 11:30
+        assert!(formatted.contains("[work]\nImplemented feature"));
+        assert!(formatted.contains("> **[abc1234]** Add tests — *Bob*"));
+        assert!(formatted.contains("> **[def5678]** Refactor — *Bob*"));
+        assert!(formatted.contains("[review]\nApproved"));
+
+        let work_pos = formatted.find("[work]").unwrap();
+        let commit1_pos = formatted.find("[abc1234]").unwrap();
+        let commit2_pos = formatted.find("[def5678]").unwrap();
+        let review_pos = formatted.find("[review]").unwrap();
+        assert!(work_pos < commit1_pos);
+        assert!(commit1_pos < commit2_pos);
+        assert!(commit2_pos < review_pos);
+    }
+
+    #[test]
+    fn test_build_timeline_sorts_chronologically() {
+        let logs = vec![make_log("work", 1, "content", "2024-01-01T12:00:00Z")];
+        let commits = vec![make_commit("aaa", "early", "A", "2024-01-01T08:00:00Z")];
+
+        let timeline = build_timeline(&logs, commits);
+        assert_eq!(timeline.len(), 2);
+        // commit (08:00) sorts before log (12:00)
+        assert!(matches!(timeline[0], ActivityEntry::Commit(_)));
+        assert!(matches!(timeline[1], ActivityEntry::Log(_)));
+    }
+
+    #[test]
+    fn test_empty_base_branch_skips_commits() {
+        let temp_dir = TempDir::new().unwrap();
+        let commits = fetch_branch_commits(temp_dir.path(), "");
+        assert!(commits.is_empty());
+    }
+
+    #[test]
+    fn test_commits_only_timeline() {
+        let commits = vec![make_commit("abc", "msg", "author", "2024-01-01T10:00:00Z")];
+        let timeline = build_timeline(&[], commits);
+        let formatted = format_activity_log(&timeline);
+        assert_eq!(formatted, "> **[abc]** msg — *author*\n\n");
+    }
+
+    #[test]
+    fn test_build_timeline_sorts_across_timezones() {
+        // commit at 2026-07-23T08:00:00+09:00 = 2026-07-22T23:00:00 UTC (before the iteration)
+        // iteration at 2026-07-23T00:00:00+00:00 (after the commit in UTC)
+        // Lexicographically: "2026-07-23T00..." < "2026-07-23T08..." → iteration sorts first (WRONG)
+        // Chronologically: commit (2026-07-22T23:00 UTC) sorts first (CORRECT)
+        let logs = vec![make_log("work", 1, "content", "2026-07-23T00:00:00+00:00")];
+        let commits = vec![make_commit(
+            "abc",
+            "early commit",
+            "A",
+            "2026-07-23T08:00:00+09:00",
+        )];
+
+        let timeline = build_timeline(&logs, commits);
+        assert_eq!(timeline.len(), 2);
+        // commit (08:00+09:00 = 23:00 UTC prev day) sorts before log (00:00 UTC)
+        assert!(
+            matches!(timeline[0], ActivityEntry::Commit(_)),
+            "commit with +09:00 offset that is earlier in UTC must sort before UTC iteration"
+        );
+        assert!(matches!(timeline[1], ActivityEntry::Log(_)));
     }
 }

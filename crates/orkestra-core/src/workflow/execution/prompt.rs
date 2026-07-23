@@ -1051,11 +1051,13 @@ mod tests {
                 stage: "work".into(),
                 iteration_number: 1,
                 content: "Log A".into(),
+                timestamp: "2024-01-01T10:00:00Z".into(),
             },
             ActivityLogEntry {
                 stage: "work".into(),
                 iteration_number: 2,
                 content: "Log B".into(),
+                timestamp: "2024-01-01T11:00:00Z".into(),
             },
         ];
         let result = deduplicate_activity_logs_by_stage(logs);
@@ -1070,21 +1072,25 @@ mod tests {
                 stage: "work".into(),
                 iteration_number: 1,
                 content: "A".into(),
+                timestamp: "2024-01-01T09:00:00Z".into(),
             },
             ActivityLogEntry {
                 stage: "review".into(),
                 iteration_number: 2,
                 content: "C".into(),
+                timestamp: "2024-01-01T10:00:00Z".into(),
             },
             ActivityLogEntry {
                 stage: "work".into(),
                 iteration_number: 3,
                 content: "B".into(),
+                timestamp: "2024-01-01T11:00:00Z".into(),
             },
             ActivityLogEntry {
                 stage: "work".into(),
                 iteration_number: 4,
                 content: "D".into(),
+                timestamp: "2024-01-01T12:00:00Z".into(),
             },
         ];
         let result = deduplicate_activity_logs_by_stage(logs);

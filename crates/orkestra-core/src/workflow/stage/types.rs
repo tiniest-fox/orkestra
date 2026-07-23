@@ -11,6 +11,34 @@ pub struct ActivityLogEntry {
     pub iteration_number: u32,
     /// The activity log content.
     pub content: String,
+    /// RFC3339 timestamp from the iteration's `started_at` field; used for chronological sorting.
+    pub timestamp: String,
+}
+
+/// A git commit on the task branch.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct CommitEntry {
+    pub hash: String,
+    pub message: String,
+    pub author: String,
+    pub timestamp: String,
+}
+
+/// A single entry in the activity log timeline.
+#[derive(Debug, Clone)]
+pub(crate) enum ActivityEntry {
+    Log(ActivityLogEntry),
+    Commit(CommitEntry),
+}
+
+impl ActivityEntry {
+    /// Sortable timestamp for chronological ordering.
+    pub fn sort_key(&self) -> &str {
+        match self {
+            Self::Log(l) => &l.timestamp,
+            Self::Commit(c) => &c.timestamp,
+        }
+    }
 }
 
 /// Consolidate activity logs, collapsing only consecutive same-stage entries.

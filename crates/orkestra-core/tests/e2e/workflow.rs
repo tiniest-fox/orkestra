@@ -4270,6 +4270,108 @@ fn activity_log_file_written_with_correct_content() {
     );
 }
 
+/// Test that `activity_log.md` interleaves real git commits from the task branch alongside
+/// iteration entries. This exercises `fetch_branch_commits` against a real git worktree.
+#[test]
+fn activity_log_contains_commits_from_worktree_branch() {
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
+    use std::fs;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_gate(GateConfig::Agentic),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+    let task = ctx.create_task(
+        "Commit interleave test",
+        "Verify commits in activity log",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Planning stage produces an iteration with an activity log entry.
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: Some("- Analysed requirements\n- Drafted plan".to_string()),
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn planning agent
+    ctx.advance(); // process planning output
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // process approval → advance to work stage
+
+    // Make a real commit on the task's worktree branch so fetch_branch_commits returns it.
+    let worktree_path = ctx
+        .api()
+        .get_task(&task_id)
+        .unwrap()
+        .worktree_path
+        .expect("task should have a worktree after planning");
+    fs::write(
+        std::path::Path::new(&worktree_path).join("feature.txt"),
+        "initial implementation",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Implement feature skeleton"])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+
+    // Spawn work agent — materialize_artifacts runs and writes activity_log.md.
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done".to_string(),
+            activity_log: None,
+            resources: vec![],
+        },
+    );
+    ctx.advance(); // spawn work agent (materializes artifacts before spawn)
+
+    let activity_log_path =
+        std::path::Path::new(&worktree_path).join(".orkestra/.artifacts/activity_log.md");
+    assert!(
+        activity_log_path.exists(),
+        "activity_log.md should exist in worktree"
+    );
+
+    let content = fs::read_to_string(&activity_log_path).unwrap();
+
+    // Iteration entry is present.
+    assert!(
+        content.contains("[planning]"),
+        "activity_log.md should contain [planning] iteration entry. Got:\n{content}"
+    );
+    assert!(
+        content.contains("Analysed requirements"),
+        "activity_log.md should contain iteration log content. Got:\n{content}"
+    );
+
+    // Commit entry is present in blockquote format.
+    assert!(
+        content.contains("Implement feature skeleton"),
+        "activity_log.md should contain the commit message. Got:\n{content}"
+    );
+    assert!(
+        content.contains("> **["),
+        "commit entry should use blockquote format. Got:\n{content}"
+    );
+}
+
 /// Test that activity logs are stored on reviewer iterations (including rejections).
 #[test]
 fn activity_log_on_rejection_retry() {

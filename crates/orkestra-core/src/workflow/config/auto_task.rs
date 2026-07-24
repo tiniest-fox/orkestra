@@ -92,7 +92,7 @@ fn parse_template_file(
 ) -> Result<AutoTaskTemplate, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("failed to read: {e}"))?;
 
-    let (frontmatter, body) = split_frontmatter(&content)
+    let (frontmatter, body) = super::split_frontmatter(&content)
         .ok_or_else(|| "missing YAML frontmatter (expected --- delimiters)".to_string())?;
 
     let parsed: Frontmatter =
@@ -115,18 +115,6 @@ fn parse_template_file(
         description: body.to_string(),
         filename: filename.to_string(),
     })
-}
-
-/// Split a markdown file into YAML frontmatter and body.
-///
-/// Expects the file to start with `---`, followed by YAML, then `---`,
-/// then the body content.
-fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
-    let content = content.strip_prefix("---")?;
-    let end = content.find("\n---")?;
-    let frontmatter = content[..end].trim();
-    let body = content[end + 4..].trim(); // skip past "\n---"
-    Some((frontmatter, body))
 }
 
 #[cfg(test)]
@@ -158,19 +146,19 @@ mod tests {
     #[test]
     fn test_split_frontmatter_valid() {
         let content = "---\ntitle: Hello\n---\nBody here";
-        let (fm, body) = split_frontmatter(content).unwrap();
+        let (fm, body) = super::super::split_frontmatter(content).unwrap();
         assert_eq!(fm, "title: Hello");
         assert_eq!(body, "Body here");
     }
 
     #[test]
     fn test_split_frontmatter_no_delimiters() {
-        assert!(split_frontmatter("no frontmatter here").is_none());
+        assert!(super::super::split_frontmatter("no frontmatter here").is_none());
     }
 
     #[test]
     fn test_split_frontmatter_missing_closing() {
-        assert!(split_frontmatter("---\ntitle: Hello\nno closing").is_none());
+        assert!(super::super::split_frontmatter("---\ntitle: Hello\nno closing").is_none());
     }
 
     #[test]

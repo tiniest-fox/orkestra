@@ -68,7 +68,7 @@ impl Serialize for ArtifactConfig {
 ///
 /// Each entry specifies a tool pattern that the agent cannot use,
 /// plus a message explaining why (injected into the agent's prompt).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ToolRestriction {
     /// Tool pattern in Claude Code format (e.g., `Bash(cargo *)`, `Edit`, `Write`).
     pub pattern: String,

@@ -5,6 +5,7 @@
 
 mod auto_task;
 mod loader;
+pub mod technique;
 
 // Re-export config types from orkestra-types
 pub use orkestra_types::config::stage;
@@ -18,3 +19,7 @@ pub use orkestra_types::config::{
 // Local I/O operations
 pub use auto_task::{load_auto_task_templates, AutoTaskTemplate};
 pub use loader::{load_workflow, load_workflow_for_project, LoadError};
+pub use technique::{
+    parse_check_metadata, parse_model_registry, parse_technique, CheckMetadata, ModelRegistry,
+    Technique, TechniqueLoadError,
+};

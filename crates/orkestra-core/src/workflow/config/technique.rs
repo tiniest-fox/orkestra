@@ -212,13 +212,16 @@ pub fn resolve_checks(techniques: &[&Technique]) -> Vec<String> {
 
 /// Collect and deduplicate tool restrictions across a set of techniques.
 ///
-/// Output is sorted by pattern for deterministic ordering.
+/// Deduplication is by pattern only — if two techniques restrict the same
+/// pattern with different messages, the first one wins. Output is sorted by
+/// pattern for deterministic ordering.
 pub fn resolve_disallowed_tools(techniques: &[&Technique]) -> Vec<ToolRestriction> {
-    let set: HashSet<ToolRestriction> = techniques
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut tools: Vec<ToolRestriction> = techniques
         .iter()
         .flat_map(|t| t.disallowed_tools.iter().cloned())
+        .filter(|t| seen.insert(t.pattern.clone()))
         .collect();
-    let mut tools: Vec<ToolRestriction> = set.into_iter().collect();
     tools.sort_by(|a, b| a.pattern.cmp(&b.pattern));
     tools
 }
@@ -468,6 +471,26 @@ mod tests {
         // sorted by pattern
         assert_eq!(result[0].pattern, "Edit");
         assert_eq!(result[1].pattern, "Write");
+    }
+
+    #[test]
+    fn test_resolve_disallowed_tools_same_pattern_different_message() {
+        let mut t1 = test_technique("a");
+        t1.disallowed_tools = vec![ToolRestriction {
+            pattern: "Edit".to_string(),
+            message: Some("read-only".to_string()),
+        }];
+        let mut t2 = test_technique("b");
+        t2.disallowed_tools = vec![ToolRestriction {
+            pattern: "Edit".to_string(),
+            message: None,
+        }];
+
+        let result = resolve_disallowed_tools(&[&t1, &t2]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].pattern, "Edit");
+        // First writer wins
+        assert_eq!(result[0].message, Some("read-only".to_string()));
     }
 
     #[test]

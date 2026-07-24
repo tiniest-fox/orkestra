@@ -4,6 +4,8 @@ Replacing static, named `workflow.yaml` flows with a composed pipeline built fro
 
 Read [`design.md`](./design.md) first if you haven't already; the phase files below assume its terminology (Technique, Composer, Composed step, Mechanism vs. policy, etc.) without re-explaining it.
 
+[`technique-index-draft.md`](./technique-index-draft.md) has a draft Technique index + `COMPOSITION.md`, validated via a lightweight composer-simulation exercise — a starting point for Phase 2, not the finished library.
+
 ## Progress
 
 - [x] [Phase 0 — Resolve open design questions](./00-resolve-open-design-questions.md)

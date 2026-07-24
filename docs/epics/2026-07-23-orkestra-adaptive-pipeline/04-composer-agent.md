@@ -31,7 +31,7 @@ What this phase actually has to find out, which hasn't been explored yet, is whe
 - [ ] Locate and trace today's chat-to-stage-execution handoff before writing anything new
 - [ ] Wire the composer to emit a real `Proposal` at that boundary, resolved into composed steps by Phase 3's execution path
 - [ ] Composer clearance stays off — every proposal pauses for human confirmation regardless of confidence, so this phase validates composition quality in isolation from the clearance question (Phase 8)
-- [ ] Validate against all three worked use cases from `design.md`, plus a handful of real Traks
+- [ ] Validate against all four worked use cases from `design.md` (including Use Case 4's underspecified-ask → `requirements-discovery` → recomposition-on-new-input shape), plus a handful of real Traks
 
 ## Open questions
 
@@ -43,5 +43,5 @@ With both the mandatory-verification rule and `pinned_when` removed (see `design
 
 ## Exit criteria
 
-- [ ] All three worked use cases produce correct proposals
+- [ ] All four worked use cases produce correct proposals
 - [ ] Validated manually against real Traks, not just the worked examples

@@ -31,8 +31,10 @@ workflow/
 ├── orchestrator/       # OrchestratorLoop — tick loop, recovery, commit pipeline
 │
 ├── config/             # Configuration loading
+│   ├── mod.rs          # Shared parsing helpers (e.g., split_frontmatter) + re-exports from orkestra-types
 │   ├── loader.rs       # load_workflow_for_project(), load_workflow()
-│   └── auto_task.rs    # AutoTaskTemplate for subtask config
+│   ├── auto_task.rs    # AutoTaskTemplate for subtask config
+│   └── technique.rs    # Technique frontmatter + check metadata + model registry: types, parsers, resolvers
 │
 ├── domain/             # Domain model re-exports + UI types
 │   ├── mod.rs          # Re-exports all types from orkestra-types::domain
@@ -153,6 +155,12 @@ These threads take cloned inputs (no lock held) and call back via `Arc<Mutex<Wor
 ### Title/Commit Generators Are Internal
 
 Title generation (`title.rs`) and commit message generation (`commit_message.rs`) use internal templates, not configurable agent prompts. They're utility functions, not workflow stages.
+
+### Config Structs in `config/` Must Use `deny_unknown_fields`
+
+Any struct in `workflow/config/` that is deserialized from user-authored YAML (workflow.yaml, technique files, check scripts) must include `#[serde(deny_unknown_fields)]`. See `orkestra-types/CLAUDE.md` for the full pattern and required regression test. `TechniqueFrontmatter`, `CheckMetadataRaw`, and `ModelRegistry` (in `technique.rs`) currently lack this — add it in a follow-up.
+
+**Shared parsing helpers belong in `config/mod.rs`.** Before adding a new parsing utility to a file in `config/`, check `mod.rs` — helpers used by more than one file in the module (e.g., `split_frontmatter`) live there as `pub(crate)` functions.
 
 ### Optional vs. Required Config File Loading
 

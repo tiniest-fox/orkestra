@@ -93,7 +93,7 @@ pub fn parse_technique(path: &Path) -> Result<Technique, TechniqueLoadError> {
 
     let content = std::fs::read_to_string(path)?;
 
-    let (frontmatter_str, body) = split_frontmatter(&content).ok_or_else(|| {
+    let (frontmatter_str, body) = super::split_frontmatter(&content).ok_or_else(|| {
         TechniqueLoadError::Validation(
             "missing YAML frontmatter (expected --- delimiters)".to_string(),
         )
@@ -227,18 +227,6 @@ pub fn resolve_disallowed_tools(techniques: &[&Technique]) -> Vec<ToolRestrictio
 }
 
 // -- Helpers --
-
-/// Split a markdown file into YAML frontmatter and body.
-///
-/// Expects the file to start with `---`, followed by YAML, then `---`,
-/// then the body content.
-fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
-    let content = content.strip_prefix("---")?;
-    let end = content.find("\n---")?;
-    let frontmatter = content[..end].trim();
-    let body = content[end + 4..].trim(); // skip past "\n---"
-    Some((frontmatter, body))
-}
 
 // ============================================================================
 // Tests

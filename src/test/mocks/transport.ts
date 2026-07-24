@@ -40,7 +40,8 @@ type TransportMethod =
   | "start_run_script"
   | "stop_run_script"
   | "get_run_status"
-  | "get_run_logs";
+  | "get_run_logs"
+  | "finish_task";
 
 interface ResponseMap {
   list_tasks: WorkflowTaskView[];
@@ -62,6 +63,7 @@ interface ResponseMap {
   stop_run_script: undefined;
   get_run_status: { running: boolean; pid: number | null; exit_code: number | null };
   get_run_logs: { lines: string[]; total_lines: number };
+  finish_task: WorkflowTask;
 }
 
 /**

@@ -599,6 +599,7 @@ pub fn run() {
             commands::workflow_request_update,
             commands::workflow_set_auto_mode,
             commands::workflow_interrupt,
+            commands::workflow_finish_task,
             commands::workflow_skip_stage,
             commands::workflow_send_to_stage,
             commands::workflow_restart_stage,

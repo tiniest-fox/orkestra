@@ -306,6 +306,22 @@ pub fn workflow_request_update(
     })
 }
 
+/// Finish a task immediately, entering the commit pipeline from any bypassable state.
+///
+/// Bypasses remaining workflow stages and enters the commit/integration pipeline.
+#[tauri::command]
+pub fn workflow_finish_task(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Value, TauriError> {
+    orkestra_debug!("tauri", "finish_task {task_id}");
+    registry.with_project(window.label(), |state| {
+        let params = serde_json::json!({ "task_id": task_id });
+        action::finish_task(state.command_context(), &params).map_err(Into::into)
+    })
+}
+
 /// Skip the current stage, advancing to the next stage with a message.
 ///
 /// Moves the task forward without agent review. If this is the last stage, marks the task Done.

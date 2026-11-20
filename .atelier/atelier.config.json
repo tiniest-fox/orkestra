@@ -1,0 +1,17 @@
+{
+  "alias": {
+    "@client": "client/src",
+    "@atelier": ".atelier"
+  },
+  "css": [
+    "client/src/styles.css"
+  ],
+  "catalogue": {
+    "include": [
+      "client/src/components",
+      "client/src/features"
+    ],
+    "exclude": [],
+    "wrapper": "client/src/atelier.wrapper.tsx"
+  }
+}

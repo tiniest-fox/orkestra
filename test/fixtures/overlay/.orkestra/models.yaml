@@ -1,0 +1,6 @@
+default: haiku
+models:
+  claude:
+    - name: opus
+    - name: sonnet
+    - name: haiku

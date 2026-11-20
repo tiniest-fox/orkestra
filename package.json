@@ -1,0 +1,62 @@
+{
+  "name": "orkestra-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.16"
+  },
+  "scripts": {
+    "spike": "tsx src/main.ts",
+    "build": "tsx src/build.ts",
+    "app": "pnpm install --frozen-lockfile && pnpm --filter @orkestra/client build && pnpm build && pnpm --filter @orkestra/desktop build && pnpm --filter @orkestra/desktop package && pnpm --filter @orkestra/desktop install-app",
+    "check": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/engine.tsbuildinfo && tsc --noEmit -p shared --incremental --tsBuildInfoFile node_modules/.cache/tsc/shared.tsbuildinfo",
+    "lint": "oxlint --type-aware --tsconfig tsconfig.json src test shared && oxlint --type-aware client && oxlint --type-aware desktop",
+    "lint:fix": "oxlint --type-aware --tsconfig tsconfig.json --fix src test shared && oxlint --type-aware --fix client && oxlint --type-aware --fix desktop",
+    "fmt": "oxfmt --write src test shared client desktop",
+    "fmt:check": "oxfmt --check src test shared client desktop",
+    "knip": "knip --no-config-hints",
+    "docs:check": "tsx src/docs-check.ts",
+    "test": "vitest run",
+    "verify": "pnpm fmt:check && pnpm check && pnpm lint && pnpm knip && pnpm docs:check && pnpm test && pnpm --filter @orkestra/client verify && pnpm --filter @orkestra/desktop verify",
+    "walkthrough": "tsx src/walkthrough.ts",
+    "real": "tsx src/real.ts",
+    "real:compose": "tsx src/real-compose.ts",
+    "real:trak": "tsx src/real-trak.ts",
+    "compose-lab": "tsx src/compose-lab.ts",
+    "ork": "tsx src/ork.ts",
+    "client": "pnpm --filter @orkestra/client dev",
+    "serve": "tsx src/serve.ts",
+    "sim": "tsx src/sim.ts",
+    "ui": "tsx src/ui.ts",
+    "ui:stop": "tsx src/ui-stop.ts",
+    "ui:both": "concurrently -k -n serve,client -c blue,magenta \"pnpm serve\" \"pnpm client\"",
+    "smoke": "tsx src/smoke.ts"
+  },
+  "dependencies": {
+    "@effect/platform": "^0.97.0",
+    "@effect/platform-node": "^0.108.0",
+    "@orkestra/shared": "workspace:*",
+    "@types/mustache": "^4.2.6",
+    "effect": "^3.22.0",
+    "happy-dom": "^20.14.5",
+    "mermaid": "^11.16.1",
+    "mustache": "^4.2.0",
+    "unique-names-generator": "^4.7.1",
+    "web-push": "^3.6.7",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/web-push": "^3.6.4",
+    "concurrently": "^10.0.4",
+    "esbuild": "0.28.1",
+    "knip": "^6.29.0",
+    "oxfmt": "^0.60.0",
+    "oxlint": "1.75.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

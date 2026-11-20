@@ -1,0 +1,144 @@
+// The client's boundary rules — only the difference from the root config.
+//
+// **DO NOT DELETE `extends`.** A nested oxlint config REPLACES the root one rather than
+// layering on it, so without that line `client/` keeps almost none of the engine's 37
+// rules and nothing reports it. With it, `rules` and `plugins` merge root-then-local, so
+// `no-console` and the rest are inherited and must not be restated here.
+//
+// The differences, and nothing else:
+//
+//   1. `react` plugin — it carries the hooks rules; there is no separate react-hooks
+//      plugin in oxlint.
+//   2. `unicorn/no-null` off — React refs are `useRef<T>(null)`.
+//   3. `import/no-default-export` off for `.tsx` only.
+//   4. `react/react-in-jsx-scope` off — it encodes the classic JSX runtime, and
+//      `tsconfig.json` sets `jsx: "react-jsx"`.
+//   5. `import/no-unassigned-import` allows `**/*.css` and jest-dom's vitest entry —
+//      `import "./styles.css"` has no binding by design, and a matcher package's whole
+//      job is to register matchers. Two named exceptions, still an error for anything
+//      else: an unassigned import of a module is a side effect nobody declared.
+//   6. The transport seam: restricted everywhere, exempted for `src/api/**`. Keep that
+//      direction — enumerating `features/**` and `components/**` leaves the next
+//      directory ungoverned.
+//   7. No database client: `postgres`, `aws4fetch` and anything under `plugins/` are
+//      refused, as the root config refuses them. Restated because rule 6 replaces the
+//      root's `no-restricted-imports` here.
+//
+// `max-lines-per-function: 100` is inherited and NOT relaxed.
+// `exactOptionalPropertyTypes` is the fourth relaxation and lives in `tsconfig.json`.
+{
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "extends": ["../.oxlintrc.json"],
+  // `public/` is Vite's static directory, copied into the bundle verbatim: the service
+  // worker and the manifest, no TypeScript. Its one script runs in a
+  // ServiceWorkerGlobalScope that `tsconfig.json` deliberately does not cover (its lib
+  // is DOM), so every type-aware rule reads `error` types there — noise, not findings.
+  // `fmt` still covers it; this is a classification, not a relaxation.
+  "ignorePatterns": ["public/"],
+  "plugins": ["react"],
+  "rules": {
+    "unicorn/no-null": "off",
+    "import/no-unassigned-import": [
+      "error",
+      { "allow": ["**/*.css", "@testing-library/jest-dom/vitest"] }
+    ],
+
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "react/jsx-key": "error",
+    "react/react-in-jsx-scope": "off",
+
+    "eslint/no-restricted-globals": [
+      "error",
+      {
+        "name": "fetch",
+        "message": "Only client/src/api/ may call fetch. A fetch outside the seam is what turns the Tauri/Electron swap from one directory's work into a rewrite — lift the call into the api/ file named for its wire slice and depend on its signature. See the client-style skill."
+      },
+      {
+        "name": "XMLHttpRequest",
+        "message": "Only client/src/api/ may talk to the network. See the client-style skill."
+      },
+      {
+        "name": "WebSocket",
+        "message": "Only client/src/api/ may talk to the network. See the client-style skill."
+      },
+      {
+        "name": "EventSource",
+        "message": "Only client/src/api/ may open the engine stream, and it does so once, in api/stream.ts. A second subscriber is a second copy of the cache-patching rules, and the two would disagree about what has been applied. Depend on the hook. See the client-style skill."
+      }
+    ],
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "effect",
+            "allowTypeImports": true,
+            "message": "`effect` may be imported as a VALUE only under client/src/api/**, where responses are decoded. Everywhere else use `import type`, which esbuild erases so the runtime stays out of the bundle. TanStack Query already owns async state here, and Layer/Scope have nothing to hold in a React tree. See the client-style skill."
+          },
+          {
+            "name": "node:http",
+            "message": "A Node transport cannot run in a browser. The wire protocol belongs in client/src/api/."
+          },
+          {
+            "name": "undici",
+            "message": "A Node transport cannot run in a browser. The wire protocol belongs in client/src/api/."
+          },
+          {
+            "name": "postgres",
+            "message": "No database client goes into client/."
+          },
+          {
+            "name": "aws4fetch",
+            "message": "No database client goes into client/."
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["@tauri-apps/**"],
+            "message": "Tauri IPC is the adapter behind the transport port, not something a feature reaches for. When Tauri lands, only client/src/api/ changes. See the client-style skill."
+          },
+          {
+            "group": ["@orkestra/shared", "@orkestra/shared/**"],
+            "allowTypeImports": true,
+            "message": "The wire package is re-exported through client/src/api/types.ts, so no feature depends on it directly. Types are fine anywhere because they are erased; a value import means a Schema, and Schemas are decoded in api/ only."
+          },
+          {
+            "group": ["**/plugins/**"],
+            "message": "No database client goes into client/."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/api/**/*.ts"],
+      "rules": {
+        "eslint/no-restricted-globals": "off",
+        "eslint/no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["**/*.tsx"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    },
+    {
+      "files": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+      "rules": {
+        "eslint/no-console": "off",
+        "typescript/no-unsafe-type-assertion": "off",
+        "vitest/no-conditional-in-test": "off",
+        "vitest/no-conditional-expect": "off"
+      }
+    },
+    {
+      "files": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+packages:
+  - shared
+  - client
+  - desktop
+
+# Refuse to run any script against a node_modules tree that does not match the
+# lockfile, naming the fix — instead of the ERR_MODULE_NOT_FOUND stack trace a
+# missing package otherwise produces mid-script.
+#
+# Two states refuse, not one, and the second is the surprising one: node_modules
+# behind the lockfile, and `package.json` ahead of it — a dependency added and not
+# yet installed stops EVERY script in the workspace, not only one that needs it.
+# `pnpm install` is itself never gated, so the fix the message names always runs.
+verifyDepsBeforeRun: error
+
+autoInstallPeers: false
+allowBuilds:
+  "@parcel/watcher": false
+  electron: true
+  esbuild: false
+  msgpackr-extract: false
+  msw: false

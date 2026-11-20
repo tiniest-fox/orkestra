@@ -1,0 +1,56 @@
+// The desktop shell's boundary rules — only the difference from the root config.
+//
+// **DO NOT DELETE `extends`.** A nested oxlint config REPLACES the root one rather than
+// layering on it; with this line `rules` and `plugins` merge root-then-local.
+//
+// The shell is a CLIENT of the daemon, like `src/cli/`: it starts engines, finds them
+// and opens windows on them. Everything it knows about a trak arrives as a DTO from
+// `@orkestra/shared`. The engine files it shares are the port derivation in
+// `src/app/discovery.ts`, because a client has to find the engine, and the supervisor in
+// `src/supervisor/`, which is held to the same rule. The restriction below is
+// `src/cli/`'s, for the same reason.
+{
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "extends": ["../.oxlintrc.json"],
+  "rules": {
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": [
+              "**/workflow/**",
+              "**/workflow",
+              "**/agent/**",
+              "**/vcs/**",
+              "**/library/**",
+              "**/prompts/**"
+            ],
+            "message": "desktop/ is a CLIENT of the daemon and has no engine in it. Everything it knows about a trak arrives as a DTO from @orkestra/shared, and everything it does to one is an HTTP request. The port derivation in src/app/discovery.ts and the supervisor in src/supervisor/ are what it shares with the engine, because a client has to find and start it."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/main.ts", "build.ts", "package.ts", "install.ts"],
+      "rules": {
+        "eslint/no-console": "off"
+      }
+    },
+    {
+      "files": ["vitest.config.ts"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    },
+    {
+      "files": ["src/**/*.test.ts"],
+      "rules": {
+        "vitest/no-conditional-in-test": "off",
+        "vitest/no-conditional-expect": "off"
+      }
+    }
+  ]
+}

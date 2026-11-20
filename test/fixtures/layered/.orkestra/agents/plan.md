@@ -1,0 +1,5 @@
+---
+model: opus
+checks:
+  - spelling
+---

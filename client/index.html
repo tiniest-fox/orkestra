@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Where every relative URL on this page resolves, and the only place the page learns
+         its path prefix: a host serving this engine under `/p/<project>/` rewrites this one
+         tag as it forwards the page. First in <head>, because a URL parsed before it
+         resolves against the document's own path. See `src/base.ts`. -->
+    <base href="/" />
+    <!-- `viewport-fit=cover` is what makes `env(safe-area-inset-*)` report anything:
+         without it every inset is 0px and the safe-area tokens in styles.css do
+         nothing. It lets the page extend under the notch and the home indicator, and
+         the tokens are what keep content out from under them. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Both schemes are real, so tell the browser that before first paint: it
+         picks the matching form-control and scrollbar colours instead of assuming
+         light. The tokens themselves flip via `prefers-color-scheme` in styles.css. -->
+    <meta name="color-scheme" content="light dark" />
+    <!-- An installed app's title bar is drawn in this colour: `canvas` in each scheme,
+         `rail.html`'s reason. -->
+    <meta name="theme-color" content="#faf8fc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#13111a" media="(prefers-color-scheme: dark)" />
+    <!-- Inline so it costs no request and no file; a missing favicon 404s on every load. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e83558'/><circle cx='16' cy='16' r='6' fill='none' stroke='white' stroke-width='4'/></svg>"
+    />
+    <!-- What makes the site installable: `display: standalone` and the icons live in
+         the manifest; iOS reads the home-screen icon off its own link. The viewport
+         meta above is the phone shell's line, not these. Every URL in the manifest is
+         relative, so it resolves under the prefix and each project installs as its own
+         app. It has no `id` on purpose: `id` resolves against the origin, so one there
+         would give every project on a host the same identity. Left out, it is the
+         per-prefix `start_url`. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <title>Orkestra</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

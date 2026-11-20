@@ -1,0 +1,621 @@
+/* The only token file in the client. A component needing a value not named here adds a
+ * token; it does not use an arbitrary utility (`bg-[#123456]`, `text-[13px]`).
+ *
+ * `client/src/components/README.md` says what is built on top and what is still open.
+ *
+ * Differences from Forge upstream (`../orkestra/src/styles/forge-tokens.css`) that you
+ * must not "fix" back:
+ *
+ *   - Colours are plain hex, NOT space-separated RGB channels. Channels exist upstream
+ *     for Tailwind v3; v4 applies opacity with `color-mix()`, so `bg-accent/40` works
+ *     on hex.
+ *   - Text tokens are `fg`, not `text` — upstream's nesting makes the utility
+ *     `text-text-primary`, and `text-primary` silently renders browser defaults.
+ *   - No custom spacing scale; Tailwind's 4px base is used as-is.
+ */
+
+/* The one external request the client makes. The stacks in `--font-sans` and
+ * `--font-mono` below fall back to system faces, so a blocked or offline fetch
+ * degrades to a different face rather than a broken layout. The fonts are not
+ * self-hosted yet.
+ *
+ * FIRST, above `@import "tailwindcss"`, and it has to stay there: `@import` rules
+ * must precede all other rules, and the Tailwind import expands into rules. Putting
+ * this second builds with a warning and drops the font in a strict parser. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+@import "tailwindcss";
+
+/* `@theme`, NEVER `@theme inline`.
+ *
+ * Plain `@theme` compiles `bg-canvas` to `background-color: var(--color-canvas)`, so
+ * redefining that variable in the dark block below flips every utility that uses it.
+ * `@theme inline` bakes the literal value into the utility instead, and the dark
+ * block then silently does nothing at all. That is the one trap in this file. */
+@theme {
+  /* -- Backgrounds: app → panel → inset/hover.
+   *
+   * Three. Splitting `surface-2` into a large secondary background at `#f7f5fa` and a
+   * small recess at `#efeaf5` does not help, though the shade token reads too dark under a
+   * whole conversation pane. Measured, `#f7f5fa` is within 1.5% of `canvas` and the two
+   * are indistinguishable — what actually lifts a card off its ground is its *edge*, not
+   * two points of luminance. So the pane sits on `canvas`, which already existed, and this
+   * stays one token. -- */
+  --color-canvas: #faf8fc;
+  --color-surface: #ffffff;
+  --color-surface-2: #efeaf5;
+
+  /* -- Text -- */
+  --color-fg: #120f18;
+  --color-fg-muted: #443c54;
+  --color-fg-subtle: #564d68;
+
+  /* -- Border. Derived from `fg-muted`, not from `fg`: mixing `fg` in at this strength
+   * produced rgb(241,241,241) — R, G and B all equal, a pure grey — in a palette whose
+   * whole point is that its neutrals are violet. `fg-muted` is chromatic enough to
+   * survive the dilution. -- */
+  --color-border: color-mix(in oklab, var(--color-fg-muted) 7.5%, var(--color-surface));
+
+  /* -- Guide. **An edge and a drawn line are not the same thing**, and this is the token
+   * for the second. `border` is tuned to separate a panel from the page at the threshold
+   * of visibility, which is right for something you are meant to feel rather than see —
+   * and wrong for a line that *is* the drawing. `TrakMap` found that the hard way: its
+   * first draft drew the plan's route in `border` and the route was invisible, so it
+   * carried this value as a local constant instead. The trak rail wants the same thing,
+   * which is why it is a token.
+   *
+   * Four times `border`'s strength, from `fg-subtle` rather than `fg-muted` so a line and
+   * an edge are not the same hue at two weights.
+   *
+   * Mixed with `transparent`, not with `surface`, and that is what makes one declaration
+   * enough: it composites over whatever ground it is drawn on — the white bar, the canvas
+   * pane, a tone-tinted plate — and it follows `fg-subtle` through a scheme flip without
+   * a dark override, exactly as the hover tints do. -- */
+  --color-guide: color-mix(in oklab, var(--color-fg-subtle) 18%, transparent);
+
+  /* -- Accent. One non-status colour; everything filled, selected or linked comes from
+   * it. Every text pair it forms clears 4.5:1.
+   * `accent-ink` is the label that survives on it, and it flips between schemes: a dark
+   * scheme wants a light accent and a light scheme a dark one. -- */
+  --color-accent: #c2184a;
+  --color-accent-hover: #a81742;
+  --color-accent-ink: #ffffff;
+
+  /* -- Hover. A tint of the surface, never a surface: `surface-2` means *recessed*, and
+   * a row under the cursor has not changed level. Declared as an alpha rather than an
+   * opaque mix so it composites over whatever ground is beneath it — the same ghost
+   * button sits on the page, in a panel and in a recess, and one value serves all three.
+   *
+   * Two strengths, by what is hovering. A full-width row is a lot of area and area
+   * amplifies a tint; a control with no resting surface has to *build* one. There is no
+   * third for quiet buttons — they take an accent edge instead, so their plate never
+   * moves. -- */
+  --color-hover-row: color-mix(in oklab, var(--color-accent) 3%, transparent);
+  --color-hover-bare: color-mix(in oklab, var(--color-accent) 14%, transparent);
+
+  /* -- Source. **Not a sixth and seventh tone**, and the distinction is the whole reason
+   * these are here: `Tone` answers *how is this going* — nothing owed, in flight, a human
+   * owes something, succeeded, failed — and `trakLabel` and `stepTone` both return one.
+   * *Who did this* is a different axis, so it gets a vocabulary of its own that can never
+   * be returned from an event switch by accident.
+   *
+   * Two, and they are the two voices in a trak: a person, and everything that is not one.
+   * `machine` covers both things that are not — a decision the agent inferred, and a gate
+   * the engine took with nobody reading it — because the axis is *who*, and *which
+   * machine* is a distinction no surface draws.
+   *
+   * Indigo and cyan because the wheel is crowded: with the accent, the five tones already
+   * hold red, amber, green, blue and violet-grey. The pairing that had to be checked is
+   * these two against each other, since the provenance plates sit them side by side at one
+   * wash on one white — violet-blue against green-blue, and they separate cleanly. Both
+   * are lifted in dark for the reason the accent is: a saturated hue on a dark ground
+   * fails the contrast bar the light one clears.
+   *
+   * **A source colour never goes inside a plate**, and that is what keeps the cyan off
+   * `tone-working`'s blue — at plate size and at 15% the two are one colour. A plate's
+   * fill says how the step *went*, so a source lives on a badge, a band's ground or a row
+   * wash, where the nearest blue is a spinner rather than another plate. Anything putting
+   * one inside a plate re-opens the choice of value. -- */
+  --color-source-human: #4338ca;
+  --color-source-machine: #0e7490;
+
+  /* -- Brand: a vendor's own mark color, for its logo and nothing else — `BrandLogo`. One
+   * value in both schemes, since it is the vendor's and has to read as theirs. -- */
+  --color-brand-claude: #d97757;
+
+  /* -- Tones: the five semantic values in `format/tone.ts`, and the only colours a
+   * component should reach for to say how something is going. A sixth tone means an
+   * state was not thought about — add the case to `trakLabel`'s switch, not a
+   * token here.
+   *
+   * Each fill is *derived* from its own foreground rather than authored. One rule
+   * instead of five more values, and it survives a scheme flip for free. -- */
+  --color-tone-neutral: #4f4760;
+  --color-tone-working: #1d4ed8;
+  --color-tone-waiting: #8f5104;
+  --color-tone-good: #12703a;
+  --color-tone-bad: #c0182a;
+
+  --color-tone-neutral-bg: color-mix(in oklab, var(--color-tone-neutral) 15%, var(--color-surface));
+  --color-tone-working-bg: color-mix(in oklab, var(--color-tone-working) 15%, var(--color-surface));
+  --color-tone-waiting-bg: color-mix(in oklab, var(--color-tone-waiting) 15%, var(--color-surface));
+  --color-tone-good-bg: color-mix(in oklab, var(--color-tone-good) 15%, var(--color-surface));
+  --color-tone-bad-bg: color-mix(in oklab, var(--color-tone-bad) 15%, var(--color-surface));
+
+  /* -- Diff marks: **a fourth family, and not a sixth tone.** A `Tone` says how something
+   * is *going* and these say what happened to a *file*, so they can never be returned from
+   * a status switch by accident — the same separation `source-human`/`source-machine`
+   * carries one axis over.
+   *
+   * They also cannot be the tones at other names. Every tone above was tuned to clear
+   * 4.5:1 as 11px text, which is why `tone-good` is `#12703a` — and an 8px dot at that
+   * value reads as grey. A non-text mark's bar is 3:1, so the scale below is brighter than
+   * the tones by design rather than by drift. Measured against `canvas`, which is the
+   * ground the file index sits on: 3.12:1, 5.00:1 and 4.58:1 in light; 7.36:1, 7.40:1 and
+   * 5.58:1 in dark. Every one is also measured on `surface`, where the same dots sit on a
+   * file's own header, and clears there too — 3.30/5.28/4.83 and 6.80/6.83/5.15.
+   *
+   * Three, and a renamed file takes `fg-subtle` rather than a fourth — a move is the one
+   * change with nothing added and nothing removed, so it has no side to be on. -- */
+  --color-diff-added: #16a34a;
+  --color-diff-modified: #0b6bcb;
+  --color-diff-deleted: #dc2626;
+
+  /* -- The wash behind a changed row, from the tones rather than from the marks above:
+   * this one *is* a status — the row succeeded into the file or left it — and it sits
+   * behind text that has to stay readable.
+   *
+   * **10% where the tone fills take 15%, and that is not a rounding.** A fill is a pill;
+   * this runs the whole width of a scroller for a hundred rows, and area amplifies a
+   * tint — at 15% the diff read as two coloured pages rather than as code with lines
+   * marked on it. Dark takes 13%, holding the same ratio to the 20% the fills take
+   * there. -- */
+  --color-diff-add-wash: color-mix(in oklab, var(--color-tone-good) 10%, var(--color-surface));
+  --color-diff-del-wash: color-mix(in oklab, var(--color-tone-bad) 10%, var(--color-surface));
+
+  /* -- Pseudo-code's nine hues, copied from tiniestfox's `SYNTAX` palettes (`packages/kit/
+   * src/ui/theme.ts`) so a ```pseudo fence and a sketch colour the way that notation is
+   * coloured where it was defined. A fence in a real language is coloured by shiki's own
+   * theme instead (`useTokens`); these are for the one notation shiki has no grammar for. -- */
+  --color-syntax-keyword: #cf222e;
+  --color-syntax-string: #0a3069;
+  --color-syntax-constant: #0550ae;
+  --color-syntax-tag: #116329;
+  --color-syntax-name: #953800;
+  --color-syntax-call: #7f4edb;
+  --color-syntax-comment: #656d77;
+  --color-syntax-rule: #ad4f05;
+  --color-syntax-hole: #0b766a;
+
+  /* -- The track: the hairline the running segment travels on, drawn in the 1.5px the
+   * plate pulls in by while a turn is in flight (`components/Plate`).
+   *
+   * **It exists because the gap was the page.** With nothing behind the segment, three
+   * quarters of that ring showed whatever the plate was sitting on — which is 1.2:1
+   * against the fill in light and invisible, and 1.5:1 in dark, where it read as a dark
+   * moat cut around a plate that had visibly shrunk. Looked at in dark and settled there.
+   *
+   * Halfway between the plate's own fill and the page, and *derived* from both for the
+   * reason the fills are derived from their foregrounds: it is a relationship rather than
+   * a value, so it survives a scheme flip and any retuning of either end. Against
+   * `canvas` and not `surface`, which is the one place this departs from the fill above
+   * it — a plate sits on the canvas on both surfaces that draw one. -- */
+  --color-tone-neutral-track: color-mix(
+    in oklab,
+    var(--color-tone-neutral-bg) 50%,
+    var(--color-canvas)
+  );
+  --color-tone-working-track: color-mix(
+    in oklab,
+    var(--color-tone-working-bg) 50%,
+    var(--color-canvas)
+  );
+  --color-tone-waiting-track: color-mix(
+    in oklab,
+    var(--color-tone-waiting-bg) 50%,
+    var(--color-canvas)
+  );
+  --color-tone-good-track: color-mix(in oklab, var(--color-tone-good-bg) 50%, var(--color-canvas));
+  --color-tone-bad-track: color-mix(in oklab, var(--color-tone-bad-bg) 50%, var(--color-canvas));
+
+  /* -- Destructive. Not a second red: the darkest thing in the palette with `tone-bad`
+   * mixed into it, so weight carries the warning and it never competes with the accent.
+   * The accent and `tone-bad` are two hex digits apart, and a solid red button beside a
+   * solid accent one reads as a single colour with two labels. -- */
+  --color-destructive: color-mix(in oklab, var(--color-tone-bad) 42%, var(--color-fg));
+  --color-destructive-ink: var(--color-canvas);
+
+  /* -- Type. A dense, tool-like scale: nothing above 16px, because this is a log viewer
+   * and not a document. Sizes are paired with a line-height so callers never set the two
+   * separately.
+   *
+   * The names say size and nothing else. They used to be `mono-sm` and `mono`, which
+   * named a *family* the token does not set — and two call sites paired them with the
+   * sans face, which is how the lie showed. Mono is one step smaller than the step it
+   * sits at, because mono runs wide and reads large at the same nominal size; `2xs`
+   * exists so the smallest mono has a step to step down to. -- */
+  --text-2xs: 9px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 10px;
+  --text-xs--line-height: 16px;
+  --text-sm: 11px;
+  --text-sm--line-height: 16px;
+  --text-base: 13px;
+  --text-base--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
+  /* The one size past 16px: six digits a person reads off one screen and types into
+   * another — a host's pairing code, issued and typed — where the scale's largest reads as
+   * a line of text rather than a code. Nothing else takes it. */
+  --text-code: 24px;
+  --text-code--line-height: 32px;
+
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  /* -- The page gutter: the one horizontal inset everything at the top level shares, so
+   * the app bar, a list row and a page-level notice all start their text on the same
+   * line. Tailwind's `--spacing-*` namespace, so it works as `px-gutter`, `pl-gutter`
+   * and so on. Rows carry it themselves rather than the page carrying it, because the
+   * hover tint has to run full-bleed. 16px below the phone breakpoint — the override is
+   * at the foot of this file, beside the breakpoint's own comment. -- */
+  --spacing-gutter: 24px;
+
+  /* -- Safe areas: the notch and the home indicator, as spacing tokens.
+   *
+   * `env()` reports 0px everywhere but an installed or full-bleed phone viewport (and
+   * reports anything at all only because index.html sets `viewport-fit=cover`), so
+   * every use of these is a no-op on desktop — which is why they can sit on shared
+   * chrome unconditionally rather than behind a variant.
+   *
+   * `foot` is the chat bar's 16px bottom inset plus the home indicator's, one token
+   * because the two paddings are one CSS property and a second class would lose the
+   * conflict silently. It reads `safe-b` rather than `env()` a second time, so that the
+   * inset has one declaration: `e2e/phone.spec.ts` simulates an iPhone by overriding
+   * `--spacing-safe-b`, and a token reading `env()` on its own is one the suite cannot
+   * see move. -- */
+  --spacing-safe-t: env(safe-area-inset-top, 0px);
+  --spacing-safe-b: env(safe-area-inset-bottom, 0px);
+  --spacing-foot: calc(16px + var(--spacing-safe-b));
+
+  /* -- A Field's vertical inset, and the one value its height formula and its padding
+   * class both read — `components/Field` computes its floor as
+   * `rows × 20px + 2 × this + 2px`, so the two paths cannot disagree. 11px below the
+   * phone breakpoint (the override is at the foot of this file): one line of base text
+   * plus 11px each side plus the hairlines is 44px, which is the send button's own
+   * touch floor, so the chat bar's two controls sit at one height there. -- */
+  --spacing-field-pad: 8px;
+
+  /* The trak drawer's width: 80% of the window, with a 780px floor of its own and 320px
+   * left to the list beside it. `clamp` lets the floor win when the two cannot both hold
+   * — a window narrower than 1100px squeezes the list rather than the drawer — because
+   * the drawer is what is being read. 780 is what the pane's contents were laid out for
+   * before it grew. */
+  --spacing-drawer: clamp(780px, 80vw, calc(100vw - 320px));
+  /* With the side panel open the drawer takes the window but the list's first 48px — the
+   * width of its marks, which stay where their rows are — and the trak itself narrows to
+   * a column of its own beside the panel. */
+  --spacing-drawer-wide: calc(100vw - 48px);
+  --spacing-agent: 440px;
+
+  /* -- Radius. Two, plus a pill. Surfaces and overlays settled on the same number, so
+   * they are one token rather than two that happen to agree. -- */
+  --radius-surface: 6px;
+  --radius-control: 4px;
+  --radius-pill: 9999px;
+  /* -- The rail's 14px tile, and **derived rather than authored** for the same reason the
+   * tone fills are: it is a relationship, not a value. The scale names object kinds rather
+   * than numbers, and a tile is a control at roughly half scale — so it takes half the
+   * radius, and the two read as one shape at two sizes instead of a square and a squircle.
+   * Authored as `2px` it would drift the moment `control` moved. -- */
+  --radius-tile: calc(var(--radius-control) / 2);
+  /* -- The phone's bottom sheet, top corners only. Its own number because a sheet is not
+   * a surface: at 6px a full-width card rising over the wash reads as a panel edge — a
+   * drawer — where the drawn design's corner is what says *sheet*. -- */
+  --radius-sheet: 16px;
+
+  /* -- Elevation. A surface says what it is by *one* of three mechanisms, and each means
+   * something: an edge is a region level with its neighbours, `surface-2` is recessed
+   * inside its container, and a shadow is above the page and temporary. So a panel takes
+   * a border and NOT a shadow — these two are for menus and modals only.
+   *
+   * A contact shadow plus a soft ambient one. The technique differs by scheme rather
+   * than the values being darkened: a diffuse drop shadow reads as depth on a light
+   * canvas and as dirt on a dark one. -- */
+  --shadow-menu: 0 1px 1px rgb(18 15 24 / 0.1), 0 4px 8px -3px rgb(18 15 24 / 0.14);
+  --shadow-modal: 0 2px 3px rgb(18 15 24 / 0.1), 0 14px 30px -10px rgb(18 15 24 / 0.26);
+
+  /* -- The wash behind a modal. It and the shadow do the same job, so they trade. -- */
+  --color-scrim: rgb(6 4 10 / 0.28);
+
+  /* -- The agent thinking, as three dots that rise in turn.
+   *
+   * A token rather than an arbitrary utility for the reason every other line here is one:
+   * the motion is a thing the system does, and a second place that animates dots would be
+   * a second speed. The rise is 1.5px against a 16px line and the trough is most of the
+   * cycle, which is what keeps it a texture rather than a thing that moves — an indicator
+   * a reader has to look away from is worse than no indicator.
+   *
+   * **The rise is measured against the dot, not the line.** The dots are 2px, so this is
+   * already most of one — it went to 1.5 when they came down from 4, because the same
+   * travel on a smaller mark reads as a bigger jump rather than the same one.
+   *
+   * The stagger is at the call site, since it is per dot and there are three. -- */
+  --animate-thinking: thinking 1.4s ease-in-out infinite;
+
+  /* -- One dot breathing: the mark in the lead of a tool call that is still running.
+   *
+   * `thinking`'s period without its rise, and with the peak at full ink rather than the
+   * trough most of the cycle. A single mark that rose would read as a dot jumping, and one
+   * dim for most of a cycle reads as off. Same 1.4s, so a pause and a running call on one
+   * screen keep one rhythm. -- */
+  --animate-breathe: breathe 1.4s ease-in-out infinite;
+
+  /* -- A segment travelling a straight edge: the hairline on the top of the finished card
+   * while the forge is being re-asked.
+   *
+   * **It travels rather than pulsing in place**, which was decided by looking at both: a
+   * bar sitting still at a third of the width reads as progress that has stalled, and this
+   * is drawn on a card somebody is watching for a change.
+   *
+   * The plate's own running segment is `Plate`'s conic gradient and stays there — a
+   * gradient turning around a rounded box and a segment crossing a 2px line are the same
+   * claim drawn two ways, and neither geometry can do the other's job. -- */
+  --animate-travel: travel 1.4s ease-in-out infinite;
+
+  /* -- The same segment on `EmptyState`'s band while something is coming — the engine
+   * running a `git`, or the first poll not landed yet. One keyframe, because it is one
+   * geometry: a bar a third of the track wide, run from wholly off the left edge to wholly
+   * off the right. **`travel`'s `300%` and the bar's `w-1/3` are one number** — the pass
+   * has to cover the track *plus* the bar, or a third of it is still on screen when the
+   * cycle restarts and it snaps back rather than flowing. Widen the bar without moving the
+   * keyframe and nothing fails; it just stops looking continuous.
+   *
+   * Its own timing, not `travel`'s: a slower, eased pass reads calmer than the linear one,
+   * and the two are never on one screen — the card is a finished trak's, the band a working
+   * one's. -- */
+  --animate-advance: travel 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  /* -- The band's glyph turning, at 2.4s against the segment's 1.8s. Deliberately not the
+   * same period: two motions on one surface at unrelated rates beat against each other,
+   * and the smaller mark going slower is what keeps the pair reading as one rhythm. -- */
+  --animate-turn: turn 2.4s linear infinite;
+
+  /* -- The goal banner's inner ring turning while its composer works, at 1.8s. -- */
+  --animate-ring: turn 1.8s linear infinite;
+
+  /* -- The travelling segment's fill: it fades in from nothing and out to nothing, so the
+   * bar has no ends to watch arrive. `currentColor`, so the call site picks the tone with
+   * a `text-*` utility as it would for a glyph. -- */
+  --background-image-taper: linear-gradient(
+    90deg,
+    transparent 0%,
+    currentColor 50%,
+    transparent 100%
+  );
+
+  /* -- A strip dropping out from behind the thing it hangs off, once.
+   *
+   * The login's refusal is a wash attached to the field's bottom edge, and the motion is
+   * what says it *arrived* rather than was always there: it starts wholly behind the field
+   * and comes down its own height. One quarter second and an ease-out, so it lands rather
+   * than bounces. Under `motion-safe` at the call site — a person who asked for no motion
+   * should simply find it there. -- */
+  --animate-drop: drop 0.25s ease-out;
+}
+
+@keyframes drop {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes travel {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes thinking {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 0.7;
+    transform: translateY(-1.5px);
+  }
+}
+
+/* Media-query only: the tokens flip with the OS and there is no class toggle and no
+ * theme switcher, matching upstream's `darkMode: 'media'`. That is also why `dark:`
+ * variants should be rare-to-absent in components — a token that flips here needs no
+ * variant at the call site. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #13111a;
+    --color-surface: #1c1926;
+    --color-surface-2: #252233;
+
+    --color-fg: #f4f2f7;
+    --color-fg-muted: #c2bbd0;
+    --color-fg-subtle: #aaa2bc;
+
+    /* The accent lifts toward white, and its label flips to ink: below about 40% a
+     * lifted accent lands in a dead zone — too dark to carry white, too light to carry
+     * near-black — and fails both ways. */
+    --color-accent: #dc7996;
+    --color-accent-hover: #e895ab;
+    --color-accent-ink: #16121c;
+
+    /* A wash over a dark ground reads weaker at the same number. */
+    --color-hover-row: color-mix(in oklab, var(--color-accent) 5%, transparent);
+    --color-hover-bare: color-mix(in oklab, var(--color-accent) 16%, transparent);
+
+    /* Both up the same three steps of their own ramp, so the pair that was checked
+     * against each other in light stays the same pair here. */
+    --color-source-human: #a5b4fc;
+    --color-source-machine: #67e8f9;
+
+    --color-tone-neutral: #b0a8c0;
+    --color-tone-working: #7aa5f7;
+    --color-tone-waiting: #f0b429;
+    --color-tone-good: #4ade80;
+    --color-tone-bad: #ff8a8a;
+
+    /* The light values already clear 3:1 here — 5.67, 3.55 and 3.88 — and the blue is the
+     * one that shows why that is not enough: a saturated hue on a dark ground reads as a
+     * dim smudge at 8px long before it fails a ratio. Lifted the way every other colour in
+     * this block is, and lifted to GitHub's own dark semantics rather than to the tones
+     * directly above, so the two families stay distinguishable in both schemes. */
+    --color-diff-added: #3fb950;
+    --color-diff-modified: #58a6ff;
+    --color-diff-deleted: #f85149;
+
+    --color-syntax-keyword: #ff7b72;
+    --color-syntax-string: #a5d6ff;
+    --color-syntax-constant: #79c0ff;
+    --color-syntax-tag: #7ee787;
+    --color-syntax-name: #ffa657;
+    --color-syntax-call: #d2a8ff;
+    --color-syntax-comment: #8b949e;
+    --color-syntax-rule: #f3a660;
+    --color-syntax-hole: #63d6c3;
+
+    /* `fg` is near-white here, so mixing into it would make "heavy" come out as a pale
+     * rose. Dark inverts the ground, not the idea. */
+    --color-destructive: color-mix(in oklab, var(--color-tone-bad) 42%, var(--color-canvas));
+    --color-destructive-ink: var(--color-fg);
+
+    --shadow-menu: 0 1px 1px rgb(0 0 0 / 0.5), 0 4px 10px -3px rgb(0 0 0 / 0.55);
+    --shadow-modal: 0 2px 3px rgb(0 0 0 / 0.5), 0 18px 36px -12px rgb(0 0 0 / 0.7);
+
+    --color-scrim: rgb(0 0 0 / 0.5);
+  }
+}
+
+/* Tone fills take 20% in dark rather than 15%, for the same reason the hover tints are
+ * stronger there. A second block rather than more lines in the first, because these
+ * depend on the `--color-tone-*` values the block above has just replaced. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-tone-neutral-bg: color-mix(
+      in oklab,
+      var(--color-tone-neutral) 20%,
+      var(--color-surface)
+    );
+    --color-tone-working-bg: color-mix(
+      in oklab,
+      var(--color-tone-working) 20%,
+      var(--color-surface)
+    );
+    --color-tone-waiting-bg: color-mix(
+      in oklab,
+      var(--color-tone-waiting) 20%,
+      var(--color-surface)
+    );
+    --color-tone-good-bg: color-mix(in oklab, var(--color-tone-good) 20%, var(--color-surface));
+    --color-tone-bad-bg: color-mix(in oklab, var(--color-tone-bad) 20%, var(--color-surface));
+
+    /* The tracks are re-derived here for the same reason, one level further out: they
+     * mix the fills this block has just replaced with the canvas the block above it did.
+     * Both ends move, so neither the light rule nor the dark one can be the other's. */
+    --color-tone-neutral-track: color-mix(
+      in oklab,
+      var(--color-tone-neutral-bg) 50%,
+      var(--color-canvas)
+    );
+    --color-tone-working-track: color-mix(
+      in oklab,
+      var(--color-tone-working-bg) 50%,
+      var(--color-canvas)
+    );
+    --color-tone-waiting-track: color-mix(
+      in oklab,
+      var(--color-tone-waiting-bg) 50%,
+      var(--color-canvas)
+    );
+    --color-tone-good-track: color-mix(
+      in oklab,
+      var(--color-tone-good-bg) 50%,
+      var(--color-canvas)
+    );
+    --color-tone-bad-track: color-mix(in oklab, var(--color-tone-bad-bg) 50%, var(--color-canvas));
+
+    /* Re-derived here for the same reason the fills are: both ends moved. 13% to the
+     * light scheme's 10%, holding the ratio the fills take between the two schemes. */
+    --color-diff-add-wash: color-mix(in oklab, var(--color-tone-good) 13%, var(--color-surface));
+    --color-diff-del-wash: color-mix(in oklab, var(--color-tone-bad) 13%, var(--color-surface));
+  }
+}
+
+/* The phone breakpoint, in the one place a raw media query may say it: everywhere else
+ * it is Tailwind's own `sm` boundary (`max-sm:` variants, 40rem) or `usePhone`, and all
+ * three must agree — a component hidden by `max-sm:` while `usePhone` says desktop is a
+ * layout half-switched. 639.98 rather than 640 because `max-width` is inclusive and
+ * `sm` starts at 640.
+ *
+ * What it does here: the page gutter narrows to 16px, which is what the phone rounds
+ * settled — every `px-gutter` call site follows, because plain `@theme` compiles the
+ * utility to `var(--spacing-gutter)` rather than baking the value in. */
+@media (max-width: 639.98px) {
+  :root {
+    --spacing-gutter: 16px;
+    /* One line of base text (20px) + 11px each side + the hairlines = 44px, the touch
+     * floor — so a one-line field matches the send button beside it. */
+    --spacing-field-pad: 11px;
+  }
+}
+
+/* The one rule over mermaid's drawing: a state diagram's end dot, filled with the accent
+ * like every other arrow-end. Mermaid 11 fills that inner disc from `stateBorder`, which
+ * also draws every state box's border, so no theme variable reaches the disc alone —
+ * `useMermaid` keeps `stateBorder` on the box line and this paints the disc.
+ *
+ * The selector rides on mermaid's internal structure — the end state is a `.outer-path`
+ * circle holding the disc as a group of paths — so an upgrade that builds it differently
+ * drops the dot back to the box line, silently. Scoped to `MermaidBlock`'s drawing so it
+ * reaches nothing else. */
+.mermaid-figure .outer-path > g > path {
+  fill: var(--color-accent);
+  stroke: var(--color-accent);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Upstream sets this so a missing IBM Plex weight is not faked by the browser
+     * into a blurry synthetic bold. */
+    font-synthesis: none;
+  }
+}

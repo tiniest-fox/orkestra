@@ -1,0 +1,99 @@
+# Runs the whole check chain on a clean machine: `pnpm verify`, then the browser tier.
+# Every test file runs on every run; nothing is skipped on an earlier pass.
+#
+# Nothing here spends money, needs an API key, or installs an agent CLI: `pnpm smoke` and
+# `pnpm real:*` are not in the chain, and no secret is referenced below.
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded push buys nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # A backstop against a hung run, not an assertion about how long the checks take.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # node and pnpm come from mise.toml, so the versions live in one place.
+      - uses: jdx/mise-action@v4
+
+      # The engine commits with plain `git commit`, and a runner has no identity of its own.
+      - name: Give the runner a git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+      - run: pnpm install --frozen-lockfile
+
+      # Every vitest run makes its temp folders in one directory of its own and removes it
+      # (`test/support/run-tmpdir.ts`). An entry the checks add here is a test writing past
+      # `TMPDIR`, except the files kept there on purpose, which the step after the checks
+      # names.
+      - name: List the temp directory
+        run: ls -A "${TMPDIR:-/tmp}" | sort > "$RUNNER_TEMP/tmp-before"
+
+      - run: pnpm verify
+
+      # Kept in the temp directory on purpose, and so not a leak: `tsx-<uid>`, tsx's compile
+      # cache, which `pnpm ork` and `docs:check` keep; `node-compile-cache`, Node's own, which
+      # vite, vitest and knip turn on with `module.enableCompileCache()`, and which a fresh
+      # runner sees appear; and the recording hook as Node imports it, which a recorded check
+      # writes there, named for its bytes, and keeps for the checks after it (`loadedHookAt`,
+      # `src/workflow/adapters/checks-shell.ts`).
+      - name: Fail on what the checks left in the temp directory
+        run: |
+          ls -A "${TMPDIR:-/tmp}" | sort > "$RUNNER_TEMP/tmp-after"
+          left=$(comm -13 "$RUNNER_TEMP/tmp-before" "$RUNNER_TEMP/tmp-after" \
+            | grep -Ev '^(tsx-.*|node-compile-cache|orkestra-recording-hook-[0-9a-f]{16}\.mjs)$' || true)
+          if [ -n "$left" ]; then
+            echo "The checks left these in ${TMPDIR:-/tmp}, past the run's own temp directory:"
+            echo "$left"
+            exit 1
+          fi
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v4
+
+      - name: Give the runner a git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install the browser
+        run: pnpm --filter @orkestra/client exec playwright install --with-deps chromium
+
+      # Boots the engine against this checkout's `.orkestra/`, which has no `.database/` on
+      # a fresh runner.
+      - name: Browser tier
+        run: pnpm --filter @orkestra/client e2e
+
+      # Only on failure: the report, and each failed test's error context, to read beside
+      # the server's own output, which the log carries prefixed `[WebServer]`.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright
+          path: |
+            client/playwright-report
+            client/test-results
+          if-no-files-found: ignore

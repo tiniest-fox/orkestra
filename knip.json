@@ -1,0 +1,48 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "project": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+      ],
+      "entry": [
+        "test/support/durations-reporter.ts",
+        "src/recording-hook.ts",
+        "src/recording-vitest.ts",
+        "src/check-stages.ts"
+      ]
+    },
+    "shared": {
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "desktop": {
+      "project": [
+        "src/**/*.ts"
+      ],
+      "entry": [
+        "src/main.ts",
+        "src/preload.ts",
+        "src/page-preload.ts",
+        "src/rail-preload.ts"
+      ]
+    },
+    "client": {
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ],
+      "ignoreDependencies": [
+        "tailwindcss"
+      ],
+      "entry": [
+        "src/**/*.fixtures.{ts,tsx}",
+        "src/atelier.wrapper.tsx",
+        "src/launcher.tsx",
+        "src/rail.tsx"
+      ]
+    }
+  },
+  "ignoreExportsUsedInFile": true
+}

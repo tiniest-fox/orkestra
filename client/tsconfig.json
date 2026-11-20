@@ -1,0 +1,45 @@
+// Run by this package's `check`, which the root `verify` chains.
+//
+// Identical to the root tsconfig except for the four lines below; keep it that way, or
+// `client/` is held to a different standard than the code it consumes.
+//
+//   1. `lib` adds "DOM". `target` is untouched — DOM is an API, not syntax.
+//   2. `jsx: "react-jsx"` — automatic runtime, no `import React` per file.
+//   3. `exactOptionalPropertyTypes: false` — the one scoped relaxation, because passing
+//      `undefined` to an optional prop is idiomatic React. Off HERE only; `shared/` and
+//      the engine keep it on.
+//   4. `types: ["vite/client"]` and NOT "node" — a `process.env` that typechecks here is
+//      a browser crash. `vite/client` is required for `import "./styles.css"` (TS2882
+//      without it).
+//
+// Imports here are extensionless (`./format/tone`), not `.js` as in `src/` — Vite is the
+// resolver.
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["vite/client"],
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "src",
+    "e2e",
+    "test-setup.ts",
+    "playwright.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
+}

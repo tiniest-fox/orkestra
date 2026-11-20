@@ -1,0 +1,90 @@
+# Every model an agent may name, grouped by the CLI that runs it. The list is
+# what validates `model:` on an agent — a typo there is the one policy mistake
+# that costs a whole trak to discover, because it surfaces as a provider error
+# mid-turn. Nothing here ranks: with one agent per step there is nothing to
+# resolve, and `ranked:`, the flat list this replaced, is refused by name.
+#
+# An entry may carry `effort:`, the reasoning effort every turn on that model
+# runs at unless the agent file says `effort:` itself. It is checked at load
+# against the levels the CLI takes — `claude --effort` takes low, medium, high,
+# xhigh and max; Codex is wider — and never against what one Codex model
+# supports, which lives in a catalog the engine cannot read. Checked here
+# because the CLI will not: `claude --effort bogus` warns and runs at its default
+# with exit 0. No `effort:` anywhere means no flag, and the CLI's own default.
+#
+# `default:` is the model the COMPOSER runs on, and every role the engine ships,
+# since a shipped file names no model. So every role here runs on `opus` except
+# `resolve`, whose override in `agents/` names `sonnet`.
+#
+# **Nothing is tiered down, on purpose, and this is the third setting.** It was
+# `haiku`, then `sonnet` with the fleet split along deciding-gets-opus,
+# doing-gets-sonnet. Two things collapsed that split. `build` moved up when
+# planning stopped handing it a file-by-file map — working out where a change goes
+# became its job, so the deciding half now happens inside the step that also does
+# the typing. And `operator` was the last one down, which was the least defensible
+# place to save: its document was the thing that went out, and a cheap model
+# writing it was a cheap model writing the only thing anyone would check.
+#
+# **`build` named `fable` until Opus 5.5, and is back on `opus`.** Anthropic's own
+# benchmarks put Opus 5.5 ahead of Fable 5.1 on every one they report, agentic
+# coding included, at 40% of its per-token price — so the case for paying more on
+# the longest turns in the fleet went away. `fable` stays listed for an agent that
+# wants it; it needs 30-day data retention on the account and is refused outright
+# below that, a setting this checkout cannot see.
+#
+# **That argument now covers `pull-request` too, and more sharply.** Neither agent
+# acts — an `effects:` script does, on the approval a person gave — so what both
+# spend opus on is a document somebody reads once and cannot take back afterwards.
+#
+# **`resolve` is the one exception that goes down: it names `sonnet`.** It is the
+# agent that runs most often without a person asking for it — every merge that does
+# not go in — and nearly everything it settles is arithmetic: two branches adding a
+# field to the same list or a variant to the same union, where the answer is both
+# sides and the prose that counts them. The one thing that needs judgement, two sides
+# asserting different rules, it is told to abort and hand back as `unplanned_work`
+# rather than pick, and no model reads that answer off the diff. So a cheaper model there costs nothing a dearer one
+# would have bought, on the step whose bill is driven by how often it runs.
+#
+# So this is a deliberate spend, not an oversight. **The tiering is what to put
+# back first** if the bill is the problem — the composer has the clearest case, and
+# `review-comments`, which quotes rather than decides, is the next. Neither is a
+# code change.
+#
+# `assemble.ts`'s no-`models.yaml` fallback still says `sonnet`, and now disagrees
+# with this file. That is intended: the fallback is what a project that never
+# stated a preference gets, and it should not spend opus rates by omission. This
+# project stated one.
+#
+# **The group names the CLI, and the name stays as the CLI knows it.** An agent
+# writes a `claude:` model bare and any other as `<cli>/<name>` — `codex/gpt-5.6-sol`
+# runs on `codex`, and one agent names it: `codex-test`, a probe a person launches
+# by hand. A Codex turn reports token counts and no dollar figure, so a trak that
+# runs on it records no spend.
+#
+# `context_windows:` is how many tokens each model's context holds, and it is the
+# fallback: each CLI reports the window itself — Claude on its `result` line, Codex in
+# its own session log — and a screen drawing how full a step's context is divides by
+# that figure, then by this one where a turn reported none, then draws no ceiling.
+# Every key has to be a model `models:` lists, spelled as an agent would write it. The
+# Claude figures are the API's own; the Codex one is what `codex` reported for the
+# model, which is smaller than the model's — the CLI is what the turn runs inside.
+#
+# A table of its own rather than a `window:` beside each `effort:`, because the two
+# merge differently: a local entry replaces the team's model entry outright, which
+# would drop a window nobody meant to touch, while a local window lays over the team's
+# one model at a time.
+default: opus
+models:
+  claude:
+    - name: fable
+    - name: opus
+    - name: sonnet
+    - name: haiku
+  codex:
+    - name: gpt-5.6-sol
+context_windows:
+  fable: 1000000
+  opus: 1000000
+  sonnet: 1000000
+  haiku: 200000
+  codex/gpt-5.6-sol: 258400

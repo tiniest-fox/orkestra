@@ -1,0 +1,34 @@
+{
+  "name": "@orkestra/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./launcher": {
+      "types": "./src/launcher.ts",
+      "default": "./src/launcher.ts"
+    },
+    "./page": {
+      "types": "./src/page.ts",
+      "default": "./src/page.ts"
+    },
+    "./rail": {
+      "types": "./src/rail.ts",
+      "default": "./src/rail.ts"
+    },
+    "./page-host": {
+      "types": "./src/page-host.ts",
+      "default": "./src/page-host.ts"
+    },
+    "./variables": {
+      "types": "./src/variables.ts",
+      "default": "./src/variables.ts"
+    },
+    "./dto/*": {
+      "types": "./src/dto/*.ts",
+      "default": "./src/dto/*.ts"
+    }
+  },
+  "dependencies": {
+    "effect": "^3.22.0"
+  }
+}

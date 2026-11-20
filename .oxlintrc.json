@@ -1,0 +1,1826 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc",
+    "import",
+    "promise",
+    "node",
+    "vitest"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-import-type-side-effects": "error",
+    "eslint/no-console": "error",
+    "unicorn/no-null": "error",
+    "import/no-cycle": "error",
+    "import/no-self-import": "error",
+    "typescript/consistent-return": "off",
+    "typescript/prefer-readonly-parameter-types": "off",
+    "eslint/no-undefined": "off",
+    "oxc/no-rest-spread-properties": "off",
+    "unicorn/no-array-reduce": "off",
+    "unicorn/no-array-sort": "off",
+    "typescript/consistent-type-assertions": [
+      "error",
+      {
+        "assertionStyle": "never"
+      }
+    ],
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/ban-ts-comment": [
+      "error",
+      {
+        "ts-expect-error": "allow-with-description",
+        "ts-ignore": true,
+        "ts-nocheck": true,
+        "ts-check": false,
+        "minimumDescriptionLength": 10
+      }
+    ],
+    "eslint/no-underscore-dangle": [
+      "error",
+      {
+        "allow": [
+          "_tag"
+        ]
+      }
+    ],
+    "eslint/max-lines-per-function": [
+      "error",
+      {
+        "max": 100,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "eslint/max-params": [
+      "error",
+      7
+    ],
+    "eslint/max-depth": [
+      "error",
+      3
+    ],
+    "eslint/max-nested-callbacks": [
+      "error",
+      4
+    ],
+    "import/no-default-export": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/consistent-type-imports": "error",
+    "unicorn/no-array-callback-reference": "off",
+    "typescript/require-await": "error",
+    "unicorn/no-useless-undefined": "off",
+    "typescript/prefer-nullish-coalescing": "error",
+    "typescript/strict-boolean-expressions": "error",
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "node:child_process",
+            "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+          },
+          {
+            "name": "child_process",
+            "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+          },
+          {
+            "name": "postgres",
+            "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+          },
+          {
+            "name": "aws4fetch",
+            "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+          }
+        ],
+        "patterns": [
+          {
+            "group": [
+              "**/plugins/**"
+            ],
+            "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "test/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": [
+        "src/agent/**/*.ts",
+        "src/library/**/*.ts",
+        "src/prompts/**/*.ts",
+        "src/recording/**/*.ts",
+        "src/vcs/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/agent/adapters/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/interactions/**"
+                ],
+                "message": "An adapter implements a port. If it needs business logic, the wiring belongs in app/ or runtime/."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/agent/interactions/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/adapters/**",
+                  "**/providers/**"
+                ],
+                "message": "Business logic depends on ports, not adapters \u2014 that is what keeps it testable against fakes."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/agent/types/**/*.ts",
+        "src/agent/logic/**/*.ts",
+        "src/agent/providers/*/argv.ts",
+        "src/agent/providers/*/normalize.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "effect",
+                "importNames": [
+                  "Effect",
+                  "Layer",
+                  "Stream",
+                  "Ref",
+                  "Context",
+                  "Scope",
+                  "Fiber"
+                ],
+                "message": "types/ and logic/ are pure. Data, Schema, Option and Match are fine \u2014 they are values. If you need Effect, this belongs in interactions/ or adapters/."
+              },
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/ports/**",
+                  "**/adapters/**",
+                  "**/interactions/**",
+                  "**/runtime/**",
+                  "**/ports",
+                  "**/runtime",
+                  "**/providers/**"
+                ],
+                "message": "types/ and logic/ sit below every other kind. Take the value as an argument instead."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/workflow/domain/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "effect",
+                "importNames": [
+                  "Effect",
+                  "Layer",
+                  "Stream",
+                  "Ref",
+                  "Context",
+                  "Scope",
+                  "Fiber"
+                ],
+                "message": "workflow/domain is pure: no Effect, no Layer, no Stream. Emit a Command instead."
+              },
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/ports",
+                  "**/ports/**",
+                  "**/runtime",
+                  "**/runtime.js",
+                  "**/adapters/**"
+                ],
+                "message": "workflow/domain is pure: no ports, no adapters, no runtime. Add a Command instead."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/library/types/**/*.ts",
+        "src/library/logic/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "effect",
+                "importNames": [
+                  "Effect",
+                  "Layer",
+                  "Stream",
+                  "Ref",
+                  "Context",
+                  "Scope",
+                  "Fiber"
+                ],
+                "message": "library/types and library/logic are pure: every loading rule is a pure function of file text. The Tag belongs in ports/, the filesystem in adapters/."
+              },
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/ports/**",
+                  "**/adapters/**"
+                ],
+                "message": "library/types and library/logic are pure: no ports, no adapters. Take the value as an argument instead."
+              },
+              {
+                "group": [
+                  "node:fs",
+                  "node:fs/promises",
+                  "node:path"
+                ],
+                "message": "Only adapters/ touch the filesystem. Take the file's text as an argument."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/recording/types/**/*.ts",
+        "src/recording/logic/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "effect",
+                "importNames": [
+                  "Effect",
+                  "Layer",
+                  "Stream",
+                  "Ref",
+                  "Context",
+                  "Scope",
+                  "Fiber"
+                ],
+                "message": "recording/types and recording/logic are pure: what a print is and whether it still holds are functions of file text. The filesystem belongs in the adapter that reads it."
+              },
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/ports/**",
+                  "**/adapters/**"
+                ],
+                "message": "recording/types and recording/logic are pure: no ports, no adapters. Take the value as an argument instead."
+              },
+              {
+                "group": [
+                  "node:fs",
+                  "node:fs/promises",
+                  "node:path"
+                ],
+                "message": "Only an adapter touches the filesystem. Take the file's text, or a function that names a path, as an argument."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/recording-hook.ts",
+        "src/recording-vitest.ts",
+        "src/check-stages.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "./*",
+                  "../*",
+                  "effect",
+                  "effect/*",
+                  "@effect/*"
+                ],
+                "allowTypeImports": true,
+                "message": "The recording hook and the stage runner run inside the project's own processes, where Node runs this file with its types stripped and nothing else of Orkestra is loaded. Import only Node's built-ins; a type-only import is erased and is fine."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/vcs/types/**/*.ts",
+        "src/vcs/logic/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "effect",
+                "importNames": [
+                  "Effect",
+                  "Layer",
+                  "Stream",
+                  "Ref",
+                  "Context",
+                  "Scope",
+                  "Fiber"
+                ],
+                "message": "vcs/types and vcs/logic are pure so workflow/domain can import them. The Tag belongs in ports/, git in adapters/."
+              },
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/ports/**",
+                  "**/adapters/**"
+                ],
+                "message": "vcs/types and vcs/logic are pure: no ports, no adapters. Take the value as an argument instead."
+              },
+              {
+                "group": [
+                  "node:fs",
+                  "node:fs/promises",
+                  "node:path"
+                ],
+                "message": "Only adapters/ touch the filesystem. A path is built from the root it was handed."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/prompts/types/**/*.ts",
+        "src/prompts/logic/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "effect",
+                "importNames": [
+                  "Effect",
+                  "Layer",
+                  "Stream",
+                  "Ref",
+                  "Context",
+                  "Scope",
+                  "Fiber"
+                ],
+                "message": "prompts/types and prompts/logic are pure so workflow/domain can import them. The Tag belongs in ports/, the loader in adapters/."
+              },
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow"
+                ],
+                "message": "Capability modules must stay trak-agnostic. If this needs a TrakId, the boundary was fake \u2014 see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "group": [
+                  "**/ports/**",
+                  "**/adapters/**"
+                ],
+                "message": "prompts/types and prompts/logic are pure: no ports, no adapters."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/cli/**/*.ts",
+        "src/ork.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow",
+                  "**/agent/**",
+                  "**/vcs/**",
+                  "**/library/**",
+                  "**/prompts/**"
+                ],
+                "message": "src/cli is a CLIENT of the daemon and has no engine in it. Everything it knows about a trak arrives as a DTO from @orkestra/shared, and everything it does to one is an HTTP request \u2014 reaching into the engine here would put a second writer back, which is the whole thing the daemon removed. The port derivation in src/app/discovery.ts is the one thing it shares with the engine, because a client has to find it."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/supervisor/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/**",
+                  "**/workflow",
+                  "**/agent/**",
+                  "**/vcs/**",
+                  "**/library/**",
+                  "**/prompts/**"
+                ],
+                "message": "src/supervisor starts, stops and follows engines from OUTSIDE them, for the desktop shell and a host process, and has no engine in it. Everything it knows about a trak arrives as a DTO from @orkestra/shared, and everything it does to one is an HTTP request. The port derivation in src/app/discovery.ts is the one engine file it shares, because a supervisor has to find the engine."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/app/**/*.ts"
+      ],
+      "excludeFiles": [
+        "src/app/drive.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/runtime.js"
+                ],
+                "message": "Only src/app/drive.ts may drive the engine \u2014 it claims custody first, and an unclaimed drive races a live `ork` and leaves a stray `reap` can never see. Route it through `startDrive`. See src/app/drive.ts."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/app/routes/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/workflow/runtime.js"
+                ],
+                "message": "Only src/app/drive.ts may drive the engine \u2014 it claims custody first, and an unclaimed drive races a live `ork` and leaves a stray `reap` can never see. Route it through `startDrive`. See src/app/drive.ts."
+              },
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../routes/*",
+                  "!./common.js",
+                  "!../routes/common.js"
+                ],
+                "message": "One route group may not import another: what two groups share goes in src/app/routes/common.ts, and anything else either group needs belongs in src/app/ beside drive.ts and dto.ts. src/app/server.ts is what assembles the groups - see the header there."
+              }
+            ],
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/build.ts",
+        "src/check-stages.ts",
+        "src/compose-lab.ts",
+        "src/main.ts",
+        "src/ork.ts",
+        "src/real-compose.ts",
+        "src/real-trak.ts",
+        "src/real.ts",
+        "src/serve.ts",
+        "src/app/serve-engine.ts",
+        "src/sim.ts",
+        "src/smoke.ts",
+        "src/ui.ts",
+        "src/ui-stop.ts",
+        "src/walkthrough.ts",
+        "src/docs-check.ts"
+      ],
+      "rules": {
+        "eslint/no-console": "off"
+      }
+    },
+    {
+      "files": [
+        "test/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-console": "off",
+        "typescript/no-unsafe-type-assertion": "off",
+        "vitest/no-conditional-in-test": "off",
+        "vitest/no-conditional-expect": "off"
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**"
+                ],
+                "message": "A slice under shared/src/dto/ with no override of its own in the root .oxlintrc.json may import no other slice. Give it an override naming the slices it may import, in one direction - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/common.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**"
+                ],
+                "message": "shared/src/dto/common.ts may import no other slice. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/log.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./attachments.js"
+                ],
+                "message": "shared/src/dto/log.ts may import common.ts, attachments.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/transcript.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./log.js",
+                  "!./attachments.js"
+                ],
+                "message": "shared/src/dto/transcript.ts may import common.ts, log.ts, attachments.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/trak.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./log.js",
+                  "!./transcript.js"
+                ],
+                "message": "shared/src/dto/trak.ts may import common.ts, log.ts, transcript.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/actions.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./log.js",
+                  "!./trak.js",
+                  "!./attachments.js"
+                ],
+                "message": "shared/src/dto/actions.ts may import common.ts, log.ts, trak.ts, attachments.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/fleet.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./log.js"
+                ],
+                "message": "shared/src/dto/fleet.ts may import common.ts, log.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/forge.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js"
+                ],
+                "message": "shared/src/dto/forge.ts may import common.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/changes.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js"
+                ],
+                "message": "shared/src/dto/changes.ts may import common.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/git.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js"
+                ],
+                "message": "shared/src/dto/git.ts may import common.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/files.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js"
+                ],
+                "message": "shared/src/dto/files.ts may import common.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/openers.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js"
+                ],
+                "message": "shared/src/dto/openers.ts may import common.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/usage.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js"
+                ],
+                "message": "shared/src/dto/usage.ts may import common.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/goals.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./log.js",
+                  "!./transcript.js",
+                  "!./trak.js",
+                  "!./attachments.js"
+                ],
+                "message": "shared/src/dto/goals.ts may import common.ts, log.ts, transcript.ts, trak.ts, attachments.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/trak-frames.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./log.js",
+                  "!./trak.js"
+                ],
+                "message": "shared/src/dto/trak-frames.ts may import common.ts, log.ts, trak.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/stream.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js",
+                  "!./log.js",
+                  "!./transcript.js",
+                  "!./trak.js",
+                  "!./trak-frames.js",
+                  "!./usage.js"
+                ],
+                "message": "shared/src/dto/stream.ts may import common.ts, log.ts, transcript.ts, trak.ts, trak-frames.ts, usage.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "shared/src/dto/host-engine.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawn through the Process tag, not node:child_process. A file that spawns only the engine's own work carries a disable comment on this import saying so - see .claude/skills/where-code-goes/SKILL.md."
+              },
+              {
+                "name": "postgres",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "name": "aws4fetch",
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/plugins/**"
+                ],
+                "message": "No database client goes into src/, shared/ or client/ The engine reaches a store only through its Store port."
+              },
+              {
+                "group": [
+                  "./*",
+                  "../**",
+                  "@orkestra/shared",
+                  "@orkestra/shared/**",
+                  "!./common.js"
+                ],
+                "message": "shared/src/dto/host-engine.ts may import common.ts. Each slice of the wire contract imports only the slices its own override in the root .oxlintrc.json lists, in one direction, so an edit to one feature's shapes reruns only the tests that reach that slice. Move a shape two slices both need down into the lower one, or into common.ts when neither may import the other - see the client-style skill."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+// Run by `pnpm check` as a SECOND tsc pass (`tsc --noEmit -p shared`), and that
+// second pass is the whole point of this file.
+//
+// The root pass already compiles these sources transitively, because
+// `package.json` points `exports.types` at source — but it compiles them inside a
+// program whose `types` is `["node"]`, so `process.env` in the wire contract
+// typechecks clean there. This config omits `types` entirely, which is what makes
+// a Node global in `shared/` an error: the contract has to compile in a browser,
+// and the client is the consumer that would find out at runtime.
+//
+// Every other flag is deliberately identical to the root tsconfig. If one drifts,
+// `shared/` is being held to a different standard than the code that imports it.
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "preserve",
+    "moduleResolution": "bundler"
+  },
+  "include": ["src"]
+}

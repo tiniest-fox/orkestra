@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    // ES2024, not ES2025, and not "ESNext". Three constraints, in order:
+    //
+    // 1. Pinned, never "ESNext" — ESNext re-defines itself on a TypeScript
+    //    upgrade, so `pnpm up typescript` could silently make APIs typecheck
+    //    that the runtime doesn't implement: a build-clean runtime crash.
+    // 2. The ceiling is the OLDEST TypeScript in the toolchain, not the newest.
+    //    tsc here is 7.x and accepts ES2025, but editors bundle their own 5.x
+    //    (TS 7 is the native Go port and ships no tsserver for them to load).
+    //    A value 5.x rejects makes the whole config fail to load in-editor, so
+    //    every file then reports phantom errors against ES5 defaults.
+    // 3. Nothing we write needs ES2025 — no Set.union, no Promise.try. Raise
+    //    this when an API earns it, not because a newer number exists.
+    //
+    // `lib` is stated separately because it is a different promise from `target`:
+    // target is the syntax we emit, lib is the APIs we assert exist. An Electron
+    // renderer would add "DOM" here without touching target.
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}

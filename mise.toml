@@ -1,0 +1,47 @@
+[tools]
+node = "26.5.0"
+pnpm = "10.34.5"
+
+[tasks.install]
+description = "Install dependencies from the lockfile"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.verify]
+description = "fmt:check -> check -> lint -> knip -> docs:check -> test, then the client's and the desktop's check -> test -> build (all must pass, zero warnings)"
+run = "pnpm verify"
+
+[tasks.test]
+description = "Run the vitest suite"
+run = "pnpm test"
+
+[tasks.walkthrough]
+description = "3-event happy path: pure domain, then wired up"
+run = "pnpm walkthrough"
+
+[tasks.spike]
+description = "Happy path + human gate + malformed-response retry + restart"
+run = "pnpm spike"
+
+[tasks.sim]
+description = "The whole app over a temporary project, every agent turn scripted -- set PORT, and build the client first"
+run = "pnpm sim"
+
+[tasks.real]
+description = "Spawn real `claude`, show normalized events (COSTS TOKENS)"
+run = "pnpm real"
+
+[tasks."real:compose"]
+description = "The composer alone: one turn, no steps (COSTS TOKENS) -- takes a description"
+run = "pnpm real:compose"
+
+[tasks."real:trak"]
+description = "The whole engine against real claude; approves for you, clamped read-only (COSTS TOKENS) -- takes a description"
+run = "pnpm real:trak"
+
+[tasks.ork]
+description = "The engine with YOU at every gate; real permissions, REAL WRITES to cwd (COSTS TOKENS) -- takes a description"
+run = "pnpm ork"
+
+[tasks.smoke]
+description = "Checks against the real claude CLI (~$0.08) (COSTS TOKENS)"
+run = "pnpm smoke"

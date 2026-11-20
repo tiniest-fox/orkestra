@@ -1,0 +1,84 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Orkestra runtime data
+**/.orkestra/.trak/
+**/.orkestra/.database/
+**/.orkestra/.processes.json*
+**/.orkestra/records/
+**/.orkestra/.snapshots/
+**/.orkestra/.setup/
+.orkestra/.logs/
+**/.orkestra/.worktrees/
+.orkestra/.screenshots/
+**/.orkestra/.local/
+# The one committed overlay in the repository: `test/e2e/library-from-disk.test.ts` points
+# the loader at it, so it has to sit at exactly this path and it has to be in git. Once the
+# line above gained its `**/` prefix it matched here too — and a directory rule stops git
+# descending, so a fixture added under it would silently never be committed. Negating the
+# directory itself is what lets git back in; `!…/.local/**` would not.
+!test/fixtures/overlay/.orkestra/.local/
+**/.orkestra/.cache/
+
+# Scratch from the globally-installed `playwright-cli` dev tool, which writes into cwd
+.playwright-cli/
+
+# Where an `experiment` step works. Ignoring this path is the whole mechanism that lets a
+# write step throw its code away: `commitWork` stages with `git add -A`, so a probe script
+# and whatever it installed never reach the trak's branch, and the step's commit is empty.
+# It sits inside the checkout rather than in a temp directory so an experiment can compile
+# against this repo's own types and node_modules. Nothing here is kept: the finding goes
+# in the artifact, and the directory goes with the worktree at close.
+.experiments/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# Env
+.env
+.env.local
+!.env.example
+.test-repos/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# atelier design studies. The dated month folders are not part of this repository; each
+# person keeps their own. The tool files beside them — `atelier.config.json`, `atelier.ts`,
+# `live.tsx`, `CLAUDE.md` — are tracked: `atelier dev` reads the config, and every round
+# that mounts the real client imports `live.tsx`.
+.atelier/20*
+.atelier/.*
+#
+# derived, regenerated on demand
+.atelier/**/.shots/
+.atelier/.exports/
+.atelier/.cache/
+.atelier/.log
+# a saved decision is its JSON; the picture beside it is reproducible from the round and
+# is larger than every .tsx in the study put together
+.atelier/**/saved/*.png
+# shipped examples, rewritten by every atelier command
+.atelier/**/example-*/
+# spot checks — thrown away, not kept
+.atelier/proof/
+
+# Playwright's own output. The specs are the artefact; a run's report is not.
+client/test-results/
+client/playwright-report/
+
+# Prompt transcripts, rewritten by every e2e run and read on the machine that ran them.
+# They were committed once, so that a prompt edit showed up as a diff — but nobody ever
+# read one that way, and the cost was paid on every surface: one five-line edit to a
+# shared template rewrites the same text in 216 files, which buries the real change in
+# `git diff`, in review, in the reviewing agent's token bill, and in `git log --stat`
+# forever. Run the suite and read the file instead; a run is free.
+test/e2e/logs/
+

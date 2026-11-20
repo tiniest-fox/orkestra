@@ -1,0 +1,85 @@
+# The light tier's selection tables, read by `verify.sh` through the stage runner's
+# `--select`. Not a check: the loader reads only `*.sh` here. A pattern is a path from the
+# checkout root where `*` is any run of characters, `/` included.
+
+# Files a test reads off disk, runs, or spawns rather than imports, which vitest's import
+# graph never holds, each pattern beside the files that read it: a change to one is taken
+# as a change to its readers, so a reader that is a test runs, and so does every test
+# importing a reader that is a module. Every row a changed file matches counts. **Kept by
+# hand, and nothing fails when it drifts**: a test that starts reading another committed
+# file by its path belongs here, or a change to that file runs nothing.
+#
+# **A `.ts` file a test starts as a child process is a `run:` row**, and its readers run
+# when the entry changes or when anything it imports does: what the child imports is
+# outside vitest's graph too, so the stage runner lists it with esbuild. A test that starts
+# one with no `run:` row fails `verify-light.test.ts`, which finds them by how they are named.
+reads:
+  # Every template: read by name through `loadTemplates`, rendered off disk by two tests,
+  # every file checked by `step-output.test.ts`, and bundled by `build.ts`.
+  "src/prompts/templates/*": [
+    src/prompts/adapters/builtin.ts, src/workflow/domain/prompt.test.ts,
+    src/workflow/domain/goal.test.ts, src/workflow/domain/outputs/step-output.test.ts,
+    test/e2e/build.test.ts
+  ]
+  # The shipped fleet: the modules that load it, the tests that load or run its files,
+  # and the client's glyph test, which reads every agent's `icon:`.
+  "src/library/shipped/*": [
+    src/app/layers.ts, src/app/proofs.ts, src/workflow/domain/prompt.test.ts, test/e2e/open-pr.test.ts, test/e2e/proofs.test.ts,
+    test/support/fingerprints.ts, test/e2e/library-from-disk.test.ts,
+    test/e2e/build.test.ts, client/src/format/glyph.test.ts
+  ]
+  ".orkestra/agents/*": [client/src/format/glyph.test.ts]
+  ".orkestra/checks/verify.sh": [
+    test/verify-light.test.ts, test/support/verify-light.ts,
+    test/contract/checks-shell.test.ts
+  ]
+  ".orkestra/checks/verify-light.sh": [test/support/verify-light.ts]
+  ".orkestra/checks/verify.select.yaml": [test/verify-light.test.ts, test/support/verify-light.ts]
+  ".agents/skills/jev/jev.mjs": [test/jev.test.ts]
+  # Copied into a fixture project, or run nested under the recording hook.
+  "client/vitest.config.ts": [test/e2e/fingerprints-carry.test.ts]
+  "client/test-setup.ts": [test/e2e/fingerprints-carry.test.ts]
+  "test/support/run-tmpdir.ts": [test/e2e/fingerprints-carry.test.ts]
+  "test/e2e/library-from-disk.test.ts": [test/e2e/fingerprints-carry.test.ts]
+  # Read as text, never imported.
+  "src/ork.ts": [src/ork.test.ts]
+  # Spawned entries, each with everything it imports.
+  "run:src/sim.ts": [test/e2e/sim.test.ts]
+  "run:src/main.ts": [test/e2e/sim.test.ts]
+  "run:src/serve.ts": [test/e2e/boot-refusal.test.ts]
+  "run:src/build.ts": [test/e2e/build.test.ts]
+  "run:src/docs-check.ts": [test/docs-check.test.ts]
+  "run:src/check-stages.ts": [
+    test/check-stages.test.ts, test/check-stages-related.test.ts, test/check-stages-reads.test.ts
+  ]
+  "run:test/support/fake-engine.ts": [test/support/host.ts]
+  "run:test/support/prints-heap.ts": [test/contract/passes-heap.test.ts]
+  "run:test/support/run-tmpdir.ts": [test/run-tmpdir.test.ts]
+  # Fixtures, by directory.
+  "test/fixtures/claude/*": [
+    src/agent/providers/claude/normalize.test.ts,
+    test/contract/provider-claude-fixtures.test.ts
+  ]
+  "test/fixtures/codex/*": [
+    src/agent/providers/codex/normalize.test.ts,
+    test/contract/provider-codex-fixtures.test.ts
+  ]
+  "test/fixtures/runner/*": [test/e2e/boot-refusal.test.ts, test/e2e/library-from-disk.test.ts]
+  "test/fixtures/shipped/*": [
+    test/e2e/library-from-disk.test.ts, test/e2e/reload.test.ts
+  ]
+  "test/fixtures/library/*": [test/e2e/library-from-disk.test.ts, test/e2e/reload.test.ts]
+  "test/fixtures/fleetless/*": [test/e2e/library-from-disk.test.ts]
+  "test/fixtures/layered/*": [test/e2e/library-from-disk.test.ts]
+  "test/fixtures/overlay/*": [test/e2e/library-from-disk.test.ts]
+
+# **The real-container tests run in the light tier only when a file they test changed.**
+# Each entry is the patterns of the files its tests are about, beside the test files that
+# start a Docker container. A test file the import graph selected is left out of the light
+# tier unless a changed file matches one of its entry's patterns or is that test file
+# itself. A pattern names what the test is about rather than everything it imports: any
+# engine edit reaches these files through the graph, and they cost about half of a full
+# suite's time. The full tier never reads this table, and a file left out here is never
+# recorded as proven, so GitHub runs it. A test file that probes `docker info`, itself or
+# through a support module, with no entry fails `verify-light.test.ts`.
+held_back: []

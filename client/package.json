@@ -1,0 +1,49 @@
+{
+  "name": "@orkestra/client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/client.tsbuildinfo",
+    "test": "vitest run",
+    "verify": "pnpm check && pnpm test && pnpm build",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@orkestra/shared": "workspace:*",
+    "@shikijs/core": "^4.4.3",
+    "@shikijs/engine-javascript": "^4.4.3",
+    "@shikijs/langs": "^4.4.3",
+    "@shikijs/themes": "^4.4.3",
+    "@tanstack/query-sync-storage-persister": "^5.101.4",
+    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query-persist-client": "^5.101.4",
+    "@tanstack/react-router": "^1.170.18",
+    "anser": "^2.3.5",
+    "effect": "^3.22.0",
+    "lucide-react": "^1.28.0",
+    "mermaid": "^11.16.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "happy-dom": "^20.14.5",
+    "msw": "^2.15.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

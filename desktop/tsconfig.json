@@ -1,0 +1,27 @@
+// Run by this package's `check`, which the root `verify` chains.
+//
+// Identical to the root tsconfig: the main process is Node with Electron's API on top,
+// so nothing the engine is held to is relaxed here. `include` is this package; the
+// engine files it imports (`src/app/discovery.ts` and what that reaches) are checked
+// through the import, under these same flags.
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"]
+  },
+  "include": ["src", "build.ts", "package.ts", "install.ts", "vitest.config.ts"]
+}

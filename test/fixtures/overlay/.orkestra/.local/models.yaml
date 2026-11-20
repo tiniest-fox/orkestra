@@ -1,0 +1,5 @@
+default: local-model
+models:
+  claude:
+    - name: local-model
+      effort: high

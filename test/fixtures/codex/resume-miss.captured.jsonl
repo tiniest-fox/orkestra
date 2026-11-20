@@ -1,0 +1,3 @@
+{"id":1,"result":{"userAgent":"orkestra/0.154.0 (Mac OS 26.3.0; arm64) unknown (orkestra; 0)","codexHome":"/Users/k/.codex","platformFamily":"unix","platformOs":"macos"}}
+{"method":"remoteControl/status/changed","params":{"status":"disabled","serverName":"…","installationId":"…","environmentId":null},"emittedAtMs":1791751946226}
+{"error":{"code":-32600,"message":"no rollout found for thread id 01a12cbb-0000-7000-8000-000000000000"},"id":2}

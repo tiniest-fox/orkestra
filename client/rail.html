@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- A desktop shell window's own page — the project rail, and the pane for a project with
+     no client to show — and a host's root, which frames each project's client itself.
+     Built by the same `vite build` as `index.html`, with relative asset URLs (see
+     `vite.config.ts`): Electron loads it off disk, and a host serves it at `/` with
+     `assets/` beside it. No `<base>`, which on disk would name the filesystem root. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- `launcher.html`'s policy, for its reason. `img-src data:` is also how a tile's
+         picture arrives: the shell reads it out of the checkout and sends the bytes. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <!-- An installed app's title bar — Safari's Add to Dock — is drawn in this colour:
+         `canvas` in each scheme, so it reads as the window, as the desktop shell's hidden
+         title bar does, rather than as a brand bar. The manifest's `theme_color` is the
+         light one, for a browser that reads only that. `index.html` has the same. -->
+    <meta name="theme-color" content="#faf8fc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#13111a" media="(prefers-color-scheme: dark)" />
+    <!-- A host's page is opened on phones; `viewport-fit=cover` is what makes the safe-area
+         insets the strip and the frames pay report anything (`index.html` has the same). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- What lets a phone install the host as one app holding every project: the client's
+         own manifest and touch icon, which the host serves at its root before the gate,
+         since a browser fetches the manifest without cookies. Its
+         URLs are relative and it has no `id`, so here it describes an app scoped to `/`.
+         Each project at `/p/<id>/` still installs on its own. Under `file://` in the
+         desktop shell both do nothing. There is deliberately no
+         `apple-mobile-web-app-status-bar-style`: iOS then draws its own solid bar above the
+         page. `black-translucent` drew white text over the strip's white light-mode
+         `bg-surface`. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <!-- The page fills whatever holds it — the window here, a frame in a proof. -->
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+      }
+    </style>
+    <title>Orkestra</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/rail.tsx"></script>
+  </body>
+</html>

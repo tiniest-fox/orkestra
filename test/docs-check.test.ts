@@ -1,10 +1,12 @@
 // `pnpm docs:check --changed-since <ref>`, driven the way a reviewer drives it: the
-// script on `tsx`, in a repository of its own, stdout read back whole.
+// script on `tsx`, in a repository of its own, stdout read back whole. Beside it, the
+// gate's package-coverage rule for a workspace that vendors another repository as a git
+// submodule.
 //
 // At the root beside `jev.test.ts` for the same reason: an entry-point script that is
-// neither a flow nor a contract. The gate half of the script is exercised by `pnpm
-// verify` on every run; only the listing needs a repository built to order, because
-// what it prints depends on a diff.
+// neither a flow nor a contract. The rest of the gate is exercised by `pnpm verify` on
+// every run; the listing needs a repository built to order, because what it prints
+// depends on a diff, and the submodule rule needs a workspace this repository is not.
 
 import { execFileSync, spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
@@ -137,5 +139,51 @@ describe("docs:check --changed-since", () => {
     expect(run.status).toBe(1)
     expect(run.stdout).toBe("")
     expect(run.stderr).toContain("no-such-ref")
+  })
+})
+
+/**
+ * A workspace whose `lint` and `fmt:check` reach `app` alone, beside `vendor/engine` — a
+ * package of the submodule at `vendor/` when `.gitmodules` names it — and `tools`, which
+ * nothing reaches.
+ */
+const workspace = (submodule: boolean): string => {
+  const dir = mkdtempSync(join(tmpdir(), "docs-check-workspace-"))
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ scripts: { lint: "oxlint app", "fmt:check": "oxfmt --check app" } }),
+  )
+  writeFileSync(
+    join(dir, "pnpm-workspace.yaml"),
+    "packages:\n  - app\n  - vendor/engine\n  - tools\n",
+  )
+  if (submodule) {
+    writeFileSync(
+      join(dir, ".gitmodules"),
+      '[submodule "vendor"]\n\tpath = vendor\n\turl = https://example.com/engine.git\n',
+    )
+  }
+  return dir
+}
+
+const gate = (cwd: string): Run => {
+  const child = spawnSync(TSX, [SCRIPT], { cwd, encoding: "utf8" })
+  return { stdout: child.stdout, stderr: child.stderr, status: child.status ?? -1 }
+}
+
+describe("docs:check's package coverage, in a workspace that vendors a submodule", () => {
+  it("skips a package inside a path .gitmodules names, and still refuses one outside it", () => {
+    const run = gate(workspace(true))
+
+    expect(run.status).toBe(1)
+    expect(run.stderr).not.toContain("vendor/engine")
+    expect(run.stderr).toContain("workspace package `tools` is not covered by `lint`")
+    expect(run.stderr).toContain("workspace package `tools` is not covered by `fmt:check`")
+  })
+
+  it("refuses the same package when no .gitmodules names its directory", () => {
+    const run = gate(workspace(false))
+
+    expect(run.stderr).toContain("workspace package `vendor/engine` is not covered by `lint`")
   })
 })

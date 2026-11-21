@@ -303,13 +303,26 @@ const workspacePackages = (): readonly string[] => {
 }
 
 /**
+ * The paths `.gitmodules` names. A workspace package inside one is another repository's,
+ * which that repository's own gates check, so the coverage rule below skips it.
+ */
+const submodulePaths = (): readonly string[] =>
+  existsSync(".gitmodules")
+    ? [...readFileSync(".gitmodules", "utf8").matchAll(/^\s*path\s*=\s*(.+?)\s*$/gm)].flatMap(
+        ([, path]) => (path === undefined ? [] : [path]),
+      )
+    : []
+
+/**
  * Every workspace package must be reachable by `lint` and `fmt:check` — either
  * named in their path lists, or behind its own `verify` the root chains. A package
  * no gate reaches is how four unformatted files survived a green `pnpm verify`.
  */
 const checkPackageCoverage = (scripts: ReadonlyMap<string, string>): void => {
   const verify = scripts.get("verify") ?? ""
+  const submodules = submodulePaths()
   for (const name of workspacePackages()) {
+    if (submodules.some((path) => name === path || name.startsWith(`${path}/`))) continue
     const chained = verify.includes(`--filter ${name}`)
     for (const gate of ["lint", "fmt:check"]) {
       const cmd = scripts.get(gate) ?? ""

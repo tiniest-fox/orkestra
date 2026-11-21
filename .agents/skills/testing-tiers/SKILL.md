@@ -246,7 +246,9 @@ drops the orphans a renamed test leaves behind.
 ## Contract tests are the multi-provider bet
 
 Write the contract once, run it against every implementation. Adding a provider means
-making an existing suite pass. **A contract test that branches on which provider it is
+making an existing suite pass. The package exports each suite as
+`@orkestra/engine/test/contract/<port>`, so a host that builds on Orkestra runs its own
+adapters through the same suites. **A contract test that branches on which provider it is
 running is a design smell** — express the difference as a declared capability
 (`supportsSessionHandoff`) the suite reads.
 

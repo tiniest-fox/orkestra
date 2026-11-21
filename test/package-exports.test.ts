@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import { canonical } from "@orkestra/engine/app/discovery"
 import { credential, nodeLaunch, startEngine, stopEngine } from "@orkestra/engine/supervisor/engine"
+import { storeContract } from "@orkestra/engine/test/contract/store"
 import { serveFakeEngine } from "@orkestra/engine/test/support/fake-engine"
 import { FAKE_LAUNCH, project } from "@orkestra/engine/test/support/host"
 
@@ -23,6 +24,10 @@ describe("@orkestra/engine", () => {
   it("exports test/support/ under its own path", () => {
     expect(serveFakeEngine).toBeTypeOf("function")
     expect(FAKE_LAUNCH.env).toHaveProperty("NODE_OPTIONS")
+  })
+
+  it("exports test/contract/, a port's shared suite any host can run against its own adapter", () => {
+    expect(storeContract).toBeTypeOf("function")
   })
 
   it("answers a host's extra route beside the fake engine's own, behind the same bearer", async () => {

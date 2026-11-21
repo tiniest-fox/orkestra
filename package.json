@@ -11,6 +11,10 @@
     "./test/support/*": {
       "types": "./test/support/*.ts",
       "default": "./test/support/*.ts"
+    },
+    "./test/contract/*": {
+      "types": "./test/contract/*.ts",
+      "default": "./test/contract/*.ts"
     }
   },
   "engines": {

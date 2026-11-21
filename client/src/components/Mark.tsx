@@ -1,8 +1,8 @@
 import type { ReactNode } from "react"
 
 /**
- * The mark: the favicon in `index.html`, redrawn rather than linked — an `<img>` pointing
- * at a data URI would be the same bytes twice with a request's worth of ceremony. The
+ * The mark: `public/favicon.svg`, redrawn rather than linked, so it costs no request and
+ * its square follows the accent token rather than the file's fixed color. The
  * ring is stroked white in both schemes because it is a hole in a saturated square, not
  * a colour that should follow the room.
  *

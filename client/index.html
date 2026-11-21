@@ -20,11 +20,9 @@
          `rail.html`'s reason. -->
     <meta name="theme-color" content="#faf8fc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#13111a" media="(prefers-color-scheme: dark)" />
-    <!-- Inline so it costs no request and no file; a missing favicon 404s on every load. -->
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e83558'/><circle cx='16' cy='16' r='6' fill='none' stroke='white' stroke-width='4'/></svg>"
-    />
+    <!-- A file, as the PNG icons are, so a host building its own client replaces it the
+         same way. Relative, so it resolves under the `<base>` prefix. -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <!-- What makes the site installable: `display: standalone` and the icons live in
          the manifest; iOS reads the home-screen icon off its own link. The viewport
          meta above is the phone shell's line, not these. Every URL in the manifest is

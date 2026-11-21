@@ -43,6 +43,9 @@ reads:
   "test/e2e/library-from-disk.test.ts": [test/e2e/fingerprints-carry.test.ts]
   # Read as text, never imported.
   "src/ork.ts": [src/ork.test.ts]
+  # A package's `exports`, resolved by every import through its name.
+  "package.json": [test/package-exports.test.ts]
+  "client/package.json": [client/src/package-exports.test.ts]
   # Spawned entries, each with everything it imports.
   "run:src/sim.ts": [test/e2e/sim.test.ts]
   "run:src/main.ts": [test/e2e/sim.test.ts]
@@ -55,6 +58,7 @@ reads:
   "run:test/support/fake-engine.ts": [test/support/host.ts]
   "run:test/support/prints-heap.ts": [test/contract/passes-heap.test.ts]
   "run:test/support/run-tmpdir.ts": [test/run-tmpdir.test.ts]
+  "run:test/fixtures/fake-engine/extra-route.ts": [test/package-exports.test.ts]
   # Fixtures, by directory.
   "test/fixtures/claude/*": [
     src/agent/providers/claude/normalize.test.ts,

@@ -37,12 +37,17 @@
 // against.
 //
 // Run with `node --import tsx`, so it is a plain child process the test can SIGKILL.
+//
+// A host that answers routes of its own launches a script of its own instead, which imports
+// `serveFakeEngine` from here and passes them: an extra route is answered after the bearer
+// check and before every route above, so it can also stand in for one of them.
 
 import { randomBytes } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
+import { fileURLToPath } from "node:url"
 import { Effect, Schema } from "effect"
 import { announce, health, MIGRATING } from "../../src/app/discovery.js"
 
@@ -76,6 +81,16 @@ const keepCreated = (
   })
 }
 
+/** A `POST /api/push/notify` kept for `/api/notified`, answered 204. */
+function keepNotified(req: IncomingMessage, res: ServerResponse): void {
+  const chunks: Buffer[] = []
+  req.on("data", (chunk: Buffer) => chunks.push(chunk))
+  req.once("end", () => {
+    notified.push(Buffer.concat(chunks).toString("utf8"))
+    res.writeHead(204).end()
+  })
+}
+
 /** `GET /api/ownerless`: the file the test wrote, a 500 when it asked for one, else nothing ownerless. */
 function ownerless(res: ServerResponse): void {
   if (existsSync(join(root, "ownerless-fails"))) {
@@ -87,7 +102,35 @@ function ownerless(res: ServerResponse): void {
   res.writeHead(200, { "content-type": "application/json" }).end(body)
 }
 
-const server = createServer((req, res) => {
+/** A route a host adds, keyed by the exact request path, and answered with the bearer checked. */
+export type FakeRoute = (req: IncomingMessage, res: ServerResponse) => void
+
+/** Answers the routes above and `extra`, and binds once `FAKE_ENGINE_HOLD_MS` has passed. */
+export function serveFakeEngine(extra: Readonly<Record<string, FakeRoute>> = {}): void {
+  const server = createServer((req, res) => respond(extra, req, res))
+  // `FAKE_ENGINE_ANNOUNCE_MS` holds the record back after the bind, as a real engine's
+  // later `announce` can.
+  const announceMs = Number(process.env["FAKE_ENGINE_ANNOUNCE_MS"] ?? "0")
+  const holdMs = Number(process.env["FAKE_ENGINE_HOLD_MS"] ?? "0")
+  const progressMs = Number(process.env["FAKE_ENGINE_PROGRESS_MS"] ?? "0")
+  if (process.env["FAKE_ENGINE_MIGRATING"] === "1") console.log(MIGRATING)
+  const progress =
+    progressMs > 0
+      ? setInterval(() => console.log("store: writing, 1 of 2"), progressMs)
+      : undefined
+  setTimeout(() => {
+    clearInterval(progress)
+    openStore()
+    server.listen(port, "127.0.0.1", () => listening(announceMs))
+  }, holdMs)
+  process.on("SIGTERM", () => process.exit(0))
+}
+
+function respond(
+  extra: Readonly<Record<string, FakeRoute>>,
+  req: IncomingMessage,
+  res: ServerResponse,
+): void {
   const path = req.url ?? "/"
   if (path === "/api/health") {
     res
@@ -104,6 +147,11 @@ const server = createServer((req, res) => {
     res.writeHead(401).end()
     return
   }
+  const route = extra[path]
+  if (route !== undefined) {
+    route(req, res)
+    return
+  }
   if (path === "/api/traks") {
     const cookie = req.headers.cookie
     const user = req.headers["x-orkestra-user"]
@@ -118,12 +166,7 @@ const server = createServer((req, res) => {
     return
   }
   if (path === "/api/push/notify" && req.method === "POST") {
-    const chunks: Buffer[] = []
-    req.on("data", (chunk: Buffer) => chunks.push(chunk))
-    req.once("end", () => {
-      notified.push(Buffer.concat(chunks).toString("utf8"))
-      res.writeHead(204).end()
-    })
+    keepNotified(req, res)
     return
   }
   if (path === "/api/notified") {
@@ -180,17 +223,7 @@ const server = createServer((req, res) => {
   res
     .writeHead(200, { "content-type": "text/html; charset=utf-8" })
     .end(`<!doctype html><html><head><base href="/" /></head><body>${root} ${path}</body></html>`)
-})
-
-// `FAKE_ENGINE_ANNOUNCE_MS` holds the record back after the bind, as a real engine's
-// later `announce` can.
-const announceMs = Number(process.env["FAKE_ENGINE_ANNOUNCE_MS"] ?? "0")
-
-const holdMs = Number(process.env["FAKE_ENGINE_HOLD_MS"] ?? "0")
-const progressMs = Number(process.env["FAKE_ENGINE_PROGRESS_MS"] ?? "0")
-if (process.env["FAKE_ENGINE_MIGRATING"] === "1") console.log(MIGRATING)
-const progress =
-  progressMs > 0 ? setInterval(() => console.log("store: writing, 1 of 2"), progressMs) : undefined
+}
 
 /** The project's store, opened as a real engine's boot opens it, with the table a drill reads. */
 const openStore = (): void => {
@@ -203,13 +236,7 @@ const openStore = (): void => {
   db.close()
 }
 
-const listen = (): void => {
-  clearInterval(progress)
-  openStore()
-  server.listen(port, "127.0.0.1", listening)
-}
-
-function listening(): void {
+function listening(announceMs: number): void {
   console.log(`serving ${root} on ${String(port)}`)
   // On stderr, and naming its token, as an engine printing another program's words could.
   const gh = process.env["GH_TOKEN"]
@@ -224,5 +251,6 @@ function listening(): void {
     ),
   )
 }
-setTimeout(listen, holdMs)
-process.on("SIGTERM", () => process.exit(0))
+// `realpathSync`, because `argv[1]` keeps a symlink in the path that `import.meta.url` resolves.
+const main = process.argv[1]
+if (main !== undefined && realpathSync(main) === fileURLToPath(import.meta.url)) serveFakeEngine()

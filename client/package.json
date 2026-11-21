@@ -2,6 +2,33 @@
   "name": "@orkestra/client",
   "private": true,
   "type": "module",
+  "exports": {
+    "./src/styles.css": "./src/styles.css",
+    "./src/*.tsx": {
+      "types": "./src/*.tsx",
+      "default": "./src/*.tsx"
+    },
+    "./src/*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    },
+    "./vite.config": {
+      "types": "./vite.config.ts",
+      "default": "./vite.config.ts"
+    },
+    "./playwright.config": {
+      "types": "./playwright.config.ts",
+      "default": "./playwright.config.ts"
+    },
+    "./test-setup": {
+      "types": "./test-setup.ts",
+      "default": "./test-setup.ts"
+    },
+    "./e2e/phone": {
+      "types": "./e2e/phone.ts",
+      "default": "./e2e/phone.ts"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

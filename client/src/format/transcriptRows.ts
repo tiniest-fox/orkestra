@@ -6,7 +6,7 @@
  * **Shared because two surfaces summarise the same work.** The drawer's log draws every
  * row; the list's trak row draws only the newest one, as a single line —
  * `latestActivity`. Both read the rows off here, so the row cannot say `Read src/a.ts`
- * while the log beside it says `Read 4 files`.
+ * while the log beside it says `Read, and edited`.
  *
  * `features/trak-detail/turns/turns.ts` cuts a transcript into turns first; this takes
  * one turn's entries, or one agent's.
@@ -128,8 +128,8 @@ export const isEngineLine = (e: TranscriptEntryDto): boolean =>
  *
  * **Hiding them is also what lets a parent's run fold back together.** A `Note` is not a
  * `Tool`, so each one ends the run behind it in `groupRuns` — a heartbeat between every
- * pair of twenty reads drew twenty `Read 1 file` rows with a note between each, where the
- * stretch of working is one `Read 20 files`.
+ * pair of twenty reads drew twenty `Read` rows with a note between each, where the
+ * stretch of working is one `Read`.
  *
  * A rendering rule and nothing more: the kinds stay on the wire and in the transcript, so
  * a surface that finds a use for their counters still has them.
@@ -684,8 +684,8 @@ const reportedOn = (
  * **A run is calls separated only by their own results — of any kind, not of one.** It
  * grouped by kind until a read between two edits broke both, which against a real
  * transcript is most of them: an agent interleaves. What a row stands for is therefore a
- * *stretch of working*, and `phraseForRun` is what counts the kinds inside it — `Read 4
- * files, and ran 1 command` rather than three rows that have to be read together to say
+ * *stretch of working*, and `phraseForRun` is what names the work inside it — `Read,
+ * searched, and edited` rather than three rows that have to be read together to say
  * the same thing.
  *
  * **What separates two runs is a pause, and every pause gets a group of its own here** —
@@ -712,7 +712,7 @@ export const groupRuns = (
 /**
  * Where each hook rides: on the line of the call it ran for, or — a stray — in the run it
  * arrived in. **Never a row of its own, so it never ends a run**: a hook between two reads
- * leaves them one `Read 2 files`.
+ * leaves them one `Read` row.
  *
  * Only a call on a line of a run carries a mark, so a hook on one a card took — a view, a
  * check, a delegation, a background job — or naming no call is a stray, and a stray that
@@ -1004,13 +1004,13 @@ export const runningSince = (group: readonly TranscriptEntryDto[]): number | und
 /**
  * The newest row the live log would draw, as the one line a trak's row has room for — the
  * agent's words, `Thinking` or the model's name for what it is working out, or a run's
- * phrase such as `Read 1 file, and ran 2 commands`.
+ * phrase such as `Read, and ran commands`.
  *
  * **The log's own pipeline, and then its own words for the last row.** `workOnly`,
  * `groupEntries` and `withoutEndedPauses` decide which row is last, exactly as they do in
  * `TurnSection`; `ActivityGroup` names a run by `phraseForRun` and a pause by `pauseText`,
  * and so does this. A row that summarised on rules of its own would say `Read src/a.ts`
- * while the log beside it said `Read 4 files`.
+ * while the log beside it said `Read, and edited`.
  *
  * **Asked only of a turn something is still driving**, which is the only time the engine
  * sends the entries — so the live pause survives and an ended one does not, as at the
@@ -1035,7 +1035,7 @@ export const latestActivity = (
   if (isViewed(last)) return `${last.view.server}/${last.view.tool}`
   if (isChecked(last)) return `${last.checked.server}/${last.checked.tool} ${last.checked.name}`
   const calls = groupCalls(last)
-  if (calls.length > 0) return phraseForRun(calls.map((call) => call.kind))
+  if (calls.length > 0) return phraseForRun(calls)
   const pause = last.findLast(isPause)
   if (pause !== undefined) {
     const retry = pauseRetry(last)

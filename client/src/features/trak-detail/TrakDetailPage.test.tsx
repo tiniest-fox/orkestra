@@ -64,7 +64,7 @@ import {
  * three different tools, which is what keeps *this position's turns and no other's* an
  * assertion the collapsed rows can still make.
  */
-const COMPOSED = "Globbed 1 pattern"
+const COMPOSED = "Searched"
 
 describe("TrakDetailPage", () => {
   it("opens where the trak is, showing that position's turns and no other's", async () => {
@@ -1060,9 +1060,9 @@ const recomposed = (): TrakDetailDto =>
       makeSpawned({ pid: 300, position: "composer" }),
       makeSession({ id: "s-plan-2", position: "composer" }),
       makeTool({
-        name: "Grep",
-        kind: "Grep",
-        detail: "only-the-second.ts",
+        name: "WebFetch",
+        kind: "WebFetch",
+        detail: "https://example.com/only-the-second",
         position: "composer",
       }),
     ],
@@ -1105,9 +1105,9 @@ describe("the map", () => {
     )
 
     fireEvent.click(again)
-    // A `Grep`, where the first run's was a `Glob` — so the folded rows say which run's
+    // A `WebFetch`, where the first run's was a `Glob` — so the folded rows say which run's
     // work this is without either of them being opened.
-    expect(await screen.findByText("Searched 1 time")).toBeDefined()
+    expect(await screen.findByText("Fetched pages")).toBeDefined()
     // The first compose's work is not this run's, and pooling them is the whole bug.
     expect(screen.queryByText(COMPOSED)).toBeNull()
   })

@@ -1,13 +1,14 @@
 /**
  * How a run of calls names itself.
  *
- * A decision about the *kind* rather than about the row, which is why it is here rather
+ * A decision about the *call* rather than about the row, which is why it is here rather
  * than inline: a group and a single call have to agree about what a `Bash` is for, and
  * two switches drift.
  *
- * **Every word a row says about a call is in this file**, including the punctuation
- * joining two of them — a run holds several kinds now, and a caller assembling the
- * sentence from parts would be a second place deciding how one reads. Which end of a
+ * **Every word a row says about a call is in this file**, including the punctuation joining
+ * two of them, except the verbs `shellVerbs` gives a shell call by its command — a run holds
+ * several kinds now, and a caller assembling the sentence from parts would be a second place
+ * deciding how one reads. Which end of a
  * detail is worth keeping is the one call-shaped decision that is not: `keepsTail` lives
  * in `format/activity`, because `ToolCall` reads it too.
  *
@@ -16,101 +17,93 @@
  */
 
 import type { ToolEntryDto } from "../api/types"
+import { shellVerbs } from "./shellVerb"
 
 type Kind = ToolEntryDto["kind"]
 
 /**
- * The kinds a run counts separately. **An MCP call is counted as one more call**, beside
- * the unclassified ones: both say `Called`, and two counts with the same verb read
- * `called 1 time, and called 2 times`. Which calls were MCP is the opened run's to show.
- */
-type Counted = Exclude<Kind, "Mcp">
-
-const countedAs = (kind: Kind): Counted => (kind === "Mcp" ? "Other" : kind)
-
-/**
- * The verb and the unit for each kind, so a group reads as a sentence.
+ * The verb phrase for each kind, so a run reads as a sentence.
  *
- * "Ran 3 commands", never "Bash 3 files" — the tool's name is the word a person watching
- * that CLI saw, but a *count* of them wants ordinary English or the row stops being
- * readable at a glance.
+ * **No counts, for any kind.** A count of calls is wrong for `cat a b c`, and counting
+ * paths parsed out of a command fails on globs and directories — so a sentence that said
+ * `Read 3 files` would state a number the call does not support. The opened run lists
+ * every call.
  *
- * **Both numbers of the unit are written out.** Every one of them happens to lose a
- * trailing `s`, so a slice would work today and would be a rule about English that this
- * table does not state — the first unit that pluralises any other way would read
- * `1 matche` and nothing would fail.
+ * `Bash` is the fallback only: a shell call whose command names its effects takes the verbs
+ * `shellVerbs` gives it, and the same verb as the dedicated tool — a `cat` and a `Read` are
+ * one `read`. An MCP call is one more `called tools`, beside the unclassified ones.
  */
-const PHRASE: Record<Counted, readonly [verb: string, one: string, many: string]> = {
-  Bash: ["Ran", "command", "commands"],
-  Read: ["Read", "file", "files"],
-  Edit: ["Edited", "file", "files"],
-  Write: ["Wrote", "file", "files"],
-  Grep: ["Searched", "time", "times"],
-  Glob: ["Globbed", "pattern", "patterns"],
-  WebSearch: ["Searched the web", "time", "times"],
-  WebFetch: ["Fetched", "page", "pages"],
-  Todo: ["Updated the plan", "time", "times"],
-  Task: ["Delegated", "time", "times"],
-  Other: ["Called", "time", "times"],
+const PHRASE: Record<Kind, string> = {
+  Bash: "ran commands",
+  Read: "read",
+  Edit: "edited",
+  Write: "wrote",
+  Grep: "searched",
+  Glob: "searched",
+  WebSearch: "searched the web",
+  WebFetch: "fetched pages",
+  Todo: "updated the plan",
+  Task: "delegated",
+  Mcp: "called tools",
+  Other: "called tools",
 }
 
 /**
- * What `count` calls of one kind are called.
- *
- * **`count` can be 1**, and that is the ordinary case rather than the edge one: a run
- * broken by a pause on either side of it is one call, and a lone call is counted rather
- * than drawn as a row of its own — see `ActivityGroup` for why that changed.
+ * What each call did, as verb phrases the run sentence can hold — several for a shell call
+ * that did several things. The shell calls are classified together, because whether a
+ * write was scratch or an edit was undone is something only the whole run can say.
  */
-const phraseFor = (kind: Counted, count: number): string => {
-  const [verb, one, many] = PHRASE[kind]
-  return `${verb} ${count} ${count === 1 ? one : many}`
+const phrasesFor = (calls: readonly ToolEntryDto[]): readonly string[] => {
+  const shell = calls.filter((call) => call.kind === "Bash")
+  const verbs = shellVerbs(shell.map((call) => call.command ?? call.detail ?? ""))
+  return calls.flatMap((call) => {
+    if (call.kind !== "Bash") return [PHRASE[call.kind]]
+    return (verbs[shell.indexOf(call)] ?? [undefined]).map((verb) => verb ?? PHRASE.Bash)
+  })
 }
-
-/** A phrase joining another one, so only the first keeps its capital. */
-const joining = (phrase: string): string => phrase.charAt(0).toLowerCase() + phrase.slice(1)
 
 /**
  * What a whole run is called, when the run can hold more than one kind of call.
  *
- * `Read 4 files, and ran 1 command` — the kinds in the order the agent first reached for
- * them, each counted, read as one sentence. A run is a stretch of working rather than a
- * repetition of one activity (`groupRuns` carries why), so the row has to be able to say
- * several things and stay a row.
+ * `Read, searched, and edited` — what the calls did, each said once, in the order the
+ * agent first did it. A run is a stretch of working rather than a repetition of one
+ * activity (`groupRuns` carries why), so the row has to be able to say several things and
+ * stay a row.
  *
  * **The list is Oxford-comma'd at two as well as at three**, which is not how a sentence
- * would ordinarily punctuate a pair. It reads as a list rather than as prose that happens
- * to have a count in it, and every row in this column is the same list of the same shape —
- * so the comma is the thing that makes the second half scannable rather than parsed.
+ * would ordinarily punctuate a pair. It reads as a list rather than as prose, and every row
+ * in this column is the same list of the same shape — so the comma is the thing that makes
+ * the second half scannable rather than parsed.
  *
  * Empty for a group with no calls in it, which `ActivityGroup` never asks about: a group
  * is only phrased once its head is known to be a call.
  */
-export const phraseForRun = (kinds: readonly Kind[]): string => {
-  const counts = new Map<Counted, number>()
-  for (const kind of kinds.map(countedAs)) counts.set(kind, (counts.get(kind) ?? 0) + 1)
-
-  const [first, ...rest] = [...counts].map(([kind, count]) => phraseFor(kind, count))
+export const phraseForRun = (calls: readonly ToolEntryDto[]): string => {
+  const phrases = [...new Set(phrasesFor(calls))]
+  const [first, ...rest] = phrases
   if (first === undefined) return ""
+  const head = first.charAt(0).toUpperCase() + first.slice(1)
   const last = rest.at(-1)
-  if (last === undefined) return first
-  return [first, ...rest.slice(0, -1).map(joining), `and ${joining(last)}`].join(", ")
+  if (last === undefined) return head
+  return [head, ...rest.slice(0, -1), `and ${last}`].join(", ")
 }
 
 /**
  * Whether an opened run draws each call's own name beside its argument.
  *
  * **The question is whether the head has already said which tool this was.** It has when
- * the whole run is one tool — `Read 4 files` over four paths would be `Read` said four
- * more times — and two things break that.
+ * the whole run is one tool — `Read` over four paths would be `Read` said four more
+ * times, and a run of shell calls is a column of commands whatever verb its head says —
+ * and two things break that.
  *
  * A run of several tools, told apart by **name** rather than by kind: `Skill`,
  * `ToolSearch`, `TaskStop` and `Monitor` all normalize to `Other`, so a kind-based answer
  * would hide exactly the word that says which of them made a row. Reading names also
  * separates `Edit` from `MultiEdit`.
  *
- * And a run of one tool whose kind is `Other`, because `Called 3 times` names no tool at
- * all. `PHRASE`'s verb is what carries the name on every other kind — `Ran`, `Read`,
- * `Edited` — and `Other` is the one that has nothing to carry, which is the cost of it
+ * And a run of one tool whose kind is `Other`, because `Called tools` names no tool at
+ * all. `PHRASE`'s verb is what carries the name on every other kind — `Ran commands`,
+ * `Read`, `Edited` — and `Other` is the one that has nothing to carry, which is the cost of it
  * being the escape hatch rather than a word in the vocabulary.
  *
  * **Asked of the run's built-in calls only.** An MCP call always carries its own mark in

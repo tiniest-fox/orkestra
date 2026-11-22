@@ -252,7 +252,7 @@ describe("TraksListPage", () => {
     const review = screen.getByRole("link", { name: "Review — add a client" })
     expect(review.getAttribute("href")).toBe("/traks/11111111-2222-4333-8444-555555555555")
     // The calls are the phrase the live log names their run by, never one line per call.
-    expect(screen.getByText("Read 1 file, and edited 1 file")).toBeDefined()
+    expect(screen.getByText("Read, and edited")).toBeDefined()
     expect(screen.queryByText("src/app/dto.ts")).toBeNull()
   })
 
@@ -332,7 +332,7 @@ describe("TraksListPage", () => {
     renderList()
 
     expect(await screen.findByText("Thinking")).toBeDefined()
-    expect(screen.queryByText(/Read 1 file/)).toBeNull()
+    expect(screen.queryByText(/Read/)).toBeNull()
   })
 
   it("says what would put something here when there is nothing", async () => {

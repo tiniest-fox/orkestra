@@ -4,7 +4,7 @@
  *
  *     ┌────┐  Move the commit to the end of a step
  *     │ ◉  │  Move the commit to the end of the step, after checks pass
- *     └────┘  Working…                  ⟋ Read 4 files, and edited 1 file
+ *     └────┘  Working…                  ⟋ Read, searched, and edited
  *
  * The top line is the plan's title, and the request only until there is one — a title
  * is a name and a request is a paragraph, and a list of paragraphs is unreadable. It is

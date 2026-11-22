@@ -1560,7 +1560,7 @@ const envelopeIn = (
  * at the top level, or since the turn began if it has not.
  *
  * **The row draws what the live log draws last**, and that is a row of the log rather than
- * an entry — `Read 4 files` is four entries. So the slice has to start early enough to hold
+ * an entry — one `Read` row over four paths is four entries. So the slice has to start early enough to hold
  * the whole of the last row, and the agent's own words are where that is guaranteed: a
  * `Text` closes the run behind it, so nothing before it can join a row after it.
  *

@@ -279,7 +279,7 @@ describe("TurnsView", () => {
     view([filed("done")])
 
     expect(screen.queryByText(/Usage\(/)).toBeNull()
-    expect(screen.getByText("Read 2 files")).toBeDefined()
+    expect(screen.getByText("Read")).toBeDefined()
     // A pause is not bookkeeping, and it is dropped for a different reason: nothing is
     // driving this turn, so the wait it stands for is over — see the pauses describe.
     expect(screen.queryByText("Thinking")).toBeNull()
@@ -377,7 +377,7 @@ describe("TurnsView, on the pause the agent is still in", () => {
     expect(screen.getAllByText("Thinking")).toHaveLength(1)
     // At the end, and after the work rather than between two stretches of it.
     expect(document.body.textContent.lastIndexOf("Thinking")).toBeGreaterThan(
-      document.body.textContent.indexOf("Read 1 file"),
+      document.body.textContent.indexOf("Read"),
     )
   })
 
@@ -445,7 +445,7 @@ describe("TurnsView, on a turn whose pauses carry words", () => {
   it("separates the calls either side of a summary into two runs", () => {
     drawn(reasoned, false)
 
-    expect(screen.getAllByText("Read 1 file")).toHaveLength(2)
+    expect(screen.getAllByText("Read")).toHaveLength(2)
   })
 
   it("draws only the summary the agent is still on, with the dots", () => {
@@ -484,7 +484,7 @@ describe("TurnsView, on the paths a call names", () => {
         cancelling={undefined}
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "Read 1 file" }))
+    fireEvent.click(screen.getByRole("button", { name: "Read" }))
   }
 
   it("draws a call relative to the checkout it ran in", () => {
@@ -1278,7 +1278,7 @@ describe("TurnsView, on a position that dropped the same way twice", () => {
     // Below that turn's own call and above the restart that ended it, which is the only
     // way to say which of the two identical attempts it belongs to.
     const shown = document.body.textContent
-    expect(shown.indexOf(HEAD)).toBeGreaterThan(shown.indexOf("Read 1 file"))
+    expect(shown.indexOf(HEAD)).toBeGreaterThan(shown.indexOf("Read"))
     expect(shown.indexOf(HEAD)).toBeLessThan(shown.indexOf("Restarted"))
   })
 
@@ -1293,8 +1293,8 @@ describe("TurnsView, on a position that dropped the same way twice", () => {
     // Once, and between the two: after the turn the drop ended, above the turn it began.
     expect(screen.getAllByText("Restarted")).toHaveLength(1)
     const shown = document.body.textContent
-    expect(shown.indexOf("Restarted")).toBeGreaterThan(shown.indexOf("Read 1 file"))
-    expect(shown.indexOf("Restarted")).toBeLessThan(shown.indexOf("Edited 1 file"))
+    expect(shown.indexOf("Restarted")).toBeGreaterThan(shown.indexOf("Read"))
+    expect(shown.indexOf("Restarted")).toBeLessThan(shown.indexOf("Edited"))
   })
 })
 

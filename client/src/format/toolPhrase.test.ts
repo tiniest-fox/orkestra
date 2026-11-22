@@ -24,50 +24,95 @@ const KINDS: readonly ToolEntryDto["kind"][] = [
 const run = (kind: ToolEntryDto["kind"], n: number): readonly ToolEntryDto["kind"][] =>
   Array.from({ length: n }, () => kind)
 
+const tools = (kinds: readonly ToolEntryDto["kind"][]): readonly ToolEntryDto[] =>
+  kinds.map((kind) => makeTool({ name: kind, kind }))
+
+/** A Claude shell call: the command in `command` when the agent described it. */
+const claude = (command: string): ToolEntryDto =>
+  makeTool({ name: "Bash", kind: "Bash", detail: "Look around", command })
+
+/** A Codex shell call: the wrapped command in `detail`. */
+const codex = (command: string): ToolEntryDto =>
+  makeTool({ name: "commandExecution", kind: "Bash", detail: `/bin/zsh -lc '${command}'` })
+
 describe("phraseForRun", () => {
-  it("names a run of reads by what was read, not by the tool", () => {
-    expect(phraseForRun(run("Read", 5))).toBe("Read 5 files")
+  it("names a run of shell calls by what they did, in the order the agent first did it", () => {
+    const calls = [
+      claude("cat src/a.ts"),
+      codex("rg -n x src"),
+      claude("sed -n 1,40p src/b.ts"),
+      codex('sed -i "" s/a/b/ src/a.ts'),
+    ]
+    expect(phraseForRun(calls)).toBe("Read, searched, and edited")
   })
 
-  it("counts commands rather than files, because a Bash call is not a file", () => {
-    expect(phraseForRun(run("Bash", 3))).toBe("Ran 3 commands")
+  it("names every effect of a call that did several things", () => {
+    expect(phraseForRun([claude("git mv a.ts b.ts && rm c.ts")])).toBe("Moved, and deleted")
+    expect(phraseForRun([codex("mv a.ts b.ts; some-cli run")])).toBe("Moved, and ran commands")
+    expect(phraseForRun([claude("sed -i '' s/a/b/ f.ts && grep -n b f.ts")])).toBe("Edited")
+    expect(phraseForRun([codex("grep x f | head")])).toBe("Searched")
   })
 
-  it("has a phrase for every kind the wire can send", () => {
-    // The wire's `kind` is a closed literal union, so a new member is a compile error in
-    // `PHRASE` — this asserts none of them is an empty string somebody stubbed.
-    for (const kind of KINDS) expect(phraseForRun(run(kind, 2))).toMatch(/^\S.* 2 \S+$/)
+  it("classifies the run's shell calls together, so scratch and undone edits drop", () => {
+    const probe = [
+      claude("cat > spec/zz_probe_spec.rb <<EOF\nit {}\nEOF"),
+      makeTool({ name: "Read", kind: "Read", detail: "spec/zz_probe_spec.rb" }),
+      codex("bundle exec rspec spec/zz_probe_spec.rb"),
+      claude("rm spec/zz_probe_spec.rb"),
+    ]
+    expect(phraseForRun(probe)).toBe("Ran commands, read, and tested")
+    const undone = [
+      claude("sed -i '' s/a/b/ src/a.ts"),
+      claude("pnpm test"),
+      codex("git checkout -- src/a.ts"),
+    ]
+    expect(phraseForRun(undone)).toBe("Ran commands, and tested")
   })
 
-  // A run of one is the common case, not the edge one: a pause on either side of a call
-  // leaves it alone in its run, so `1` is the count most rows carry.
-  it("counts one of something in the singular", () => {
-    expect(phraseForRun(["Read"])).toBe("Read 1 file")
-    expect(phraseForRun(["Bash"])).toBe("Ran 1 command")
-  })
-
-  it("has a singular for every kind, and never the plural with a 1 in front of it", () => {
-    for (const kind of KINDS) {
-      expect(phraseForRun(run(kind, 1))).toMatch(/^\S.* 1 \S+$/)
-      // What a row pasted from the column beside it would read as.
-      expect(phraseForRun(run(kind, 1))).not.toBe(phraseForRun(run(kind, 2)).replace(" 2 ", " 1 "))
-    }
-  })
-
-  it("joins two kinds into one sentence, lowering the second so it reads as one", () => {
-    expect(phraseForRun([...run("Read", 4), "Bash"])).toBe("Read 4 files, and ran 1 command")
-  })
-
-  it("counts each kind wherever its calls fell, and orders them by first reach", () => {
-    // Interleaved, which is what an agent actually does — the row says what happened in
-    // the stretch, not what order the counting was easiest in.
-    expect(phraseForRun(["Bash", "Read", "Bash", "Edit", "Read"])).toBe(
-      "Ran 2 commands, read 2 files, and edited 1 file",
+  it("says an agent that only slept waited", () => {
+    expect(phraseForRun([claude("sleep 200"), codex("until test -f done; do sleep 5; done")])).toBe(
+      "Waited",
     )
   })
 
-  it("counts an MCP call with the unclassified ones, so `called` is said once", () => {
-    expect(phraseForRun(["Read", "Mcp", "Other", "Mcp"])).toBe("Read 1 file, and called 3 times")
+  it("reads a Claude call with no description from its detail", () => {
+    expect(phraseForRun([makeTool({ name: "Bash", kind: "Bash", detail: "ls -la" })])).toBe(
+      "Listed",
+    )
+  })
+
+  it("falls back to `ran commands` for a shell call it cannot name", () => {
+    expect(phraseForRun([claude("widgetctl render x"), codex("git fetch")])).toBe("Ran commands")
+  })
+
+  it("merges a shell verb with the dedicated tool that does the same thing", () => {
+    expect(phraseForRun([claude("cat a.ts"), ...tools(["Read"])])).toBe("Read")
+    expect(phraseForRun([...tools(["Grep", "Glob"]), codex("rg x")])).toBe("Searched")
+  })
+
+  it("never puts a number in the sentence, for any kind", () => {
+    for (const kind of KINDS) expect(phraseForRun(tools(run(kind, 3)))).not.toMatch(/\d/)
+    expect(phraseForRun([claude("cat a b c"), claude("pnpm test 2>&1 | tail -3")])).toBe(
+      "Read, and tested",
+    )
+  })
+
+  it("has a phrase for every kind the wire can send", () => {
+    for (const kind of KINDS) expect(phraseForRun(tools([kind]))).toMatch(/^[A-Z][a-z ]+$/)
+  })
+
+  it("joins two phrases into one sentence, lowering the second so it reads as one", () => {
+    expect(phraseForRun(tools(["Read", "Read", "Bash"]))).toBe("Read, and ran commands")
+  })
+
+  it("says each phrase once, wherever its calls fell", () => {
+    expect(phraseForRun(tools(["Bash", "Read", "Bash", "Edit", "Read"]))).toBe(
+      "Ran commands, read, and edited",
+    )
+  })
+
+  it("says `called tools` once for MCP calls and unclassified ones together", () => {
+    expect(phraseForRun(tools(["Read", "Mcp", "Other", "Mcp"]))).toBe("Read, and called tools")
   })
 
   it("says nothing about a run with no calls in it", () => {

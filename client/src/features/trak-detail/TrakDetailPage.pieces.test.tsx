@@ -188,7 +188,7 @@ describe("a spawn's pieces", () => {
     await press(/Map/)
     fireEvent.click(map().getByRole("button", { name: /draw the columns/ }))
     // A press on the map is a navigation, so the pane is still the position being left until
-    // it commits — and every piece's row reads `Read 1 file`, so a call opened before then
+    // it commits — and every piece's row reads `Read`, so a call opened before then
     // is the wrong piece's.
     await waitFor(() => {
       expect(screen.getByRole("navigation").textContent).toContain("draw the columns")

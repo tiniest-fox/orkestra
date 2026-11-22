@@ -469,7 +469,7 @@ export const TrakSummaryDto = Schema.Struct({
    * carries, from the agent's last words at the top level, or the turn's start, onwards.
    *
    * Entries rather than a rendered line, so the row summarises them with the rules the
-   * live log draws by, and says `Read 4 files` where the log does. Formatting them is the
+   * live log draws by, and says `Read, and edited` where the log does. Formatting them is the
    * client's job in both places; a string here would be the server deciding how a row
    * reads. The engine's `latestStretch` carries where the slice starts and why.
    *

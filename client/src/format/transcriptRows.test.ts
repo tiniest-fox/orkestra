@@ -45,6 +45,7 @@ import {
   type Delegation,
   type Job,
 } from "./transcriptRows"
+import { phraseForRun } from "./toolPhrase"
 
 const tool = (name: string, kind: ToolEntryDto["kind"], detail?: string): ToolEntryDto =>
   makeTool({ name, kind, ...(detail === undefined ? {} : { detail }) })
@@ -387,7 +388,7 @@ const failedFor = (call: string): NoteEntryDto => makeNote({ text: "ToolResult(e
  * A `Note` is not a `Tool`, so every one ends the run behind it — and the CLI writes a
  * `system/task_progress` line in front of every call while a subagent is working. One
  * position of `bedbed16`'s transcript is twenty commands in that shape, which drew as
- * twenty `Ran 1 command` rows with twenty notes standing between them.
+ * twenty `Ran commands` rows with twenty notes standing between them.
  */
 describe("workOnly before groupEntries — the run that could not fold", () => {
   const beat = makeNote({ text: "Unknown(system/task_progress)" })
@@ -1265,11 +1266,22 @@ describe("latestActivity — the trak row's line", () => {
       tool("Read", "Read", "b.ts"),
       tool("Bash", "Bash"),
     ]
-    expect(latestActivity(entries, undefined)).toBe("Read 2 files, and ran 1 command")
+    expect(latestActivity(entries, undefined)).toBe("Read, and ran commands")
   })
 
-  it("names a lone call by its count too", () => {
-    expect(latestActivity([tool("Edit", "Edit", "a.ts")], undefined)).toBe("Edited 1 file")
+  it("names a lone call the same way", () => {
+    expect(latestActivity([tool("Edit", "Edit", "a.ts")], undefined)).toBe("Edited")
+  })
+
+  it("names shell calls by what their commands did, as the group row does", () => {
+    const entries = [
+      tool("Bash", "Bash", "cat src/a.ts"),
+      tool("commandExecution", "Bash", "/bin/zsh -lc 'rg -n x src'"),
+      tool("Bash", "Bash", "sed -i '' s/a/b/ src/a.ts"),
+      tool("Read", "Read", "src/b.ts"),
+    ]
+    expect(latestActivity(entries, undefined)).toBe("Read, searched, and edited")
+    expect(latestActivity(entries, undefined)).toBe(phraseForRun(entries))
   })
 
   it("says the agent is thinking at a live pause, by the model's name for it where there is one", () => {

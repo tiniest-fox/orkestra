@@ -32,16 +32,14 @@ describe("ActivityGroup", () => {
   it("stands for four reads as one counted row, and shows no path until asked", () => {
     render(<ActivityGroup group={FOUR} />)
 
-    expect(screen.getByRole("button", { name: "Read 4 files" }).getAttribute("aria-expanded")).toBe(
-      "false",
-    )
+    expect(screen.getByRole("button", { name: "Read" }).getAttribute("aria-expanded")).toBe("false")
     expect(screen.queryByText("a.ts")).toBeNull()
   })
 
   it("opens into every call it stands for — the paths are why the row exists", () => {
     render(<ActivityGroup group={FOUR} />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Read 4 files" }))
+    fireEvent.click(screen.getByRole("button", { name: "Read" }))
 
     for (const path of ["a.ts", "b.ts", "c.ts", "d.ts"]) {
       expect(screen.getByText(path)).toBeDefined()
@@ -51,14 +49,14 @@ describe("ActivityGroup", () => {
   it("counts a lone call the same way, singular, and holds its path back too", () => {
     render(<ActivityGroup group={[read("only.ts")]} />)
 
-    expect(screen.getByRole("button", { name: "Read 1 file" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Read" })).toBeDefined()
     expect(screen.queryByText("only.ts")).toBeNull()
   })
 
   it("opens a lone call onto the one path it stands for", () => {
     render(<ActivityGroup group={[read("only.ts")]} />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Read 1 file" }))
+    fireEvent.click(screen.getByRole("button", { name: "Read" }))
 
     expect(screen.getByText("only.ts")).toBeDefined()
   })
@@ -66,14 +64,14 @@ describe("ActivityGroup", () => {
   it("names every kind in a mixed run, in one sentence", () => {
     render(<ActivityGroup group={[...FOUR, makeTool({ name: "Bash", kind: "Bash" }), ok]} />)
 
-    expect(screen.getByRole("button", { name: "Read 4 files, and ran 1 command" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Read, and ran commands" })).toBeDefined()
   })
 
   it("labels each call of a mixed run when it opens, because the head no longer can", () => {
     const bash = makeTool({ name: "Bash", kind: "Bash", detail: "pnpm verify" })
     render(<ActivityGroup group={[read("a.ts"), ok, bash, ok]} />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Read 1 file, and ran 1 command" }))
+    fireEvent.click(screen.getByRole("button", { name: "Read, and ran commands" }))
 
     // The name beside the detail, which a single-kind run leaves out — the row above it
     // has already said `Read`, and repeating it down the column says nothing.
@@ -84,9 +82,10 @@ describe("ActivityGroup", () => {
   it("leaves the names out of a run that is all one kind", () => {
     render(<ActivityGroup group={FOUR} />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Read 4 files" }))
+    fireEvent.click(screen.getByRole("button", { name: "Read" }))
 
-    expect(screen.queryByText("Read")).toBeNull()
+    // The head's own `Read`, and no label beside any path.
+    expect(screen.getAllByText("Read")).toHaveLength(1)
   })
 
   it("draws an entry the engine already wrote down as its own line", () => {
@@ -117,8 +116,8 @@ const called = (name: string, detail: string): TranscriptEntryDto =>
 
 /**
  * The four tools the audit found drawing as a bare name. They all normalize to `Other`,
- * whose phrase is `Called 3 times` and names no tool at all — so the head cannot stand in
- * for the label the way `Read 4 files` does.
+ * whose phrase is `Called tools` and names no tool at all — so the head cannot stand in
+ * for the label the way `Read` does.
  */
 describe("ActivityGroup — the tools nothing classifies", () => {
   it("labels each call of a run of them, though they are all one kind", () => {
@@ -128,7 +127,7 @@ describe("ActivityGroup — the tools nothing classifies", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Called 2 times" }))
+    fireEvent.click(screen.getByRole("button", { name: "Called tools" }))
 
     // Kind-based, both rows would be a bare argument with nothing saying which tool made
     // it — `Skill` and `TaskStop` are the same kind and are not the same thing.
@@ -137,22 +136,22 @@ describe("ActivityGroup — the tools nothing classifies", () => {
     }
   })
 
-  it("labels a run of one of them too, because `Called 2 times` names nothing", () => {
+  it("labels a run of one of them too, because `Called tools` names nothing", () => {
     render(
       <ActivityGroup group={[called("Skill", "atelier-proof"), ok, called("Skill", "run"), ok]} />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Called 2 times" }))
+    fireEvent.click(screen.getByRole("button", { name: "Called tools" }))
 
     expect(screen.getAllByText("Skill")).toHaveLength(2)
   })
 
   it("still leaves the name out where the head has already said it", () => {
-    // `Read 4 files` over four paths would be `Read` said four more times.
+    // `Read` over four paths would be `Read` said four more times.
     render(<ActivityGroup group={FOUR} />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Read 4 files" }))
-    expect(screen.queryByText("Read")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Read" }))
+    expect(screen.getAllByText("Read")).toHaveLength(1)
   })
 })
 
@@ -179,7 +178,7 @@ describe("ActivityGroup — a call still running", () => {
     now(1000)
     render(<ActivityGroup group={[...reads, slow]} live />)
 
-    expect(screen.getByRole("button", { name: "Read 2 files" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Read" })).toBeDefined()
     expect(screen.getByText("pnpm verify")).toBeDefined()
   })
 
@@ -187,7 +186,7 @@ describe("ActivityGroup — a call still running", () => {
     now(1000)
     render(<ActivityGroup group={[...reads, slow, answered]} live />)
 
-    expect(screen.getByRole("button", { name: "Read 2 files, and ran 1 command" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Read, and ran commands" })).toBeDefined()
     expect(screen.queryByText("pnpm verify")).toBeNull()
   })
 
@@ -262,7 +261,7 @@ describe("ActivityGroup — a call still running", () => {
     now(112_000)
     render(<ActivityGroup group={[slow]} />)
 
-    expect(screen.getByRole("button", { name: /Ran 1 command/ })).toBeDefined()
+    expect(screen.getByRole("button", { name: /Ran commands/ })).toBeDefined()
     expect(screen.queryByText("pnpm verify")).toBeNull()
     expect(screen.queryByText(/^Running/u)).toBeNull()
   })
@@ -361,7 +360,7 @@ describe("ActivityGroup — a command the agent described", () => {
     render(<ActivityGroup group={[call, ok]} />)
     expect(screen.queryByText(heredoc)).toBeNull()
 
-    fireEvent.click(screen.getByRole("button", { name: /Ran 1 command/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Wrote" }))
 
     expect(screen.getByText("Write the tag component")).toBeDefined()
     expect(screen.getByText(heredoc)).toBeDefined()
@@ -395,7 +394,7 @@ describe("ActivityGroup — an MCP call", () => {
   it("opens onto its mark and server/tool, and never the provider's name", () => {
     render(<ActivityGroup group={[read("a.ts"), ok, mcp("linear/get_issue"), ok]} />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Read 1 file, and called 1 time" }))
+    fireEvent.click(screen.getByRole("button", { name: "Read, and called tools" }))
 
     expect(screen.getByLabelText("MCP tool")).toBeDefined()
     expect(screen.getByText("linear/get_issue")).toBeDefined()
@@ -436,7 +435,7 @@ describe("ActivityGroup, with hooks", () => {
 
   it("marks the call's line with one mark for both hooks, and the stray on a line of its own", () => {
     render(<ActivityGroup group={group} />)
-    fireEvent.click(screen.getByRole("button", { name: /Ran 1 command/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Deleted/ }))
 
     expect(screen.getByRole("button", { name: "2 hooks, blocked" })).toBeDefined()
     expect(screen.getByText("postToolUse hook")).toBeDefined()
@@ -445,7 +444,7 @@ describe("ActivityGroup, with hooks", () => {
 
   it("opens what each hook said on a press", () => {
     render(<ActivityGroup group={group} />)
-    fireEvent.click(screen.getByRole("button", { name: /Ran 1 command/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Deleted/ }))
     fireEvent.click(screen.getByRole("button", { name: "2 hooks, blocked" }))
 
     const card = screen.getByRole("dialog", { name: "2 hooks, blocked" })

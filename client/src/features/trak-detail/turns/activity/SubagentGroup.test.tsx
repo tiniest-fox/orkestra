@@ -202,7 +202,7 @@ describe("SubagentGroup — what is inside it", () => {
     render(<SubagentGroup delegation={working} />)
 
     // A run of one activity is one row inside a delegation too.
-    fireEvent.click(screen.getByRole("button", { name: "Ran 2 commands" }))
+    fireEvent.click(screen.getByRole("button", { name: "Listed, and ran commands" }))
     expect(screen.getByText("ls")).toBeDefined()
   })
 

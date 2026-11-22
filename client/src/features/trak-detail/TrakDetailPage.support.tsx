@@ -113,8 +113,8 @@ export const detail = (over: Partial<TrakDetailDto> = {}): TrakDetailDto =>
     ],
     ...over,
   })
-export const PLANNED = "Read 1 file"
-export const BUILT = "Edited 1 file"
+export const PLANNED = "Read"
+export const BUILT = "Edited"
 
 /**
  * Open a folded call, so the path it names is on screen.

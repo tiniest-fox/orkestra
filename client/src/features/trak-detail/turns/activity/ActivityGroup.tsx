@@ -2,9 +2,8 @@
  * A stretch of calling, as one row that opens into the calls it stands for.
  *
  * A step that read forty files is unreadable as forty rows and useless as "40 tool calls"
- * — so the row says `Read 40 files` and the paths are one click away. One phrase rather
- * than a name and a count beside each other: `Read ×40` *and* `40 files` says the same
- * thing twice and leaves the reader deciding which half is the row.
+ * — so the row says `Read` and the paths are one click away. The row carries no count: a
+ * count of calls is wrong for one `cat a b c`, and `toolPhrase` carries why.
  *
  * **Only a failure is marked.** A tick on every successful call is a column saying "as
  * expected" twenty times, and what a reader scans that column for is the one row that did
@@ -13,16 +12,16 @@
  *
  * **A call draws the same way whether there are forty of them or one.** A lone call used to
  * put its name and its path straight on the row, which made the log two kinds of row that
- * had to be told apart before either could be read — and the count is what says which. So
- * one call is `Read 1 file` and opens into its path, exactly as four do.
+ * had to be told apart before either could be read. So one call is `Read` and opens into
+ * its path, exactly as four do.
  *
  * **A run holds whatever the agent did between two pauses, so the row can name more than
- * one kind**: `Read 4 files, and ran 1 command`. `phraseForRun` writes the sentence and
+ * one verb**: `Read, searched, and edited`. `phraseForRun` writes the sentence and
  * `groupRuns` decides where it starts and stops.
  *
- * **Opened, a run labels each call when the head has not already named it.** `Read 4
- * files` over four paths would be `Read` said four more times; a run holding two tools,
- * or one whose phrase is `Called 3 times`, says nothing about which line is which.
+ * **Opened, a run labels each call when the head has not already named it.** `Read` over
+ * four paths would be `Read` said four more times; a run holding two tools, or one whose
+ * phrase is `Called tools`, says nothing about which line is which.
  * `labelsCalls` owns that question and carries why it is asked of names rather than kinds.
  *
  * **An MCP call opens to its mark and `server/tool`, never the provider's name for it**, so
@@ -33,8 +32,8 @@
  * and a running line both say what it is for; the command is what opening it is for.
  *
  * **A call still running stands out of the run, on a line of its own under it**, and the
- * row counts only the calls that have come back — so `Read 2 files` over a running
- * `pnpm verify` becomes `Read 2 files, and ran 1 command` when the result lands and the
+ * row names only the calls that have come back — so `Read` over a running
+ * `pnpm verify` becomes `Read, and ran commands` when the result lands and the
  * line folds into it. A run whose every call is still open draws no row at all, only the
  * lines. `RunningCall` carries the line, its mark and its clock.
  *
@@ -179,7 +178,6 @@ const ActivityGroup = ({
   const running = live ? unansweredCalls(group) : []
   const calls = all.filter((call) => !running.includes(call))
 
-  const kinds = calls.map((call) => call.kind)
   const labelled = labelsCalls(calls)
 
   return (
@@ -200,7 +198,7 @@ const ActivityGroup = ({
               }
               trailing={failed}
             >
-              <span className="font-mono text-xs text-fg">{phraseForRun(kinds)}</span>
+              <span className="font-mono text-xs text-fg">{phraseForRun(calls)}</span>
             </Line>
           </button>
           {/* The calls it stands for, on a rule that starts under the caret — so they read as

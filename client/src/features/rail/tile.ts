@@ -102,15 +102,67 @@ export const tileLabel = (project: RailProjectDto): string => {
 }
 
 /**
- * A found icon's form: a `tile` brings its own opaque ground, a `glyph` is a shape on a
- * transparent one.
+ * An opaque icon whose corners are rounded at no more than a quarter of its side, with the
+ * color of the ground just inside its top-left corner as a CSS color.
  */
-export type IconForm = "tile" | "glyph"
+export interface RoundedTile {
+  readonly ground: string
+}
 
 /**
- * The form, from the alpha of the icon's four corner pixels: a tile only when every one is
- * fully opaque. A corner a rounded tile anti-aliases reads as a glyph, which draws it set
- * in on the plate rather than clipped — the safer of the two mistakes.
+ * A found icon's form: a `tile` brings its own opaque ground to every edge and corner, a
+ * `RoundedTile` brings one everywhere but its rounded corners, and a `glyph` is a shape on a
+ * transparent ground.
  */
-export const formOfCorners = (alphas: readonly number[]): IconForm =>
-  alphas.length === 4 && alphas.every((alpha) => alpha === 255) ? "tile" : "glyph"
+export type IconForm = "tile" | RoundedTile | "glyph"
+
+/** The roundest corner a rounded tile may have, as a share of its side. */
+const ROUNDEST = 0.25
+
+/**
+ * Whether the pixel whose top-left is (`x`, `y`) lies in what a corner of radius
+ * `ROUNDEST × side` cuts away — with a pixel's grace inward, so the anti-aliased rim of a
+ * corner rounded at exactly a quarter still counts as cut away.
+ */
+const cutAway = (x: number, y: number, side: number): boolean => {
+  const radius = side * ROUNDEST
+  // Folded into the top-left corner, so one test covers all four.
+  const across = Math.min(x + 0.5, side - x - 0.5)
+  const down = Math.min(y + 0.5, side - y - 0.5)
+  if (across >= radius || down >= radius) return false
+  return Math.hypot(radius - across, radius - down) > radius - 1
+}
+
+/**
+ * The ground of a rounded tile: the first fully opaque pixel along the top-left diagonal,
+ * then one further in, past the anti-aliased rim.
+ */
+const groundOf = (pixels: Uint8ClampedArray, side: number): string => {
+  let at = 0
+  while (at < side - 1 && (pixels[(at * side + at) * 4 + 3] ?? 0) < 255) at += 1
+  const step = Math.min(at + 1, side - 1)
+  const base = (step * side + step) * 4
+  const [red, green, blue] = [pixels[base] ?? 0, pixels[base + 1] ?? 0, pixels[base + 2] ?? 0]
+  return `rgb(${String(red)} ${String(green)} ${String(blue)})`
+}
+
+/**
+ * The form, from the RGBA pixels of the icon drawn on a `side`-square canvas. A tile when
+ * every corner pixel is fully opaque; a rounded tile when every pixel that is not fully
+ * opaque lies in what a quarter-side corner would cut away; a glyph otherwise. A circle,
+ * or a square rounded past a quarter, leaves pixels open outside those corners and so
+ * reads as a glyph, which draws it set in on the plate — the safer of the two mistakes.
+ */
+export const formOfPixels = (pixels: Uint8ClampedArray, side: number): IconForm => {
+  if (side < 1 || pixels.length !== side * side * 4) return "glyph"
+  const alphaAt = (x: number, y: number): number => pixels[(y * side + x) * 4 + 3] ?? 0
+  const last = side - 1
+  if (
+    [alphaAt(0, 0), alphaAt(last, 0), alphaAt(0, last), alphaAt(last, last)].every((a) => a === 255)
+  )
+    return "tile"
+  for (let y = 0; y < side; y += 1)
+    for (let x = 0; x < side; x += 1)
+      if (alphaAt(x, y) < 255 && !cutAway(x, y, side)) return "glyph"
+  return { ground: groundOf(pixels, side) }
+}

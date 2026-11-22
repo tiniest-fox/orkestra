@@ -7,8 +7,11 @@ import { useIconForm } from "./useIconForm"
  * A project's picture: the icon the shell found in its checkout, else two letters on a
  * colour taken from its name. Fills the box it is put in, which the tile sizes.
  *
- * **A found icon is drawn by its form**, which `useIconForm` reads off its corners. A
- * tile brings its own ground and goes edge to edge, in every place. A glyph is a shape on
+ * **A found icon is drawn by its form**, which `useIconForm` reads off its pixels. A
+ * tile brings its own ground and goes edge to edge, in every place. A rounded tile goes edge
+ * to edge too, over its own ground color, which fills the corners its rounding leaves open
+ * wherever the caller's clip is squarer than the icon — not enlarged, so nothing of the
+ * icon is cut off. A glyph is a shape on
  * a transparent ground, so it sits on the `surface-2` plate, set in 18% of the picture's
  * side on each edge — the rail's desktop tile included, so beside the lettered squares it
  * still reads as a tile with something on it. Percentage padding scales with the box, from
@@ -45,6 +48,12 @@ const ProjectPicture = ({
       </span>
     )
   if (form === "tile") return <img src={project.icon} alt="" className="size-full object-cover" />
+  if (typeof form === "object")
+    return (
+      <span className="flex size-full" style={{ background: form.ground }}>
+        <img src={project.icon} alt="" className="size-full object-cover" />
+      </span>
+    )
   const padding = form === "glyph" ? "p-[18%]" : inset ? "p-1" : ""
   return (
     <span className={`flex size-full items-center justify-center bg-surface-2 ${padding}`}>

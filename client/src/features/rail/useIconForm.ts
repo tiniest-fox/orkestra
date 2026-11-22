@@ -4,7 +4,7 @@
  * **In the client, not the host.** The host would need a PNG decoder to read a pixel, and
  * could not judge an SVG at all: what an SVG paints is only known once something renders
  * it. Here the icon is already a `data:` URL, so it is drawn onto a small canvas and its
- * four corners read back — `formOfCorners` decides from those.
+ * pixels read back — `formOfPixels` decides from those.
  *
  * **`undefined` until it is known, and wherever it cannot be.** The picture draws today's
  * treatment for that, so nothing jumps while the read is in flight and nothing breaks
@@ -17,14 +17,17 @@
  */
 
 import { useEffect, useState } from "react"
-import { formOfCorners, type IconForm } from "./tile"
+import { formOfPixels, type IconForm } from "./tile"
 
-/** The canvas side. Small, because only the corners are read. */
-const SIDE = 16
+/**
+ * The canvas side. Large enough that a quarter-side corner is 16 pixels across, so a
+ * corner rounded at 22% and one rounded at 30% land on different pixels.
+ */
+const SIDE = 64
 
 const known = new Map<string, IconForm>()
 
-/** Draws `src` and reads its corners, or resolves `undefined` where it cannot. */
+/** Draws `src` and reads its form, or resolves `undefined` where it cannot. */
 export const readIconForm = (src: string): Promise<IconForm | undefined> =>
   new Promise((resolve) => {
     if (typeof document === "undefined") {
@@ -56,11 +59,7 @@ export const readIconForm = (src: string): Promise<IconForm | undefined> =>
         resolve(undefined)
         return
       }
-      const last = SIDE - 1
-      const alphaAt = (x: number, y: number): number => data[(y * SIDE + x) * 4 + 3] ?? 0
-      resolve(
-        formOfCorners([alphaAt(0, 0), alphaAt(last, 0), alphaAt(0, last), alphaAt(last, last)]),
-      )
+      resolve(formOfPixels(data, SIDE))
     })
     image.src = src
   })

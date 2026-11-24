@@ -109,7 +109,7 @@ export interface Connections {
   /**
    * The server a session starts for `connection`, or why it has none: the engine holds no
    * key from a host, or the host will not hand it a token for `connection`. Asked at every
-   * session start, so a binding made in Host settings reaches the next turn.
+   * session start, so a binding made in Settings reaches the next turn.
    */
   readonly server: (
     connection: string,

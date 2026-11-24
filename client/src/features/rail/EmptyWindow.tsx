@@ -54,12 +54,12 @@ const EmptyWindow = ({
         {recents.data.length === 0 ? (
           <p className="text-base text-fg-muted">
             <span className="block font-semibold text-fg">
-              {host ? "This host has no projects yet" : "No projects in this window"}
+              {host ? "No projects yet" : "No projects in this window"}
             </span>
             {host
               ? onSearch === undefined
-                ? "An admin of this host adds one from GitHub."
-                : "Add one from your GitHub repositories and the host clones it here."
+                ? "An admin adds one from GitHub."
+                : "Add one from your GitHub repositories and Orkestra clones it here."
               : "Open a folder with a repository in it and Orkestra will keep it here."}
           </p>
         ) : (

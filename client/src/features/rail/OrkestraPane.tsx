@@ -70,7 +70,7 @@ const OrkestraPane = ({
               </Button>
             ) : (
               <Button variant="quiet" icon={X} onClick={() => onRemove(project.path)}>
-                Remove from host…
+                Remove project…
               </Button>
             )}
           </>
@@ -85,8 +85,8 @@ const OrkestraPane = ({
       }
     >
       {admin
-        ? `Orkestra needs one to start. Start writes an empty, untracked .orkestra/ folder into the checkout. ${added ? "Cancel deletes the clone." : "Remove takes it off this host."}`
-        : "Orkestra needs one to start. An admin of this host can start it with an empty .orkestra/ folder."}
+        ? `Orkestra needs one to start. Start writes an empty, untracked .orkestra/ folder into the checkout. ${added ? "Cancel deletes the clone." : "Remove takes it off this list."}`
+        : "Orkestra needs one to start. An admin can start it with an empty .orkestra/ folder."}
     </EmptyState>
   )
 }

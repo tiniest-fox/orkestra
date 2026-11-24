@@ -85,7 +85,7 @@ const Pane = ({
         project={project}
         onRetry={onAsk === undefined ? presses.retry : undefined}
         onRemove={host === undefined ? presses.remove : admin ? onAsk : undefined}
-        removeLabel={onAsk === undefined ? "Remove from window" : "Remove from host…"}
+        removeLabel={onAsk === undefined ? "Remove from window" : "Remove project…"}
       />
     )
   // A project the page frames itself draws its frame over this box, and nothing under it.

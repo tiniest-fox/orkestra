@@ -188,7 +188,7 @@ export const queryKeys = {
    */
   hostRepos: (team: string | undefined) => ["host-repos", team ?? ""] as const,
   /**
-   * A host's tokens, its named secrets and each project's own — what Host settings draws.
+   * A host's tokens, its named secrets and each project's own — what Settings draws.
    * Asked while it is open, and polled then, since
    * `pnpm host secrets` can change it from a terminal; a save invalidates it.
    */
@@ -222,7 +222,7 @@ export const queryKeys = {
    */
   hostCallers: (project: string) => ["host-callers", project] as const,
   /**
-   * A host's MCP sign-ins and its callback address: the host's own for Host settings, `""`,
+   * A host's MCP sign-ins and its callback address: the host's own for Settings, `""`,
    * or one project's — its own and the host's — for its Project settings. Asked while either
    * is open, and polled then, since a refresh the provider refuses turns one to
    * `needs-sign-in`.
@@ -235,13 +235,13 @@ export const queryKeys = {
    */
   hostBindings: (project: string) => ["host-bindings", project] as const,
   /**
-   * Every team on a host, its members and each App installation's team — Host settings'
+   * Every team on a host, its members and each App installation's team — Settings'
    * Teams group, a host admin's. Asked and polled while the pane is open; a create or an
    * assignment invalidates it.
    */
   hostTeams: ["host-teams"] as const,
   /**
-   * One team's settings — its members, named secrets and installations — what Team settings
+   * One team's settings — its members, named secrets and installations — what its settings pane
    * draws. Asked and polled while that pane is open; a member or secret press invalidates it.
    */
   hostTeamSettings: (team: string) => ["host-team-settings", team] as const,

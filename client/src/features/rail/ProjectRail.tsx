@@ -85,8 +85,8 @@ const ProjectRail = ({
           )}
           <button
             type="button"
-            title="Host settings"
-            aria-label="Host settings"
+            title="Settings"
+            aria-label="Settings"
             aria-current={settings.open ? "true" : undefined}
             onClick={settings.onOpen}
             className={`flex size-7 items-center justify-center rounded-control hover:bg-hover-bare hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${settings.open ? "bg-hover-bare text-fg" : "text-fg-muted"}`}

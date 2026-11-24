@@ -127,13 +127,13 @@ const Unread = ({ error }: { readonly error: Error | null }): ReactNode =>
  * same pane, from its tile's menu.
  *
  * **A host's member is offered only what a member may do** — the slot's role: no Add, no
- * Remove, no Start and no Project settings, and in Host settings only their own credential
+ * Remove, no Start and no Project settings, and in Settings only their own credential
  * and devices.
  *
  * **On a host with two or more teams the rail and the sheet group projects by team**
  * (the slot's `tiles` and `sections`), each team's header the way into its menu: Expand or Collapse, and for an
- * admin of the team, Add to it and its Team settings, which open in the pane in Host
- * settings' place. A team's admin removes and starts its projects and opens their Project
+ * admin of the team, Add to it and its settings, which open in the pane in Settings'
+ * place. A team's admin removes and starts its projects and opens their Project
  * settings as a host admin does. Which groups are folded is this device's own.
  *
  * The host's overlays draw after the phone's sheet, so a tile's menu opened from it draws over it.

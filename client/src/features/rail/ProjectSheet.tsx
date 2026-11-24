@@ -120,7 +120,7 @@ const ProjectSheet = ({
             <span className="flex size-8 shrink-0 items-center justify-center">
               <Settings size={16} aria-hidden />
             </span>
-            Host settings
+            Settings
           </button>
         )}
       </div>

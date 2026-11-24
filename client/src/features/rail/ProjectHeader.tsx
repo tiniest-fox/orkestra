@@ -14,7 +14,7 @@ import { tileLabel } from "./tile"
  * person, and the frame's search on the right, over the frame, whose own bar stands down.
  *
  * The left side is the open project's picture, greyed in its ring while it clones; the
- * gear and *Host settings* or *Team settings* while those are open; the mark and *Projects* before anything
+ * gear and *Settings* or a team's settings while those are open; the mark and *Projects* before anything
  * is chosen. Every one of them is the press that opens the sheet.
  *
  * Search asks the open project's frame to open its palette, so it is disabled wherever

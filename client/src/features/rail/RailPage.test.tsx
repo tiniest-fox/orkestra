@@ -226,7 +226,7 @@ describe("RailPage, under the public slots", () => {
 
     expect(await screen.findByText(NO_RAIL)).toBeDefined()
     expect(asked).toEqual([])
-    expect(screen.queryByRole("button", { name: "Host settings" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull()
     expect(screen.queryByRole("heading", { name: /settings/iu })).toBeNull()
   })
 })

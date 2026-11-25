@@ -164,6 +164,18 @@ export const TEMPLATE_NAMES = [
   // What a call answers when an engine restart cut it: the sandbox's relay resent it to the
   // engine that came back, which runs nothing for it.
   "trak/lost-to-restart",
+  // Not for any session here: one description per tool on Orkestra Cloud's own MCP server,
+  // which a person's agent reaches from outside. Cloud reads them through
+  // `app/outside-tools.ts`; they are listed here so a missing file still fails a boot.
+  "outside/tool-list_projects",
+  "outside/tool-list_traks",
+  "outside/tool-read_trak",
+  "outside/tool-read_record",
+  "outside/tool-start_trak",
+  "outside/tool-answer_trak",
+  "outside/tool-approve_trak",
+  "outside/tool-reject_trak",
+  "outside/tool-retry_trak",
 ] as const
 
 export type TemplateName = (typeof TEMPLATE_NAMES)[number]

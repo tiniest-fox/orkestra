@@ -4332,21 +4332,6 @@ const confirmVersion = (proc: ProcessShape, cwd: string): Effect.Effect<void, Gi
   })
 
 /**
- * The cache checkout at `cache` for the repository at `startDir`, made or brought up to
- * `origin` as `GitCliLayer` brings it, and its root. For a reader built before that layer —
- * the library, which the layers beneath `Vcs` are built over.
- */
-export const preparedCache = (
-  proc: ProcessShape,
-  startDir: string,
-  cache: string,
-): Effect.Effect<string, GitFailed> =>
-  Effect.flatMap(
-    git(proc, startDir, "find repository", ["rev-parse", "--show-toplevel"]),
-    (started) => cacheCheckout(proc, started, cache),
-  )
-
-/**
  * The commit `origin`'s default branch names in `repoRoot`, as last fetched — or `undefined`
  * where `origin` names no default branch, or this repository holds no copy of it.
  */

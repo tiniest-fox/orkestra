@@ -419,9 +419,9 @@ export const engineLayers = (cwd: string, options: EngineOptions = {}) => {
   const locks = Layer.effect(Locks, Locks).pipe(Layer.provide(stores))
   const shared = sharedOf(stores)
   const store = publishingStore(stores)
-  // Over the library, which reads `.orkestra/` again after each call that can move the default
-  // branch — and is built first, so its boot fetch of the cache checkout is never run beside
-  // this one's.
+  // Over the library, which reads `.orkestra/` again once this layer's boot has made or fetched
+  // the cache checkout, and after each call that can move the default branch. The library never
+  // fetches: `proc` is built over it, and only `proc` carries the credential a hosted fetch needs.
   const vcs = refreshingVcs(GitCliLayer(cwd, checkouts)).pipe(
     Layer.provide(Layer.mergeAll(proc, sandboxes, preparation, lib)),
   )

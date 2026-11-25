@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest"
 import { toWeb } from "@effect/platform/HttpServerResponse"
 import { HealthDto } from "@orkestra/shared/dto/host-engine"
 import { NodeProcessLayer } from "../../src/agent/adapters/process-node.js"
+import { Process } from "../../src/agent/ports/process.js"
 import { Lib } from "../../src/library/ports/library.js"
 import { HostGit, HostGitLayer } from "../../src/app/host-git.js"
 import { SHIPPED_AGENTS, TEMPLATES } from "../../src/app/packaged.js"
@@ -75,7 +76,7 @@ const pushed = (
  * A project whose first commit holds a setup script saying `v1`, pushed to an origin of its
  * own, and the place its cache checkout goes. The start directory is never pulled again.
  */
-const project = () => {
+const project = (): Project => {
   const start = mkdtempSync(join(tmpdir(), "orkestra-committed-"))
   git(start, "init", "--quiet", "--initial-branch=main")
   git(start, "config", "user.email", "test@example.com")
@@ -87,16 +88,68 @@ const project = () => {
   git(start, "commit", "--quiet", "-m", "initial")
   const origin = addOrigin(start)
   const cache = join(mkdtempSync(join(tmpdir(), "orkestra-cache-")), "cache")
-  return { start, elsewhere: origin.elsewhere, cache }
+  return { start, elsewhere: origin.elsewhere, cache, credential: {} }
 }
 
-type Project = ReturnType<typeof project>
+/**
+ * The same, but `origin` is a forge's address git can reach only with what the Process the
+ * seams provide adds to each spawn — as Orkestra Cloud's reaches GitHub only with its token.
+ */
+const forgeProject = (): Project => {
+  const p = project()
+  const real = git(p.start, "remote", "get-url", "origin")
+  const forge = "https://forge.invalid/project.git"
+  git(p.start, "remote", "set-url", "origin", forge)
+  return {
+    ...p,
+    credential: {
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: `url.${real}.insteadOf`,
+      GIT_CONFIG_VALUE_0: forge,
+    },
+  }
+}
 
-/** What the engine's log took, by line, and how many reads the runner reader was asked for. */
+interface Project {
+  readonly start: string
+  readonly elsewhere: string
+  readonly cache: string
+  readonly credential: Readonly<Record<string, string>>
+}
+
+/**
+ * What the engine's log took, by line, how many reads the runner reader was asked for, and
+ * every git command the Process the seams provide was handed, as its arguments joined.
+ */
 interface Watched {
   readonly lines: string[]
   reads: number
+  readonly gits: string[]
 }
+
+/**
+ * The Process the seams provide, as a hosted engine's is built: over the library, whose
+ * runner files it reads. The node layer beneath, every git command it spawns kept in `watched`,
+ * and each handed `credential` — what a hosted engine's adds to reach its forge.
+ */
+const seamsProcess = (watched: Watched, credential: Readonly<Record<string, string>> = {}) =>
+  Layer.effect(
+    Process,
+    Effect.gen(function* () {
+      yield* Lib
+      const inner = yield* Process
+      return {
+        ...inner,
+        spawn: (spec) =>
+          Effect.zipRight(
+            Effect.sync(() => {
+              if (spec.command === "git") watched.gits.push(spec.args.join(" "))
+            }),
+            inner.spawn({ ...spec, env: { ...spec.env, ...credential } }),
+          ),
+      }
+    }),
+  ).pipe(Layer.provide(NodeProcessLayer))
 
 /** The layers `engineLayers` wires for the library and git, over `p`'s cache checkout. */
 const engineOver = (p: Project, watched: Watched) => {
@@ -111,8 +164,9 @@ const engineOver = (p: Project, watched: Watched) => {
       }),
     p.cache,
   )
+  const proc = seamsProcess(watched, p.credential).pipe(Layer.provide(files))
   const vcs = refreshingVcs(GitCliLayer(p.start, p.cache)).pipe(
-    Layer.provide(Layer.merge(NodeProcessLayer, files)),
+    Layer.provide(Layer.merge(proc, files)),
   )
   return Layer.mergeAll(files, vcs, HostGitLayer.pipe(Layer.provide(vcs)))
 }
@@ -137,7 +191,7 @@ const booted = <A, E>(
     Effect.runPromise,
   )
 
-const watching = (): Watched => ({ lines: [], reads: 0 })
+const watching = (): Watched => ({ lines: [], reads: 0, gits: [] })
 
 /** What the next unit of work would run as its setup script: the held library's, run. */
 const setupRun = withProjectFiles(
@@ -226,6 +280,24 @@ describe("the engine's .orkestra/ under an external store", () => {
     expect(git(p.start, "show", `HEAD:${SETUP}`)).toContain("v1")
     expect(await booted(p, watching(), setupRun)).toBe("origin")
   })
+
+  it("clones and fetches the cache checkout at boot through the Process the seams provide", async () => {
+    const p = forgeProject()
+    const first = watching()
+    await booted(p, first, Effect.void)
+    expect(first.gits.filter((g) => g.startsWith("clone"))).toHaveLength(1)
+    const tip = pushed(p.elsewhere, { [SETUP]: setupSaying("fetched") }, "move on")
+    const second = watching()
+    const after = await booted(
+      p,
+      second,
+      Effect.gen(function* () {
+        return { setup: yield* setupRun, served: yield* (yield* ProjectFiles).served }
+      }),
+    )
+    expect(second.gits).toContain("fetch --quiet origin")
+    expect(after).toEqual({ setup: "fetched", served: { commit: tip } })
+  })
 })
 
 describe("a default branch whose .orkestra/ will not load", () => {
@@ -262,7 +334,7 @@ describe("a default branch whose .orkestra/ will not load", () => {
     )
   })
 
-  it("boots on the shipped agents alone over a default branch that will not load, and reports why", async () => {
+  it("keeps the start directory's files over a default branch that will not load at the first boot, and reports why", async () => {
     const p = project()
     const bad = pushed(p.elsewhere, { ".orkestra/agents/broken.md": BROKEN }, "break it")
     const watched = watching()
@@ -278,7 +350,9 @@ describe("a default branch whose .orkestra/ will not load", () => {
         }
       }),
     )
-    expect(seen.setup).toBeUndefined()
+    // The boot read the start directory, for there was no cache checkout yet; the read of
+    // origin's commit once the git layer had made one was refused, and the read held stays.
+    expect(seen.setup?.path).toBe(join(p.start, SETUP))
     expect(seen.agents).toContain("build")
     expect(seen.config?.commit).toBeUndefined()
     expect(seen.config?.refused).toMatchObject({ commit: bad })

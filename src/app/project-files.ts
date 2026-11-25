@@ -8,7 +8,15 @@
 // is read again after every git call that can move that branch (`refreshingVcs`), and the
 // read is of the committed tree rather than the cache's working tree, which nothing moves
 // either where there is no runner.
+//
+// **This layer never fetches.** Bringing the cache checkout up to `origin` needs the
+// credential only the Process the seams provide carries, and that Process is built over this
+// layer — a hosted one reads the runner files it provides. So the boot reads the cache
+// checkout as it stands, with local git alone, or the start directory where there is no cache
+// checkout yet; `GitCliLayer`, built over that Process, makes or fetches the cache checkout, and
+// `refreshingVcs` reads again as soon as it has.
 
+import { existsSync } from "node:fs"
 import { Clock, Effect, Layer, Ref } from "effect"
 import { Lib } from "../library/ports/library.js"
 import type { Library } from "../library/types/library.js"
@@ -18,7 +26,7 @@ import { loadTemplates } from "../prompts/adapters/builtin.js"
 import { Prompts, type TemplateMissing } from "../prompts/ports/prompts.js"
 import { LoadFailed } from "../library/types/errors.js"
 import { makeNodeProcess } from "../agent/adapters/process-node.js"
-import { committedFiles, defaultBranchTip, preparedCache } from "../vcs/adapters/git-cli.js"
+import { committedFiles, defaultBranchTip } from "../vcs/adapters/git-cli.js"
 import type { GitFailed } from "../vcs/types/errors.js"
 import type { CommitSha } from "../vcs/types/worktree.js"
 import { NO_RUNNER_FILES, type RunnerFiles, Runners } from "../vcs/ports/runners.js"
@@ -102,20 +110,20 @@ interface Source {
   readonly read: (commit: CommitSha | undefined) => Effect.Effect<Held, GitFailed | Unloaded>
 }
 
-const committedSource = (reading: Reading, project: string, cache: string) =>
-  Effect.map(
-    preparedCache(makeNodeProcess, project, cache),
-    (repo): Source => ({
-      tip: defaultBranchTip(makeNodeProcess, repo),
-      read: (commit) =>
-        Effect.flatMap(
-          committedFiles(makeNodeProcess, repo, commit, [".orkestra", ...SKILL_DIRS]),
-          // Served as the project's, so `deploy.sh` and a goal's composer run where they
-          // always have rather than in the copy.
-          (dir) => readAt(reading, dir, project, commit),
-        ),
-    }),
-  )
+/**
+ * Reads of the cache checkout at `cache`, with local git alone: `makeNodeProcess` carries no
+ * credential, and nothing here asks `origin` for anything.
+ */
+const committedSource = (reading: Reading, project: string, cache: string): Source => ({
+  tip: defaultBranchTip(makeNodeProcess, cache),
+  read: (commit) =>
+    Effect.flatMap(
+      committedFiles(makeNodeProcess, cache, commit, [".orkestra", ...SKILL_DIRS]),
+      // Served as the project's, so `deploy.sh` and a goal's composer run where they
+      // always have rather than in the copy.
+      (dir) => readAt(reading, dir, project, commit),
+    ),
+})
 
 /**
  * `Lib` and `Prompts` as the boot read them, and `ProjectFiles` holding the pair a reload
@@ -128,7 +136,9 @@ const committedSource = (reading: Reading, project: string, cache: string) =>
  *
  * With `cache`, the engine's store is external and `cache` is its cache checkout: every read
  * is of the commit `origin`'s default branch names there, and a default branch with no
- * `.orkestra/` reads as an empty one. **A boot whose commit will not load does not fail**:
+ * `.orkestra/` reads as an empty one. The boot reads the cache checkout as it was last fetched,
+ * or the start directory where there is none yet, and `refreshingVcs` reads again once
+ * `GitCliLayer` has fetched. **A boot whose commit will not load does not fail**:
  * only another push can fix it, so the engine boots on an empty `.orkestra/` — the shipped
  * agents alone — and reports the refusal on `ProjectFiles.served`. Git failing does fail it,
  * as it fails `GitCliLayer`.
@@ -150,8 +160,14 @@ export const ProjectFilesLayer = (
         const boot = yield* readAt(reading, cwd, undefined, undefined)
         return yield* holding(boot, readAt(reading, cwd, undefined, undefined))
       }
-      const source = yield* Effect.mapError(committedSource(reading, cwd, cache), unread(cache))
+      const source = committedSource(reading, cwd, cache)
       const refused = yield* Ref.make<RefusedConfig | undefined>(undefined)
+      if (!existsSync(cache)) {
+        return yield* holding(yield* readAt(reading, cwd, undefined, undefined), {
+          source,
+          refused,
+        })
+      }
       const boot = yield* Effect.gen(function* () {
         const tip = yield* source.tip
         const read = yield* Effect.either(source.read(tip))
@@ -262,7 +278,8 @@ const holding = (boot: Held, from: Effect.Effect<Held, Unloaded> | Committed) =>
   })
 
 /**
- * `vcs`, with `ProjectFiles.refresh` after each call that can move `origin`'s default branch
+ * `vcs`, with `ProjectFiles.refresh` once it is built — its boot made or fetched the cache
+ * checkout, through the Process the seams provide — and after each call that can move `origin`'s default branch
  * in the repository it works in: a fetch, a pull or a reconcile, a push, a merge — which,
  * under an external store, lands on `origin` and fetches — a branch moved onto its base,
  * a goal branch cut, and a trak's work brought in, which under an external store pushes
@@ -277,6 +294,7 @@ export const refreshingVcs = <E, R>(
     Effect.gen(function* () {
       const inner = yield* Vcs
       const { refresh } = yield* ProjectFiles
+      yield* refresh
       const then =
         <A extends readonly unknown[], B, F>(call: (...args: A) => Effect.Effect<B, F>) =>
         (...args: A) =>

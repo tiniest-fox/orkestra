@@ -172,7 +172,7 @@ const refuse = (
 ) =>
   Effect.gen(function* () {
     yield* Effect.logWarning(
-      `.orkestra/ on the default branch at ${commit ?? "no commit"} would not load, so the files held go on serving: ${e.message}`,
+      `.orkestra/ on the default branch at ${commit ?? "no commit"} would not load and is not served: ${e.message}`,
     )
     if (commit === undefined) return
     const at = yield* Clock.currentTimeMillis

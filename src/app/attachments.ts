@@ -263,4 +263,6 @@ export const UploadsLayer = (project: string) =>
   Layer.succeed(Uploads, {
     hold: (ids, trak) => holdUploads(project, ids, trak),
     settle: (trak, worktree) => settle(project, trak, worktree),
+    drop: (trak) =>
+      Effect.promise(() => rm(heldFor(project, trak), { recursive: true, force: true })),
   })

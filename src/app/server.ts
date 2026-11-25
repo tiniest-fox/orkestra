@@ -13,7 +13,9 @@
 //   POST /api/traks/:id/resume      body ResumeRequestDto → advance(id, Restarted{sessionId?})
 //   POST /api/traks/:id/close       no body → archive a finished trak: checkout, branch and
 //                                   forge copy go, and GitHub is asked once what merged
-//   POST /api/traks                  body CreateTrakRequestDto → a new trak, driven
+//   POST /api/traks                  body CreateTrakRequestDto → a new trak, driven. 202
+//                                   once its first event is on the log, so a read by the
+//                                   id finds it; 500 where that append fails, and no trak
 //   POST /api/traks/:id/merge        its branch into the host's, or into its parent's
 //   POST /api/traks/:id/abandon      body AbandonRequestDto → archive a trak that has not
 //                                   finished: the turn in flight is interrupted, then the
@@ -174,7 +176,8 @@
 // request's, so a closed tab, a reload or a navigation no longer interrupts an agent
 // mid-turn. What a caller watches instead is the stream — every append reaches it as a
 // frame, so the state a synchronous response used to carry arrives there, along with
-// everything that happened on the way to it.
+// everything that happened on the way to it. Starting a trak waits for one thing before
+// its 202 — the trak's first event, on the log — so the id it answers with names a trak.
 //
 // The 4xx paths stay synchronous, and that is the split worth seeing: a refusal is a
 // fact about the *request*, decided before anything is forked, so it is still an answer

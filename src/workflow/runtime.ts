@@ -4007,6 +4007,27 @@ export const advance = (id: TrakId, event: Event): Effect.Effect<Trak, RuntimeEr
   appended(id, event, "driving")
 
 /**
+ * `advance`, running `written` once the event is on the log and before anything its
+ * decision owes — for a caller that answers someone who will read the trak at once.
+ *
+ * **The append and `written` run as one**, past any interruption from outside: a drive
+ * stopped between them would leave an event on the log that `written` never told of, and
+ * the caller would answer that the trak was never written.
+ */
+export const advanceTelling = (
+  id: TrakId,
+  event: Event,
+  written: Effect.Effect<void>,
+): Effect.Effect<Trak, RuntimeError, RuntimeDeps> =>
+  Effect.gen(function* () {
+    const { trak, decision } = yield* Effect.uninterruptible(Effect.tap(onLog(id, event), written))
+    return yield* carriedOn(id, trak, decision, "driving")
+  }).pipe(
+    withProjectFiles,
+    Effect.withSpan("advance", { attributes: { trakId: id, event: event._tag } }),
+  )
+
+/**
  * Put one event on the log and run nothing a park would owe — `advance` for a caller
  * that is not driving the trak.
  *

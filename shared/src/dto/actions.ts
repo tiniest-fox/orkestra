@@ -288,9 +288,10 @@ export type CreateTrakRequestDto = Schema.Schema.Type<typeof CreateTrakRequestDt
 /**
  * What starting one answers with, and it is only the id.
  *
- * The trak exists and nothing has happened to it yet: the drive was forked, so any
- * state sent here would be a guess about a turn that has not run. The id is what a
- * caller needs to go and watch.
+ * The trak exists — its first event is on the log, so a read by this id finds it — and
+ * nothing else has happened to it yet: the drive was forked, so any state sent here
+ * would be a guess about a turn that has not run. The id is what a caller needs to go
+ * and watch.
  */
 export const CreatedDto = Schema.Struct({ id: Schema.String })
 export type CreatedDto = Schema.Schema.Type<typeof CreatedDto>

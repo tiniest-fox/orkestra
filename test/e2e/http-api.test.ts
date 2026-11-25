@@ -27,6 +27,7 @@ import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -35,7 +36,19 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServer } from "node:http"
-import { Cause, Effect, Either, Exit, Fiber, Option, Ref, Schedule, Schema } from "effect"
+import {
+  Cause,
+  type Duration,
+  Effect,
+  Either,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  Ref,
+  Schedule,
+  Schema,
+} from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Router from "@effect/platform/HttpRouter"
 import * as ServerRequest from "@effect/platform/HttpServerRequest"
@@ -96,7 +109,10 @@ import { hangsOn, onPrompt, onResume, reply } from "../support/scripted-agent.js
 import { Checks } from "../../src/workflow/ports/checks.js"
 import { GoalStore } from "../../src/workflow/ports/goal-store.js"
 import { type InFlightTurn, Runs } from "../../src/workflow/ports/runs.js"
-import { Store } from "../../src/workflow/ports/store.js"
+import { Store, type StoreShape } from "../../src/workflow/ports/store.js"
+import { Uploads } from "../../src/workflow/ports/uploads.js"
+import { MemoryStoreLayer } from "../../src/workflow/adapters/store-memory.js"
+import { claimUploads, receiveUpload } from "../../src/app/attachments.js"
 import { StoreFailed } from "../../src/workflow/ports/store-errors.js"
 import { Vcs } from "../../src/vcs/ports/vcs.js"
 import type { GitFailed } from "../../src/vcs/types/errors.js"
@@ -1690,7 +1706,84 @@ describe("starting a trak", () => {
         }),
     )
   })
+
+  it("has the trak on the log by the time it answers, however slowly the store writes", async () => {
+    await runFlow(
+      [composer("plan"), stepHangs(1, "plan")],
+      () =>
+        Effect.gen(function* () {
+          const id = yield* started(yield* start({ description: "Add a --json flag" }))
+
+          // Read at once, with nothing waited for: every append takes longer than the
+          // answer did, so a birth written after the answer would be a 404 here.
+          const read = yield* get(`/${id}`)
+          expect(read.status).toBe(200)
+          const detail = yield* detailOf(read)
+          expect(detail.description).toBe("Add a --json flag")
+          expect(detail.log[0]).toMatchObject({ _tag: "TrakCreated" })
+          expect(idsOf(yield* summariesOf(yield* get("")))).toStrictEqual([id])
+        }),
+      undefined,
+      appendsTaking("40 millis"),
+    )
+  })
+
+  it("answers 500 where the birth cannot be written, and leaves nothing under the id", async () => {
+    await runFlow(
+      [],
+      () =>
+        Effect.gen(function* () {
+          const sent = yield* Effect.orDie(
+            receiveUpload("shot.png", "image/png", new Uint8Array([137, 80])),
+          )
+          if (!("id" in sent)) throw new Error(sent.refused)
+
+          const response = yield* start({ description: "d", attachments: [sent.id] })
+          expect(response.status).toBe(500)
+
+          // `FixedIds`' first trak: the one the route minted and could not write.
+          const id = TrakId.make("child-1")
+          expect((yield* get(`/${id}`)).status).toBe(404)
+          expect(yield* summariesOf(yield* get(""))).toStrictEqual([])
+          expect(yield* (yield* Drives).driving(id)).toBe(false)
+          // Nothing held under the id to place in a checkout a later trak of that name
+          // makes, and the upload itself still held, so the same request can be sent again.
+          const checkout = mkdtempSync(join(tmpdir(), "orkestra-unborn-"))
+          yield* Effect.orDie((yield* Uploads).settle(id, checkout))
+          expect(readdirSync(checkout)).toStrictEqual([])
+          expect(yield* claimUploads([sent.id])).toHaveLength(1)
+        }),
+      undefined,
+      appendsFailing,
+    )
+  })
 })
+
+/** The memory store with every append made `delay` late — a slow disk, or a store across a network. */
+const appendsTaking = (delay: Duration.DurationInput): Layer.Layer<Store, StoreFailed> =>
+  Layer.effect(
+    Store,
+    Effect.map(
+      Store,
+      (inner): StoreShape => ({
+        ...inner,
+        append: (id, events, at) =>
+          Effect.andThen(Effect.sleep(delay), inner.append(id, events, at)),
+      }),
+    ),
+  ).pipe(Layer.provide(MemoryStoreLayer))
+
+/** The memory store refusing every append, as a full disk or an unreachable database would. */
+const appendsFailing: Layer.Layer<Store, StoreFailed> = Layer.effect(
+  Store,
+  Effect.map(
+    Store,
+    (inner): StoreShape => ({
+      ...inner,
+      append: () => Effect.fail(new StoreFailed({ reason: "the disk is full" })),
+    }),
+  ),
+).pipe(Layer.provide(MemoryStoreLayer))
 
 /**
  * Starting a trak by naming an agent instead of describing work for the composer.

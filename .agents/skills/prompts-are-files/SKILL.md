@@ -73,7 +73,9 @@ format is written down; the loader and its tests are the only other authority.
 
 **A session's MCP servers are not an `.orkestra/` file.** The host lists them through
 `Connections.servers` at every session start, and an engine no host started lists none;
-the engine never reads `.orkestra/mcp.yaml`. A server left out — an unset secret, a
+the engine never reads `.orkestra/mcp.yaml`. A `${NAME}` in a listed server is filled
+from the engine's own environment only — never from `worktrees/env.sh`, a backup file's
+`secrets:` or a reserved variable. A server left out — an unset secret, a
 sign-in the host will not hand, or a host that could not be asked — costs a `Note` on the
 session's transcript, never the turn.
 

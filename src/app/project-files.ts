@@ -140,8 +140,9 @@ const committedSource = (reading: Reading, project: string, cache: string): Sour
  * or the start directory where there is none yet, and `refreshingVcs` reads again once
  * `GitCliLayer` has fetched. **A boot whose commit will not load does not fail**:
  * only another push can fix it, so the engine boots on an empty `.orkestra/` — the shipped
- * agents alone — and reports the refusal on `ProjectFiles.served`. Git failing does fail it,
- * as it fails `GitCliLayer`.
+ * agents alone — and reports the refusal on `ProjectFiles.served`. Where there was no cache
+ * checkout to boot from, a refused read keeps the start directory's files instead. Git
+ * failing does fail the boot, as it fails `GitCliLayer`.
  *
  * One read at a time, so two presses cannot finish in the opposite order and leave the
  * older read held.

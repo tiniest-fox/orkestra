@@ -17,7 +17,6 @@ import type { CheckoutProcesses, HostedProcess, UnreadableProcess } from "../typ
 import type { SandboxTool } from "../types/tool.js"
 import { type AgentLayer, fieldsSet, readLayer, resolveAgent, shippedLayer } from "./agent-file.js"
 import { parseCheck } from "./check-file.js"
-import { parseMcpFile } from "./mcp-file.js"
 import { parseProcess } from "./process-file.js"
 import { parseTool } from "./tool-file.js"
 import { parseYaml } from "./yaml.js"
@@ -62,8 +61,6 @@ export interface TreeSource {
   readonly deploy: ScriptSource | undefined
   /** `models.yaml` */
   readonly models: string | undefined
-  /** `mcp.yaml` — the MCP servers every session in the project dials. */
-  readonly mcp: string | undefined
   /** `COMPOSITION.md` */
   readonly composition: string | undefined
   /** `GOALS.md` */
@@ -1023,7 +1020,6 @@ export const assembleLibrary = (src: LibrarySource): Either.Either<Assembled, Lo
       tools,
       root: src.root,
       models,
-      mcp: parseMcpFile(".orkestra/mcp.yaml", src.mcp),
       // Trimmed: a file ends with a newline, and the templates already put a
       // blank line after the section — untrimmed, every prose file leaves a
       // widening gap in the rendered prompt.

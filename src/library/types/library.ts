@@ -2,7 +2,6 @@
 
 import type { Agent } from "./agent.js"
 import type { Check } from "./check.js"
-import type { McpFile } from "./mcp.js"
 import type { HostedProcess } from "./process.js"
 import type { SandboxTool } from "./tool.js"
 
@@ -145,12 +144,6 @@ export interface Library {
    */
   readonly root: string
   readonly models: ModelRegistry
-  /**
-   * `.orkestra/mcp.yaml` — the MCP servers every Claude and Codex session in the project
-   * dials beside the engine's own, each secret still named rather than filled: a session
-   * start fills them through `resolveServers`.
-   */
-  readonly mcp: McpFile
   /** `.orkestra/COMPOSITION.md` — how this team wants pipelines sequenced. */
   readonly composition: string
   /**

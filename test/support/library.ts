@@ -172,7 +172,6 @@ export const library = (over: Partial<Library> = {}): Library => ({
   teardown: undefined,
   env: undefined,
   deploy: undefined,
-  mcp: { servers: [], problems: [] },
   root: "/repo",
   agents: fleet(),
   ...over,

@@ -12,7 +12,7 @@
 // its failure. Positional
 // parameters are cleared before it runs, so it does not see its own path as `$1`.
 //
-// An engine here has no host to ask: no `connection:` server is reached, and every spawn runs
+// An engine here has no host to ask: it lists no MCP server, signs in to none, and every spawn runs
 // on what the engine inherited. A host may provide an adapter that wraps this one and asks
 // the host.
 
@@ -106,12 +106,16 @@ const capture = (
     ),
   )
 
-/** What an engine no host started says of a `connection:` server. */
+/** What an engine no host started says of a sign-in. */
 const unhosted = (connection: string) =>
   `the engine was not started by a host, so it holds no key to ask for the \`${connection}\` sign-in`
 
-/** No server and no token for any `connection:` server: there is no host to ask. */
+/**
+ * No server listed, and no server or token for any sign-in: there is no host to ask. A
+ * session dials the engine's own servers and whatever its CLI reads from the checkout.
+ */
 export const NO_CONNECTIONS: Connections = {
+  servers: Effect.succeed(Either.right([])),
   server: (connection) => Effect.succeed(Either.left(unhosted(connection))),
   token: (connection) =>
     Effect.fail(new ConnectionUnavailable({ reason: unhosted(connection), asked: false })),

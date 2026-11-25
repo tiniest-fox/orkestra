@@ -11,7 +11,18 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Cause, Deferred, Effect, Exit, Layer, Queue, Schedule, Schema, Stream } from "effect"
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Either,
+  Exit,
+  Layer,
+  Queue,
+  Schedule,
+  Schema,
+  Stream,
+} from "effect"
 import { describe, expect, it } from "vitest"
 import { toWeb, type HttpServerResponse } from "@effect/platform/HttpServerResponse"
 import { CreatedDto } from "@orkestra/shared/dto/actions"
@@ -37,7 +48,6 @@ import { trakRoutes } from "../../src/app/routes/trak.js"
 import { act, human, idle, logged } from "../support/scenario.js"
 import { library } from "../support/library.js"
 import { crashesOn, hangsOn, onPrompt, onPromptAfter, reply } from "../support/scripted-agent.js"
-import { parseMcpFile } from "../../src/library/logic/mcp-file.js"
 import { Drives, openTrak } from "../../src/app/drive.js"
 import { forgeSweep, sweepMemory } from "../../src/app/forge-sweep.js"
 import { GoalDrives } from "../../src/app/goal-drives.js"
@@ -65,6 +75,8 @@ import {
   replayGoal,
   subgoalSpec,
 } from "../../src/workflow/domain/goal.js"
+import { DeclaredServer } from "../../src/workflow/domain/mcp-servers.js"
+import { hostListing } from "../support/scripted-environment.js"
 import { replayHistory } from "../../src/workflow/domain/replay.js"
 import { GoalId, TrakId, UserId, atRest } from "../../src/workflow/domain/trak.js"
 import { Frame, type Framed } from "../../src/workflow/ports/feed.js"
@@ -1361,27 +1373,23 @@ describe("a goal's scoping round", () => {
 
 const turnEnded = (g: Goal): boolean => g.session !== undefined
 
-/** The lines `mcp.yaml` left on a goal's transcript, as `[position, text]`. */
+/** The lines the host's servers left on a goal's transcript, as `[position, text]`. */
 const mcpNotes = (entries: readonly TranscriptEntry[]) =>
   entries.flatMap((e) =>
     e._tag === "Note" && e.text.startsWith("MCP server") ? [[e.position, e.text]] : [],
   )
 
-describe("a goal's composer in a project that declares MCP servers", () => {
-  const declaring = library({
-    root: lib.root,
-    mcp: parseMcpFile(
-      ".orkestra/mcp.yaml",
-      `servers:
-  linear:
-    url: https://mcp.linear.app/mcp
-    headers:
-      Authorization: "Bearer \${LINEAR_API_KEY}"
-  files:
-    command: files-mcp
-`,
-    ),
-  })
+describe("a goal's composer on an engine whose host lists MCP servers", () => {
+  const listing = hostListing(
+    Either.right([
+      DeclaredServer.Http({
+        name: "linear",
+        url: "https://mcp.linear.app/mcp",
+        headers: { Authorization: "Bearer ${LINEAR_API_KEY}" },
+      }),
+      DeclaredServer.Stdio({ name: "files", command: "files-mcp", args: [], env: {} }),
+    ]),
+  )
 
   it("dials them, and a server with an unset secret is left out with a note", async () => {
     await runFlowWithAgentLog(
@@ -1403,7 +1411,11 @@ describe("a goal's composer in a project that declares MCP servers", () => {
             ],
           ])
         }),
-      declaring,
+      library({ root: lib.root }),
+      undefined,
+      undefined,
+      undefined,
+      listing,
     )
   })
 })

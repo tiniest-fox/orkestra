@@ -92,7 +92,6 @@ const LIB: Library = {
   teardown: undefined,
   env: undefined,
   deploy: undefined,
-  mcp: { servers: [], problems: [] },
   root: "/repo",
   models: {
     allowed: ["opus", "sonnet", "haiku"],

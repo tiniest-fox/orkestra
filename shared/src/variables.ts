@@ -1,8 +1,8 @@
-// The environment variables no secret may be, and so no `${NAME}` in `.orkestra/mcp.yaml`
-// may name. The host's store refuses to keep one; the MCP file refuses to send one, since a
-// reference is filled from the engine's whole environment and would otherwise hand a stdio
-// server or any URL what the host set for the engine itself. One copy, here because a host
-// and `src/library/` may not import each other.
+// The environment variables no secret may be, and so no `${NAME}` in an MCP server the host
+// lists may name. The host's store refuses to keep one; the engine refuses to fill one, since
+// a reference is filled from the engine's whole environment and would otherwise hand a stdio
+// server or any URL what the host set for the engine itself. One copy, here, where the host's
+// store and the engine both reach it.
 
 /**
  * What a child's process or its commits depend on, so a stored value would change what runs

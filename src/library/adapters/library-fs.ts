@@ -285,7 +285,6 @@ const readTree = Effect.fn("readTree")(function* (found: Found) {
         }
       : undefined,
     models: yield* optional("models.yaml"),
-    mcp: yield* optional("mcp.yaml"),
     composition: yield* optional("COMPOSITION.md"),
     goals: yield* optional("GOALS.md"),
     guidance: yield* optional("ORKESTRA.md"),

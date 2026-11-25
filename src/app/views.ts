@@ -31,7 +31,6 @@ import {
 import { McpRequest, type McpResult, type McpView } from "../agent/types/mcp.js"
 import { Provider } from "../agent/ports/provider.js"
 import type { SessionId } from "../agent/types/session.js"
-import type { Library } from "../library/types/library.js"
 import { Vcs } from "../vcs/ports/vcs.js"
 import { replayHistory } from "../workflow/domain/replay.js"
 import type { TrakId } from "../workflow/domain/trak.js"
@@ -42,7 +41,6 @@ import {
 } from "../workflow/ports/environment.js"
 import { Feed } from "../workflow/ports/feed.js"
 import { Ids } from "../workflow/ports/ids.js"
-import { libraryNow } from "../workflow/ports/project-files.js"
 import { Runs } from "../workflow/ports/runs.js"
 import { Store } from "../workflow/ports/store.js"
 
@@ -111,9 +109,10 @@ interface Starting {
   readonly checkout: (id: TrakId) => Effect.Effect<string | undefined>
   readonly capture: (cwd: string) => Effect.Effect<Readonly<Record<string, string>>, PressRefused>
   readonly newSessionId: Effect.Effect<SessionId>
-  /** The library now, whose `mcp.yaml` servers the CLI dials as a turn's would. */
-  readonly library: Effect.Effect<Library>
-  /** The engine's environment, which fills a declared server's secrets and asks the host. */
+  /**
+   * The engine's environment, which lists the host's servers the CLI dials as a turn's
+   * would, fills their secrets and asks the host for each sign-in.
+   */
   readonly environment: EnvironmentShape
   /** The layer's own scope, which every started CLI's scope is a child of. */
   readonly scope: Scope.Scope
@@ -133,7 +132,7 @@ const started = (deps: Starting, id: TrakId, view: McpView, tool: string) =>
     const env = yield* deps.capture(cwd).pipe(Effect.mapError((e) => notStarted(e.reason)))
     // The declared servers, as a turn's are: a view kept from one of them has nothing to
     // answer it otherwise, and a press would wait out `SERVER_WAIT` with no reason given.
-    const declared = yield* declaredServers(deps.environment, yield* deps.library)
+    const declared = yield* declaredServers(deps.environment)
     const skipped = declared.skipped.get(view.server)
     if (skipped !== undefined) return yield* notStarted(skipped)
     const sessionId = yield* deps.newSessionId
@@ -255,7 +254,6 @@ export const viewsLayer = (idleFor: Duration.Duration = VIEW_CLI_IDLE_FOR) =>
           capture: (cwd) =>
             environment.capture(cwd).pipe(Effect.mapError((e) => refused("NotStarted", e.reason))),
           newSessionId: (yield* Ids).newSessionId,
-          library: yield* libraryNow,
           environment,
           scope,
         },

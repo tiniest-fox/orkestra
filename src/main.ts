@@ -53,7 +53,6 @@ const library: Library = {
   teardown: undefined,
   env: undefined,
   deploy: undefined,
-  mcp: { servers: [], problems: [] },
   root: ".",
   agents: new Map([
     [

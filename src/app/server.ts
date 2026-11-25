@@ -59,7 +59,7 @@
 //                                   engine's own agent gets
 //   POST /api/traks/:id/mcp          the same tools as one streamable-HTTP MCP endpoint,
 //                                   for a session in the trak's sandbox
-//   *    /api/traks/:id/mcp/:server  an `mcp.yaml` server with `connection:`, proxied
+//   *    /api/traks/:id/mcp/:server  a `Connection` server the host lists, proxied
 //                                   with the host's token for it
 //   POST /api/traks/:id/github       a GH_TOKEN the host mints at the call, for the gh
 //                                   wrapper and git helper of a turn in the trak's sandbox.
@@ -87,9 +87,6 @@
 //   GET  /api/agents                 the agents a trak may be opened with — policy, not a log
 //   GET  /api/models                 `models.yaml` as loaded: every model a step may run
 //                                   on, and the default a chat runs on when nobody picks
-//   GET  /api/mcp/connections        the `connection:` names `.orkestra/mcp.yaml` declares,
-//                                   as loaded — what a host's settings bind, and nothing
-//                                   else of any server
 //   GET  /api/openers                the terminals and editors installed on this machine,
 //                                   their icons, and which of each a press would open.
 //                                   macOS only — 404 anywhere else, and the surface hides

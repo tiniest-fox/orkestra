@@ -71,7 +71,6 @@ const source = (over: Partial<LibrarySource> = {}): LibrarySource => ({
   shippedChecks: [],
   fleet: undefined,
   models: undefined,
-  mcp: undefined,
   localModels: undefined,
   composition: undefined,
   goals: undefined,
@@ -100,20 +99,6 @@ describe("a minimal .orkestra directory", () => {
 
   it("defaults the model registry rather than requiring models.yaml", () => {
     expect(load()).toMatchObject({ models: { composer: "sonnet" } })
-  })
-})
-
-describe("mcp.yaml", () => {
-  it("never fails a load: a file that is not YAML loads, carrying the line that says so", () => {
-    expect(load({ mcp: "servers: [unclosed\n" })).toMatchObject({
-      mcp: { servers: [], problems: [expect.stringContaining("invalid YAML")] },
-    })
-  })
-
-  it("is read as the servers it declares", () => {
-    expect(load({ mcp: "servers:\n  s:\n    command: srv\n" })).toMatchObject({
-      mcp: { servers: [{ _tag: "Stdio", name: "s", command: "srv" }], problems: [] },
-    })
   })
 })
 

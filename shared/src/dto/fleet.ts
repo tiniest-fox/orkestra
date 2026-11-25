@@ -96,11 +96,3 @@ export const ModelsDto = Schema.Struct({
   allowed: Schema.Array(Schema.String),
 })
 export type ModelsDto = Schema.Schema.Type<typeof ModelsDto>
-
-/**
- * `GET /api/mcp/connections` — every `connection:` name `.orkestra/mcp.yaml` declares, as
- * the engine loaded it, once each in file order. The names a host binds to its sign-ins;
- * no server's address, header or secret rides with them.
- */
-export const McpConnectionNamesDto = Schema.Struct({ names: Schema.Array(Schema.String) })
-export type McpConnectionNamesDto = Schema.Schema.Type<typeof McpConnectionNamesDto>

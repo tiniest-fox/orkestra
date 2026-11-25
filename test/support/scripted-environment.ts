@@ -1,6 +1,6 @@
 // An Environment fake, answering what a flow test says the project's env script
 // left exported — or failing the way one that broke does — what the engine's own
-// process environment holds, and what the host says about a `connection:` server.
+// process environment holds, and which MCP servers the host lists and signs in to.
 //
 // Same argument as the checks fake: a flow is about what the engine does with the
 // answer, not about `bash` or the host. Whether a script is actually sourced, and what
@@ -10,6 +10,7 @@ import { Deferred, Effect, Either, Layer, Ref } from "effect"
 import { McpServer } from "../../src/agent/types/session.js"
 import type { SpawnStage } from "../../src/agent/types/spawn-stage.js"
 import { NO_CONNECTIONS } from "../../src/workflow/adapters/environment-shell.js"
+import type { DeclaredServer } from "../../src/workflow/domain/mcp-servers.js"
 import {
   Environment,
   EnvironmentFailed,
@@ -36,7 +37,7 @@ export const fakeProxy = ({
     env: { ORK_MCP_KEY: key, ORK_MCP_HOST: host },
   })
 
-/** What an engine no host started has for every `connection:` server: nothing. */
+/** What an engine no host started lists and signs in to: nothing. */
 const noHost = NO_CONNECTIONS
 
 /** An engine no host started: every spawn runs on what it inherited, and nobody is told of a refusal. */
@@ -45,6 +46,30 @@ const inherits = {
   credential: () => Effect.succeed(Either.right({})),
   credentialRefused: () => Effect.void,
 } satisfies Pick<EnvironmentShape, "secretNames" | "credential" | "credentialRefused">
+
+/** The token `hostListing`'s host hands for every sign-in. */
+export const HOST_TOKEN = "host-token"
+
+/**
+ * An engine a host started with `engine` set, whose host lists `servers` — or cannot be
+ * asked for them, for a `Left` — and signs in to every `Connection` it lists, handing
+ * `fakeProxy` for a session's server and `HOST_TOKEN` for a request.
+ */
+export const hostListing = (
+  servers: Either.Either<readonly DeclaredServer[], string>,
+  engine: Readonly<Record<string, string>> = {},
+): Layer.Layer<Environment> =>
+  Layer.succeed(Environment, {
+    capture: () => Effect.succeed({}),
+    engine: Effect.succeed(engine),
+    connection: {
+      servers: Effect.succeed(servers),
+      server: (name, url) =>
+        Effect.succeed(Either.right(fakeProxy({ connection: name, url, key: "k", host: "h" }))),
+      token: () => Effect.succeed(HOST_TOKEN),
+    },
+    ...inherits,
+  })
 
 /** What a project with no env script gets: every spawn inherits, and nothing is captured. */
 export const inheritedEnvironment: Layer.Layer<Environment> = Layer.succeed(Environment, {
@@ -59,17 +84,6 @@ export const environmentOf = (vars: Readonly<Record<string, string>>): Layer.Lay
   Layer.succeed(Environment, {
     capture: () => Effect.succeed(vars),
     engine: Effect.succeed({}),
-    connection: noHost,
-    ...inherits,
-  })
-
-/** No env script, and an engine started with these set — the secrets a host handed it. */
-export const engineStartedWith = (
-  vars: Readonly<Record<string, string>>,
-): Layer.Layer<Environment> =>
-  Layer.succeed(Environment, {
-    capture: () => Effect.succeed({}),
-    engine: Effect.succeed(vars),
     connection: noHost,
     ...inherits,
   })

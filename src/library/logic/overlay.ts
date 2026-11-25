@@ -95,9 +95,6 @@ export const overlay = (
       env: local?.env ?? team.env,
       deploy: local?.deploy ?? team.deploy,
       models: team.models,
-      // The team's alone: how a person's own file would merge with it is undecided,
-      // and that person's servers already reach every turn through their CLI's config.
-      mcp: team.mcp,
       localModels: local?.models,
       composition: local?.composition ?? team.composition,
       goals: local?.goals ?? team.goals,

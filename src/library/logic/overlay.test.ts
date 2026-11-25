@@ -22,7 +22,6 @@ const tree = (dir: "" | ".local/", over: Partial<TreeSource> = {}): TreeSource =
   env: undefined,
   deploy: undefined,
   models: undefined,
-  mcp: undefined,
   composition: undefined,
   goals: undefined,
   guidance: undefined,
@@ -191,17 +190,5 @@ describe("models.yaml is carried beside the team's rather than over it", () => {
     )
     expect(source.models).toBe("default: sonnet\nmodels: {claude: [{name: sonnet}]}")
     expect(source.localModels).toBe("default: haiku\nmodels: {claude: [{name: haiku}]}")
-  })
-})
-
-describe("mcp.yaml", () => {
-  it("is the team's alone, whatever `.local/` holds", () => {
-    const { source } = overlay(
-      NONE,
-      tree("", { mcp: "team" }),
-      tree(".local/", { mcp: "mine" }),
-      "/repo",
-    )
-    expect(source.mcp).toBe("team")
   })
 })

@@ -192,7 +192,6 @@ describe("a borrowed conversation the library can no longer price", () => {
     teardown: undefined,
     env: undefined,
     deploy: undefined,
-    mcp: { servers: [], problems: [] },
     root: "/repo",
     models: {
       allowed: ["opus", "sonnet", "haiku"],
@@ -243,7 +242,6 @@ const UNDECLARED = {
   teardown: undefined,
   env: undefined,
   deploy: undefined,
-  mcp: { servers: [], problems: [] },
   goals: "",
   tools: new Map(),
 }

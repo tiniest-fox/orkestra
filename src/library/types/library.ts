@@ -141,6 +141,10 @@ export interface Library {
    * The directory `.orkestra/` sits in — the project. Where `deploy.sh` runs, because
    * a deploy's status does not depend on any checkout, and a trak that has been
    * archived has none.
+   *
+   * Under an external store the engine's library is read out of a copy of a commit, and
+   * served with this set back to the project, so nothing runs in the copy; the runner
+   * reader is handed the library before that, with `root` the copy.
    */
   readonly root: string
   readonly models: ModelRegistry

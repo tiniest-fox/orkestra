@@ -139,6 +139,9 @@ export const IGNORED_PATHS: readonly string[] = [
   // and unignored it is tens of thousands of untracked files for a pull to stash and a commit
   // to sweep up.
   "**/.orkestra/.cache/",
+  // Under an external store, the cache checkout's copy of each default-branch commit's
+  // `.orkestra/` and skills, which the engine loads its library from.
+  "**/.orkestra/.committed/",
 ]
 
 /**

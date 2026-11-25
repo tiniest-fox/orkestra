@@ -9,6 +9,7 @@ import * as ServerResponse from "@effect/platform/HttpServerResponse"
 import * as ServerRequest from "@effect/platform/HttpServerRequest"
 import { HostNotifyDto, PushKeyDto, PushSubscriptionDto } from "@orkestra/shared/dto/host-engine"
 import { StoreHealth } from "../../workflow/ports/store-health.js"
+import { ProjectFiles } from "../../workflow/ports/project-files.js"
 import { Push } from "../push.js"
 import { pressedBy } from "../guard.js"
 import { bundleId } from "../client-bundle.js"
@@ -23,7 +24,9 @@ const healthRoute = (client?: string) =>
       const id = yield* Effect.promise(() => bundleId(client))
       const store = yield* Effect.serviceOption(StoreHealth)
       const status = Option.isSome(store) ? yield* store.value.status : undefined
-      return yield* ServerResponse.json(health(PROJECT, id, status))
+      const files = yield* Effect.serviceOption(ProjectFiles)
+      const config = Option.isSome(files) ? yield* files.value.served : undefined
+      return yield* ServerResponse.json(health(PROJECT, id, status, config))
     }),
   )
 

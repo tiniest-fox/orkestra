@@ -92,7 +92,12 @@ const over = <A, E, R>(dir: string, body: Effect.Effect<A, E, R>) =>
  */
 const holding = (first: Library) => {
   let held: ProjectFilesRead = { library: first, templates: new Map() }
-  const files: ProjectFilesShape = { current: Effect.sync(() => held), reload: Effect.void }
+  const files: ProjectFilesShape = {
+    current: Effect.sync(() => held),
+    reload: Effect.void,
+    refresh: Effect.void,
+    served: Effect.succeed(undefined),
+  }
   const swap = (next: Library): void => {
     held = { ...held, library: next }
   }

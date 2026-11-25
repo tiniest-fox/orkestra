@@ -50,7 +50,8 @@ const modelsRoute = Router.get(
  * Read `.orkestra/` and the templates again, and swap both in — or neither, answering
  * 422 with the loader's line. Nothing running is interrupted: a turn in flight finishes
  * on the pair it began with, and the next step, check run and process start read the
- * new one. 404 where this engine holds a fixed pair and nothing to reload.
+ * new one. 404 where this engine holds a fixed pair and nothing to reload. Under an
+ * external store the read is of the default branch's commit as last fetched.
  */
 const reloadRoute = Router.post(
   "/api/reload",

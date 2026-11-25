@@ -22,6 +22,17 @@ export type LoginRequestDto = Schema.Schema.Type<typeof LoginRequestDto>
  *
  * `store` is whether the project's store process answers, with why not where it does not.
  * **Absent where the engine has no external store.**
+ *
+ * `config` is the `.orkestra/` the engine serves, which under an external store is read out of
+ * the commit `origin`'s default branch names, again each time the engine sees that branch
+ * move. **Absent where the engine has no external store**, since it then reads its own
+ * checkout.
+ *
+ * - `commit` is the commit served. Absent where none is: `origin` names no default branch,
+ *   or the commit the engine booted on would not load, and the shipped agents serve alone.
+ * - `refused` is the last commit whose `.orkestra/` would not load, with the loader's line
+ *   and when, epoch milliseconds. The files held before it go on serving. **Cleared by the
+ *   next read that loads**, so its presence is the whole of *something is wrong*.
  */
 export const HealthDto = Schema.Struct({
   cwd: Schema.String,
@@ -29,6 +40,14 @@ export const HealthDto = Schema.Struct({
   client: Schema.optional(Schema.String),
   store: Schema.optional(
     Schema.Struct({ up: Schema.Boolean, reason: Schema.optional(Schema.String) }),
+  ),
+  config: Schema.optional(
+    Schema.Struct({
+      commit: Schema.optional(Schema.String),
+      refused: Schema.optional(
+        Schema.Struct({ commit: Schema.String, reason: Schema.String, at: Schema.Number }),
+      ),
+    }),
   ),
 })
 export type HealthDto = Schema.Schema.Type<typeof HealthDto>

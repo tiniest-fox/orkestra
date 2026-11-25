@@ -26,7 +26,7 @@ reads:
   "src/library/shipped/*": [
     src/app/layers.ts, src/app/proofs.ts, src/workflow/domain/prompt.test.ts, test/e2e/open-pr.test.ts, test/e2e/proofs.test.ts,
     test/support/fingerprints.ts, test/e2e/library-from-disk.test.ts,
-    test/e2e/build.test.ts, client/src/format/glyph.test.ts
+    test/e2e/committed-config.test.ts, test/e2e/build.test.ts, client/src/format/glyph.test.ts
   ]
   ".orkestra/agents/*": [client/src/format/glyph.test.ts]
   ".orkestra/checks/verify.sh": [

@@ -4332,6 +4332,88 @@ const confirmVersion = (proc: ProcessShape, cwd: string): Effect.Effect<void, Gi
   })
 
 /**
+ * The cache checkout at `cache` for the repository at `startDir`, made or brought up to
+ * `origin` as `GitCliLayer` brings it, and its root. For a reader built before that layer —
+ * the library, which the layers beneath `Vcs` are built over.
+ */
+export const preparedCache = (
+  proc: ProcessShape,
+  startDir: string,
+  cache: string,
+): Effect.Effect<string, GitFailed> =>
+  Effect.flatMap(
+    git(proc, startDir, "find repository", ["rev-parse", "--show-toplevel"]),
+    (started) => cacheCheckout(proc, started, cache),
+  )
+
+/**
+ * The commit `origin`'s default branch names in `repoRoot`, as last fetched — or `undefined`
+ * where `origin` names no default branch, or this repository holds no copy of it.
+ */
+export const defaultBranchTip = (
+  proc: ProcessShape,
+  repoRoot: string,
+): Effect.Effect<CommitSha | undefined, GitFailed> =>
+  Effect.flatMap(defaultBranch(proc, repoRoot), (named) =>
+    named === undefined
+      ? Effect.succeed(undefined)
+      : refTip(proc, repoRoot, "read default branch tip", remoteRefFor(named)),
+  )
+
+/** Where `committedFiles` writes each commit's copy, under the runtime directory git ignores. */
+const COMMITTED = join(".orkestra", ".committed")
+
+/**
+ * The paths of `paths` that `commit` holds, written out of git into a directory of their own
+ * under `repoRoot`, and that directory — or, for no commit, a copy holding nothing. One per
+ * commit, written once and never changed or removed, so a script started from one copy is
+ * never swapped under it.
+ *
+ * `.orkestra/` is made in it whether or not the commit holds one, so a walk-up from the copy
+ * stops there. Written beside the copy's place and moved in, so a write cut short is never
+ * taken for a copy; another writer's copy already there is kept.
+ *
+ * A private index, so the write never takes the lock of the index the cache's own commands use.
+ */
+export const committedFiles = (
+  proc: ProcessShape,
+  repoRoot: string,
+  commit: CommitSha | undefined,
+  paths: readonly string[],
+): Effect.Effect<string, GitFailed> =>
+  Effect.gen(function* () {
+    const op = "write committed files"
+    const dir = join(repoRoot, COMMITTED, commit ?? "none")
+    if (existsSync(dir)) return dir
+    const held =
+      commit === undefined
+        ? []
+        : listed(yield* git(proc, repoRoot, op, ["ls-tree", "--name-only", commit, "--", ...paths]))
+    const writing = `${dir}.writing-${randomUUID()}`
+    yield* fsStep(op, () => mkdirSync(join(writing, ".orkestra"), { recursive: true }))
+    if (commit !== undefined && held.length > 0) {
+      yield* git(
+        proc,
+        repoRoot,
+        op,
+        [`--work-tree=${writing}`, "restore", `--source=${commit}`, "--", ...held],
+        { GIT_INDEX_FILE: `${writing}.index` },
+      )
+    }
+    return yield* fsStep(op, () => {
+      rmSync(`${writing}.index`, { force: true })
+      try {
+        renameSync(writing, dir)
+      } catch (e) {
+        const code = e instanceof Error && "code" in e ? e.code : undefined
+        if ((code !== "ENOTEMPTY" && code !== "EEXIST") || !existsSync(dir)) throw e
+        rmSync(writing, { recursive: true, force: true })
+      }
+      return dir
+    })
+  })
+
+/**
  * `startDir` rather than the root itself, mirroring `FsLibraryLayer`: which
  * repository we are in is runtime input, and a CLI is invoked from wherever the
  * user happens to be standing. Failing at startup is the point — a trak that

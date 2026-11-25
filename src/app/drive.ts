@@ -49,6 +49,8 @@ import {
   Deferred,
   Effect,
   Either,
+  Exit,
+  Fiber,
   FiberMap,
   HashSet,
   Layer,
@@ -89,6 +91,7 @@ import { replayHistory } from "../workflow/domain/replay.js"
 import {
   advance,
   advanceAfter,
+  advanceTelling,
   askConditions,
   askMerged,
   driveChild,
@@ -309,6 +312,14 @@ export const driveEnded = (id: TrakId | GoalId, cause: Cause.Cause<unknown>): Ef
     onNone: () => Effect.logError(`drive of ${id} ended`, cause),
   })
 
+/** Whether a drive ended because another engine copy holds the trak — `driveEnded`'s info case. */
+const heldElsewhere = (exit: Exit.Exit<unknown, unknown>): boolean =>
+  Exit.isFailure(exit) &&
+  Option.exists(
+    Cause.failureOption(exit.cause),
+    (e) => e instanceof LeaseHeld || e instanceof StoreFenced,
+  )
+
 /**
  * Which event to drive, given whatever the last process left in flight.
  *
@@ -322,6 +333,17 @@ export type ChooseEvent = (resuming: InFlightTurn | undefined) => Event
 export interface DrivesShape {
   /** Fork a drive, unless this trak already has one — here, or under an external store on another copy. */
   readonly start: (id: TrakId, event: ChooseEvent) => Effect.Effect<"started" | "busy">
+  /**
+   * `start`, for a trak being born: answered once `event` is on the log rather than at the
+   * fork, so a caller that reads the trak after the answer finds it. The rest of the drive
+   * runs on after the answer, as `start`'s does — the worktree, the composer and every
+   * turn after are not waited for.
+   *
+   * `unwritten` where the drive ended before the birth was appended — the store refused
+   * it, or custody could not be taken — and then no fiber is left under the id. `busy` as
+   * `start` answers it, and where another engine copy refused the drive its lease.
+   */
+  readonly bear: (id: TrakId, event: ChooseEvent) => Effect.Effect<"born" | "busy" | "unwritten">
   /**
    * Interrupt whatever is driving this trak, wait for it to unwind, and drive
    * `event` in its place. Under an external store a drive on another copy is woken and
@@ -794,6 +816,33 @@ const stoppingIn =
       ),
     )
 
+/** `DrivesShape.bear`, over the layer's map, `begin` and `one`. At module level for `needsDriving`'s reason. */
+const bearing =
+  (
+    map: FiberMap.FiberMap<TrakId, void, never>,
+    begin: (id: TrakId, drive: Drive) => Effect.Effect<"started" | "busy">,
+    one: (id: TrakId, turn: Turn) => Drive,
+  ): DrivesShape["bear"] =>
+  (id, event) =>
+    Effect.gen(function* () {
+      const answer = yield* Deferred.make<"born" | "busy" | "unwritten">()
+      const drive = one(id, (resuming) =>
+        advanceTelling(id, event(resuming), Deferred.succeed(answer, "born")),
+      )
+      // The first answer stands, so a drive that wrote the birth is `born` however it ends.
+      const told = Effect.onExit(drive, (exit) =>
+        Deferred.succeed(answer, heldElsewhere(exit) ? "busy" : "unwritten"),
+      )
+      if ((yield* begin(id, told)) === "busy") return "busy" as const
+      const said = yield* Deferred.await(answer)
+      // The fiber answers before it leaves the map, so a birth that was refused waits for
+      // it to go: a caller reading `driving` after the answer finds nothing.
+      if (said !== "born") {
+        yield* Effect.flatMap(FiberMap.get(map, id), Fiber.await).pipe(Effect.option)
+      }
+      return said
+    })
+
 /** `DrivesShape.sayWaiting`, over the layer's `begin`. At module level for `needsDriving`'s reason. */
 /**
  * `DrivesShape.reenter`, given the layer's `begin` and `one`. The trak is read again
@@ -970,6 +1019,8 @@ export const DrivesLayer = Layer.scoped(
     const start = (id: TrakId, event: ChooseEvent): Effect.Effect<"started" | "busy"> =>
       begin(id, asked(id, event))
 
+    const bear = bearing(map, begin, one)
+
     const ask = askingFor({ map, asks, forkAsk, begin, one })
 
     const setups = yield* Setups
@@ -1002,6 +1053,7 @@ export const DrivesLayer = Layer.scoped(
       )
     return {
       start,
+      bear,
       takeOver,
       stopping,
       ask,

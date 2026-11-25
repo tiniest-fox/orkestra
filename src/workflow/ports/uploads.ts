@@ -43,6 +43,11 @@ export interface UploadsShape {
    * after they were placed, and every trak sent no file.
    */
   readonly settle: (trak: string, worktree: string) => Effect.Effect<void, GitFailed>
+  /**
+   * Let go of what `hold` held for `trak` and place nothing — a trak whose birth never
+   * reached the log. The uploads it was held from stay, so the request can be sent again.
+   */
+  readonly drop: (trak: string) => Effect.Effect<void>
 }
 
 export class Uploads extends Context.Tag("workflow/Uploads")<Uploads, UploadsShape>() {}

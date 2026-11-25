@@ -131,9 +131,10 @@ const createRoute = Router.post(
 
     const ids = yield* Ids
     const drives = yield* Drives
+    const uploads = yield* Uploads
     const id = yield* ids.newTrakId
     // Held under the new id until `SetupWorktree` makes the checkout they go in.
-    const files = yield* (yield* Uploads).hold(request.attachments, id)
+    const files = yield* uploads.hold(request.attachments, id)
     if (typeof files === "string") {
       return yield* refuse(422, AttachmentRefusedDto.make({ reason: files }))
     }
@@ -171,8 +172,15 @@ const createRoute = Router.post(
     // that nothing in the store or in git held it. Checked anyway rather than
     // assumed, because the alternative is a route that silently does nothing if
     // that ever stops being true.
-    if ((yield* drives.start(id, birth)) === "busy") {
-      return yield* refuse(409, DrivingDto.make({}))
+    //
+    // **Answered once the birth is on the log, not at the fork**: a caller that reads the
+    // trak by the id it was answered with finds it. Only the birth is waited for — the
+    // drive goes on to the worktree and the composer after the answer.
+    const born = yield* drives.bear(id, birth)
+    if (born === "busy") return yield* refuse(409, DrivingDto.make({}))
+    if (born === "unwritten") {
+      yield* uploads.drop(id)
+      return ServerResponse.empty({ status: 500, statusText: "the trak could not be written" })
     }
     yield* files.release
     return yield* ServerResponse.json(CreatedDto.make({ id }), { status: 202 })

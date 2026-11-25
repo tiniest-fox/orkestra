@@ -1,13 +1,14 @@
-import { Context, Data, Effect, type Either } from "effect"
+import { Context, Data, Effect, Either } from "effect"
 import type { ProcessSpec } from "../../agent/ports/process.js"
 import type { McpServer, SignIn } from "../../agent/types/session.js"
 import type { SpawnStage } from "../../agent/types/spawn-stage.js"
 import {
   connectionsOf,
+  type DeclaredServer,
+  hostUnasked,
   type ResolvedServers,
   resolveServers,
-} from "../../library/logic/mcp-resolve.js"
-import type { Library } from "../../library/types/library.js"
+} from "../domain/mcp-servers.js"
 import type { UserId } from "../domain/trak.js"
 import { runnerFilesNow } from "../../vcs/ports/runners.js"
 
@@ -47,7 +48,7 @@ export interface EnvironmentShape {
   ) => Effect.Effect<Readonly<Record<string, string>>, EnvironmentFailed>
   /**
    * The engine's own process environment, read when asked, which is where the host
-   * hands an engine its named secrets. What fills a `${NAME}` in `mcp.yaml` — never
+   * hands an engine its named secrets. What fills a `${NAME}` in the host's servers — never
    * `capture`'s result, which a goal's composer and a view press do not run.
    */
   readonly engine: Effect.Effect<Readonly<Record<string, string | undefined>>>
@@ -57,7 +58,7 @@ export interface EnvironmentShape {
    * None on an engine nobody hosts; a host's adapter may name some.
    */
   readonly secretNames: Effect.Effect<readonly string[]>
-  /** What the engine has for an `mcp.yaml` server with `connection:` — see `Connections`. */
+  /** The MCP servers the host lists, and what it has for each it signs in to — see `Connections`. */
   readonly connection: Connections
   /**
    * What an agent spawn for a turn `owner` owns signs in with, asked of the host before
@@ -91,7 +92,7 @@ export interface TurnCredential {
 }
 
 /**
- * Why the engine has no token for a `connection:` server. `asked` is false where it holds no
+ * Why the engine has no token for a `Connection` server. `asked` is false where it holds no
  * key to ask a host with, and true where the host was asked and gave none, or could not be
  * reached.
  */
@@ -101,46 +102,48 @@ export class ConnectionUnavailable extends Data.TaggedError("ConnectionUnavailab
 }> {}
 
 /**
- * The two ways a `connection:` server is reached: by the stdio server a session's CLI starts
- * on this machine, and by the engine's own route, which forwards each request from a
- * session in a sandbox.
+ * The servers the host lists for a session, and the two ways a `Connection` among them is
+ * reached: by the stdio server a session's CLI starts on this machine, and by the engine's
+ * own route, which forwards each request from a session in a sandbox.
  */
 export interface Connections {
   /**
-   * The server a session starts for `connection`, or why it has none: the engine holds no
-   * key from a host, or the host will not hand it a token for `connection`. Asked at every
-   * session start, so a binding made in Settings reaches the next turn.
+   * The servers one session dials, as the host lists them, `${NAME}` unfilled; or why the
+   * host could not be asked. Asked at every session start, so a server added in Settings
+   * reaches the next turn. The only source of a session's declared servers.
    */
-  readonly server: (
-    connection: string,
-    url: string,
-  ) => Effect.Effect<Either.Either<McpServer, string>>
+  readonly servers: Effect.Effect<Either.Either<readonly DeclaredServer[], string>>
+  /**
+   * The server a session starts for the sign-in stored as `name`, or why it has none: the
+   * engine holds no key from a host, or the host will not hand it a token for `name`.
+   */
+  readonly server: (name: string, url: string) => Effect.Effect<Either.Either<McpServer, string>>
   /** A token to send to `url` for one request, fetched at each ask. */
-  readonly token: (connection: string, url: string) => Effect.Effect<string, ConnectionUnavailable>
+  readonly token: (name: string, url: string) => Effect.Effect<string, ConnectionUnavailable>
 }
 
 /**
- * What one session dials of the servers `mcp.yaml` declares: each `connection:` server
- * asked of the host, then every server resolved against the engine's environment, with
- * the backup file's `secrets:` withheld from it.
+ * What one session dials of the servers the host lists: each `Connection` asked of the
+ * host, then every server resolved against the engine's environment, with the backup
+ * file's `secrets:` withheld from it. A host that cannot be asked costs its servers and
+ * one line, never the turn.
  */
-export const declaredServers = (
-  environment: EnvironmentShape,
-  library: Pick<Library, "mcp">,
-): Effect.Effect<ResolvedServers> =>
+export const declaredServers = (environment: EnvironmentShape): Effect.Effect<ResolvedServers> =>
   Effect.gen(function* () {
+    const listed = yield* environment.connection.servers
+    if (Either.isLeft(listed)) return hostUnasked(listed.left)
     const { backup } = yield* runnerFilesNow
     const dialed = yield* Effect.forEach(
-      connectionsOf(library.mcp),
+      connectionsOf(listed.right),
       (server) =>
         Effect.map(
-          environment.connection.server(server.connection, server.url),
+          environment.connection.server(server.name, server.url),
           (answer): [string, Either.Either<McpServer, string>] => [server.name, answer],
         ),
       { concurrency: "unbounded" },
     )
     return resolveServers(
-      library.mcp,
+      listed.right,
       yield* environment.engine,
       new Map(dialed),
       backup?.secrets ?? [],

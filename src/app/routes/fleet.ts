@@ -5,9 +5,8 @@
 import { Effect, Either, Option } from "effect"
 import * as Router from "@effect/platform/HttpRouter"
 import * as ServerResponse from "@effect/platform/HttpServerResponse"
-import { McpConnectionNamesDto, ModelsDto } from "@orkestra/shared/dto/fleet"
+import { ModelsDto } from "@orkestra/shared/dto/fleet"
 import { ReloadFailedDto } from "@orkestra/shared/dto/reload"
-import { connectionsOf } from "../../library/logic/mcp-resolve.js"
 import { fleet } from "../../library/logic/resolve.js"
 import { Lib } from "../../library/ports/library.js"
 import { ProjectFiles } from "../../workflow/ports/project-files.js"
@@ -48,21 +47,6 @@ const modelsRoute = Router.get(
 )
 
 /**
- * The `connection:` names the project's `.orkestra/mcp.yaml` declares, for a host's
- * settings to bind each to a sign-in. Policy for `agentsRoute`'s reason, read once into
- * `Lib`, so an edited file is answered after a reload. Names alone: a server's `url` is
- * the project's business, and the sign-in behind a name is the host's.
- */
-const mcpConnectionsRoute = Router.get(
-  "/api/mcp/connections",
-  Effect.gen(function* () {
-    const { mcp } = yield* Lib
-    const names = [...new Set(connectionsOf(mcp).map((s) => s.connection))]
-    return yield* ServerResponse.json(McpConnectionNamesDto.make({ names }))
-  }),
-)
-
-/**
  * Read `.orkestra/` and the templates again, and swap both in — or neither, answering
  * 422 with the loader's line. Nothing running is interrupted: a turn in flight finishes
  * on the pair it began with, and the next step, check run and process start read the
@@ -83,9 +67,4 @@ const reloadRoute = Router.post(
   }),
 )
 
-export const fleetRoutes = Router.empty.pipe(
-  agentsRoute,
-  modelsRoute,
-  mcpConnectionsRoute,
-  reloadRoute,
-)
+export const fleetRoutes = Router.empty.pipe(agentsRoute, modelsRoute, reloadRoute)

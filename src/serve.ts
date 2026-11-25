@@ -13,8 +13,8 @@
 //
 // **It reads none of the variables a host starts an engine with**, and refuses one. Its store
 // is SQLite, its push keys, users and tools are its own, it has no runner and no backup,
-// nothing is refused as runners-only or a drill, and it asks no host for a credential, a
-// `connection:` token or a GitHub token — a host starts an engine through its own entry point. How
+// nothing is refused as runners-only or a drill, and it asks no host for a credential, an
+// MCP server, a sign-in's token or a GitHub token — a host starts an engine through its own entry point. How
 // the boot goes is `app/serve-engine.ts`.
 //
 // **It refuses `ORKESTRA_STORE` rather than ignoring it.** Only a host's entry point opens an

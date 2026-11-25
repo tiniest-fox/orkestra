@@ -34,7 +34,8 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Cause, Effect, Exit, Fiber, Option, Ref, Schedule, Schema } from "effect"
+import { createServer } from "node:http"
+import { Cause, Effect, Either, Exit, Fiber, Option, Ref, Schedule, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Router from "@effect/platform/HttpRouter"
 import * as ServerRequest from "@effect/platform/HttpServerRequest"
@@ -42,7 +43,7 @@ import { toWeb, type HttpServerResponse } from "@effect/platform/HttpServerRespo
 import { CreatedDto, MergePreviewDto, ResumePreviewDto } from "@orkestra/shared/dto/actions"
 import { ChangesDto } from "@orkestra/shared/dto/changes"
 import { RefusalDto } from "@orkestra/shared/dto/common"
-import { AgentDto, McpConnectionNamesDto, ModelsDto } from "@orkestra/shared/dto/fleet"
+import { AgentDto, ModelsDto } from "@orkestra/shared/dto/fleet"
 import type { EntryDto } from "@orkestra/shared/dto/log"
 import { OpenersDto, SandboxShellDto } from "@orkestra/shared/dto/openers"
 import { EngineFrameDto } from "@orkestra/shared/dto/stream"
@@ -88,7 +89,8 @@ import {
 } from "../support/scenario.js"
 import { library, workDeclaring } from "../support/library.js"
 import { git, inWorktree, repoOf, worktreeOf, writeWork } from "../support/git.js"
-import { parseMcpFile } from "../../src/library/logic/mcp-file.js"
+import { DeclaredServer } from "../../src/workflow/domain/mcp-servers.js"
+import { HOST_TOKEN, hostListing } from "../support/scripted-environment.js"
 import { fail, hangs, pass } from "../support/scripted-checks.js"
 import { hangsOn, onPrompt, onResume, reply } from "../support/scripted-agent.js"
 import { Checks } from "../../src/workflow/ports/checks.js"
@@ -1966,42 +1968,83 @@ describe("the model list", () => {
   })
 })
 
-describe("the declared MCP connections", () => {
-  /** What the route answers for a project whose `.orkestra/mcp.yaml` holds `text`. */
-  const answerFor = async (text: string | undefined): Promise<unknown> => {
-    let answer: unknown
-    await runFlow(
-      [],
-      () =>
-        Effect.gen(function* () {
-          const response = yield* call(new Request("http://localhost/api/mcp/connections"))
-          expect(response.status).toBe(200)
-          answer = yield* jsonOf(response)
-        }),
-      library({ mcp: parseMcpFile(".orkestra/mcp.yaml", text) }),
-    )
-    return answer
-  }
-  const namesOf = async (text: string | undefined): Promise<readonly string[]> =>
-    Schema.decodeUnknownSync(McpConnectionNamesDto)(await answerFor(text)).names
+/** A host's list, each server built for the `url` the test's upstream listens at. */
+const hostList =
+  (...servers: ((url: string) => DeclaredServer)[]) =>
+  (url: string) =>
+    Either.right(servers.map((s) => s(url)))
+const linear = (url: string) => DeclaredServer.Connection({ name: "linear", url })
+const files = () => DeclaredServer.Stdio({ name: "files", command: "files-mcp", args: [], env: {} })
 
-  it("sends each `connection:` name once, in file order, and nothing else of any server", async () => {
-    const file = [
-      "servers:",
-      "  linear: { url: https://mcp.linear.app/mcp, connection: linear-work }",
-      "  drive: { url: https://mcp.drive.example/mcp, connection: drive }",
-      "  linear-again: { url: https://mcp.linear.app/v2, connection: linear-work }",
-      "  search: { url: https://search.example/mcp, headers: { Authorization: 'Bearer ${SEARCH_KEY}' } }",
-      "  local: { command: ./serve, env: { TOKEN: '${LOCAL_TOKEN}' } }",
-    ].join("\n")
-    // Every server is declared, so the two left out are left out by the route.
-    expect(parseMcpFile(".orkestra/mcp.yaml", file).servers).toHaveLength(5)
-    expect(await answerFor(file)).toStrictEqual({ names: ["linear-work", "drive"] })
+describe("a `Connection` server, through the engine's route", () => {
+  /**
+   * What the route answers for `name` on an engine whose host lists `servers`, and the
+   * `authorization` each request the server behind it was sent carried.
+   */
+  const answerFor = async (
+    name: string,
+    servers: (url: string) => Either.Either<readonly DeclaredServer[], string>,
+  ): Promise<{ readonly status: number; readonly body: string; readonly sent: string[] }> => {
+    const sent: string[] = []
+    const upstream = createServer((req, res) => {
+      sent.push(req.headers.authorization ?? "")
+      res.writeHead(200, { "content-type": "application/json" })
+      res.end('{"jsonrpc":"2.0","id":1,"result":{}}')
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const address = upstream.address()
+    const port = typeof address === "object" && address !== null ? address.port : 0
+    let answer = { status: 0, body: "" }
+    try {
+      await runFlowWithAgentLog(
+        [],
+        () =>
+          Effect.gen(function* () {
+            const response = yield* call(
+              new Request(`http://localhost/api/traks/t/mcp/${name}`, {
+                method: "POST",
+                body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
+              }),
+            )
+            answer = { status: response.status, body: yield* textOf(response) }
+          }),
+        library(),
+        undefined,
+        undefined,
+        undefined,
+        hostListing(servers(`http://127.0.0.1:${port}/mcp`)),
+      )
+    } finally {
+      await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
+    return { ...answer, sent }
+  }
+  it("forwards a request for a server the host lists, with the host's token", async () => {
+    const answer = await answerFor("linear", hostList(linear, files))
+    expect(answer).toEqual({
+      status: 200,
+      body: '{"jsonrpc":"2.0","id":1,"result":{}}',
+      sent: [`Bearer ${HOST_TOKEN}`],
+    })
   })
 
-  it("sends no names for a project with no file, or none that names a connection", async () => {
-    expect(await namesOf(undefined)).toStrictEqual([])
-    expect(await namesOf("servers:\n  local: { command: ./serve }")).toStrictEqual([])
+  it("is 404 for a name the host lists as no `Connection`, and forwards nothing", async () => {
+    expect(await answerFor("drive", hostList(linear, files))).toMatchObject({
+      status: 404,
+      sent: [],
+    })
+    expect(await answerFor("files", hostList(linear, files))).toMatchObject({
+      status: 404,
+      sent: [],
+    })
+  })
+
+  it("is 503 with the host's reason when the host cannot be asked", async () => {
+    expect(await answerFor("linear", () => Either.left("the host did not answer"))).toEqual({
+      status: 503,
+      body: "the host did not answer",
+      sent: [],
+    })
   })
 })
 

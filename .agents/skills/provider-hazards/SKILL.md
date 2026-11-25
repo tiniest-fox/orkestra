@@ -559,7 +559,7 @@ sandbox sends the engine on that port passes through it: a call may arrive late,
 through a restart, and one the restart cut arrives once more with `orkestra-resent`. **So a
 route the sandbox dials there answers a marked request without running anything**, as
 `trak-mcp.ts` does — the engine that died may already have run it — and a relay never
-resends a request unmarked once a byte of it reached the engine, because a `connection:`
+resends a request unmarked once a byte of it reached the engine, because a `Connection`
 server forwards to tools that are not safe to run twice. A cut `run_check` is answered
 from `trak/lost-to-restart`, which tells the agent that calling it again is safe.
 

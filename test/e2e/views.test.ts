@@ -5,7 +5,7 @@
 // The agent is scripted, so the server behind the view is the fake's. What is under
 // test is the engine's half: what it keeps, what it serves, and what it refuses.
 
-import { Effect, Schedule, Schema } from "effect"
+import { Effect, Either, Schedule, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { toWeb, type HttpServerResponse } from "@effect/platform/HttpServerResponse"
 import { RefusalDto } from "@orkestra/shared/dto/common"
@@ -13,7 +13,8 @@ import { ViewDto, ViewResultDto } from "@orkestra/shared/dto/trak"
 import { McpServer, type SessionRequest } from "../../src/agent/types/session.js"
 import type { TranscriptEntry } from "../../src/agent/types/transcript-entry.js"
 import { Views } from "../../src/app/views.js"
-import { parseMcpFile } from "../../src/library/logic/mcp-file.js"
+import { DeclaredServer } from "../../src/workflow/domain/mcp-servers.js"
+import { hostListing } from "../support/scripted-environment.js"
 import { Store } from "../../src/workflow/ports/store.js"
 import { composer, runFlow, runFlowWithAgentLog, step } from "../support/flow.js"
 import { mount } from "../support/http.js"
@@ -150,13 +151,12 @@ describe("a press on a view", () => {
   })
 })
 
-/** A project whose `mcp.yaml` declares the view's own server, as `entry` says. */
-const declaring = (entry: string) =>
-  library({ mcp: parseMcpFile(".orkestra/mcp.yaml", `servers:\n  metrics:\n${entry}`) })
+/** An engine whose host lists the view's own server, as `server` says. */
+const declaring = (server: DeclaredServer) => hostListing(Either.right([server]))
 
 const dialed = (r: SessionRequest) => r.mcpServers
 
-describe("a press in a project that declares the view's server in mcp.yaml", () => {
+describe("a press on an engine whose host lists the view's server", () => {
   it("starts the CLI with the declared servers, as a turn's are", async () => {
     await runFlowWithAgentLog(
       turns,
@@ -169,7 +169,13 @@ describe("a press in a project that declares the view's server in mcp.yaml", () 
             { metrics: McpServer.Stdio({ command: "metrics-mcp", args: [], env: {} }) },
           ])
         }),
-      declaring("    command: metrics-mcp\n"),
+      library(),
+      undefined,
+      undefined,
+      undefined,
+      declaring(
+        DeclaredServer.Stdio({ name: "metrics", command: "metrics-mcp", args: [], env: {} }),
+      ),
     )
   })
 
@@ -190,8 +196,16 @@ describe("a press in a project that declares the view's server in mcp.yaml", () 
           expect((yield* agentLog).attended).toEqual([])
           expect(yield* (yield* Views).attending(id)).toBe(false)
         }),
+      library(),
+      undefined,
+      undefined,
+      undefined,
       declaring(
-        '    url: https://metrics.example/mcp\n    headers:\n      Authorization: "Bearer ${METRICS_TOKEN}"\n',
+        DeclaredServer.Http({
+          name: "metrics",
+          url: "https://metrics.example/mcp",
+          headers: { Authorization: "Bearer ${METRICS_TOKEN}" },
+        }),
       ),
     )
   })

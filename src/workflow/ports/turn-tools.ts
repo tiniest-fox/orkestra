@@ -19,7 +19,7 @@ export interface OpenTurn {
 export interface ReachedTools {
   /** The engine's tools for the trak, in place of `TurnToolsShape.server`. */
   readonly tools: McpServer
-  /** An `mcp.yaml` server with `connection:`, by its name there, in place of the stdio proxy. */
+  /** A `Connection` server the host lists, by its name, in place of the stdio proxy. */
   readonly connection: (name: string) => McpServer
   /**
    * What the turn's environment adds in the sandbox: under a host's GitHub App, the `gh`

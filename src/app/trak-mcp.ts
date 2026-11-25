@@ -5,7 +5,7 @@
 //
 //   POST /api/traks/:id/mcp          the trak's tools — the same list and the same calls
 //                                    `trak-tools.ts` serves the shim, answered in-process
-//   *    /api/traks/:id/mcp/:server  an `mcp.yaml` server with `connection:`, forwarded to
+//   *    /api/traks/:id/mcp/:server  a `Connection` server the host lists, forwarded to
 //                                    its `url` with the host's token for it, as the stdio
 //                                    proxy forwards on this machine
 //   POST /api/goals/:id/mcp          the goal's tools, as `goals.ts` serves the shim
@@ -29,7 +29,7 @@
 // request whose connection dropped before any answer came back, once, with that header:
 // the engine that served it may have run it before it died. A marked `tools/call` is
 // answered with `trak/lost-to-restart` — for `run_check`, that calling it again is safe —
-// and a marked request to a `connection:` server is never forwarded, since a third party's
+// and a marked request to a `Connection` server is never forwarded, since a third party's
 // tool is not known to be safe to run twice. Nothing replays a cut call.
 //
 // **An unmarked call waits for its turn to open.** At a reattach the relay's held calls
@@ -53,10 +53,9 @@ import {
   type Incoming,
   type RpcId,
 } from "../cli/logic/mcp-server.js"
-import { connectionsOf } from "../library/logic/mcp-resolve.js"
-import { Lib } from "../library/ports/library.js"
 import { render } from "../prompts/index.js"
 import { Prompts } from "../prompts/ports/prompts.js"
+import { connectionsOf } from "../workflow/domain/mcp-servers.js"
 import { GoalId, TrakId } from "../workflow/domain/trak.js"
 import { Environment } from "../workflow/ports/environment.js"
 import { TurnTools } from "../workflow/ports/turn-tools.js"
@@ -117,7 +116,7 @@ const lostCall = (id: RpcId, tool: string | undefined) =>
   Effect.map(lostToRestart(tool), (text) => result(id, toolResult(text, true)))
 
 /**
- * A resent message to a `connection:` server: a call is answered as lost, and any other
+ * A resent message to a `Connection` server: a call is answered as lost, and any other
  * that asks for an answer gets the same words as an error, since the server's answer is
  * not this engine's to give.
  */
@@ -219,7 +218,7 @@ const toolsRoute = Router.post(
 )
 
 /**
- * A resent request to a `connection:` server, answered here and never forwarded. One with
+ * A resent request to a `Connection` server, answered here and never forwarded. One with
  * no body — a stream opened, or a session closed — is a 503 saying why.
  */
 const resentToConnection = (method: string) =>
@@ -256,10 +255,12 @@ const picked = (
   )
 
 /**
- * One exchange with a `connection:` server: the host's token fetched for it, then the
+ * One exchange with a `Connection` server: the host's token fetched for it, then the
  * request forwarded and the answer streamed back — a JSON body or a server-sent stream
- * alike, unread. A server the file does not declare with `connection:` is 404; an engine
- * with no key to ask a host with answers 503 and says so, and a host that hands no token, 502.
+ * alike, unread. The host's list is asked per request, so a server removed in Settings is
+ * gone at the next one. A name the list holds as no `Connection` is 404; a host that cannot
+ * be asked for its list, or an engine with no key to ask a host with, answers 503 and says
+ * so, and a host that hands no token, 502.
  */
 const connectionRoute = Router.all(
   "/api/traks/:id/mcp/:server",
@@ -267,7 +268,10 @@ const connectionRoute = Router.all(
     Effect.gen(function* () {
       yield* pathTrak
       const name = (yield* Router.params)["server"] ?? ""
-      const declared = connectionsOf((yield* Lib).mcp).find((s) => s.name === name)
+      const environment = yield* Environment
+      const listed = yield* environment.connection.servers
+      if (Either.isLeft(listed)) return ServerResponse.text(listed.left, { status: 503 })
+      const declared = connectionsOf(listed.right).find((s) => s.name === name)
       if (declared === undefined) return ServerResponse.empty({ status: 404 })
       const request = yield* ServerRequest.HttpServerRequest
       if (yield* isResent) return yield* resentToConnection(request.method)
@@ -280,9 +284,7 @@ const connectionRoute = Router.all(
                 Effect.fail(ServerResponse.empty({ status: 400 })),
               ),
             )
-      const token = yield* Effect.either(
-        (yield* Environment).connection.token(declared.connection, declared.url),
-      )
+      const token = yield* Effect.either(environment.connection.token(declared.name, declared.url))
       if (Either.isLeft(token)) {
         const { reason, asked } = token.left
         return ServerResponse.text(reason, { status: asked ? 502 : 503 })

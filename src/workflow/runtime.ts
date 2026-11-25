@@ -55,7 +55,6 @@ import { type Place, Places } from "../agent/types/place.js"
 import { agentIndex } from "../library/logic/index-summary.js"
 import { agentNamed } from "../library/logic/resolve.js"
 import { type Check, engineCondition, WAIT_UNTIL } from "../library/types/check.js"
-import { connectionsOf } from "../library/logic/mcp-resolve.js"
 import { GENERIC, type Agent, declaredTitles, requiredTitles } from "../library/types/agent.js"
 import { Lib } from "../library/ports/library.js"
 import type { Library } from "../library/types/library.js"
@@ -166,6 +165,7 @@ import {
   type TrakState,
   waitUntilAt,
 } from "./domain/trak.js"
+import type { ResolvedServers } from "./domain/mcp-servers.js"
 import { spellLocal } from "./domain/wait-until.js"
 import { type CheckOutcome, type CheckUnits, Checks } from "./ports/checks.js"
 import { EngineVersion } from "./ports/engine-version.js"
@@ -689,46 +689,45 @@ export const withSessionCopies =
     })
 
 /**
- * The MCP servers one session dials, as the request's `mcpServers`: what `mcp.yaml`
- * declares, filled from the engine's own environment, with the engine's servers laid
- * over them. The key is left out where there is no server at all.
+ * The MCP servers one session dials, as the request's `mcpServers`: what the host lists,
+ * filled from the engine's own environment, with the engine's servers laid over them.
+ * The key is left out where there is no server at all.
  *
  * **Every line is written before the turn, on every turn** — a server left out and why,
- * and every problem with the file — through `note`, into the transcript a person reads
+ * or a host that could not be asked — through `note`, into the transcript a person reads
  * the turn in. None of them fails the session: a missing tool is the whole cost.
  */
 const sessionServers = <R>(
-  lib: Library,
   own: Readonly<Record<string, McpServer>>,
   note: (text: string) => Effect.Effect<void, never, R>,
   reached?: ReachedTools,
 ) =>
   Effect.gen(function* () {
-    const resolved = yield* declaredServers(yield* Environment, lib)
+    const resolved = yield* declaredServers(yield* Environment)
     yield* Effect.forEach(resolved.lines, note, { discard: true })
     const servers = {
       ...resolved.servers,
-      ...reachedConnections(lib, resolved.servers, reached),
+      ...reachedConnections(resolved, reached),
       ...own,
     }
     return Object.keys(servers).length === 0 ? {} : { mcpServers: servers }
   })
 
 /**
- * Each `connection:` server the host would hand a token for, as the engine's route that
+ * Each `Connection` server the host would hand a token for, as the engine's route that
  * proxies it, for a session in a sandbox — where the stdio proxy's command is not. One the
- * host refused is already left out, with its line.
+ * host refused is already left out, with its line. Read from what `declaredServers`
+ * resolved, so the host is asked for its list once per session start.
  */
 const reachedConnections = (
-  lib: Library,
-  servers: Readonly<Record<string, McpServer>>,
+  resolved: ResolvedServers,
   reached: ReachedTools | undefined,
 ): Readonly<Record<string, McpServer>> =>
   reached === undefined
     ? {}
     : Object.fromEntries(
-        connectionsOf(lib.mcp).flatMap((s) =>
-          s.name in servers ? [[s.name, reached.connection(s.name)]] : [],
+        resolved.connections.flatMap((s) =>
+          s.name in resolved.servers ? [[s.name, reached.connection(s.name)]] : [],
         ),
       )
 
@@ -753,14 +752,12 @@ const noteOn = (id: TrakId, position: TurnPosition) =>
  * the step its check tool, nor a step with no check tool its declared servers.
  */
 const stepServers = (
-  lib: Library,
   trak: Trak,
   step: number,
   checks: McpServer | undefined,
   reached: ReachedTools | undefined,
 ) =>
   sessionServers(
-    lib,
     checks === undefined ? {} : { [TRAK_TOOLS]: checks },
     trakNote(trak.id, step),
     reached,
@@ -2098,7 +2095,7 @@ export const Compose = Effect.fn("Compose")(function* (
   // Before the prompt is built, because the prompt tells the turn to read what this
   // writes — see `readyFor` for why either half failing is a turn that failed.
   // The composer runs in the trak's checkout, which under a runner is in its sandbox, so
-  // it reaches `connection:` servers over HTTP and holds the tunnel as a step does. A
+  // it reaches `Connection` servers over HTTP and holds the tunnel as a step does. A
   // trak with no checkout yet composes in the project's sandbox under an external store, and on
   // this machine otherwise — its env script captured where it composes.
   const inProject = trak.worktree === undefined ? yield* projectPlace : undefined
@@ -2106,7 +2103,7 @@ export const Compose = Effect.fn("Compose")(function* (
   if (ready._tag === "Left") return ready.left
   const reached =
     trak.worktree === undefined ? undefined : yield* (yield* TurnTools).reached(trak.id)
-  const servers = yield* sessionServers(lib, {}, trakNote(trak.id, "composer"), reached)
+  const servers = yield* sessionServers({}, trakNote(trak.id, "composer"), reached)
   const { rejoin, execId } = yield* spawnedAs(trak.id, undefined, cmd.trigger)
   const request: SessionRequest = {
     prompt: buildComposerPrompt(prompts, {
@@ -2472,7 +2469,7 @@ const SpawnStep = Effect.fn("SpawnStep")(function* (
     // contract, so a CLI that carries the brief in the body says this one's again.
     inherited: slot.session === undefined && inherited !== undefined,
     env: yield* stepEnv(ready.right.env, trak, reached),
-    ...(yield* stepServers(lib, trak, cmd.step, turnTools.server, reached)),
+    ...(yield* stepServers(trak, cmd.step, turnTools.server, reached)),
     ...signInOf(ready.right.credential),
     ...carriedOver(rejoin, setupGate, execId),
   }
@@ -4680,7 +4677,7 @@ export const ComposeGoal = Effect.fn("ComposeGoal")(function* (
     })
   const own =
     tools === undefined ? undefined : inProject === undefined ? tools.here : tools.reached.tools
-  const servers = yield* sessionServers(lib, own === undefined ? {} : { [GOAL_TOOLS]: own }, note)
+  const servers = yield* sessionServers(own === undefined ? {} : { [GOAL_TOOLS]: own }, note)
   const request: SessionRequest = {
     prompt: buildGoalPrompt(prompts, goal, traks, yield* everyGoal(goals), lib.goals),
     ...(images.length === 0 ? {} : { images }),

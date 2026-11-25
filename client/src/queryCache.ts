@@ -252,12 +252,6 @@ export const queryKeys = {
    */
   hostProjectSettings: (project: string) => ["host-project-settings", project] as const,
   /**
-   * The `connection:` names one project's engine says its `.orkestra/mcp.yaml` declares, or
-   * that no engine is running there. Polled while its Project settings are open, since an engine
-   * starts, stops and reloads with nobody pressing anything here.
-   */
-  hostDeclared: (id: string) => ["host-declared", id] as const,
-  /**
    * The project checkout's branch, its upstream and how far apart they are — the git
    * bar's read. A fact about the engine's own checkout rather than any trak, so it shares
    * no prefix with the keys above and no ending sweeps it. Polled like everything the

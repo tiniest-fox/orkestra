@@ -42,7 +42,7 @@ write them.
 
 ## The `.orkestra` contract — the format policy is authored in
 
-Parsed by `src/library/logic/{agent-file,check-file,process-file,mcp-file,tool-file}.ts`. This is the only place the
+Parsed by `src/library/logic/{agent-file,check-file,process-file,tool-file}.ts`. This is the only place the
 format is written down; the loader and its tests are the only other authority.
 
 ```
@@ -52,8 +52,6 @@ format is written down; the loader and its tests are the only other authority.
   models.yaml          default: <a listed model> + models: {<cli>: [{name, effort?}]}
                        + context_windows: {<a listed model>: <tokens>} — a fallback
                        ceiling a screen divides by where the CLI reported none  (optional)
-  mcp.yaml             servers: {<name>: a stdio or an http server} — dialed by every
-                       Claude and Codex session in the project           (optional)
   COMPOSITION.md       → Library.composition, sequencing guidance only   (optional)
   GOALS.md             → Library.goals, a goal composer's first turn only (optional)
   ORKESTRA.md          → Library.guidance, injected into every step      (optional)
@@ -70,28 +68,16 @@ format is written down; the loader and its tests are the only other authority.
   worktrees/setup.sh   → Library.setup, run once per new worktree, beside the first turn
   worktrees/teardown.sh → Library.teardown, run in a checkout before the engine removes it
   worktrees/env.sh     → Library.env, sourced before every spawn in a worktree
-  .local/              the same layout again, one person's, git-ignored by the engine —
-                       except `mcp.yaml`, which is read from the team's tree only
+  .local/              the same layout again, one person's, git-ignored by the engine
 ```
 
-**`mcp.yaml` is the one file that cannot fail a load.** Each entry under `servers:` is
-a stdio server — `command:`, optional `args:` and `env:` — or an http server — `url:`,
-optional `headers:` — and never both. A secret is named as `${NAME}` inside an `env:` or
-`headers:` value, and nowhere else. The engine fills each reference once per session from
-its own process environment; a project's `worktrees/env.sh` does not reach it. The file never holds a credential: commit the
-reference, and store the value as a named secret.
-
-An http server may name `connection: <name>` in place of `headers:`, a sign-in a host
-holds under that name. An engine no host started has no such sign-in, so it leaves the
-server out.
-
-A server is left out of a session, with a `Note` on that session's transcript naming it
-and the reason, when a secret it names is unset or empty, when its name holds anything but
-letters, digits, `-` and `_` or starts `orkestra-`, when it names `connection:` and no
-token is handed for that name, or when it is wrong in any other way. A file that is not YAML, or has
-no `servers:` map, adds no server and writes one note. The engine's own tool servers sit
-over the declared ones, and the person's own CLI configuration stays loaded. A running
-engine reads the file at boot and on Reload.
+**A session's MCP servers are not an `.orkestra/` file.** The host lists them through
+`Connections.servers` at every session start, and an engine no host started lists none;
+the engine never reads `.orkestra/mcp.yaml`. A `${NAME}` in a listed server is filled
+from the engine's own environment only — never from `worktrees/env.sh`, a backup file's
+`secrets:` or a reserved variable. A server left out — an unset secret, a
+sign-in the host will not hand, or a host that could not be asked — costs a `Note` on the
+session's transcript, never the turn.
 
 **`.local/` is a private mirror of the directory, merged over it at load** — a way to
 run an agent nobody has been asked to review yet. The engine adds it to the

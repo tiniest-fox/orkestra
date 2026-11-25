@@ -213,24 +213,31 @@ export const pickPair = async (root: string, api: number, left: number): Promise
  * it, so `HealthResponse` leaves it undeclared and an engine without it still decodes.
  *
  * `store` is whether the store process answers, and absent where the project has no store
- * file. Nothing here reads it either.
+ * file. `config` is which default-branch commit's `.orkestra/` the engine serves and the last
+ * it refused, absent there too — `HealthDto` says more. Nothing here reads either.
  */
 export interface Health {
   readonly cwd: string
   readonly version: string
   readonly client?: string
   readonly store?: { readonly up: boolean; readonly reason?: string }
+  readonly config?: {
+    readonly commit?: string
+    readonly refused?: { readonly commit: string; readonly reason: string; readonly at: number }
+  }
 }
 
 export const health = (
   root: string,
   client: string | undefined,
   store?: Health["store"],
+  config?: Health["config"],
 ): Health => ({
   cwd: root,
   version: version(),
   ...(client === undefined ? {} : { client }),
   ...(store === undefined ? {} : { store }),
+  ...(config === undefined ? {} : { config }),
 })
 
 /**

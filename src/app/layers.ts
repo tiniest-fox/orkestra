@@ -98,7 +98,7 @@ import {
   type TurnGitHub,
 } from "./hosting.js"
 import { MachineOpenersLayer } from "./openers.js"
-import { ProjectFilesLayer, type RunnerFilesRead } from "./project-files.js"
+import { ProjectFilesLayer, refreshingVcs, type RunnerFilesRead } from "./project-files.js"
 import { viewsLayer } from "./views.js"
 
 /**
@@ -397,7 +397,9 @@ export const engineLayers = (cwd: string, options: EngineOptions = {}) => {
   // Named for the same reason as the store below: the library and the templates are
   // read once at boot, and every consumer resolves the one pair a reload swaps through
   // this one layer.
-  const lib = ProjectFilesLayer(cwd, SHIPPED_AGENTS, TEMPLATES, seams.runners)
+  // Under an external store, out of the commit `origin`'s default branch names in the cache
+  // checkout rather than out of `cwd`.
+  const lib = ProjectFilesLayer(cwd, SHIPPED_AGENTS, TEMPLATES, seams.runners, checkouts)
   const machine = seams.machine(cwd, { lib, preparation, checkouts })
   const { sandboxes } = machine
   const hostTraks = machine.hostTraks ?? Layer.empty
@@ -417,8 +419,11 @@ export const engineLayers = (cwd: string, options: EngineOptions = {}) => {
   const locks = Layer.effect(Locks, Locks).pipe(Layer.provide(stores))
   const shared = sharedOf(stores)
   const store = publishingStore(stores)
-  const vcs = GitCliLayer(cwd, checkouts).pipe(
-    Layer.provide(Layer.mergeAll(proc, sandboxes, preparation)),
+  // Over the library, which reads `.orkestra/` again after each call that can move the default
+  // branch — and is built first, so its boot fetch of the cache checkout is never run beside
+  // this one's.
+  const vcs = refreshingVcs(GitCliLayer(cwd, checkouts)).pipe(
+    Layer.provide(Layer.mergeAll(proc, sandboxes, preparation, lib)),
   )
   const environment = seams.environment.pipe(Layer.provide(Layer.merge(proc, lib)))
   const checks = ShellChecksLayer(RECORDING, CHECK_STAGES).pipe(

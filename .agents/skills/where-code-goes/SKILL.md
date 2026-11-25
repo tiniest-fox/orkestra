@@ -41,6 +41,13 @@ the shell exports that variable. No file reads one from the process, except
 Process, the sandboxes and the traks placed on this machine are one seam, `machine`:
 `PUBLIC_SEAMS` holds the node layer and `NoSandboxesLayer`.
 
+**Under an external store, `.orkestra/` is the commit `origin`'s default branch names in
+the cache checkout, never the directory the engine was started in**, which nothing moves.
+Read it from the library `ProjectFiles` holds, never from disk. `ProjectFiles.refresh`
+reads it again whenever that branch moves, so a new `Vcs` call that can move it — a
+fetch, a pull, a push, a merge — goes into `refreshingVcs` in `src/app/project-files.ts`;
+one left out serves the old config until the next call that is in it.
+
 **Who sees, presses or reads a trak or a goal is asked of `People`** (`src/app/people.ts`).
 A new question of that kind is a method on `PeopleShape`, and `PublicPeopleLayer` answers
 everything for the one person `pnpm ui` serves.

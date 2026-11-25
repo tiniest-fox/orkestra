@@ -19,11 +19,41 @@ export class ReloadFailed extends Data.TaggedError("ReloadFailed")<{
   }
 }
 
+/** A read of the default branch's `.orkestra/` that would not load, and so is not served. */
+export interface RefusedConfig {
+  /** The commit whose `.orkestra/` would not load. */
+  readonly commit: string
+  /** The loader's line. */
+  readonly reason: string
+  /** When it was refused, epoch milliseconds. */
+  readonly at: number
+}
+
+/** Under an external store, which commit's `.orkestra/` is served, and the last refused. */
+export interface ServedConfig {
+  /**
+   * The default-branch commit whose `.orkestra/` is held; absent where none is — `origin`
+   * names no default branch, or the boot's commit was refused and the shipped agents serve.
+   */
+  readonly commit?: string
+  /** The last read that would not load, until a read after it loads. */
+  readonly refused?: RefusedConfig
+}
+
 export interface ProjectFilesShape {
   /** The pair loaded last. */
   readonly current: Effect.Effect<ProjectFilesRead>
   /** Read both again and swap them in together — or, where either fails, swap neither. */
   readonly reload: Effect.Effect<void, ReloadFailed>
+  /**
+   * Under an external store, read again where `origin`'s default branch names a commit other
+   * than the one served and the one last refused; nothing otherwise, and nothing at all
+   * where the engine reads its own checkout. Called after every git call that can move that
+   * branch. Never fails: a read that will not load is logged and kept as `refused`.
+   */
+  readonly refresh: Effect.Effect<void>
+  /** Under an external store, what `ServedConfig` says; `undefined` where there is none. */
+  readonly served: Effect.Effect<ServedConfig | undefined>
 }
 
 /**

@@ -12,6 +12,15 @@ _what data_ goes in.
 `src/prompts/index.ts` is Effect-free because `workflow/domain` imports it — the
 `Prompts` tag lives in `ports/`, the loader in `adapters/`.
 
+**`templates/outside/` is Orkestra Cloud's, not the engine's.** It holds the descriptions
+of the tools Cloud's own MCP endpoint serves to a person's agent, and no turn renders
+them. `src/app/outside-tools.ts` reads them itself, from `TEMPLATES`, and imports
+nothing under `prompts/`, because Cloud's host code may not. Cloud depends on the nine
+file names in `OUTSIDE_TOOLS` and on `readOutsideTools(dir?)` returning a
+`ReadonlyMap<OutsideTool, string>`: the wording may change, but renaming a file or
+changing that signature breaks Cloud at its next pin bump. The nine files are still in
+`TEMPLATE_NAMES`, so a missing one fails the engine's boot too.
+
 **A template that needs the wall clock is given it, spelled.** The composer is told the
 current local time with its offset — `spellLocal`, off `Clock` at the call site — and no
 other template carries a date. An agent's own sense of _now_ is the provider's: Claude

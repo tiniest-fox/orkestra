@@ -136,7 +136,8 @@ missing, not a document waiting to be written.**
 change.** Each `src/library/logic/*-file.ts` loader is documented on the page named for its
 kind in the plural — `process-file.ts` on `docs/processes.md` — and every key in its
 allowed list is named there as `` `key:` `` with its type and default; a key it refuses
-by name goes in that page's table of refused keys. The files read elsewhere —
+by name goes in that page's table of refused keys. `pnpm docs:check` fails on an allowed
+key the page does not name, and on a loader with no page. The files read elsewhere —
 `models.yaml`, `fleet.yaml`, `worktrees/`, `deploy.sh`, `ORKESTRA.md`, `COMPOSITION.md`,
 `GOALS.md` — each have a page the index in `docs/README.md` names, and the same rule.
 

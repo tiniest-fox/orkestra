@@ -140,6 +140,9 @@ by name goes in that page's table of refused keys. `pnpm docs:check` fails on an
 key the page does not name, and on a loader with no page. The files read elsewhere —
 `models.yaml`, `fleet.yaml`, `worktrees/`, `deploy.sh`, `ORKESTRA.md`, `COMPOSITION.md`,
 `GOALS.md` — each have a page the index in `docs/README.md` names, and the same rule.
+Adding, removing or renaming a shipped agent updates the table under `## The agents` in
+`docs/fleet.md`, one row per agent with its name in backticks; `pnpm docs:check` fails on
+a shipped agent the table omits and on a row naming an agent that is not shipped.
 
 **`references/` holds only what a reader needs *outside* the code.** `glossary.md` says what a word denotes; `commands.md` says what each command does and what it spends. None says how the code is arranged — that goes stale on any
 change that touches it, so behaviour an agent needs while writing belongs in the skill

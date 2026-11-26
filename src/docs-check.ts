@@ -7,7 +7,7 @@
 // `writing-docs` skill), so nothing here reads it as a source — but a pointer *into*
 // `notes/` from anywhere else is a claim like any other.
 //
-// Six checks:
+// Seven checks:
 //
 //   1. paths         — every `src/…`-shaped reference names a file that exists
 //   2. line cites    — a cited line number is within the file
@@ -23,11 +23,13 @@
 //   5. total mappers — see below
 //   6. format keys   — every key a `src/library/logic/<kind>-file.ts` loader accepts is
 //                      named on `docs/<kind>s.md`, the public page for that file
+//   7. fleet         — `docs/fleet.md` lists every agent under `src/library/shipped/agents/`,
+//                      and no agent that is not there
 //
 // Checks 4 and 5 are not about prose at all; they live here because this is the only
-// gate that reads the repository as a whole. Check 6 is the one place a document is held
-// to the code rather than the other way round: a key added to a loader is a claim
-// `docs/` has not made yet.
+// gate that reads the repository as a whole. Checks 6 and 7 are the places a document is
+// held to the code rather than the other way round: a key added to a loader, or an agent
+// added to the fleet, is a claim `docs/` has not made yet.
 //
 // Not checked, deliberately: what a sentence *says* about the thing it names. That
 // is review's job. This only catches the cheaper failure — the name being wrong.
@@ -409,15 +411,15 @@ const checkTotalMappers = (): void => {
 const LOADERS_DIR = join("src", "library", "logic")
 const LOADER_SUFFIX = "-file.ts"
 
+/** `agent` → `agents`, `process` → `processes`: the English plural, for the kinds there are. */
+const plural = (kind: string): string => (kind.endsWith("s") ? `${kind}es` : `${kind}s`)
+
 /**
  * The loader's `ALLOWED` list, read as text: this script is a repository gate, and
  * importing the engine's modules would make it depend on them building. A loader whose
  * list this cannot find is reported rather than skipped, so a rename of the constant
  * fails loudly instead of leaving the check passing over nothing.
  */
-/** `agent` → `agents`, `process` → `processes`: the English plural, for the kinds there are. */
-const plural = (kind: string): string => (kind.endsWith("s") ? `${kind}es` : `${kind}s`)
-
 const ALLOWED_RE = /const ALLOWED\b[^=]*=\s*\[([^\]]*)\]/
 
 /** Named means written as `` `key:` ``, the form every `docs/` page uses for a key. */
@@ -445,6 +447,56 @@ const checkFormatKeys = (): void => {
         report(loader, before + offset, `accepts \`${key}:\`, which \`${page}\` does not name`)
       }
     })
+  }
+}
+
+// ============================================================================
+// 7 · Fleet — docs/fleet.md lists exactly the shipped agents
+// ============================================================================
+
+/** The shipped agents, one `.md` file each, read from the directory rather than listed. */
+const SHIPPED_AGENTS_DIR = join("src", "library", "shipped", "agents")
+const FLEET_PAGE = join("docs", "fleet.md")
+
+/**
+ * The page's agent list is the table under this heading, one row per agent, its lead
+ * cell the name in backticks. Only those rows are claims: prose elsewhere on the page
+ * may name an agent that is deliberately not in the fleet, as it does `generic`.
+ */
+const FLEET_HEADING = "## The agents"
+const FLEET_ROW_RE = /^\|\s*`([\w-]+)`\s*\|/
+
+const checkFleet = (): void => {
+  if (!existsSync(SHIPPED_AGENTS_DIR)) return
+  const shipped = new Set(
+    readdirSync(SHIPPED_AGENTS_DIR)
+      .filter((entry) => entry.endsWith(".md"))
+      .map((entry) => entry.slice(0, -".md".length)),
+  )
+  if (!existsSync(FLEET_PAGE)) {
+    report(SHIPPED_AGENTS_DIR, 1, `holds the shipped fleet, and \`${FLEET_PAGE}\` does not exist`)
+    return
+  }
+  const lines = readFileSync(FLEET_PAGE, "utf8").split("\n")
+  const start = lines.findIndex((l) => l.trimEnd() === FLEET_HEADING)
+  if (start === -1) {
+    report(FLEET_PAGE, 1, `has no \`${FLEET_HEADING}\` section listing the shipped agents`)
+    return
+  }
+  const end = lines.findIndex((l, i) => i > start && l.startsWith("## "))
+  const listed = new Set<string>()
+  lines.slice(start, end === -1 ? undefined : end).forEach((text, offset) => {
+    const name = FLEET_ROW_RE.exec(text)?.[1]
+    if (name === undefined) return
+    listed.add(name)
+    if (!shipped.has(name)) {
+      report(FLEET_PAGE, start + offset + 1, `lists \`${name}\`, which Orkestra does not ship`)
+    }
+  })
+  for (const name of [...shipped].sort()) {
+    if (!listed.has(name)) {
+      report(FLEET_PAGE, start + 1, `does not list \`${name}\`, which Orkestra ships`)
+    }
   }
 }
 
@@ -547,6 +599,7 @@ if (flagAt !== -1 && ref === undefined) {
   checkModuleCoverage()
   checkTotalMappers()
   checkFormatKeys()
+  checkFleet()
 
   if (problems.length === 0) {
     console.log(`docs:check — ${String(sources().length)} files, no broken references`)

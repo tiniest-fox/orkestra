@@ -37,9 +37,12 @@ field behind `# `, and a closing `# ---`. The script follows it and must not be 
 | `exclusive:` | boolean | `false` | Runs one at a time across every trak on this engine, queued behind any other exclusive check. For a check that already uses every core. A run in a trak's own sandbox never queues |
 | `cache:` | boolean | `true` | Whether a pass may be reused. A check that passed on exactly these files, this script and this platform is not run again. Set `false` for a check whose answer depends on the network, the clock or a tool's version. Read only under `checks:` |
 | `ignores_linguist_generated:` | boolean | `false` | Leaves the files `.gitattributes` marks `linguist-generated` out of the tree a pass is kept against, so a change to only those reuses the pass. A promise the engine cannot check: the script must not read those files |
-| `units:` | string | none | A label for the units this check proves, such as test files. The check is handed `ORKESTRA_UNITS_OUT`, a file to append each unit it proved to, one per line, and `ORKESTRA_UNITS_PROVEN`, the units already proven under the label on this tree. Refused on a script named under `conditions:` or `effects:` |
+| `units:` | string | none | A label for the units this check proves, such as test files, so a run skips the ones already proven on this tree. Refused on a script named under `conditions:` or `effects:` |
 | `cache_across:` | `platform` or `os` | `platform` | How much of the machine a kept pass is tied to: `platform` is the OS and the architecture, `os` the OS alone |
 | `fingerprint:` | list of tool names | none | Opts in to skipping a test file whose recorded inputs are unchanged although the tree changed. Each tool listed is one a test may spawn and still be skipped. Requires `units:`, and the test runner must be vitest |
+
+[check-caching.md](check-caching.md) says how the five keys above decide what is skipped,
+how to write a script with `units:`, and how to carry the records to CI.
 | `reaches:` | `local` or `external` | none | Read only on `worktrees/setup.sh` and `worktrees/teardown.sh` — see [worktrees.md](worktrees.md). Refused here |
 
 **An unknown key fails the load.** These fail with a message saying why:
@@ -74,7 +77,7 @@ whatever `worktrees/env.sh` exports. The engine adds:
 | `ORKESTRA_STAGES` | the path of the stage runner, below |
 | `ORKESTRA_BASE_COMMIT` | the commit the trak's checkout was cut from |
 | `ORKESTRA_PASSED_TREE` | the tree this check last passed on in this checkout, where it has passed |
-| `ORKESTRA_UNITS_OUT`, `ORKESTRA_UNITS_PROVEN` | the two unit files, on a check with `units:` |
+| `ORKESTRA_UNITS_OUT`, `ORKESTRA_UNITS_PROVEN` | the two unit files, on a check with `units:` — see [check-caching.md](check-caching.md#units) |
 | `ORKESTRA_TARGET_BRANCH` | for an effect, the branch a pull request goes into, where the trak's goal has a goal branch |
 
 An agent can run any check that has `cache: true` during its own turn, through the

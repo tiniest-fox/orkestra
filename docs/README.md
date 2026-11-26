@@ -12,6 +12,7 @@ Start with [concepts](concepts.md), then open the page for the file you are writ
 | [agents.md](agents.md) | `.orkestra/agents/*.md`, every frontmatter key, and how a project file layers over a shipped agent |
 | [fleet.md](fleet.md) | the agents Orkestra ships, what each is for, and `fleet.yaml` |
 | [checks.md](checks.md) | `.orkestra/checks/*.sh` as checks, effects and conditions, `*.select.yaml`, and `deploy.sh` |
+| [check-caching.md](check-caching.md) | how a check's passes, unit proofs and prints skip work, and how to carry them to CI |
 | [processes.md](processes.md) | `.orkestra/processes/*.sh`, the long-running servers a trak keeps up |
 | [tools.md](tools.md) | `.orkestra/tools/*.sh`, commands a sandbox installs on first call |
 | [goals.md](goals.md) | the goal file a goal's composer drafts, and `GOALS.md` |

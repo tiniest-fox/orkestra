@@ -24,6 +24,7 @@ import {
   Ref,
   Scope,
 } from "effect"
+import { DEPLOY_SCRIPT } from "../library/types/check.js"
 import type { CommitSha } from "../vcs/index.js"
 import { conditionAnswer } from "../workflow/domain/condition.js"
 import type { Event } from "../workflow/domain/event.js"
@@ -123,7 +124,15 @@ export const DeploysLayer = Layer.scoped(
         const script = lib.deploy
         if (script === undefined) return yield* Effect.die("asked for a deploy with no deploy.sh")
         // The project's script, so under an external store it runs as `askConditions` runs it.
-        const outcome = yield* runner.run(script, lib.root, undefined, [sha], undefined, {}, true)
+        const outcome = yield* runner.run(
+          script,
+          lib.root,
+          undefined,
+          [sha],
+          undefined,
+          {},
+          DEPLOY_SCRIPT,
+        )
         const status: DeployStatus = {
           answer: answerOf(outcome.exitCode),
           output: outcome.output,

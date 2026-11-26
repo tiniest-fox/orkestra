@@ -119,8 +119,9 @@ const committedSource = (reading: Reading, project: string, cache: string): Sour
   read: (commit) =>
     Effect.flatMap(
       committedFiles(makeNodeProcess, cache, commit, [".orkestra", ...SKILL_DIRS]),
-      // Served as the project's, so `deploy.sh` and a goal's composer run where they
-      // always have rather than in the copy.
+      // Served as the project's, so `deploy.sh` and a goal's composer run in the project
+      // rather than in the copy. `deploy.sh` is the project's own file wherever the project
+      // has a place of its own, which holds no copy; on this machine it is the copy's file.
       (dir) => readAt(reading, dir, project, commit),
     ),
 })

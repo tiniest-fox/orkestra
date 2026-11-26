@@ -167,13 +167,16 @@ export interface ChecksShape {
      */
     env?: Readonly<Record<string, string>>,
     /**
-     * The script belongs to the project rather than a checkout — `deploy.sh`. Where the
-     * project has a place of its own (`Sandboxes.project`, under an external store) it and the
-     * env script before it run there in place of `cwd`, starting a stopped sandbox, and
-     * are handed of the engine's environment only the runner's `pass:`
-     * (`ProcessSpec.inProject`, `passOnly`). Elsewhere it runs in `cwd` as any script does.
+     * The script belongs to the project rather than a checkout — `deploy.sh` — and this is
+     * its path from the project's root. Where the project has a place of its own
+     * (`Sandboxes.project`, under an external store) the file at that path in the place's
+     * checkout runs, with the env script before it, in place of `cwd` and `check.path`,
+     * starting a stopped sandbox, and both are handed of the engine's environment only the
+     * runner's `pass:` (`ProcessSpec.inProject`, `passOnly`). `check.path` is the file this
+     * machine read, which under an external store is in a copy of a commit the place does
+     * not hold. Elsewhere `check.path` runs in `cwd` as any script does.
      */
-    inProject?: true,
+    inProject?: string,
   ) => Effect.Effect<CheckOutcome>
   /**
    * The most recent run at this trak — in flight, or the last one to finish.

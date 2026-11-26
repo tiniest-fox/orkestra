@@ -37,6 +37,12 @@ export const engineCondition = (name: string): EngineCondition | undefined =>
   ENGINE_CONDITIONS.find((c) => c === name)
 
 /**
+ * Where `deploy.sh` sits from the project's root. What the project's own place runs: the
+ * file this machine read may be a copy of a commit, which that place does not hold.
+ */
+export const DEPLOY_SCRIPT = ".orkestra/deploy.sh"
+
+/**
  * The name a plan entry's time wait is recorded under, beside the conditions an agent
  * declares. Not a condition an agent may list — `wait_until` is a field the composer
  * writes on the step, and the engine resolves and answers it with no script — and not

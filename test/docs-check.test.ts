@@ -187,3 +187,87 @@ describe("docs:check's package coverage, in a workspace that vendors a submodule
     expect(run.stderr).toContain("workspace package `vendor/engine` is not covered by `lint`")
   })
 })
+
+/**
+ * A tree with two loaders: `process-file.ts`, whose page names `description:` but not
+ * `needs:`, and `tool-file.ts`, which has no page at all.
+ */
+const loaders = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "docs-check-loaders-"))
+  writeFileSync(join(dir, "package.json"), "{}")
+  mkdirSync(join(dir, "src", "library", "logic"), { recursive: true })
+  mkdirSync(join(dir, "docs"))
+  writeFileSync(
+    join(dir, "src", "library", "logic", "process-file.ts"),
+    'const ALLOWED: readonly string[] = [\n  "description",\n  "needs",\n]\n',
+  )
+  writeFileSync(
+    join(dir, "src", "library", "logic", "tool-file.ts"),
+    'const ALLOWED: readonly string[] = ["description"]\n',
+  )
+  writeFileSync(
+    join(dir, "docs", "processes.md"),
+    "| `description:` | string |\n| needs | list |\n",
+  )
+  return dir
+}
+
+describe("docs:check's format keys", () => {
+  it("refuses a loader key its docs/ page does not name as `key:`, and a loader with no page", () => {
+    const run = gate(loaders())
+
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(
+      "src/library/logic/process-file.ts:3: accepts `needs:`, which `docs/processes.md` does not name",
+    )
+    expect(run.stderr).not.toContain("accepts `description:`")
+    expect(run.stderr).toContain("`docs/tools.md` does not exist")
+  })
+})
+
+/**
+ * A tree shipping `build` and `review`, whose fleet page lists `build` and `retired`, and
+ * names `generic` in prose below the table.
+ */
+const fleet = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "docs-check-fleet-"))
+  writeFileSync(join(dir, "package.json"), "{}")
+  mkdirSync(join(dir, "src", "library", "shipped", "agents"), { recursive: true })
+  mkdirSync(join(dir, "docs"))
+  for (const name of ["build", "review"]) {
+    writeFileSync(join(dir, "src", "library", "shipped", "agents", `${name}.md`), "---\n---\n")
+  }
+  writeFileSync(
+    join(dir, "docs", "fleet.md"),
+    [
+      "# The shipped fleet",
+      "",
+      "## The agents",
+      "",
+      "| Agent | What it is for |",
+      "|---|---|",
+      "| `build` | Builds |",
+      "| `retired` | Gone |",
+      "",
+      "The engine also ships `generic`, which is not in the fleet.",
+      "",
+      "## `fleet.yaml`",
+      "",
+      "| `refused:` | list |",
+    ].join("\n"),
+  )
+  return dir
+}
+
+describe("docs:check's fleet", () => {
+  it("refuses a fleet page that omits a shipped agent or lists one that is not shipped", () => {
+    const run = gate(fleet())
+
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain("docs/fleet.md:3: does not list `review`, which Orkestra ships")
+    expect(run.stderr).toContain("docs/fleet.md:8: lists `retired`, which Orkestra does not ship")
+    expect(run.stderr).not.toContain("`build`")
+    expect(run.stderr).not.toContain("`generic`")
+    expect(run.stderr).not.toContain("`refused`")
+  })
+})

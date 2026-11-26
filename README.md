@@ -245,8 +245,9 @@ everything a production system would want:
 [`CLAUDE.md`](CLAUDE.md) routes an agent before it touches anything,
 [`references/glossary.md`](references/glossary.md) defines the vocabulary the rest
 assumes, [`references/commands.md`](references/commands.md) says what each command does and spends, and `.agents/skills/` holds the working knowledge,
-loaded at the moment it is needed rather than read up front. Those and this file are kept
-true of the code as it is.
+loaded at the moment it is needed rather than read up front. [`docs/`](docs/README.md) is the
+public reference to every `.orkestra/` file, for an agent setting Orkestra up in another
+project. Those and this file are kept true of the code as it is.
 
 [`notes/`](notes) is everything that is not: [`todo/`](notes/todo) is what we
 knowingly deferred, one file per entry with the trigger that settles it, [`IDEAS.md`](notes/IDEAS.md) is

@@ -1,6 +1,6 @@
 ---
 name: writing-docs
-description: The two buckets orkestra's documents fall into, and what each one owes. Read before editing README.md, CLAUDE.md, a skill or anything under notes/, whenever a change reverses a decision a document records, and before adding a follow-up you are not going to do now.
+description: The two buckets orkestra's documents fall into, and what each one owes. Read before editing README.md, CLAUDE.md, a skill or anything under docs/ or notes/, before changing the keys a `.orkestra/` file accepts, whenever a change reverses a decision a document records, and before adding a follow-up you are not going to do now.
 ---
 
 # Writing this repository's documents
@@ -10,7 +10,7 @@ a document is on decides what it owes.
 
 ## Reference — kept true, kept minimal
 
-`README.md`, `CLAUDE.md`, `references/*`, `.agents/skills/*`.
+`README.md`, `CLAUDE.md`, `references/*`, `.agents/skills/*`, `docs/*`.
 
 **Name a skill at `.agents/skills/`, never at `.claude/skills/`.** Both reach the same
 file — the second is a committed symlink to the whole directory, there because Claude
@@ -110,6 +110,7 @@ replaces, never by editing the old one.
 | `references/glossary.md` | **what a word means**, for a reader who hit it in another document | reference |
 | `references/commands.md` | **what each `pnpm` command does and spends**, and which presses in the UI spend | reference |
 | `.agents/skills/*` | **how to do a thing**, at the moment you need to do it | reference |
+| `docs/*` | **what a `.orkestra/` file and each of its keys do**, for an agent setting Orkestra up in another project | reference |
 | `notes/BUGS.md` | **what is broken now**, and how sure we are of it | working |
 | `notes/todo/*` | what we deferred, one file per entry, and the trigger that settles it | working |
 | `notes/IDEAS.md` | what we might want, before it has a trigger or a design | working |
@@ -122,15 +123,28 @@ second thing to forget.
 safe to point at precisely because it is frozen; a queue entry is deleted the day its work
 lands, which is also the day the sentence citing it goes false.
 
-**There is no `docs/`, and adding one back needs a reason that is not "this is too
-long for a skill".** It held a plan, an architecture map and a findings log: the first
-two described the code well enough to go stale and badly enough to be worth less than
-reading it, and the third's every live rule had already been copied into a skill.
-**A rule with no home is a rule whose skill is missing, not a document waiting to
-be written.**
+**`docs/` is the public reference to `.orkestra/`, and holds nothing else.** It is
+published raw to agents setting Orkestra up in another project, so it describes the
+product as any project sees it — never what this repository's `.orkestra/` holds, its
+`pnpm` commands or its skills. Plain GitHub-flavored markdown, and every link between
+pages relative, because a site may wrap the files later. A plan, an architecture map or a
+findings log does not go there: each describes the code well enough to go stale and badly
+enough to be worth less than reading it. **A rule with no home is a rule whose skill is
+missing, not a document waiting to be written.**
 
-**`references/` is not that, and stays that way by holding only what a reader needs
-*outside* the code.** `glossary.md` says what a word denotes; `commands.md` says what each command does and what it spends. None says how the code is arranged — that goes stale on any
+**A change to the keys a `.orkestra/` file accepts updates its `docs/` page in the same
+change.** Each `src/library/logic/*-file.ts` loader is documented on the page named for its
+kind in the plural — `process-file.ts` on `docs/processes.md` — and every key in its
+allowed list is named there as `` `key:` `` with its type and default; a key it refuses
+by name goes in that page's table of refused keys. `pnpm docs:check` fails on an allowed
+key the page does not name, and on a loader with no page. The files read elsewhere —
+`models.yaml`, `fleet.yaml`, `worktrees/`, `deploy.sh`, `ORKESTRA.md`, `COMPOSITION.md`,
+`GOALS.md` — each have a page the index in `docs/README.md` names, and the same rule.
+Adding, removing or renaming a shipped agent updates the table under `## The agents` in
+`docs/fleet.md`, one row per agent with its name in backticks; `pnpm docs:check` fails on
+a shipped agent the table omits and on a row naming an agent that is not shipped.
+
+**`references/` holds only what a reader needs *outside* the code.** `glossary.md` says what a word denotes; `commands.md` says what each command does and what it spends. None says how the code is arranged — that goes stale on any
 change that touches it, so behaviour an agent needs while writing belongs in the skill
 that owns it, and a `references/` file that starts describing flow has become the
 architecture map again. In the glossary: **define the word, then stop.**

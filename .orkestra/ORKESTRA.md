@@ -10,7 +10,7 @@ both a scripted agent and real Claude Code. It spawns two coding-agent CLIs —
 
 `CLAUDE.md` is the entry point and is kept current — read it before anything
 else. It routes to `.agents/skills/`, where every enforced rule and the reason
-for it lives. There is no `docs/`.
+for it lives. `docs/` is the public reference to `.orkestra/` for other projects.
 
 ## Non-negotiables
 

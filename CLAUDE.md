@@ -112,7 +112,7 @@ reads, is a committed symlink to that directory, and `AGENTS.md` is one to this 
 | `prompts-are-files` | editing anything under `src/prompts/`, or adding a Trigger or an engine tool |
 | `provider-hazards` | touching `agent/providers/`, `process-node.ts`, `runs-file.ts` or `cli-provider.ts`, adding an engine action that crosses into a sandbox, or writing code that needs a GitHub token |
 | `code-review-lens` | reviewing a diff here — the failure modes this repo has shipped |
-| `writing-docs` | editing `README.md`, `CLAUDE.md`, a skill, or anything under `notes/` |
+| `writing-docs` | editing `README.md`, `CLAUDE.md`, a skill, anything under `docs/` or `notes/`, or a key a `src/library/logic/*-file.ts` loader accepts |
 | `client-style` | creating any file under `client/`, touching a transport file under `client/src/api/`, adding a field or a frame to a wire slice under `shared/src/dto/`, laying out a screen, or reviewing a client diff |
 | `sim` | using the running app to check a change — the simulated engine, which spends nothing |
 | `pseudo` | writing or reading pseudo-code in a `pseudo` fence, or sketching how some code, job or flow works at the level of its decisions |
@@ -132,6 +132,7 @@ there is nothing outside these:
 | `CLAUDE.md` | this file: what to know first, and which skill to open | **reference** — kept true |
 | `references/glossary.md` | what each word means, one line each | **reference** — kept true |
 | `references/commands.md` | what each `pnpm` command does and spends, and which of `pnpm ui`'s presses spend | **reference** — kept true |
+| `docs/*` | every `.orkestra/` file and key, for an agent setting Orkestra up in another project; published | **reference** — kept true |
 | `.agents/skills/*` | how to do a thing, at the moment you need it | **reference** — kept true |
 | `.agents/skills/atelier*`, `stillroom`, `walkdown` | the skills the `atelier`, `stillroom` and `walkdown` CLIs write, which each rewrites on every run | **vendored** — never edit |
 | `notes/BUGS.md` | what is broken now, ahead of anything deferred | **working** — a queue |

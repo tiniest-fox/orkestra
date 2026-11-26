@@ -590,9 +590,15 @@ export const ShellChecksLayer = (
               at === undefined
                 ? silent
                 : watching(runs, pending, feed, check, commandFor(check, args), at)
-            const project = inProject === true ? yield* projectPlace : undefined
+            const project = inProject === undefined ? undefined : yield* projectPlace
             const placed =
               project === undefined ? {} : { inProject: true as const, passOnly: true as const }
+            // The place's own file, never the one this machine read: under an external store
+            // that is in this machine's copy of a commit, which the place does not hold.
+            const script =
+              project === undefined || inProject === undefined
+                ? check
+                : { ...check, path: join(project.place.path, inProject) }
             const sandboxed =
               project !== undefined
                 ? { sandboxes: project.sandboxes, trak: project.place.trak }
@@ -603,9 +609,9 @@ export const ShellChecksLayer = (
             const go = Effect.andThen(
               watch.started(false),
               units === undefined
-                ? runCheck(proc, environment, check, dir, args, watch, { unitFiles: env, placed })
+                ? runCheck(proc, environment, script, dir, args, watch, { unitFiles: env, placed })
                 : withUnitFiles(units, hook, sandboxed, (unitFiles) =>
-                    runCheck(proc, environment, check, dir, args, watch, {
+                    runCheck(proc, environment, script, dir, args, watch, {
                       unitFiles: { ...env, ...unitFiles },
                       placed,
                     }),

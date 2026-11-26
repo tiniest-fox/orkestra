@@ -8,6 +8,11 @@
 // after git moved, which no fake `Vcs` can say. The layers are the ones `engineLayers`
 // wires: `ProjectFilesLayer` with the cache, `GitCliLayer` under `refreshingVcs`, and
 // `HostGitLayer` over it.
+//
+// `deployed` there runs in the project's sandbox, whose checkout sits at the cache checkout's
+// path on another machine. That machine holds the cache checkout's branch, never this one's
+// copy of a commit, so the sandbox here is a clone of `origin` that the Process sends every
+// spawn placed in the project to, by rewriting the cache checkout's path to the clone's.
 
 import { execFileSync } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -26,8 +31,16 @@ import { ProjectFilesLayer, refreshingVcs } from "../../src/app/project-files.js
 import { hostRoutes } from "../../src/app/routes/host.js"
 import { GitCliLayer } from "../../src/vcs/adapters/git-cli.js"
 import { NO_RUNNER_FILES } from "../../src/vcs/ports/runners.js"
+import { Sandboxes, type SandboxesShape } from "../../src/vcs/ports/sandboxes.js"
+import { CommitSha } from "../../src/vcs/types/worktree.js"
+import { ShellChecksLayer } from "../../src/workflow/adapters/checks-shell.js"
+import { PubSubFeedLayer } from "../../src/workflow/adapters/feed-pubsub.js"
+import { emptyTrak, type Trak, TrakId } from "../../src/workflow/domain/trak.js"
 import { ProjectFiles, withProjectFiles } from "../../src/workflow/ports/project-files.js"
+import { askConditions } from "../../src/workflow/runtime.js"
+import { noPullRequest } from "../support/forge.js"
 import { addOrigin, git } from "../support/git.js"
+import { inheritedEnvironment } from "../support/scripted-environment.js"
 import { serving } from "../support/http.js"
 import { memoryPush } from "../support/push-memory.js"
 
@@ -375,6 +388,106 @@ describe("a default branch whose .orkestra/ will not load", () => {
         expect(watched.lines).toHaveLength(lines)
       }),
     )
+  })
+})
+
+const unused = Effect.die("not reached by a `deployed` condition")
+
+/** An external store's project place, the sandbox holding its checkout at `cache`. */
+const projectAt = (cache: string): SandboxesShape => ({
+  inUse: Effect.succeed(true),
+  holds: () => Effect.succeed(true),
+  placeOf: () => Effect.succeed(undefined),
+  project: Effect.succeed({ trak: "project", path: cache }),
+  create: () => unused,
+  status: () => unused,
+  idOf: () => Effect.succeed(undefined),
+  list: unused,
+  release: () => unused,
+  kill: () => unused,
+  expose: () => unused,
+  reach: () => unused,
+  healthThrough: () => unused,
+  transfer: () => unused,
+  retried: () => unused,
+  place: () => unused,
+  write: () => unused,
+  collect: () => unused,
+  moveOut: () => unused,
+  readInside: () => unused,
+  stats: () => unused,
+  copyHomeBack: () => Effect.void,
+  copyHomeIn: () => unused,
+  awake: () => unused,
+  lost: () => unused,
+  resuming: () => Effect.succeed(false),
+  remakeWith: () => unused,
+  stopIdleUnder: () => unused,
+  waitingBy: () => unused,
+  rebuild: () => unused,
+  rebuildOf: () => unused,
+  leftBehindTo: () => Effect.void,
+  asWork: (work) => work,
+  shell: () => unused,
+})
+
+/**
+ * The node Process, sending a spawn placed in the project to `sandbox`: the cache checkout's
+ * path in its directory and arguments read as `sandbox`'s, as the same path on the project's
+ * sandbox names that machine's checkout.
+ */
+const projectSandbox = (cache: string, sandbox: string) =>
+  Layer.effect(
+    Process,
+    Effect.map(Process, (inner) => ({
+      ...inner,
+      spawn: (spec) => {
+        if (spec.inProject !== true) return inner.spawn(spec)
+        const there = (path: string) => path.replaceAll(cache, sandbox)
+        return inner.spawn({ ...spec, cwd: there(spec.cwd), args: spec.args.map(there) })
+      },
+    })),
+  ).pipe(Layer.provide(NodeProcessLayer))
+
+/** A deploy script that is live for the commit it is handed, and says where it ran. */
+const DEPLOY_LIVE =
+  '#!/bin/bash\n# ---\n# description: Whether the merge is live.\n# asked_every_seconds: 60\n# ---\n\necho "live $1 in $PWD"\n'
+
+describe("the `deployed` condition under an external store", () => {
+  it("runs the merge's deploy.sh in the project's sandbox and is met on its exit 0", async () => {
+    const p = project()
+    const merge = pushed(p.elsewhere, { ".orkestra/deploy.sh": DEPLOY_LIVE }, "add deploy.sh")
+    // The project's sandbox, its checkout moved to `origin`'s default branch as the runner
+    // moves it before each spawn there.
+    const sandbox = join(mkdtempSync(join(tmpdir(), "orkestra-sandbox-")), "project")
+    git(tmpdir(), "clone", "--quiet", git(p.elsewhere, "remote", "get-url", "origin"), sandbox)
+    const checks = ShellChecksLayer().pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          projectSandbox(p.cache, sandbox),
+          PubSubFeedLayer,
+          inheritedEnvironment,
+          Layer.succeed(Sandboxes, projectAt(p.cache)),
+        ),
+      ),
+    )
+    const trak: Trak = {
+      ...emptyTrak(TrakId.make("ship")),
+      plan: {
+        title: "Ship it",
+        steps: [{ agent: "build", instruction: "Report on the release.", wait_for: "deployed" }],
+      },
+      landed: { sha: CommitSha.make(merge) },
+    }
+    const asked = await booted(
+      p,
+      watching(),
+      Effect.gen(function* () {
+        yield* holding(merge)
+        return yield* withProjectFiles(askConditions(trak, 0))
+      }).pipe(Effect.provide(Layer.merge(checks, noPullRequest))),
+    )
+    expect(asked).toMatchObject({ _tag: "ConditionsMet", step: 0, ran: ["deployed"] })
   })
 })
 

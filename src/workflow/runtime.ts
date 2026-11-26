@@ -54,7 +54,7 @@ import type { ProviderEvent } from "../agent/types/provider-event.js"
 import { type Place, Places } from "../agent/types/place.js"
 import { agentIndex } from "../library/logic/index-summary.js"
 import { agentNamed } from "../library/logic/resolve.js"
-import { type Check, engineCondition, WAIT_UNTIL } from "../library/types/check.js"
+import { type Check, DEPLOY_SCRIPT, engineCondition, WAIT_UNTIL } from "../library/types/check.js"
 import { GENERIC, type Agent, declaredTitles, requiredTitles } from "../library/types/agent.js"
 import { Lib } from "../library/ports/library.js"
 import type { Library } from "../library/types/library.js"
@@ -3284,8 +3284,9 @@ export const askMerged = (trak: Trak): Effect.Effect<CommitSha | undefined, neve
  * `merged`, and then the project's deploy script with the merge commit as `$1` — run
  * from the project root, never a checkout: a deploy is of a commit that is on no
  * branch of ours, and a trak that has landed may have no checkout left at all. Under an
- * external store that is the project's sandbox, where the script is handed only the runner's
- * `pass:` of the engine's environment (`Checks.run`'s `inProject`).
+ * external store that is the project's sandbox, which runs its own checkout's `deploy.sh`
+ * at `origin`'s default branch and hands it only the runner's `pass:` of the engine's
+ * environment (`Checks.run`'s `inProject`).
  *
  * Not merged yet is the deploy not being live yet, said under this condition's own
  * name so the wait a surface draws is the one the agent declared. A pull request
@@ -3305,7 +3306,15 @@ const deployedAnswer = Effect.fn("deployedAnswer")(function* (
     } satisfies Asked
   }
   const runner = yield* Checks
-  const outcome = yield* runner.run(script, root, undefined, [merged.merged], undefined, {}, true)
+  const outcome = yield* runner.run(
+    script,
+    root,
+    undefined,
+    [merged.merged],
+    undefined,
+    {},
+    DEPLOY_SCRIPT,
+  )
   return {
     name: "deployed",
     answer: conditionAnswer(outcome.exitCode),

@@ -71,6 +71,9 @@ where you sit.
   the change and never buy a step. What a builder cannot see is that the work obliges
   every future change to something new, because it is standing inside one.
 
+  **A change to the keys an `.orkestra/` file accepts carries its `docs/` page in the
+  same step** — the step that changes the format, not a `write-docs` step after it.
+
 - **A step whose document is sent outside this checkout goes last.** Some agents
   declare a script that runs once their step's work is on the branch, and the gate
   approving the document is what sends it — `pull-request` is the one here. Nothing

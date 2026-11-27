@@ -42,7 +42,7 @@ marked **required** must be set by some layer once the layers are merged.
 | `effort:` | string | the model's `effort:` in `models.yaml`, else the CLI's own default | The reasoning effort this agent's turns run at. Checked at load against the levels the model's CLI accepts |
 | `checks:` | list of script names | `[]` | Scripts from `.orkestra/checks/` run against the worktree after each artifact. Non-zero sends the step back. See [checks.md](checks.md) |
 | `effects:` | list of script names | `[]` | Scripts run once this step's work is on the branch and approved. Non-zero stops the trak as failed |
-| `conditions:` | list of script names | `[]` | Scripts asked before a step of this agent starts. Also accepts `merged` and `deployed`, which the engine answers itself |
+| `conditions:` | list of script names | `[]` | Scripts asked before a step of this agent starts. Also accepts `merged` and `deployed`, which the engine answers itself. See [checks.md](checks.md#names) |
 | `processes:` | list of process names | `[]` | Processes from `.orkestra/processes/` started before each turn. A process that does not come up does not stop the turn; the agent is told it is down. See [processes.md](processes.md) |
 | `skills:` | list of skill names | `[]` | Skills in the repository this agent reads. Each name resolves to the first of `.claude/skills/<name>/SKILL.md` and `.agents/skills/<name>/SKILL.md` that exists; a name that resolves to neither fails the load. The agent is given each path at the start of its session |
 | `start:` | boolean | `false` | Whether this agent can be the first step of a trak, with nothing but the request to read. The app offers only these as opening moves |

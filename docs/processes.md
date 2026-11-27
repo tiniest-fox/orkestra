@@ -21,7 +21,7 @@ exec npx vite --port "$PORT" --strictPort
 
 ## The header
 
-The same comment block a check uses: a `# ---` line after the shebang, each field behind
+The same comment block a [check](checks.md#the-header) uses: a `# ---` line after the shebang, each field behind
 `# `, and a closing `# ---`. The script follows it and must not be empty.
 
 | Key | Type | Default | What it does |

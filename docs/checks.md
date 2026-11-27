@@ -62,7 +62,7 @@ reserved: `merged` and `deployed`, which the engine answers itself, and `wait_un
 - **`merged`** is the trak's branch having gone in, through a merged pull request or a
   merge made from the engine.
 - **`deployed`** is `merged` and then `.orkestra/deploy.sh` saying the merge commit is live.
-  An agent may list it only where `deploy.sh` exists.
+  An agent may list it only where `deploy.sh` exists — see [`deploy.sh`](#deploysh).
 
 Orkestra ships one script, `open-pr`, which the shipped `pull-request` agent names as an
 effect. A project script called `open-pr.sh` replaces it.
@@ -126,7 +126,76 @@ held_back:
 
 ## `deploy.sh`
 
-**Path:** `.orkestra/deploy.sh`. It takes the same header as a check, and its presence lets
-an agent list the `deployed` condition. The engine runs it from the project root with the
-merge commit as `$1`, once the trak's branch has gone in. `exit 0` is live, `1` is not yet,
-and anything else gives up. `asked_every_seconds:` sets how often it is asked again.
+**Path:** `.orkestra/deploy.sh`, and `.orkestra/.local/deploy.sh` for one person's copy,
+which replaces the team's. It answers the `deployed` condition: whether the commit a trak's
+branch merged as is live. An agent may list `deployed` under `conditions:`, and a composer
+may write it as a plan step's `wait_for`, only where this file exists; either fails without
+it.
+
+```bash
+#!/bin/bash
+# ---
+# description: Whether the merge commit is serving in production.
+# asked_every_seconds: 120
+# ---
+set -euo pipefail
+live=$(curl -fsS https://example.com/version) || exit 1
+[ "$live" = "$1" ] || exit 1
+echo "{\"url\": \"https://example.com\", \"version\": \"$live\"}"
+```
+
+It takes the header a check takes. `description:` is required, `timeout_seconds:` defaults
+to `60`, and `asked_every_seconds:` is optional here: without it the engine asks every 60
+seconds. `reaches:` is refused.
+
+### When it runs
+
+`deployed` is `merged` first. Until the trak's branch has gone in, `deployed` answers *not
+yet* without running the script, and a pull request closed unmerged gives up. Once the branch
+is in, the engine runs the script:
+
+- **as the step that waits on it is about to start**, and again on the interval while the
+  trak rests on *not yet*. The engine looks for due waits every ten seconds, so an ask may
+  land up to ten seconds late. An engine restart asks a wait whose interval has passed at
+  once.
+- **while a merged trak's page is open in the app**, to show the deploy's status. One run
+  is shared by every tab asking, and its answer is reused for 30 seconds.
+
+### What it is given
+
+| | |
+|---|---|
+| `$1` | the merge commit: the merged pull request's merge commit, or the tip a merge made from the engine left. It is the only argument, and no other script takes one |
+| working directory | the project root, never a trak's checkout: the merged commit is on no trak's branch, and a merged trak may have no checkout left |
+| environment | the engine's, laid over by what `worktrees/env.sh` exports when run in the project root — see [worktrees.md](worktrees.md) |
+
+### What its exit means
+
+| Exit | Answer | What the engine does |
+|---|---|---|
+| `0` | live | the waiting step starts |
+| `1` | not yet | the trak rests, and the script is asked again on the interval |
+| no exit: timed out, or could not start | not yet | the same as `1`. An outage is not an answer |
+| anything else | gives up | the trak stays where it is, the engine stops asking, and a push says the wait is over. Nothing is failed |
+
+A person can skip the wait from the app, which starts the step with `deployed` unmet.
+
+### What it prints
+
+The output is stderr, then stdout. **The last line that parses as a JSON object** is read for
+three string fields, which the app draws beside the deploy's status: `url`, a link to what was
+deployed; `version`; and `detail`. Any other field, and a field that is not a string, is
+dropped. Every other line is shown as text.
+
+### Under an external store
+
+Where the engine keeps its store outside the project, it reads `.orkestra/` from the commit
+`origin`'s default branch names rather than from the directory it started in, and
+`.orkestra/.local/` is not read.
+
+- **Without a runner**, the engine runs that commit's `deploy.sh` from the project root, as
+  above.
+- **With a runner**, the script runs in the project's own sandbox: `.orkestra/deploy.sh`
+  in that sandbox's checkout, moved to `origin`'s default branch first, with `env.sh` run
+  there before it. Of the engine's environment it is handed only the variables the runner
+  file's `pass:` names, so `pass:` must name every one the script needs.

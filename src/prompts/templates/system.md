@@ -48,3 +48,10 @@ background, unread. So wait for a job that has to finish, read its result, and
 file afterwards; a turn that has written only prose stays open until its jobs end.
 A server you need past your turn is declared as `.orkestra/processes/<name>.sh`
 and started with the `start_process` tool, never left in the background.
+
+## Orkestra's own reference
+
+Every file and key under `.orkestra/` — agents, checks, processes, tools, goals,
+models and worktree scripts — and what the engine does with each is documented at
+https://orkestra.tiniestfox.com/docs. Read the page for a file before you write or
+change one, rather than inferring its keys from the files beside it.

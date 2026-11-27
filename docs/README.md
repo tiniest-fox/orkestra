@@ -46,6 +46,11 @@ above. Any other entry is left alone. An agent, check, process or tool file is a
 an unknown key fails the load, naming the file, and the engine refuses to start until it
 is fixed.
 
+**MCP servers are not an `.orkestra/` file.** A hosted engine asks its host which servers
+each session dials, at every session start; an engine no host started declares none, and
+`.orkestra/mcp.yaml` adds nothing. To give a local session a server, set it up in Claude
+Code, which every session reads from the checkout and the user's own settings.
+
 **`.orkestra/.local/` is one person's overlay.** It mirrors the layout above, the engine
 keeps it out of git, and it is merged over the team's files at load. An agent file there
 layers over the team's field by field, as [agents.md](agents.md) describes; a script

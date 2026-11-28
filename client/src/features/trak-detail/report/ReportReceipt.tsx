@@ -41,7 +41,7 @@ const ReportReceipt = ({
             href={reference}
             target="_blank"
             rel="noreferrer"
-            className="flex min-w-0 items-center gap-1 text-sm text-accent underline-offset-2 hover:underline"
+            className="flex min-w-0 items-center gap-1 text-sm text-accent underline-offset-2 hover:underline max-sm:min-h-11"
           >
             <span className="min-w-0 truncate font-mono text-xs">{reference}</span>
             <ExternalLink size={12} className="shrink-0" aria-hidden />

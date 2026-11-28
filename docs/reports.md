@@ -65,8 +65,8 @@ new `format`, never an edit to this one.
 
 **The log is the trak's events and the engine's warning and error lines that name the
 trak, merged oldest first by time.** Agent transcripts are not included. Each line is one
-JSON object: an event as the engine stores it, or `{ "at", "level", "message" }` for an
-engine line.
+JSON object: an event as the engine stores it, whose `at` is milliseconds since the epoch,
+or `{ "at", "level", "message" }` for an engine line, whose `at` is ISO 8601.
 
 `log._tag` is one of two:
 

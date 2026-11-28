@@ -108,15 +108,15 @@ export const ReportDto = Schema.Struct({
    */
   note: Schema.optional(Schema.String),
   /**
-   * The bytes each free-text field lost to the cut, naming only the fields that were cut;
-   * absent where none was.
-   */
-  /**
    * Present where the engine could not read its list of secrets: the note is then absent,
    * `trak.title` is the trak's id and `trak.description` is empty, because nothing typed
    * can be shown to hold no secret.
    */
   withheld: Schema.optional(Schema.Literal("secrets-unreadable")),
+  /**
+   * The bytes each free-text field lost to the cut, naming only the fields that were cut;
+   * absent where none was.
+   */
   cut: Schema.optional(
     Schema.Struct({
       note: Schema.optional(Schema.Number),

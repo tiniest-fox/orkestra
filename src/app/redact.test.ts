@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { redact, redactor, secretValues, type SecretSources } from "./redact.js"
+import {
+  hideTokenShapes,
+  redact,
+  redactor,
+  reportCleaner,
+  secretValues,
+  type SecretSources,
+} from "./redact.js"
 
 const CLAUDE = "sk-ant-oat01-claude-token-value"
 const NAMED = "named-secret-from-host"
@@ -73,5 +80,57 @@ describe("redactor", () => {
       "none",
     ])
     expect(hiding.found()).toBe(2)
+  })
+})
+
+/** One of each shape, none of which the engine holds as a value. */
+const SHAPED = {
+  github: "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB",
+  githubPat: "github_pat_11ABCDEFG0123456789_abcdefghijklmnop",
+  anthropic: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123",
+  openai: "sk-proj-abcdefghijklmnopqrstuvwxyz0123",
+  awsId: "AKIAIOSFODNN7EXAMPLE",
+  awsSecret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  bearer: "eyJhbGciOiJIUzI1NiJ9.payload.signature",
+  pem: "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7",
+}
+
+describe("hideTokenShapes", () => {
+  it("takes out each well-known token shape, and the value beside a name", () => {
+    const text = [
+      `push with ${SHAPED.github}`,
+      `fine-grained ${SHAPED.githubPat}`,
+      `ANTHROPIC_API_KEY=${SHAPED.anthropic}`,
+      `OPENAI_API_KEY=${SHAPED.openai}`,
+      `id ${SHAPED.awsId}`,
+      `aws_secret_access_key = ${SHAPED.awsSecret}`,
+      `Authorization: Bearer ${SHAPED.bearer}`,
+      `-----BEGIN RSA PRIVATE KEY-----\\n${SHAPED.pem}\\n-----END RSA PRIVATE KEY----- after`,
+    ].join("\n")
+    const hidden = hideTokenShapes(text)
+    for (const value of Object.values(SHAPED)) expect(hidden).not.toContain(value)
+    expect(hidden).toContain("aws_secret_access_key = [redacted]")
+    expect(hidden).toContain("Authorization: Bearer [redacted]")
+    expect(hidden).toContain("[redacted] after")
+  })
+
+  it("takes a private key whose end is not in the text to the end of the text", () => {
+    expect(hideTokenShapes(`key -----BEGIN PRIVATE KEY-----${SHAPED.pem}`)).toBe("key [redacted]")
+  })
+
+  it("leaves ordinary words, short ids and a sha alone", () => {
+    const text = "the task-runner sk-short a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0 Bearer of news"
+    expect(hideTokenShapes(text)).toBe(text)
+  })
+})
+
+describe("reportCleaner", () => {
+  it("takes out held values and token shapes, and counts every mark it added", () => {
+    const cleaner = reportCleaner([NAMED])
+    expect(cleaner.clean(`${NAMED} then ${SHAPED.github} and already [redacted]`)).toBe(
+      "[redacted] then [redacted] and already [redacted]",
+    )
+    expect(cleaner.clean(NAMED)).toBe("[redacted]")
+    expect(cleaner.marked()).toBe(3)
   })
 })

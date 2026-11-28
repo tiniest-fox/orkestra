@@ -989,6 +989,13 @@ export const HandoffDto = Schema.Struct({
 export type HandoffDto = Schema.Schema.Type<typeof HandoffDto>
 
 /**
+ * That the host running the engine has somewhere to send a problem report, and the name it
+ * gives that place, where it gives one. The report itself is `report.ts`'s.
+ */
+export const ReportOfferDto = Schema.Struct({ destination: Schema.optional(Schema.String) })
+export type ReportOfferDto = Schema.Schema.Type<typeof ReportOfferDto>
+
+/**
  * Whose a trak or goal is, sent only to a viewer who is not its owner on a host with more
  * than one user: every press that would start a turn is refused to them. `owner` is the
  * owner's login. Asked per request, of who is looking, so it never rides a frame.
@@ -1108,6 +1115,11 @@ export const TrakDetailDto = Schema.Struct({
   seam: Schema.optional(SeamStatusDto),
   /** Present only where the viewer is not the owner — `OwnershipDto`. */
   ownership: Schema.optional(OwnershipDto),
+  /**
+   * Present only where the host has a report destination — asked of the host on every
+   * read, never of the log, so a frame never carries it.
+   */
+  report: Schema.optional(ReportOfferDto),
 })
 export type TrakDetailDto = Schema.Schema.Type<typeof TrakDetailDto>
 

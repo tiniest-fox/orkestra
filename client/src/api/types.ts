@@ -39,6 +39,14 @@ export type {
 } from "@orkestra/shared/dto/changes"
 export type { RefusalDto, RunModeDto } from "@orkestra/shared/dto/common"
 export type {
+  ReportDto,
+  ReportLeftOutReasonDto,
+  ReportLogDto,
+  ReportSendAnswerDto,
+  ReportSendRequestDto,
+  ReportTrakDto,
+} from "@orkestra/shared/dto/report"
+export type {
   FileContentDto,
   FileMatchDto,
   FileSearchDto,

@@ -48,6 +48,10 @@ accepts: a plan for the composer, a document filling the role's sections otherwi
 trak keeps advancing however far it is pressed. A goal started on the page gets prose
 and nothing else, because its composer moves only by tool calls.
 
+Every trak offers *Report a problem…*: the simulated engine has a destination named *the
+sim's inbox*, which prints each report to the log and answers a link. A note holding `fail`
+is refused instead, which reaches the failed state and its Try again.
+
 `build` runs one stand-in check. It passes, except in a trak whose id names
 `check-failed` or `check-running`.
 

@@ -20,6 +20,7 @@ Start with [concepts](concepts.md), then open the page for the file you are writ
 | [worktrees.md](worktrees.md) | `.orkestra/worktrees/setup.sh`, `teardown.sh` and `env.sh` |
 | [orkestra-md.md](orkestra-md.md) | `.orkestra/ORKESTRA.md`, guidance given to every step |
 | [composition-md.md](composition-md.md) | `.orkestra/COMPOSITION.md`, guidance given to the composer |
+| [reports.md](reports.md) | the problem report a trak's page sends through the host, as a receiver maps it |
 
 ## The directory
 

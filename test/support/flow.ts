@@ -43,6 +43,7 @@ import { openPromptLog } from "./prompt-log.js"
 import type { Views } from "../../src/app/views.js"
 import type { GoalDrives } from "../../src/app/goal-drives.js"
 import type { People } from "../../src/app/people.js"
+import type { Reports } from "../../src/app/reports.js"
 import type { Preparation } from "../../src/vcs/ports/preparation.js"
 import type { Uploads } from "../../src/workflow/ports/uploads.js"
 
@@ -65,6 +66,7 @@ export type FlowDeps =
   | Locks
   | Forge
   | Push
+  | Reports
   | PushSent
   | PushSentTo
   | Openers

@@ -41,7 +41,7 @@ export const withArgs = <A, I, B, E, R>(
  * boot is still one: the host's named variables, the CLIs' sign-ins, the runner's and the
  * backup file's, and the engine's own key and passphrase.
  */
-const heldSecrets = Effect.gen(function* () {
+export const heldSecrets = Effect.gen(function* () {
   const { runner, backup } = yield* runnerFilesNow
   // Absent from a test engine that mints nothing.
   const minted = yield* Effect.serviceOption(MintedSecrets)

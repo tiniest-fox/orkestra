@@ -125,7 +125,7 @@ views, its colocated hooks and its pure helpers together.
 **A feature too big to scan is grouped one level down, by what each group draws.**
 `trak-detail/` is: `changes/`, `pull-request/`, `checks/`, `turns/`, `tokens/`,
 `finished/`, `waits/`, `family/`, `cards/`, `openers/`, `deploy/`, `chat-bar/`,
-`failure/` and `run-mode/`. A new file goes into the group whose word its name carries
+`failure/`, `run-mode/` and `report/`. A new file goes into the group whose word its name carries
 (`ChangeFoo.tsx` → `changes/`). The top level keeps the page shell and the hooks that act
 on the trak as a whole (`useApprove`, `useStop`, `useFile`). A group gets a
 subdirectory of its own once it splits the same way (`cards/gate/`, `finished/merge/`).
@@ -403,6 +403,7 @@ refreshes, and nothing errors.
 | `["files", "content", path]` | one file as the viewer draws it — its text, or its size where it is binary or over 1 MB. Polled while open; no `keepPreviousData`, since the path is the subject |
 | `["files", "search", q]` | the lines of those files holding `q`. Asked once the typing settles and from two characters, with `keepPreviousData` |
 | `["archived", q]` | the put-away traks whose title or id holds `q`, off the engine's archived set. Its own root, so no acting hook's sweep of `["traks"]` reaches it |
+| `["report", id]` | what a problem report about one trak would carry now — the report pane's preview. Asked only while the pane is open, and polled then; a send rebuilds the report on the engine and answers with its own outcome, so nothing invalidates it |
 | `["goal", id]` | one goal whole: the goal, its log and its composer's transcript. Invalidated by every `Goal` frame rather than patched — the frame names the goal and carries nothing else — and by every press on it |
 
 **A key that carries a varying value needs `placeholderData: keepPreviousData`, or the
@@ -599,6 +600,11 @@ client keeps no readiness rule of its own.
 queues a press made under a running turn. It is disabled while the detail's `rebuild` says one
 is owed, since a second press would ask for nothing.
 
+**`useReport` — Send on a trak's report pane — takes no `running`, for `useProcessPress`'s
+reason**: the route claims no custody and appends nothing, and a report is most wanted
+while a turn misbehaves. It is disabled while its send is in flight and once one went; the
+typed note is kept across a failed send and dropped when the trak changes.
+
 **The git bar's press — Fetch, Pull, Reconcile and Push, in `traks-list/git/useGitBar` —
 is not one of the twenty-three and takes no `running`.** It acts on the project checkout,
 which no trak owns, so its routes claim no custody and no drive can refuse them. The two
@@ -774,6 +780,15 @@ reader outside the client takes off an engine: `reload.ts` holds the answer the 
 group's `POST /api/reload` sends, so its reader does not import `fleet.ts`, and
 `trak-frames.ts` holds the four stream frames a watcher decodes, so it does not import
 `stream.ts` and every slice a frame carries.
+
+**`report.ts` is also a contract with receivers outside Orkestra, and what it carries
+leaves the engine.** A field added to `ReportDto` that holds text the engine did not
+write — anything a person typed or a program printed — goes through `reportCleaner` in
+`reportOf`, `src/app/report.ts`, and is withheld where the list of secrets cannot be read;
+a field that cannot be cleaned is left out. The same change updates `docs/reports.md`, and
+a change a receiver could misread is a new `format`. Nothing checks either. The
+destination and the signed send stay behind the host's `Reports` seam: the client posts
+only the note and the log choice, and no route or client file names a destination.
 
 **What the wire does NOT carry is part of the contract.** No `gate` (see the regression
 checklist), and no synthesised values: `custody.holder` is `{ since }` only because that is

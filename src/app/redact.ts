@@ -3,8 +3,10 @@
 // output or an engine log line can quote a credential another program printed.
 //
 // Pure: the caller reads the environment and the library, and this decides which of their
-// values are secrets and takes them out of a text.
+// values are secrets and takes them out of a text. A problem report also takes out every
+// string shaped like a well-known token, which catches a credential the engine never held.
 
+import { REDACTION_MARK } from "@orkestra/shared/dto/report"
 import { PASSPHRASE_ENV } from "./guard.js"
 
 /**
@@ -19,7 +21,7 @@ const ENGINE_SECRETS = [PASSPHRASE_ENV, "GH_TOKEN"] as const
  */
 const SHORTEST_SECRET = 8
 
-export const REDACTED = "[redacted]"
+export const REDACTED = REDACTION_MARK
 
 /** Where the names of the secret variables come from, beside the engine's own. */
 export interface SecretSources {
@@ -114,5 +116,49 @@ export const redactor = (values: readonly string[]): Redactor => {
       return hidden.text
     },
     found: () => found.size,
+  }
+}
+
+/**
+ * Strings shaped like a well-known credential: GitHub's tokens, Anthropic's and OpenAI's
+ * keys, an AWS access key id and the secret written beside its name, a `Bearer` token, and
+ * a PEM private key — to its end, or to the end of the text where its end is not in it.
+ * Where the shape is a name and a value, only the value is taken.
+ */
+const TOKEN_SHAPES: readonly RegExp[] = [
+  /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,})/g,
+  /\bsk-[A-Za-z0-9_-]{20,}/g,
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
+  /(?<=aws_secret_access_key["']?\s*[:=]\s*["']?)[A-Za-z0-9/+]{40}/gi,
+  /(?<=\bBearer\s+)[A-Za-z0-9._~+/-]{8,}=*/gi,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----|[\s\S]*$)/g,
+]
+
+/** `text` with every token-shaped string replaced by `[redacted]`. */
+export const hideTokenShapes = (text: string): string =>
+  TOKEN_SHAPES.reduce((done, shape) => done.replaceAll(shape, REDACTED), text)
+
+/** How many marks `text` holds. */
+const marksIn = (text: string): number => text.split(REDACTED).length - 1
+
+/**
+ * A problem report's cleaning: every held value, then every token shape, applied to each
+ * line before anything cuts one. `marked` is how many marks the cleaning added across
+ * every text it was given.
+ */
+export interface ReportCleaner {
+  readonly clean: (text: string) => string
+  readonly marked: () => number
+}
+
+export const reportCleaner = (values: readonly string[]): ReportCleaner => {
+  let marked = 0
+  return {
+    clean: (text) => {
+      const cleaned = hideTokenShapes(redact(text, values).text)
+      marked += marksIn(cleaned) - marksIn(text)
+      return cleaned
+    },
+    marked: () => marked,
   }
 }

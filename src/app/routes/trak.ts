@@ -40,6 +40,7 @@ import { Deploys } from "../deploys.js"
 import { Details } from "../details.js"
 import { Drives } from "../drive.js"
 import { handoffFor, sandboxRebuildOf } from "../handoff.js"
+import { Reports } from "../reports.js"
 import { trakImage } from "../images.js"
 import { trakRecord, writeCorpus } from "../records.js"
 import { levelHere, levelsHere, ownershipHere } from "../people.js"
@@ -249,6 +250,11 @@ const detailFor = (id: TrakId) =>
       seam: yield* seamOf(id),
       // Asked of who is looking, so a frame never carries it.
       ownership: yield* ownershipHere(trak.owner),
+      // The host's to say, asked on every read: a destination it adds is offered at once.
+      // Absent from a test engine built without the seam, which offers none.
+      report: yield* Effect.flatMap(Effect.serviceOption(Reports), (reports) =>
+        Option.isSome(reports) ? reports.value.destination : Effect.succeed(undefined),
+      ),
     })
   })
 

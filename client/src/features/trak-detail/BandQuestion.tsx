@@ -76,6 +76,8 @@ export interface BandOffer {
   readonly archiving: Archiving
   /** Only for a trak whose checkout is in a sandbox. */
   readonly rebuild: RebuildOffer | undefined
+  /** Open the report pane — only where the host has a report destination. */
+  readonly report: (() => void) | undefined
 }
 
 const BandQuestion = ({

@@ -132,7 +132,7 @@ there is nothing outside these:
 | `CLAUDE.md` | this file: what to know first, and which skill to open | **reference** — kept true |
 | `references/glossary.md` | what each word means, one line each | **reference** — kept true |
 | `references/commands.md` | what each `pnpm` command does and spends, and which of `pnpm ui`'s presses spend | **reference** — kept true |
-| `docs/*` | every `.orkestra/` file and key, for an agent setting Orkestra up in another project; published | **reference** — kept true |
+| `docs/*` | every `.orkestra/` file and key, for an agent setting Orkestra up in another project, and the problem report's contract for a receiver; published | **reference** — kept true |
 | `.agents/skills/*` | how to do a thing, at the moment you need it | **reference** — kept true |
 | `.agents/skills/atelier*`, `stillroom`, `walkdown` | the skills the `atelier`, `stillroom` and `walkdown` CLIs write, which each rewrites on every run | **vendored** — never edit |
 | `notes/BUGS.md` | what is broken now, ahead of anything deferred | **working** — a queue |

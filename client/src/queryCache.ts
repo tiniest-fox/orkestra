@@ -296,6 +296,13 @@ export const queryKeys = {
    * press does moves a name already in the archive.
    */
   archived: (q: string) => ["archived", q] as const,
+  /**
+   * What a problem report about one trak would carry now — asked only while its pane is
+   * open. Its own root, so no acting hook's sweep of `["trak"]` reaches it; a send
+   * rebuilds the report on the engine and answers with its own outcome, so nothing
+   * invalidates it either.
+   */
+  report: (id: string) => ["report", id] as const,
 }
 
 /**

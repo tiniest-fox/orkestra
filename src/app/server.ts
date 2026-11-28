@@ -54,6 +54,11 @@
 //   POST /api/traks/:id/sandbox/rebuild  no body → the trak's sandbox made again with its
 //                                   uncommitted changes carried, at the next gap. Spends
 //                                   nothing, appends nothing; queued in daemon memory
+//   GET  /api/traks/:id/report       the problem report a send would carry now, cleaned and
+//                                   cut — 404 where the host has no destination
+//   POST /api/traks/:id/report       body ReportSendRequestDto → the report rebuilt and sent
+//                                   through the host; its reference, or why it did not go.
+//                                   Spends nothing, appends nothing
 //   GET  /api/traks/:id/tools        the turn's engine tools as MCP lists them
 //   POST /api/traks/:id/tools/:name  one call, forwarded by `orkestra trak-tools`, for the
 //                                   turn in flight: a check, answered once it has run, or
@@ -212,6 +217,7 @@ import { hostRoutes } from "./routes/host.js"
 import { mergeRoutes } from "./routes/merge.js"
 import { openerRoutes } from "./routes/openers.js"
 import { processRoutes } from "./routes/processes.js"
+import { reportRoutes } from "./routes/report.js"
 import { settingRoutes } from "./routes/settings.js"
 import { stopRoutes } from "./routes/stop.js"
 import { streamRoutes } from "./routes/stream.js"
@@ -274,6 +280,7 @@ export const apiRouter = <E = never, R = never>(options: ApiOptions<E, R> = {}) 
         Router.concat(goalRoutes),
         Router.concat(trakToolRoutes),
         Router.concat(trakMcpRoutes),
+        Router.concat(reportRoutes),
         Router.concat(extra),
         Router.concat(Router.empty.pipe(clientRoute(options.client))),
       )

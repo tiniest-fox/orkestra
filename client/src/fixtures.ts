@@ -45,6 +45,7 @@ import type {
   PullRequestFoundDto,
   PullRequestsDto,
   PullRequestSummaryDto,
+  ReportDto,
   ReviewDto,
   ReviewThreadDto,
   StepOutputDto,
@@ -562,6 +563,32 @@ export const makeDeploy = (over: Over<Exclude<DeployDto, { answer: "none" }>> = 
   detail: "building, 6m in",
   text: "",
   at: 1_000,
+  ...over,
+})
+
+/**
+ * A report preview whose log went whole: three lines, one carrying a redaction mark. A test
+ * about a cut or a log left out passes its own `log`.
+ */
+export const makeReport = (over: Over<ReportDto> = {}): ReportDto => ({
+  format: "orkestra-report/1",
+  madeAt: "2026-11-28T12:00:00.000Z",
+  trak: {
+    id: "trak-reported",
+    title: "Add a --json flag",
+    description: "Add a --json flag",
+    state: "AwaitingHuman",
+    position: "2-review",
+    agent: "review",
+  },
+  engine: { version: "0.41.2", platform: "darwin" },
+  log: {
+    _tag: "Included",
+    lines: ['{"_tag":"TrakCreated"}', '{"level":"WARN","message":"token [redacted]"}', "{}"],
+    kept: { lines: 3, bytes: 80 },
+    leftOut: { lines: 0, bytes: 0 },
+    redactions: 1,
+  },
   ...over,
 })
 

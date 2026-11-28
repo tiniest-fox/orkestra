@@ -190,6 +190,8 @@ import { usePhone } from "../../hooks/usePhone"
 import { useTyping } from "./useTyping"
 import TrakChatBar from "./chat-bar/TrakChatBar"
 import TrakControls from "./TrakControls"
+import ReportPane from "./report/ReportPane"
+import { type ReportPaneState, useReportPane } from "./report/useReport"
 import BandQuestion, { type BandOffer, type RebuildOffer } from "./BandQuestion"
 import type { Rebuilding } from "./useRebuildSandbox"
 import TrakFailure from "./failure/TrakFailure"
@@ -382,6 +384,7 @@ const offerFor = (
   unfinished: UnfinishedArchive,
   archiving: Archiving,
   rebuilding: Rebuilding,
+  onReport: (id: string) => void,
 ): BandOffer => ({
   offers: {
     abandon: archiveUnfinishedOffered(trak.state),
@@ -390,6 +393,13 @@ const offerFor = (
   unfinished,
   archiving,
   rebuild: rebuildFor(trak, rebuilding),
+  // At every state, wherever the host has somewhere to send it.
+  report:
+    trak.report === undefined
+      ? undefined
+      : () => {
+          onReport(trak.id)
+        },
 })
 
 /**
@@ -415,6 +425,7 @@ const endingsFor = (
   ends: BandEndings,
   archiving: Archiving,
   finishing: Finishing,
+  onReport: (id: string) => void,
 ): { readonly page: ReactNode; readonly piece: ReactNode; readonly sheet: ReactNode } => {
   const onPiece = here.id !== trak.id
   const offers = {
@@ -423,9 +434,10 @@ const endingsFor = (
       ends.unfinished.page,
       onPiece ? archiving : finishing.archiving,
       ends.rebuilds.page,
+      onReport,
     ),
     piece: onPiece
-      ? offerFor(here, ends.unfinished.piece, finishing.archiving, ends.rebuilds.piece)
+      ? offerFor(here, ends.unfinished.piece, finishing.archiving, ends.rebuilds.piece, onReport)
       : undefined,
   }
   const menu = (band: "page" | "piece", offer: BandOffer | undefined): ReactNode =>
@@ -1105,6 +1117,26 @@ const panelOpenerFor = (side: SidePanel): ReactNode =>
   )
 
 /**
+ * The report pane, for whichever of `traks` it is open for — the page's own or the piece a
+ * band spoke for — and only while the host still offers a destination for that trak.
+ */
+const reportPaneFor = (
+  traks: readonly TrakDetailDto[],
+  pane: ReportPaneState,
+  phone: boolean,
+): ReactNode => {
+  const reported = traks.find((t) => t.id === pane.trak && t.report !== undefined)
+  return reported?.report === undefined ? undefined : (
+    <ReportPane
+      reporting={pane.reporting}
+      destination={reported.report.destination}
+      phone={phone}
+      onBack={pane.close}
+    />
+  )
+}
+
+/**
  * The drawer, with the side panel in it where the panel is open.
  *
  * **On the desk the drawer widens and splits**: the trak keeps a column of its own and the
@@ -1117,20 +1149,40 @@ const panelOpenerFor = (side: SidePanel): ReactNode =>
  */
 const SideDrawer = ({
   side,
+  trak,
   here,
   phone,
+  chrome,
+  report: opened,
   children,
 }: {
   readonly side: SidePanel
+  /** The trak the page is of; `here` is the one owning the position, which may be a piece. */
+  readonly trak: TrakDetailDto
   readonly here: TrakDetailDto
   readonly phone: boolean
+  /** The header and the navigator — `chromeFor`. */
+  readonly chrome: ReactNode
+  /** The report pane's state: where one is open it is the whole screen on a phone, the row on a desk. */
+  readonly report: ReportPaneState
+  /** The rail and the pane's column, as one row. */
   readonly children: ReactNode
 }): ReactNode => {
   useHoldWideDrawer(side.open && !phone)
+  const report = reportPaneFor([trak, here], opened, phone)
+  const body =
+    phone && report !== undefined ? (
+      report
+    ) : (
+      <>
+        {chrome}
+        {report ?? children}
+      </>
+    )
   // A link an agent wrote to one of this trak's processes, or to its pull request, opens the
   // panel there — every markdown on the screen, so it is provided around all of it. Not on a
   // phone, where the panel is a screen of its own and links stay as they were.
-  const linked = <MarkdownLinks follow={phone ? undefined : side.follow}>{children}</MarkdownLinks>
+  const linked = <MarkdownLinks follow={phone ? undefined : side.follow}>{body}</MarkdownLinks>
   if (!side.open) return <Drawer label="Trak">{linked}</Drawer>
   const panel = (
     <ProcessPanel
@@ -1277,7 +1329,8 @@ const TrakDetailPage = (): ReactNode => {
   // And the goal that opened the page's trak, which the header links back to.
   const [openers, goal] = [useOpeners(id, at, phone), useGoalLink(data?.goal)]
   // The side panel — `SideDrawer` — whose processes are the position's trak's.
-  const side = useSidePanel(id, data, at)
+  // And the report pane, open for the page's trak or a piece, shut by a step to another page.
+  const [side, report] = [useSidePanel(id, data, at), useReportPane(id)]
   // Both bands' endings, each keyed to its own trak, and a phone's open question.
   const ends = useBandEndings({ id, owed: data?.rebuild }, { id: at, owed: owner?.rebuild }, phone)
 
@@ -1305,7 +1358,7 @@ const TrakDetailPage = (): ReactNode => {
   const here = owner ?? data
   // Each band's ending menu, with the pane's Archive shared wherever two surfaces act on
   // one trak — `endingsFor` carries the routing.
-  const endings = endingsFor(data, here, ends, archiving, finishing)
+  const endings = endingsFor(data, here, ends, archiving, finishing, report.open)
 
   // The gate's presses, the gate's form, and the footer band — `chatSlots` places them.
   const gate = { approval, answer, permitting }
@@ -1328,14 +1381,14 @@ const TrakDetailPage = (): ReactNode => {
   const failure =
     engine === undefined ? failureAt(here, spot, restsAt, driving, resumption, skip) : undefined
 
-  return (
-    <SideDrawer side={side} here={here} phone={phone}>
-      {chromeFor(
-        { trak: data, here, settings, endings, openers, back: phone, side, goal },
-        { phone, bands, parent: data.id, spot, level, prev, next, onLevel: setLevel, onStep: go },
-        typing.typing,
-      )}
+  const chrome = chromeFor(
+    { trak: data, here, settings, endings, openers, back: phone, side, goal },
+    { phone, bands, parent: data.id, spot, level, prev, next, onLevel: setLevel, onStep: go },
+    typing.typing,
+  )
 
+  return (
+    <SideDrawer side={side} trak={data} here={here} phone={phone} chrome={chrome} report={report}>
       {/* The rail and the pane are one row that runs to the foot of the drawer. It sits
           beside the pane rather than beside the whole drawer, so the header and the step
           bar still run the full width — the rail is about a position within the work and

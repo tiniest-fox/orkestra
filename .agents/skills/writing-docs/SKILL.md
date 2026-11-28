@@ -123,7 +123,8 @@ second thing to forget.
 safe to point at precisely because it is frozen; a queue entry is deleted the day its work
 lands, which is also the day the sentence citing it goes false.
 
-**`docs/` is the public reference to `.orkestra/`, and holds nothing else.** It is
+**`docs/` is the public reference to `.orkestra/`, and holds nothing else** but
+`reports.md`, the contract a problem report's receiver maps from. It is
 published raw to agents setting Orkestra up in another project, so it describes the
 product as any project sees it — never what this repository's `.orkestra/` holds, its
 `pnpm` commands or its skills. Plain GitHub-flavored markdown, and every link between

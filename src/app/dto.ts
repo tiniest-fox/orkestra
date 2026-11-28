@@ -2086,6 +2086,7 @@ export const toDetailDto = ({
   seam,
   ownership,
   runner,
+  report,
 }: {
   readonly trak: Trak
   readonly events: readonly Event[]
@@ -2126,6 +2127,8 @@ export const toDetailDto = ({
   readonly ownership?: OwnershipDto | undefined
   /** The description of the runner the project sends work through, which a preparation names. */
   readonly runner?: string | undefined
+  /** The host's report destination, where it has one — asked of the host, never of the log. */
+  readonly report?: { readonly name?: string } | undefined
 }): TrakDetailDto => ({
   id: trak.id,
   description: trak.description,
@@ -2148,6 +2151,9 @@ export const toDetailDto = ({
   ...preparingField(preparing, runner),
   ...seamField(seam),
   ...(ownership === undefined ? {} : { ownership }),
+  ...(report === undefined
+    ? {}
+    : { report: report.name === undefined ? {} : { destination: report.name } }),
 })
 
 /** The frame's `turn`, as an exact optional. */

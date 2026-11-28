@@ -19,6 +19,7 @@ const offer = (pressed: string[]): BandOffer => {
     unfinished: { ...press, archive: () => pressed.push("abandon") },
     archiving: { ...press, archive: () => pressed.push("archive") },
     rebuild: { owed: undefined, press: { ...press, rebuild: () => pressed.push("rebuild") } },
+    report: () => pressed.push("report"),
   }
 }
 
@@ -36,6 +37,28 @@ describe("TrakControls on a phone", () => {
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(asked).toEqual([ask])
     expect(pressed).toEqual([])
+  })
+})
+
+describe("TrakControls' report item", () => {
+  it("sits between Rebuild and Archive, and opens the report without asking", () => {
+    const pressed: string[] = []
+    render(<TrakControls offer={offer(pressed)} onAsk={undefined} />)
+    fireEvent.click(screen.getByRole("button", { name: "More options" }))
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Rebuild sandbox",
+      "Report a problem…",
+      "Archive this trak",
+    ])
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report a problem…" }))
+    expect(screen.queryByRole("menu")).toBeNull()
+    expect(pressed).toEqual(["report"])
+  })
+
+  it("is absent where no destination is offered", () => {
+    render(<TrakControls offer={{ ...offer([]), report: undefined }} onAsk={undefined} />)
+    fireEvent.click(screen.getByRole("button", { name: "More options" }))
+    expect(screen.queryByRole("menuitem", { name: "Report a problem…" })).toBeNull()
   })
 })
 

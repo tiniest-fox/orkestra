@@ -17,7 +17,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { Cause, Console, Effect, Exit, Fiber, Schedule } from "effect"
+import { Cause, Console, Effect, Exit, Fiber, Layer, Schedule } from "effect"
 import * as HttpServer from "@effect/platform/HttpServer"
 // Named submodules, as `serve.ts` imports them: the package root pulls in a peer this
 // repository does not install.
@@ -32,6 +32,7 @@ import { startGoal, startGoalWatching } from "./app/goals.js"
 import { makeGuard, sessionsFile } from "./app/guard.js"
 import { engineLayers } from "./app/layers.js"
 import { SHIPPED_AGENTS } from "./app/packaged.js"
+import { Reports } from "./app/reports.js"
 import { loadLibrary } from "./library/adapters/library-fs.js"
 import { Vcs } from "./vcs/ports/vcs.js"
 import { worktreePathFor } from "./vcs/logic/paths.js"
@@ -75,6 +76,21 @@ const writeProject = (): string => {
   git("commit", "-m", "The simulated project")
   return root
 }
+
+/**
+ * A report destination of its own, so the report form can be opened and sent. Each send
+ * prints the report and answers a link; a note holding `fail` is refused instead, which
+ * is how the failed state and its retry are reached.
+ */
+const SimReportsLayer = Layer.succeed(Reports, {
+  destination: Effect.succeed({ name: "the sim's inbox" }),
+  send: (report) =>
+    report.note?.includes("fail") === true
+      ? Effect.succeed({ reason: "The sim's inbox refused it, because the note says fail." })
+      : Effect.as(Console.log(`sim: report ${JSON.stringify(report)}`), {
+          reference: `https://reports.example.invalid/${report.trak.id}/${report.madeAt}`,
+        }),
+})
 
 const ROOT = writeProject()
 // What the routes take for the project, read once when `app/server.ts` loads — which is
@@ -162,6 +178,7 @@ const serving = (engine: string) =>
     Effect.provide(
       engineLayers(ROOT, {
         hosting: { engine, token: TOKEN },
+        reports: SimReportsLayer,
         scripted: ScriptedQueuesLayer({ queues: QUEUES, repeat: simRepeat(LIB) }),
       }),
     ),

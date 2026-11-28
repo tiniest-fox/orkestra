@@ -27,6 +27,10 @@
  * owed the item says what it waits on and cannot be pressed again — the engine queues a
  * press made under a running turn, and the detail's `rebuild` is what reports it.
  *
+ * **Report a problem is between the two, and only where the host has a destination.** It
+ * asks nothing: it shuts the menu and opens the report pane, which is where the person
+ * decides. With no destination the item is absent and nothing else changes.
+ *
  * **The question is `BandQuestion`'s.** At a desk it replaces the items in the popover. On a
  * phone the page hands `onAsk`: the item shuts the popover and reports what it asks, and the
  * page draws the sheet after the pane, where no later band can paint over it.
@@ -63,10 +67,10 @@ const TrakControls = ({
   // the panel, which unmounts its body while it is shut — `onDismiss` is what puts it back at
   // the items, so a menu reopened after a cancel is not a confirmation nobody asked for again.
   const [asking, setAsking] = useState<BandAsk | undefined>(undefined)
-  const { rebuild } = offer
+  const { rebuild, report } = offer
   const ending = endingOf(offer.offers, offer.unfinished, offer.archiving)
 
-  if (ending === undefined && rebuild === undefined) return undefined
+  if (ending === undefined && rebuild === undefined && report === undefined) return undefined
 
   const cancel = (): void => {
     setAsking(undefined)
@@ -93,6 +97,16 @@ const TrakControls = ({
                 }}
               >
                 {rebuildSaid(rebuild.owed)}
+              </MenuItem>
+            )}
+            {report !== undefined && (
+              <MenuItem
+                onClick={() => {
+                  shut()
+                  report()
+                }}
+              >
+                Report a problem…
               </MenuItem>
             )}
             {ending !== undefined && (

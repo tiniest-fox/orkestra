@@ -36,6 +36,7 @@ import { MemoryPassesLayer } from "../../src/workflow/adapters/passes-memory.js"
 import { MemoryTurnToolsLayer } from "../../src/workflow/adapters/turn-tools-memory.js"
 import { MemorySetupsLayer } from "../../src/workflow/adapters/setups-memory.js"
 import { UploadsLayer } from "../../src/app/attachments.js"
+import { NoReportsLayer } from "../../src/app/reports.js"
 import { MemoryPreparationLayer } from "../../src/workflow/adapters/preparation-memory.js"
 import { FileEngineLogLayer } from "../../src/workflow/adapters/engine-log-file.js"
 import { ShellHostedProcessesLayer } from "../../src/workflow/adapters/processes-shell.js"
@@ -243,6 +244,8 @@ export const scenario = (
       forgeLayer,
       push.layer,
       openers,
+      // An engine nobody hosts has no report destination; the report theme provides its own.
+      NoReportsLayer,
       // A flow's provider is not watched, so nothing reports; the route answers `NotRead`.
       UsageMemoryLayer,
       // Real for `Vcs`'s reason: a process coming up on its port and dying when it

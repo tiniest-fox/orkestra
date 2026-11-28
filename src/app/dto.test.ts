@@ -2038,3 +2038,21 @@ describe("a log written before places were recorded", () => {
     ).toHaveProperty("place")
   })
 })
+
+describe("toDetailDto — the report offer", () => {
+  const trak = { ...emptyTrak(TrakId.make("t1")), description: "d" }
+  const withReport = (report: { readonly name?: string } | undefined) =>
+    toDetailDto({
+      trak,
+      events: [],
+      transcript: [],
+      asked: { nextChecks: [], deployScript: false, handOffBase: undefined, lib: LIB },
+      ...(report === undefined ? {} : { report }),
+    })
+
+  it("is absent where the host has no destination, and carries the name where it gives one", () => {
+    expect("report" in withReport(undefined)).toBe(false)
+    expect(withReport({}).report).toEqual({})
+    expect(withReport({ name: "inbox" }).report).toEqual({ destination: "inbox" })
+  })
+})

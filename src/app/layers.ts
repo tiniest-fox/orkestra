@@ -88,6 +88,7 @@ import { replayHistory } from "../workflow/domain/replay.js"
 import { holdsCheckout, TrakId, waitsOnPerson } from "../workflow/domain/trak.js"
 import { CHECK_STAGES, RECORDING, SHIPPED_AGENTS, TEMPLATES, version } from "./packaged.js"
 import { type Push, StoredPushLayer } from "./push.js"
+import { NoReportsLayer, type Reports } from "./reports.js"
 import { goalDrivesLayer } from "./goal-drives.js"
 import {
   goalToolsServer,
@@ -335,6 +336,8 @@ export interface EngineSeams {
   readonly stores: StoresOf
   readonly environment: ReturnType<typeof ShellEnvironmentLayer>
   readonly push: (cwd: string) => Layer.Layer<Push, Error>
+  /** Where a problem report goes, and the signed send — the host's; none where left out. */
+  readonly reports: Layer.Layer<Reports>
   /** Who sees, presses and reads each item — over the stores and the feed it follows. */
   readonly people: Layer.Layer<People, never, Store | GoalStore | Feed>
   /**
@@ -349,8 +352,8 @@ export interface EngineSeams {
 }
 
 /**
- * The seams of an engine nobody hosts: SQLite, its own push keys, nobody else's users, and no
- * other copy writing to its store.
+ * The seams of an engine nobody hosts: SQLite, its own push keys, nobody else's users, no
+ * other copy writing to its store, and nowhere to send a problem report.
  */
 export const PUBLIC_SEAMS: EngineSeams = {
   hostProject: undefined,
@@ -361,6 +364,7 @@ export const PUBLIC_SEAMS: EngineSeams = {
   stores: (cwd, _lib, proc) => sqliteStoresOf(cwd, proc),
   environment: ShellEnvironmentLayer(),
   push: (cwd) => StoredPushLayer(cwd),
+  reports: NoReportsLayer,
   people: PublicPeopleLayer,
   watch: Effect.void,
 }
@@ -479,6 +483,7 @@ export const engineLayers = (cwd: string, options: EngineOptions = {}) => {
     // The push key and subscription store, on disk beside `daemon.json` so a restart
     // forgets no phone. The sender is not here — `serve-engine.ts` forks it off the `Feed`.
     seams.push(cwd),
+    seams.reports,
     // The turns in flight a check-tool call can act for, and the server a step's session
     // is handed to make one.
     // Under a runner file the session is handed the same tools over HTTP instead, with

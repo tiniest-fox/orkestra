@@ -34,6 +34,7 @@ const ID = TrakId.make("reported-trak")
 /** The engine's own GitHub token, which it holds as a secret whoever started it. */
 const HELD = "gho-held-by-the-engine-0123"
 const SHAPED = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123"
+const REQUEST = `Push fails with ${SHAPED} and ${HELD} set`
 
 /** A provider that is never run: the routes read only its sign-in variables. */
 const provider = Layer.succeed(Provider, {
@@ -74,7 +75,8 @@ const keeping = (sent: Ref.Ref<readonly ReportDto[]>, answer: ReportSent) =>
 
 const seed = Effect.gen(function* () {
   const store = yield* Store
-  yield* store.append(ID, [Events.trakCreated("Add a --json flag")], { after: 0 })
+  // The request itself holds a token shape and a held value, as a pasted error would.
+  yield* store.append(ID, [Events.trakCreated(REQUEST)], { after: 0 })
   yield* store.append(ID, [Events.mergeFailed(`refused near ${HELD} and ${SHAPED}`)], { after: 1 })
 })
 
@@ -168,6 +170,29 @@ describe("with a destination", () => {
     const [report] = await Effect.runPromise(Ref.get(sent))
     expect(report?.log).toEqual({ _tag: "LeftOut", reason: "turned-off" })
     expect(report?.note).toBeUndefined()
+  })
+
+  it("sends the trak's title and description cleaned, where its request holds a token", async () => {
+    const sent = Ref.unsafeMake<readonly ReportDto[]>([])
+    await run(send({ includeLog: true }), keeping(sent, { reference: "FB-5" }))
+    const [report] = await Effect.runPromise(Ref.get(sent))
+    expect(report?.trak.title).toBe("Push fails with [redacted] and [redacted] set")
+    expect(report?.trak.description).toBe("Push fails with [redacted] and [redacted] set")
+    for (const secret of [HELD, SHAPED]) expect(JSON.stringify(report)).not.toContain(secret)
+  })
+
+  it("withholds the request and the note where the secrets cannot be read", async () => {
+    const sent = Ref.unsafeMake<readonly ReportDto[]>([])
+    await run(
+      send({ note: `pasted ${HELD}`, includeLog: true }),
+      keeping(sent, { reference: "FB-6" }),
+      false,
+    )
+    const [report] = await Effect.runPromise(Ref.get(sent))
+    expect(report?.log).toEqual({ _tag: "LeftOut", reason: "secrets-unreadable" })
+    expect(report?.withheld).toBe("secrets-unreadable")
+    expect(report?.note).toBeUndefined()
+    for (const secret of [HELD, SHAPED]) expect(JSON.stringify(report)).not.toContain(secret)
   })
 
   it("answers the host's reason where the send did not go", async () => {

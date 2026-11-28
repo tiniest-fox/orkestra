@@ -4,12 +4,13 @@ import {
   REPORT_FORMAT,
   REPORT_MOST_BYTES,
   REPORT_MOST_LINES,
+  REPORT_TEXT_MOST_BYTES,
   type ReportDto,
   type ReportLogIncludedDto,
 } from "@orkestra/shared/dto/report"
 import { type Event, Events } from "../workflow/domain/event.js"
 import { TrakId } from "../workflow/domain/trak.js"
-import { mergedLog, newestWithin, reportOf, type ReportSources } from "./report.js"
+import { headWithin, mergedLog, newestWithin, reportOf, type ReportSources } from "./report.js"
 
 const ID = TrakId.make("careful-trak")
 const HELD = "held-deploy-secret-0123"
@@ -88,6 +89,62 @@ describe("reportOf", () => {
     const report = reportOf(sources(), { note: "   ", includeLog: false })
     expect(report.log).toEqual({ _tag: "LeftOut", reason: "turned-off" })
     expect(report.note).toBeUndefined()
+  })
+})
+
+describe("reportOf — the trak's own text", () => {
+  const AWS = "AKIAIOSFODNN7EXAMPLE"
+  const asked = `Push fails with ${SHAPED}, ${AWS} and ${HELD} in the env`
+  const withRequest = (over: Partial<ReportSources> = {}) =>
+    sources({ events: [at(Events.trakCreated(asked), NOW - 3000)], ...over })
+
+  it("cleans the title and the description of token shapes and held values", () => {
+    const report = reportOf(withRequest(), { note: undefined, includeLog: true })
+    const cleaned = "Push fails with [redacted], [redacted] and [redacted] in the env"
+    expect(report.trak.title).toBe(cleaned)
+    expect(report.trak.description).toBe(cleaned)
+    for (const secret of [SHAPED, AWS, HELD]) expect(JSON.stringify(report)).not.toContain(secret)
+  })
+
+  it("withholds them and the note where the list of secrets cannot be read, and says so", () => {
+    const report = reportOf(withRequest({ secrets: undefined }), {
+      note: `my key ${HELD}`,
+      includeLog: true,
+    })
+    expect(report.log).toEqual({ _tag: "LeftOut", reason: "secrets-unreadable" })
+    expect(report.withheld).toBe("secrets-unreadable")
+    expect(report.trak.title).toBe(ID)
+    expect(report.trak.description).toBe("")
+    expect(report.note).toBeUndefined()
+    for (const secret of [SHAPED, AWS, HELD]) expect(JSON.stringify(report)).not.toContain(secret)
+  })
+
+  it("cuts an oversized description and note from their start, and says how much went", () => {
+    const long = `${SHAPED} ${"d".repeat(REPORT_TEXT_MOST_BYTES * 2)}`
+    const report = reportOf(sources({ events: [at(Events.trakCreated(long), NOW)] }), {
+      note: "n".repeat(REPORT_TEXT_MOST_BYTES + 10),
+      includeLog: false,
+    })
+    expect(Buffer.byteLength(report.trak.description)).toBe(REPORT_TEXT_MOST_BYTES)
+    expect(report.trak.description.startsWith("[redacted] ddd")).toBe(true)
+    expect(report.note).toHaveLength(REPORT_TEXT_MOST_BYTES)
+    const cleanedBytes = Buffer.byteLength(long) - SHAPED.length + REDACTION_MARK.length
+    expect(report.cut).toEqual({
+      note: 10,
+      title: cleanedBytes - REPORT_TEXT_MOST_BYTES,
+      description: cleanedBytes - REPORT_TEXT_MOST_BYTES,
+    })
+  })
+
+  it("names no cut where nothing was cut", () => {
+    expect(reportOf(sources(), { note: "short", includeLog: true }).cut).toBeUndefined()
+  })
+})
+
+describe("headWithin", () => {
+  it("never splits a character, and counts the bytes left out", () => {
+    expect(headWithin("aé€", 4)).toEqual({ text: "aé", leftOut: 3 })
+    expect(headWithin("short", 10)).toEqual({ text: "short", leftOut: 0 })
   })
 })
 

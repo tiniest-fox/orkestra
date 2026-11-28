@@ -67,6 +67,13 @@ export const keyedLines = (
 ): readonly { readonly key: number; readonly line: string }[] =>
   lines.map((line, i) => ({ key: before + i, line }))
 
+/** What stands where the engine withheld everything typed. */
+export const WITHHELD_WORDS =
+  "The title, the description and your note are left out: the engine could not read its list of secrets to clean them with. The report says so."
+
+/** What the cut took off the end of a text, in bytes. */
+export const cutWords = (bytes: number): string => `⋯ ${count(bytes)} more bytes left out`
+
 /** A reference the receipt opens rather than only copies. */
 export const isLink = (reference: string): boolean => /^https?:\/\/\S+$/.test(reference)
 

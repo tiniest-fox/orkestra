@@ -157,3 +157,55 @@ describe("with a report destination", () => {
     expect(screen.queryByRole("region", { name: "Report a problem" })).toBeNull()
   })
 })
+
+describe("the trak's own text in the preview", () => {
+  it("shows the trak's title and description as they go, removals and cut marked", async () => {
+    const report = makeReport()
+    server.use(
+      emptyList,
+      answers(detail({ report: {} })),
+      preview(
+        makeReport({
+          trak: {
+            ...report.trak,
+            id: ID,
+            title: "Push fails with [redacted]",
+            description: "Push fails with [redacted] in the env",
+          },
+          cut: { description: 4096 },
+        }),
+      ),
+    )
+    renderDetail()
+    await openReport()
+
+    const request = await screen.findByLabelText("The request that goes")
+    expect(request.textContent).toBe(
+      "Push fails with removed in the env ⋯ 4,096 more bytes left out",
+    )
+    // One in the title, one in the description, one in the fixture's log line.
+    expect(screen.getAllByText("removed")).toHaveLength(3)
+  })
+
+  it("says the typed text is withheld, and takes no note, where it cannot be cleaned", async () => {
+    server.use(
+      emptyList,
+      answers(detail({ report: {} })),
+      preview(
+        makeReport({
+          withheld: "secrets-unreadable",
+          trak: { ...makeReport().trak, id: ID, title: ID, description: "" },
+          log: { _tag: "LeftOut", reason: "secrets-unreadable" },
+        }),
+      ),
+    )
+    renderDetail()
+    await openReport()
+
+    expect(
+      await screen.findByText(/^The title, the description and your note are left out/),
+    ).toBeDefined()
+    expect(screen.getByRole("textbox", { name: "What went wrong (optional)" })).toBeDisabled()
+    expect(screen.queryByLabelText("The request that goes")).toBeNull()
+  })
+})

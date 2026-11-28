@@ -51,8 +51,10 @@ new `format`, never an edit to this one.
 |---|---|
 | `format` | always `orkestra-report/1` for this shape |
 | `madeAt` | when the engine built the report, ISO 8601 |
-| `note` | what the person wrote, cleaned as the log is; absent where they wrote nothing |
-| `trak.id`, `trak.title`, `trak.description` | the trak, its plan's title or the request where it has no plan, and the request as written |
+| `note` | what the person wrote, cleaned and cut — below; absent where they wrote nothing |
+| `withheld` | `secrets-unreadable` where the engine could not read its list of secrets; absent otherwise. The note is then absent, `trak.title` is the trak's id and `trak.description` is empty |
+| `cut` | the bytes the cut took off the end of `note`, `title` or `description`, naming only the fields it cut; absent where it cut none |
+| `trak.id`, `trak.title`, `trak.description` | the trak, its plan's title or the request where it has no plan, and the request — the last two cleaned and cut — below |
 | `trak.goal` | the goal that opened the trak; absent where none did |
 | `trak.state` | the state's name — `AgentWorking`, `AwaitingHuman`, `Failed`, `Finished` and the rest; `Unreadable` where the stored log will not decode |
 | `trak.position`, `trak.agent` | the step the state names, as `<index>-<agent>`, and its agent; absent where the state names no step |
@@ -78,6 +80,16 @@ engine holds, and each string shaped like a well-known credential — a GitHub t
 Anthropic or OpenAI key, an AWS access key id or secret key, a `Bearer` token, a PEM
 private key — with `[redacted]`. Where the engine cannot read its list of secrets, it sends
 no log rather than a log cleaned of shapes alone.
+
+## The typed text
+
+**The note, the title and the description are cleaned as a log line is, whether or not the
+log goes**, because each is text a person typed and may hold a credential. Each is then cut
+from its start to 64 KB, never splitting a character, and `cut` says how many bytes each
+lost. Where the engine cannot read its list of secrets, all three are withheld rather than
+cleaned of shapes alone, and `withheld` says so.
+
+## How long a log may be
 
 **A long log is cut to its newest lines within 2,000 lines and 256 KB**, whichever is
 reached first, and `leftOut` says how many older lines and bytes were left out.

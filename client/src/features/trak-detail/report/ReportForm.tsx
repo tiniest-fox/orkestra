@@ -25,6 +25,8 @@ const ReportForm = ({
 }): ReactNode => {
   const { locked, sending } = reporting
   const on = locked === undefined && reporting.includeLog
+  // Where the engine cannot clean typed text, a note would be dropped, so none is taken.
+  const withheld = reporting.preview?.withheld !== undefined
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-col gap-1.5">
@@ -37,9 +39,13 @@ const ReportForm = ({
           label="What went wrong (optional)"
           value={reporting.note}
           onChange={reporting.setNote}
-          placeholder="What you saw, and what you expected instead. The trak's details and log go either way."
+          placeholder={
+            withheld
+              ? "No note can go: the engine could not read its list of secrets to clean it with."
+              : "What you saw, and what you expected instead. The trak's details and log go either way."
+          }
           rows={rows}
-          disabled={sending}
+          disabled={sending || withheld}
           unzoomed={phone}
         />
       </div>

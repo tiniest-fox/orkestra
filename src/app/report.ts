@@ -15,6 +15,7 @@ import {
   REPORT_FORMAT,
   REPORT_MOST_BYTES,
   REPORT_MOST_LINES,
+  REPORT_TEXT_MOST_BYTES,
   type ReportDto,
   type ReportLogDto,
   ReportLogIncludedDto,
@@ -115,6 +116,27 @@ export const newestWithin = (lines: readonly string[]) => {
   }
 }
 
+/**
+ * `text` from its start, within `most` bytes and never splitting a character, and the
+ * bytes the cut left out.
+ */
+export const headWithin = (
+  text: string,
+  most: number,
+): { readonly text: string; readonly leftOut: number } => {
+  const total = Buffer.byteLength(text)
+  if (total <= most) return { text, leftOut: 0 }
+  let bytes = 0
+  let end = 0
+  for (const character of text) {
+    const size = Buffer.byteLength(character)
+    if (bytes + size > most) break
+    bytes += size
+    end += character.length
+  }
+  return { text: text.slice(0, end), leftOut: total - bytes }
+}
+
 /** The step a state names, where it names one. */
 const stepIn = (trak: Trak): number | undefined =>
   "step" in trak.state && typeof trak.state.step === "number" ? trak.state.step : undefined
@@ -135,7 +157,15 @@ const trakDetails = (id: TrakId, events: readonly Event[] | undefined): ReportTr
   }
 }
 
-/** The report, cleaned and cut. Pure: every source is read before it is called. */
+/**
+ * The report, cleaned and cut. Pure: every source is read before it is called.
+ *
+ * **Every free-text field is cleaned, whether or not the log goes.** The note and the trak's
+ * title and description are what a person typed, so each can hold a credential: each is
+ * cleaned as a log line is and then cut from its start to `REPORT_TEXT_MOST_BYTES`. Where
+ * the list of secrets could not be read, all three are withheld as the log is — a token
+ * shape can still be found, but a held value cannot.
+ */
 export const reportOf = (src: ReportSources, asked: ReportAsked): ReportDto => {
   const cleaner = reportCleaner(src.secrets ?? [])
   const note = asked.note?.trim() === "" ? undefined : asked.note
@@ -147,12 +177,27 @@ export const reportOf = (src: ReportSources, asked: ReportAsked): ReportDto => {
     return ReportLogIncludedDto.make({ ...newestWithin(cleaned), redactions: cleaner.marked() })
   }
   const log = logOf()
+  // Cleaned after the log, so the log's count is the log's alone.
+  const text = (raw: string) => headWithin(cleaner.clean(raw), REPORT_TEXT_MOST_BYTES)
+  const withheld = src.secrets === undefined
+  const details = trakDetails(src.id, src.events)
+  const fields = {
+    note: note === undefined || withheld ? undefined : text(note),
+    title: text(withheld ? src.id : details.title),
+    description: text(withheld ? "" : details.description),
+  }
+  const cut = Object.fromEntries(
+    Object.entries(fields).flatMap(([field, value]) =>
+      value === undefined || value.leftOut === 0 ? [] : [[field, value.leftOut]],
+    ),
+  )
   return {
     format: REPORT_FORMAT,
     madeAt: new Date(src.now).toISOString(),
-    // Cleaned after the log, so the log's count is the log's alone.
-    ...(note === undefined ? {} : { note: cleaner.clean(note) }),
-    trak: trakDetails(src.id, src.events),
+    ...(fields.note === undefined ? {} : { note: fields.note.text }),
+    ...(withheld ? { withheld: "secrets-unreadable" as const } : {}),
+    ...(Object.keys(cut).length === 0 ? {} : { cut }),
+    trak: { ...details, title: fields.title.text, description: fields.description.text },
     engine: { version: src.version, platform: src.platform },
     log,
   }

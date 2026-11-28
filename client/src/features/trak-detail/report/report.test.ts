@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { makeReport } from "../../../fixtures"
-import { detailRows, isLink, logLocked, logNote, piecesOf } from "./report"
+import { cutWords, detailRows, isLink, logLocked, logNote, piecesOf } from "./report"
 import { outcomeOf } from "./useReport"
 
 describe("piecesOf", () => {
@@ -70,5 +70,11 @@ describe("outcomeOf", () => {
     expect(outcomeOf(undefined, new Error("down"))).toEqual({
       failed: "The report did not reach the engine.",
     })
+  })
+})
+
+describe("cutWords", () => {
+  it("says how many bytes the cut took off a text", () => {
+    expect(cutWords(123_456)).toBe("⋯ 123,456 more bytes left out")
   })
 })

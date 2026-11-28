@@ -15,13 +15,22 @@ export const REPORT_FORMAT = "orkestra-report/1"
 export const REPORT_MOST_LINES = 2000
 export const REPORT_MOST_BYTES = 256 * 1024
 
+/**
+ * The most of each free-text field a report carries — the note, and the trak's title and
+ * description — in bytes, from its start. Cut after cleaning, as the log is.
+ */
+export const REPORT_TEXT_MOST_BYTES = 64 * 1024
+
 /** The longest note a person may send, in characters. */
 export const REPORT_NOTE_MOST = 20_000
 
 /** What stands in a line or the note where a secret or a token-shaped string was. */
 export const REDACTION_MARK = "[redacted]"
 
-/** The trak the report is about, as the engine holds it. */
+/**
+ * The trak the report is about, as the engine holds it. `title` and `description` are
+ * cleaned as the log is and cut to `REPORT_TEXT_MOST_BYTES`.
+ */
 export const ReportTrakDto = Schema.Struct({
   id: Schema.String,
   /** The plan's title, or the request where no plan exists yet. */
@@ -93,8 +102,28 @@ export const ReportDto = Schema.Struct({
   format: Schema.Literal(REPORT_FORMAT),
   /** When the engine made it, as an ISO 8601 instant. */
   madeAt: Schema.String,
-  /** What the person wrote, cleaned as the log is. Absent where they wrote nothing. */
+  /**
+   * What the person wrote, cleaned as the log is and cut to `REPORT_TEXT_MOST_BYTES`.
+   * Absent where they wrote nothing.
+   */
   note: Schema.optional(Schema.String),
+  /**
+   * The bytes each free-text field lost to the cut, naming only the fields that were cut;
+   * absent where none was.
+   */
+  /**
+   * Present where the engine could not read its list of secrets: the note is then absent,
+   * `trak.title` is the trak's id and `trak.description` is empty, because nothing typed
+   * can be shown to hold no secret.
+   */
+  withheld: Schema.optional(Schema.Literal("secrets-unreadable")),
+  cut: Schema.optional(
+    Schema.Struct({
+      note: Schema.optional(Schema.Number),
+      title: Schema.optional(Schema.Number),
+      description: Schema.optional(Schema.Number),
+    }),
+  ),
   trak: ReportTrakDto,
   engine: ReportEngineDto,
   log: ReportLogDto,

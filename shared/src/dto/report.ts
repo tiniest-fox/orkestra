@@ -21,9 +21,6 @@ export const REPORT_MOST_BYTES = 256 * 1024
  */
 export const REPORT_TEXT_MOST_BYTES = 64 * 1024
 
-/** The longest note a person may send, in characters. */
-export const REPORT_NOTE_MOST = 20_000
-
 /** What stands in a line or the note where a secret or a token-shaped string was. */
 export const REDACTION_MARK = "[redacted]"
 
@@ -130,9 +127,13 @@ export const ReportDto = Schema.Struct({
 })
 export type ReportDto = Schema.Schema.Type<typeof ReportDto>
 
-/** `POST /api/traks/:id/report`'s body. */
+/**
+ * `POST /api/traks/:id/report`'s body. The note has no length bound here: the engine cuts
+ * it to `REPORT_TEXT_MOST_BYTES` and says so in `cut.note`, where a bound would refuse the
+ * whole send and the person would see only that it did not reach the engine.
+ */
 export const ReportSendRequestDto = Schema.Struct({
-  note: Schema.optional(Schema.String.pipe(Schema.maxLength(REPORT_NOTE_MOST))),
+  note: Schema.optional(Schema.String),
   includeLog: Schema.Boolean,
 })
 export type ReportSendRequestDto = Schema.Schema.Type<typeof ReportSendRequestDto>

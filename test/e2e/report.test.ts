@@ -11,6 +11,7 @@ import {
   type ReportDto,
   ReportDto as ReportSchema,
   ReportSendAnswerDto,
+  REPORT_TEXT_MOST_BYTES,
 } from "@orkestra/shared/dto/report"
 import { Provider, type ProviderRegistry } from "../../src/agent/ports/provider.js"
 import { PublicPeopleLayer } from "../../src/app/people.js"
@@ -162,6 +163,19 @@ describe("with a destination", () => {
     expect(report?.note).toBe("It stopped; my key is [redacted]")
     expect(report?.log._tag).toBe("Included")
     for (const secret of [HELD, SHAPED]) expect(JSON.stringify(report)).not.toContain(secret)
+  })
+
+  it("sends a note past the text bound cut, and says how much the cut took", async () => {
+    const sent = Ref.unsafeMake<readonly ReportDto[]>([])
+    const long = "a".repeat(REPORT_TEXT_MOST_BYTES + 4000)
+    const answer = await run(
+      send({ note: long, includeLog: false }),
+      keeping(sent, { reference: "FB-7" }),
+    )
+    expect(answer).toEqual({ _tag: "Sent", reference: "FB-7" })
+    const [report] = await Effect.runPromise(Ref.get(sent))
+    expect(report?.note).toBe("a".repeat(REPORT_TEXT_MOST_BYTES))
+    expect(report?.cut).toEqual({ note: 4000 })
   })
 
   it("sends no log where the person turned it off", async () => {

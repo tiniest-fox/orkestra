@@ -781,6 +781,15 @@ group's `POST /api/reload` sends, so its reader does not import `fleet.ts`, and
 `trak-frames.ts` holds the four stream frames a watcher decodes, so it does not import
 `stream.ts` and every slice a frame carries.
 
+**`report.ts` is also a contract with receivers outside Orkestra, and what it carries
+leaves the engine.** A field added to `ReportDto` that holds text the engine did not
+write — anything a person typed or a program printed — goes through `reportCleaner` in
+`reportOf`, `src/app/report.ts`, and is withheld where the list of secrets cannot be read;
+a field that cannot be cleaned is left out. The same change updates `docs/reports.md`, and
+a change a receiver could misread is a new `format`. Nothing checks either. The
+destination and the signed send stay behind the host's `Reports` seam: the client posts
+only the note and the log choice, and no route or client file names a destination.
+
 **What the wire does NOT carry is part of the contract.** No `gate` (see the regression
 checklist), and no synthesised values: `custody.holder` is `{ since }` only because that is
 all the `Runs.holder` port reports, and a field the server would have to invent to fill is
